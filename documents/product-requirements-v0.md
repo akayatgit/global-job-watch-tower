@@ -12,7 +12,7 @@
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
 | **First-mover mandate** | **Highest product priority:** start and sustain tower searches so Quanta is among the first to collect fresh job-market insights — coverage before polish |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
-| **Lid / sleep warning** | **Default Ubuntu/GNOME: closing the lid = suspend → tower freezes** (worker, beat, API, scrape browser, DB I/O stop). Overnight collection requires lid-close ≠ suspend (or keep lid open on AC). |
+| **Lid / sleep policy** | **Configured 2026-08-01 for overnight collect:** GNOME lid-close + idle sleep = `nothing`; systemd-logind `HandleLidSwitch=ignore` via `/etc/systemd/logind.conf.d/99-watch-tower-lid.conf`. Lid close should **not** suspend. Keep on charger; allow airflow (laptop may run warm with lid closed). |
 | **Source of truth** | Pitch deck slides + this document (iterate in place; do not fork near-duplicates) |
 | **Existing seed** | `job_engine/` LinkedIn scrape + admin pilot (foundation for Discovery / Tracks) |
 
@@ -531,7 +531,7 @@ START OF EVERY SESSION
 
 **While Ashok sleeps:** leave worker/beat collecting the 111-role first pass (one at a time).  
 **Standing YES (2026-08-01):** commit after every finished slice; keep collector running overnight unless Ashok says stop.  
-**Hardware note:** Tower is alive only while this ThinkPad is awake. Lid-close currently suspends (confirmed GNOME `lid-close-*-action='suspend'`).  
+**Hardware note:** Tower is alive on this ThinkPad while awake. Lid-close/idle suspend disabled for overnight collection (2026-08-01). Prefer AC power + ventilation.  
 **Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
 
 ---

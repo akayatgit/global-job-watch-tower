@@ -40,8 +40,8 @@ Ashok is vision owner (Yes/No). He granted full build agency.
 
 Alive on Ashok’s **Lenovo ThinkPad P16 Gen 1**, Ubuntu 24.04, local processes only
 (`job_engine` / Celery / Postgres / Redis / Ollama). Not cloud.
-**Closing the lid suspends the laptop by default → searches stop.** Prefer
-lid-ignore on AC for overnight collection; never assume the tower survives sleep.
+Lid-close/idle suspend disabled (2026-08-01) so overnight collection can continue.
+Still: keep on charger, never assume cloud failover — this laptop is the only runtime.
 
 ## Standing handoff
 
