@@ -51,6 +51,96 @@ Ashok can build from phone or any device: open a PR → merge to `main` → this
 
 ---
 
+### 0A.2 Test deployment (verify before merge)
+
+A test deployment lets Ashok (or Akay) prove a feature branch works end-to-end on the ThinkPad **before** the PR is merged to `main`.  
+It is manual, non-destructive, and fully reversible.
+
+#### When to run a test deployment
+
+| Situation | Do it? |
+|---|---|
+| New scraper change, new migration, or restart-app edits | **Yes — always** |
+| Pure UI/template change (no migrations, no worker code) | Recommended |
+| Docs-only or rule-file-only change | Optional (skip if confident) |
+| Hotfix that must be live immediately | Skip and merge direct with admin bypass |
+
+#### How to do it (on the ThinkPad)
+
+```bash
+# 1. Fetch the PR branch (replace `feature/my-branch` with the actual branch)
+cd /home/user/Documents
+git fetch origin feature/my-branch
+
+# 2. Stash any local tweaks (should be clean on the tower)
+git stash
+
+# 3. Check out the PR branch (tower keeps running from systemd — it doesn't restart yet)
+git checkout feature/my-branch
+
+# 4. Apply any new migrations against the live DB (safe — migrations are additive)
+cd job_engine
+conda run -n ai alembic upgrade head
+
+# 5. Restart services to load the new code
+bash job_engine/restart_app.sh
+
+# 6. Run smoke tests (see checklist below)
+```
+
+> **Important:** Do **not** run `deploy_local.sh` for a test deploy. That script is for `origin/main` only (it calls `git reset --hard origin/main` which would undo your branch checkout). Use the manual steps above.
+
+#### Smoke-test checklist
+
+Run these after the branch is live on `:8001`:
+
+| Check | Command / URL |
+|---|---|
+| API responds | `curl -sf http://127.0.0.1:8001/ \| head -5` |
+| Migrations OK | `conda run -n ai alembic -c job_engine/alembic.ini current` — shows HEAD |
+| No crashed services | `systemctl --user is-active watch-tower-{api,worker,beat}` — all should be `active` |
+| Admin shell loads | Open `http://127.0.0.1:8001` in browser — no 500 |
+| Tower health tab | `/tower-health` — vitals show; no red error banners |
+| Hiring signals | `/signals` — table loads; no server error |
+| Watchlist | `/watchlist` — loads without crash |
+| One manual search | Queue one search from the UI; confirm it goes `dispatched → running → done` |
+| Beat still schedules | Check Activity page after ~15 min — no double-queuing |
+
+#### After a successful test
+
+```bash
+# Return to main (tower is still running the feature branch until deploy_local.sh runs after merge)
+git checkout main
+
+# Or keep the branch active until you merge the PR — deploy_local.sh will align to main on merge
+```
+
+#### Rollback if the test fails
+
+```bash
+# Immediate: go back to last known-good SHA on main
+cd /home/user/Documents
+git checkout main
+cd job_engine && conda run -n ai alembic downgrade -1   # only if migration was applied
+bash job_engine/restart_app.sh
+```
+
+> Any failed migration should be downgraded **before** switching branches to avoid schema/code mismatch.
+
+#### Relationship to the CI deploy
+
+```
+PR branch  →  manual test deploy on ThinkPad  →  pass  →  merge PR to main
+                                                              ↓
+                                              GitHub Actions (push to main)
+                                                              ↓
+                                              scripts/deploy_local.sh (production deploy)
+```
+
+Test deploy uses the same restart path as production (`restart_app.sh`) so failures surface before they hit the Actions pipeline.
+
+---
+
 ## 0. Mother Promise (binding operating contract)
 
 As the AI assistant leading this project (**Akay**), this document records a **mother promise** to Ashok and to the investor vision:
