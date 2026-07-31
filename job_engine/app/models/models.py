@@ -125,3 +125,16 @@ class ConsoleLog(Base):
     level: Mapped[str] = mapped_column(String(10), default='info')
     run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     message: Mapped[str] = mapped_column(Text)
+
+
+class TowerEvent(Base):
+    """Structured pulse events for Tower Health (filter mode, browser open)."""
+
+    __tablename__ = 'tower_events'
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    # ollama_filter | keyword_filter | browser_open | scrape_done
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    detail: Mapped[str] = mapped_column(String(1000), default='')

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Tower health{% endblock %}
+{% block content %}
+<h1>Tower health <span class="sub">Is this laptop alive, cool, and filtering with Ollama?</span></h1>
+<p class="muted" style="margin-top:0;max-width:52rem">
+  Goal: scrape as many <strong>quality</strong> roles as this ThinkPad can sustain — smart filter on,
+  human-like browsing, heat under control. Keyword filter is Plan B only under critical heat or
+  missing GPU. We measure capacity here, then scale with more laptops (one per industry is fine).
+</p>
+
+<div class="stat-row">
+  <div class="stat">
+    <div class="n">{% if detail.heat_c is not none %}{{ '%.0f'|format(detail.heat_c) }}°{% else %}—{% endif %}</div>
+    <div class="l">PC heat · {{ detail.heat_label }}</div>
+  </div>
+  <div class="stat">
+    <div class="n">{{ '%.0f'|format(detail.mem_pct) }}%</div>
+    <div class="l">PC memory · {{ detail.mem_used_mb }} / {{ detail.mem_total_mb }} MB</div>
+  </div>
+  <div class="stat">
+    <div class="n">{{ detail.cpu_label }}</div>
+    <div class="l">PC CPU · load {{ '%.2f'|format(detail.load1) }}</div>
+  </div>
+  <div class="stat">
+    <div class="n">{{ detail.ollama_capacity_estimate }}</div>
+    <div class="l">Ollama searches / day target</div>
+  </div>
+</div>
+
+<h2>Search pulse</h2>
+<table>
+  <thead>
+    <tr><th>Signal</th><th>Value</th><th>What it means</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Last search with Ollama</td>
+      <td>{{ detail.last_ollama_at | rel }}</td>
+      <td>Quality filter path — this should be the normal heartbeat.</td>
+    </tr>
+    <tr>
+      <td>Last search without Ollama</td>
+      <td>{% if detail.last_keyword_at %}<span class="status failed">{{ detail.last_keyword_at | rel }}</span>{% else %}<span class="status success">never</span>{% endif %}</td>
+      <td>Plan B only. If this fires often, data quality is at risk — cool the laptop or slow the catalogue.</td>
+    </tr>
+    <tr>
+      <td>Searches today</td>
+      <td><strong>{{ detail.searches_today }}</strong></td>
+      <td>All browser searches started since local midnight.</td>
+    </tr>
+    <tr>
+      <td>Searches last 24 hours</td>
+      <td><strong>{{ detail.searches_24h }}</strong></td>
+      <td>Rolling window — compares to the capacity target below.</td>
+    </tr>
+    <tr>
+      <td>Ollama searches now</td>
+      <td><strong>{{ detail.ollama_running }}</strong>{% if detail.scrape_running %} · {{ detail.scrape_running_name }}{% endif %}</td>
+      <td>One browser at a time on this laptop.</td>
+    </tr>
+    <tr>
+      <td>Ollama searches today</td>
+      <td><strong>{{ detail.ollama_today }}</strong></td>
+      <td>Completed smart-filter rounds today.</td>
+    </tr>
+    <tr>
+      <td>Ollama searches last 24h (max handled)</td>
+      <td><strong>{{ detail.ollama_max_24h }}</strong></td>
+      <td>With one worker, this equals completed Ollama-filtered searches in 24h.</td>
+    </tr>
+    <tr>
+      <td>Plan B keyword today / 24h</td>
+      <td>{{ detail.keyword_today }} / {{ detail.keyword_24h }}</td>
+      <td>Should stay near zero. Spikes mean heat or GPU trouble.</td>
+    </tr>
+    <tr>
+      <td>Next search countdown</td>
+      <td><strong>{{ detail.next_search_secs | countdown }}</strong>
+        <span class="muted">· {{ detail.next_search_name }}</span></td>
+      <td>Nearest due search on the staggered daily schedule.</td>
+    </tr>
+    <tr>
+      <td>Last browser opened</td>
+      <td>{{ detail.last_browser_at | rel }}</td>
+      <td>Aliveness check — browser should open when a search runs.</td>
+    </tr>
+    <tr>
+      <td>Filter policy</td>
+      <td><strong>{{ detail.filter_mode_policy }}</strong></td>
+      <td>Must stay on Ollama for production quality. Keyword is emergency only.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Capacity — this laptop before we buy more</h2>
+<p style="max-width:52rem;margin:0 0 12px">{{ detail.capacity_note }}</p>
+<div class="stat-row">
+  <div class="stat">
+    <div class="n">{{ detail.ollama_24h }}</div>
+    <div class="l">Handled in last 24h</div>
+  </div>
+  <div class="stat">
+    <div class="n">~{{ detail.ollama_capacity_estimate }}</div>
+    <div class="l">Sustainable target / day</div>
+  </div>
+  <div class="stat">
+    <div class="n">{% if detail.ollama_capacity_estimate %}{{ ((100 * detail.ollama_24h) / detail.ollama_capacity_estimate)|int }}%{% else %}—{% endif %}</div>
+    <div class="l">Of target used (24h)</div>
+  </div>
+</div>
+<p class="muted" style="max-width:52rem">
+  Once this number is stable under cool/warm heat (not critical), we scale horizontally —
+  another laptop per industry or market slice — instead of overloading one machine.
+</p>
+
+<h2>Heat detail</h2>
+<p class="muted" style="margin-top:0">{{ detail.heat_detail }}</p>
+
+<h2>Recent pulse events <span class="muted">({{ recent_events|length }} shown)</span></h2>
+{% if recent_events %}
+<table>
+  <thead>
+    <tr><th>#</th><th>When</th><th>What</th><th>Detail</th></tr>
+  </thead>
+  <tbody>
+    {% for e in recent_events %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ e.ts | rel }}</td>
+      <td>{% if e.kind == 'keyword_filter' %}<span class="status failed">{{ event_labels.get(e.kind, e.kind) }}</span>{% else %}{{ event_labels.get(e.kind, e.kind) }}{% endif %}</td>
+      <td class="muted">{{ e.detail or '—' }}{% if e.run_id %} · activity #{{ e.run_id }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No pulse events yet — they appear when the browser opens or a filter finishes.</p>
+{% endif %}
+{% endblock %}

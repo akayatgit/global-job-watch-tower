@@ -62,12 +62,52 @@
     background: var(--qt-glass);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--qt-glass-border);
-    padding: 12px 28px;
+    padding: 12px 28px 10px;
     display: flex;
     align-items: center;
     gap: 28px;
     flex-wrap: wrap;
   }
+  .vitals {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 8px 0 2px;
+    border-top: 1px solid rgba(216, 222, 233, 0.65);
+    margin-top: 4px;
+  }
+  .vital {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 88px;
+    padding: 5px 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid rgba(216, 222, 233, 0.8);
+    text-decoration: none;
+    color: inherit;
+    line-height: 1.2;
+  }
+  .vital:hover { background: rgba(255,255,255,0.9); border-color: var(--qt-blue-deep); }
+  .vital .vk {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--qt-muted);
+  }
+  .vital .vv {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--qt-ink);
+    white-space: nowrap;
+  }
+  .vital.warn .vv { color: var(--qt-warn); }
+  .vital.bad .vv { color: var(--qt-fail); }
+  .vital.ok .vv { color: var(--qt-ok); }
+  .vital.planb .vv { color: var(--qt-fail); }
   .brand {
     display: flex;
     align-items: center;
@@ -279,7 +319,56 @@
     <a href="/runs" class="{{ 'active' if active == 'runs' }}">Activity</a>
     <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
     <a href="/console" class="{{ 'active' if active == 'console' }}">Live feed</a>
+    <a href="/tower-health" class="{{ 'active' if active == 'tower_health' }}">Tower health</a>
   </nav>
+  {% if vitals %}
+  <div class="vitals" id="tower-vitals" title="Live laptop + search pulse — open Tower health for detail">
+    <a class="vital {% if vitals.heat_label in ('Hot','Critical') %}bad{% elif vitals.heat_label == 'Warm' %}warn{% else %}ok{% endif %}" href="/tower-health" data-k="heat">
+      <span class="vk">PC heat</span>
+      <span class="vv" data-v="heat">{% if vitals.heat_c is not none %}{{ '%.0f'|format(vitals.heat_c) }}° · {{ vitals.heat_label }}{% else %}{{ vitals.heat_label }}{% endif %}</span>
+    </a>
+    <a class="vital {% if vitals.mem_pct >= 90 %}bad{% elif vitals.mem_pct >= 75 %}warn{% endif %}" href="/tower-health" data-k="mem">
+      <span class="vk">PC memory</span>
+      <span class="vv" data-v="mem">{{ '%.0f'|format(vitals.mem_pct) }}%</span>
+    </a>
+    <a class="vital {% if vitals.cpu_label == 'Stressed' %}bad{% elif vitals.cpu_label == 'Busy' %}warn{% else %}ok{% endif %}" href="/tower-health" data-k="cpu">
+      <span class="vk">PC CPU</span>
+      <span class="vv" data-v="cpu">{{ vitals.cpu_label }} · {{ '%.1f'|format(vitals.load1) }}</span>
+    </a>
+    <a class="vital ok" href="/tower-health" data-k="last_ollama">
+      <span class="vk">Last w/ Ollama</span>
+      <span class="vv" data-v="last_ollama">{% if vitals.last_ollama_at %}<time class="rel" datetime="{{ vitals.last_ollama_at.isoformat() }}">{{ vitals.last_ollama_at.isoformat() }}</time>{% else %}never{% endif %}</span>
+    </a>
+    <a class="vital {% if vitals.last_keyword_at %}planb{% endif %}" href="/tower-health" data-k="last_keyword">
+      <span class="vk">Last without</span>
+      <span class="vv" data-v="last_keyword">{% if vitals.last_keyword_at %}<time class="rel" datetime="{{ vitals.last_keyword_at.isoformat() }}">{{ vitals.last_keyword_at.isoformat() }}</time>{% else %}never ✓{% endif %}</span>
+    </a>
+    <a class="vital" href="/tower-health" data-k="today">
+      <span class="vk">Searches today</span>
+      <span class="vv" data-v="today">{{ vitals.searches_today }}</span>
+    </a>
+    <a class="vital" href="/tower-health" data-k="h24">
+      <span class="vk">Last 24h</span>
+      <span class="vv" data-v="h24">{{ vitals.searches_24h }}</span>
+    </a>
+    <a class="vital ok" href="/tower-health" data-k="ollama_load">
+      <span class="vk">Ollama now / day / 24h</span>
+      <span class="vv" data-v="ollama_load">{{ vitals.ollama_running }} · {{ vitals.ollama_today }} · {{ vitals.ollama_24h }}</span>
+    </a>
+    <a class="vital" href="/tower-health" data-k="cap">
+      <span class="vk">Capacity target</span>
+      <span class="vv" data-v="cap">~{{ vitals.ollama_capacity_estimate }}/day</span>
+    </a>
+    <a class="vital" href="/tower-health" data-k="next">
+      <span class="vk">Next search</span>
+      <span class="vv" data-v="next">{{ vitals.next_search_secs | countdown }}</span>
+    </a>
+    <a class="vital {% if not vitals.last_browser_at %}warn{% endif %}" href="/tower-health" data-k="browser">
+      <span class="vk">Browser opened</span>
+      <span class="vv" data-v="browser">{% if vitals.last_browser_at %}<time class="rel" datetime="{{ vitals.last_browser_at.isoformat() }}">{{ vitals.last_browser_at.isoformat() }}</time>{% else %}waiting{% endif %}</span>
+    </a>
+  </div>
+  {% endif %}
 </header>
 <main>
 {% block content %}{% endblock %}
@@ -309,6 +398,50 @@ function updateRelTimes(root) {
 }
 updateRelTimes();
 setInterval(() => updateRelTimes(), 30000);
+
+function setVitalHtml(key, html, cls) {
+  const el = document.querySelector('#tower-vitals [data-v="' + key + '"]');
+  if (!el) return;
+  el.innerHTML = html;
+  const card = el.closest('.vital');
+  if (card && cls !== undefined) {
+    card.classList.remove('ok', 'warn', 'bad', 'planb');
+    if (cls) card.classList.add(cls);
+  }
+}
+function relOrNever(iso, neverLabel) {
+  if (!iso) return neverLabel || 'never';
+  return '<time class="rel" datetime="' + iso + '">' + iso + '</time>';
+}
+async function refreshVitals() {
+  try {
+    const res = await fetch('/api/tower-vitals', {headers: {'Accept': 'application/json'}});
+    if (!res.ok) return;
+    const v = await res.json();
+    const heatCls = (v.heat_label === 'Hot' || v.heat_label === 'Critical') ? 'bad'
+      : (v.heat_label === 'Warm' ? 'warn' : 'ok');
+    const heatTxt = (v.heat_c != null)
+      ? (Math.round(v.heat_c) + '° · ' + v.heat_label) : v.heat_label;
+    setVitalHtml('heat', heatTxt, heatCls);
+    setVitalHtml('mem', Math.round(v.mem_pct) + '%',
+      v.mem_pct >= 90 ? 'bad' : (v.mem_pct >= 75 ? 'warn' : ''));
+    setVitalHtml('cpu', v.cpu_label + ' · ' + v.load1,
+      v.cpu_label === 'Stressed' ? 'bad' : (v.cpu_label === 'Busy' ? 'warn' : 'ok'));
+    setVitalHtml('last_ollama', relOrNever(v.last_ollama_at, 'never'), 'ok');
+    setVitalHtml('last_keyword', relOrNever(v.last_keyword_at, 'never ✓'),
+      v.last_keyword_at ? 'planb' : '');
+    setVitalHtml('today', String(v.searches_today), '');
+    setVitalHtml('h24', String(v.searches_24h), '');
+    setVitalHtml('ollama_load',
+      v.ollama_running + ' · ' + v.ollama_today + ' · ' + v.ollama_24h, 'ok');
+    setVitalHtml('cap', '~' + v.ollama_capacity_estimate + '/day', '');
+    setVitalHtml('next', v.next_search_label || '—', '');
+    setVitalHtml('browser', relOrNever(v.last_browser_at, 'waiting'),
+      v.last_browser_at ? '' : 'warn');
+    updateRelTimes(document.getElementById('tower-vitals'));
+  } catch (e) { /* keep last values */ }
+}
+setInterval(refreshVitals, 3000);
 
 const refreshEvery = parseInt(document.body.dataset.refresh || '0', 10);
 if (refreshEvery > 0) {

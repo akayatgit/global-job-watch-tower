@@ -2,14 +2,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig
+from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig, TowerEvent
 from app.schedule import FREQ_OPTIONS, WEEKDAYS, build_cron, cron_to_human
 from app.signals import (
     WINDOW_OPTIONS,
@@ -21,6 +21,7 @@ from app.signals import (
     watchlist_rows,
 )
 from app.tasks import _config_busy, run_scrape
+from app.tower_health import compute_vitals
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / 'templates'))
@@ -34,10 +35,92 @@ def _rel(value) -> Markup:
     return Markup(f'<time class="rel" datetime="{escape(iso)}">{escape(iso)}</time>')
 
 
+def _fmt_countdown(secs: int | None) -> str:
+    if secs is None:
+        return '—'
+    if secs <= 0:
+        return 'due now'
+    if secs < 60:
+        return f'{secs}s'
+    if secs < 3600:
+        return f'{secs // 60}m {secs % 60}s'
+    h, rem = divmod(secs, 3600)
+    return f'{h}h {rem // 60}m'
+
+
 templates.env.filters['rel'] = _rel
 templates.env.filters['cron_human'] = cron_to_human
 templates.env.filters['delta'] = format_delta
 templates.env.filters['pct'] = format_pct
+templates.env.filters['countdown'] = _fmt_countdown
+
+
+def _page(request: Request, name: str, ctx: dict, db: Session):
+    """Every admin page gets Tower Health vitals for the sticky header."""
+    vitals = compute_vitals(db)
+    payload = {'vitals': vitals, **ctx}
+    return templates.TemplateResponse(request, name, payload)
+
+
+def _vitals_json(v) -> dict:
+    def iso(dt):
+        return dt.isoformat() if dt is not None else None
+
+    return {
+        'heat_c': v.heat_c,
+        'heat_label': v.heat_label,
+        'heat_detail': v.heat_detail,
+        'mem_used_mb': v.mem_used_mb,
+        'mem_total_mb': v.mem_total_mb,
+        'mem_pct': round(v.mem_pct, 1),
+        'load1': round(v.load1, 2),
+        'cpu_label': v.cpu_label,
+        'last_ollama_at': iso(v.last_ollama_at),
+        'last_keyword_at': iso(v.last_keyword_at),
+        'last_browser_at': iso(v.last_browser_at),
+        'searches_today': v.searches_today,
+        'searches_24h': v.searches_24h,
+        'ollama_today': v.ollama_today,
+        'ollama_24h': v.ollama_24h,
+        'keyword_today': v.keyword_today,
+        'keyword_24h': v.keyword_24h,
+        'ollama_running': v.ollama_running,
+        'ollama_max_24h': v.ollama_max_24h,
+        'ollama_capacity_estimate': v.ollama_capacity_estimate,
+        'capacity_note': v.capacity_note,
+        'next_search_at': iso(v.next_search_at),
+        'next_search_name': v.next_search_name,
+        'next_search_secs': v.next_search_secs,
+        'next_search_label': _fmt_countdown(v.next_search_secs),
+        'scrape_running': v.scrape_running,
+        'scrape_running_name': v.scrape_running_name,
+        'filter_mode_policy': v.filter_mode_policy,
+    }
+
+
+@router.get('/api/tower-vitals')
+def api_tower_vitals(db: Session = Depends(get_db)):
+    return JSONResponse(_vitals_json(compute_vitals(db)))
+
+
+@router.get('/tower-health')
+def tower_health(request: Request, db: Session = Depends(get_db)):
+    vitals = compute_vitals(db)
+    recent = db.execute(
+        select(TowerEvent).order_by(desc(TowerEvent.id)).limit(40)
+    ).scalars().all()
+    return _page(request, 'tower_health.html', {
+        'active': 'tower_health',
+        'refresh': 3,
+        'detail': vitals,
+        'recent_events': recent,
+        'event_labels': {
+            'ollama_filter': 'Smart filter (Ollama)',
+            'keyword_filter': 'Plan B keyword',
+            'browser_open': 'Browser opened',
+            'scrape_done': 'Search finished',
+        },
+    }, db)
 
 
 @router.get('/')
@@ -95,7 +178,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     signals = compute_hiring_signals(db, window_days=7)
     watched = watchlist_rows(db, window_days=7)[:6]
 
-    return templates.TemplateResponse(request, 'dashboard.html', {
+    return _page(request, 'dashboard.html', {
         'stats': stats, 'recent_runs': recent_runs, 'configs': configs,
         'top_companies': top_companies, 'per_role': per_role,
         'daily_series': daily_series, 'daily_max': max([d['n'] for d in daily_series] + [1]),
@@ -105,7 +188,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         'signals': signals,
         'watched': watched,
         'active': 'dashboard', 'refresh': 5,
-    })
+    }, db)
 
 
 @router.get('/signals')
@@ -113,12 +196,12 @@ def signals_page(request: Request, days: int = 7, db: Session = Depends(get_db))
     if days not in (7, 14, 30):
         days = 7
     signals = compute_hiring_signals(db, window_days=days)
-    return templates.TemplateResponse(request, 'signals.html', {
+    return _page(request, 'signals.html', {
         'signals': signals,
         'window_options': WINDOW_OPTIONS,
         'active': 'signals',
         'refresh': 8,
-    })
+    }, db)
 
 
 @router.get('/watchlist')
@@ -133,7 +216,7 @@ def watchlist_page(
         days = 7
     watched = watchlist_rows(db, window_days=days, q=q)
     directory = company_directory(db, q=add or q, limit=50)
-    return templates.TemplateResponse(request, 'watchlist.html', {
+    return _page(request, 'watchlist.html', {
         'watched': watched,
         'directory': directory,
         'window_options': WINDOW_OPTIONS,
@@ -142,7 +225,7 @@ def watchlist_page(
         'f_add': add,
         'active': 'watchlist',
         'refresh': 8,
-    })
+    }, db)
 
 
 @router.post('/watchlist/{company_id}/toggle')
@@ -163,10 +246,10 @@ def watchlist_toggle(
 @router.get('/configs')
 def configs_page(request: Request, db: Session = Depends(get_db)):
     configs = db.execute(select(SearchConfig).order_by(SearchConfig.id)).scalars().all()
-    return templates.TemplateResponse(request, 'configs.html', {
+    return _page(request, 'configs.html', {
         'configs': configs, 'active': 'configs',
         'freq_options': FREQ_OPTIONS, 'weekdays': WEEKDAYS,
-    })
+    }, db)
 
 
 @router.post('/configs/create')
@@ -260,10 +343,10 @@ def runs_page(request: Request, db: Session = Depends(get_db)):
     logs = db.execute(
         select(RequestLog).order_by(desc(RequestLog.id)).limit(30)
     ).scalars().all()
-    return templates.TemplateResponse(request, 'runs.html', {
+    return _page(request, 'runs.html', {
         'runs': runs, 'configs': configs, 'logs': logs, 'active': 'runs',
         'refresh': 5,
-    })
+    }, db)
 
 
 @router.post('/runs/{run_id}/cancel')
@@ -374,12 +457,12 @@ def jobs_page(
     company_names = db.execute(
         select(Company.name).order_by(Company.name).limit(300)
     ).scalars().all()
-    return templates.TemplateResponse(request, 'jobs.html', {
+    return _page(request, 'jobs.html', {
         'rows': rows, 'total': total, 'active': 'jobs',
         'all_configs': all_configs, 'company_names': company_names,
         'f_q': q, 'f_company': company, 'f_posted': posted, 'f_config': config_id,
         'f_sort': sort, 'f_dir': dir,
-    })
+    }, db)
 
 
 @router.post('/console/clear')
@@ -435,8 +518,8 @@ def console_page(request: Request, db: Session = Depends(get_db)):
         ).scalar_one_or_none()
         phases[run.id] = last.message[:90] if last else '—'
 
-    return templates.TemplateResponse(request, 'console.html', {
+    return _page(request, 'console.html', {
         'display': display, 'running': running, 'configs': configs, 'phases': phases,
         'active': 'console',
         'last_id': entries[-1].id if entries else 0,
-    })
+    }, db)

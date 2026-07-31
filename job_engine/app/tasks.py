@@ -275,6 +275,7 @@ def run_scrape(self, scrape_run_id: int):
                 on_page=on_page,
                 should_continue=should_continue,
                 log=lambda msg: console_log('scraper', msg, run_id=run.id),
+                run_id=run.id,
             )
         except Exception as exc:
             db.rollback()

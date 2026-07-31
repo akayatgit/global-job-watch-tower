@@ -3,9 +3,9 @@
 The searched role (e.g. "ai product owner") must actually match the job
 title. Irrelevant jobs are not stored.
 
-Uses fast JSON mode by default. Between batches, the thermal governor
-inserts dynamic breaks so GPU/CPU heat stays under control. On critical
-heat or missing NVIDIA, falls back to keyword matching for that round.
+Ollama is the normal path (quality data). Keyword filter is Plan B ONLY
+for critical heat or missing NVIDIA — never for convenience. Keyword
+matching corrupts relevance and must stay rare.
 """
 
 import json
@@ -20,6 +20,7 @@ from app import config
 from app.console import console_log
 from app.scraper.parse import ParsedJob
 from app import thermal
+from app.tower_health import record_event_standalone
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,20 @@ Reply with ONLY this JSON, with exactly {n} booleans in the same order:
 
 
 def _fallback_verdicts(titles: list[str], keywords: str) -> list[bool]:
-    """Keyword heuristic used when Ollama is unavailable or answers badly."""
+    """Keyword heuristic — Plan B only. Prefer rejecting over false keeps."""
     kw = keywords.lower().strip()
-    core = ' '.join(kw.split()[1:]) if len(kw.split()) > 1 else kw
-    return [kw in t.lower() or core in t.lower() for t in titles]
+    tokens = [t for t in kw.split() if len(t) > 1]
+    out = []
+    for title in titles:
+        tl = title.lower()
+        # All significant tokens must appear — stricter than substring guess
+        if tokens and all(t in tl for t in tokens):
+            out.append(True)
+        elif kw and kw in tl:
+            out.append(True)
+        else:
+            out.append(False)
+    return out
 
 
 def _parse_verdicts(content: str, n: int) -> list[bool]:
@@ -118,41 +129,50 @@ def _plain_verdicts(titles: list[str], keywords: str) -> list[bool]:
 
 def _verdicts_for_batch(titles: list[str], keywords: str,
                         run_id: int | None, bi: int, total: int) -> list[bool]:
+    """Ollama only. On failure: one heat-break retry, then reject the batch
+    (do not silently keyword — that corrupts data outside Plan B)."""
     timeout = config.OLLAMA_TIMEOUT_S
-    if config.OLLAMA_THINK:
+
+    def _attempt(label: str) -> list[bool]:
+        if config.OLLAMA_THINK:
+            try:
+                return _with_timeout(
+                    lambda: _stream_verdicts(titles, keywords, run_id),
+                    timeout,
+                )
+            except Exception as exc:
+                logger.warning('streamed batch %s failed (%s); plain', bi, exc)
+                console_log(
+                    'ai',
+                    f'Batch {bi}/{total}: thinking mode failed ({exc}); '
+                    'retrying fast JSON…',
+                    run_id=run_id, level='warn',
+                )
+        return _with_timeout(lambda: _plain_verdicts(titles, keywords), timeout)
+
+    try:
+        return _attempt('first')
+    except Exception as exc:
+        logger.warning('batch %s failed (%s); cooling then one retry', bi, exc)
+        console_log(
+            'ai',
+            f'Batch {bi}/{total}: Ollama hiccup ({exc}); heat break then one retry…',
+            run_id=run_id, level='warn',
+        )
+        thermal.wait_for_breath(run_id, why=f'ollama retry batch {bi}')
+        if not thermal.allow_ollama(run_id):
+            raise RuntimeError('critical heat during Ollama retry') from exc
         try:
-            return _with_timeout(
-                lambda: _stream_verdicts(titles, keywords, run_id),
-                timeout,
-            )
-        except Exception as exc:
-            logger.warning('streamed batch %s failed (%s); retrying plain', bi, exc)
+            return _attempt('retry')
+        except Exception as exc2:
+            logger.warning('batch %s retry failed (%s); rejecting batch', bi, exc2)
             console_log(
                 'ai',
-                f'Batch {bi}/{total}: thinking mode failed ({exc}); '
-                'retrying fast JSON…',
+                f'Batch {bi}/{total}: Ollama still failing — rejecting these '
+                f'{len(titles)} title(s) rather than keyword-corrupting data.',
                 run_id=run_id, level='warn',
             )
-    try:
-        return _with_timeout(lambda: _plain_verdicts(titles, keywords), timeout)
-    except FuturesTimeout:
-        logger.warning('batch %s timed out after %ss', bi, timeout)
-        console_log(
-            'ai',
-            f'Batch {bi}/{total}: Ollama timed out after {int(timeout)}s; '
-            'using keyword fallback for this batch.',
-            run_id=run_id, level='warn',
-        )
-        return _fallback_verdicts(titles, keywords)
-    except Exception as exc:
-        logger.warning('plain batch %s failed (%s); keyword fallback', bi, exc)
-        console_log(
-            'ai',
-            f'Batch {bi}/{total}: Ollama failed ({exc}); '
-            'using keyword fallback for this batch.',
-            run_id=run_id, level='warn',
-        )
-        return _fallback_verdicts(titles, keywords)
+            return [False] * len(titles)
 
 
 def _keyword_filter(jobs: list[ParsedJob], keywords: str,
@@ -163,9 +183,14 @@ def _keyword_filter(jobs: list[ParsedJob], keywords: str,
     rejected = [j for j, keep in zip(jobs, verdicts) if not keep]
     console_log(
         'ai',
-        f'Keyword filter ({reason}): kept {len(relevant)} of {len(jobs)} '
-        f'title(s) for "{keywords}".',
+        f'Plan B keyword filter ({reason}): kept {len(relevant)} of {len(jobs)} '
+        f'title(s) for "{keywords}". Use only under critical heat / no GPU.',
+        run_id=run_id, level='warn',
+    )
+    record_event_standalone(
+        'keyword_filter',
         run_id=run_id,
+        detail=f'{reason}; kept {len(relevant)}/{len(jobs)}',
     )
     return relevant, rejected
 
@@ -177,13 +202,13 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
         return [], []
 
     mode = config.RELEVANCE_MODE
+    # Explicit keyword mode is legacy emergency override — still Plan B
     if mode in ('keyword', 'keywords', 'off', 'cool'):
-        return _keyword_filter(jobs, keywords, run_id, 'forced cool mode')
+        return _keyword_filter(jobs, keywords, run_id, 'forced Plan B mode')
 
-    # auto / ollama: respect thermal governor
-    use_ollama = mode in ('ollama', 'auto', 'gpu')
-    if use_ollama and not thermal.allow_ollama(run_id):
-        return _keyword_filter(jobs, keywords, run_id, 'thermal/GPU guard')
+    # ollama / auto / gpu: quality path
+    if not thermal.allow_ollama(run_id):
+        return _keyword_filter(jobs, keywords, run_id, 'critical heat / no GPU')
 
     batch_size = max(4, config.OLLAMA_BATCH_SIZE)
     snap = thermal.snapshot()
@@ -196,33 +221,53 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
     console_log(
         'ai',
         f'Checking {len(jobs)} title(s) against "{keywords}" with '
-        f'{config.OLLAMA_MODEL} (fast JSON, heat={snap.level} {snap.detail}) '
+        f'{config.OLLAMA_MODEL} (heat={snap.level} {snap.detail}) '
         f'in {len(batches)} batch(es) of ~{batch_size}…',
         run_id=run_id,
     )
 
     relevant: list[ParsedJob] = []
     rejected: list[ParsedJob] = []
+    used_ollama = False
 
     for bi, batch in enumerate(batches, start=1):
-        # Dynamic break before every batch (including first — lets GPU settle
-        # after Chrome dwell). Longer when warm/hot.
         thermal.wait_for_breath(run_id, why=f'batch {bi}/{len(batches)}')
         if not thermal.allow_ollama(run_id):
-            # Finish the rest with keyword so we don't keep heating
+            # Cool down once more before Plan B — prefer waiting over keyword
+            console_log(
+                'ai',
+                'Heat still critical — extra cool-down before Plan B…',
+                run_id=run_id, level='warn',
+            )
+            time.sleep(max(60.0, config.HEAT_BREAK_CRITICAL_S))
+            if not thermal.allow_ollama(run_id):
+                rest = []
+                for b in batches[bi - 1:]:
+                    rest.extend(b)
+                kw_rel, kw_rej = _keyword_filter(
+                    rest, keywords, run_id, 'critical heat mid-run Plan B',
+                )
+                relevant.extend(kw_rel)
+                rejected.extend(kw_rej)
+                break
+            # cooled enough — continue Ollama
+
+        titles = [job.title for job in batch]
+        t0 = time.monotonic()
+        try:
+            verdicts = _verdicts_for_batch(titles, keywords, run_id, bi, len(batches))
+            used_ollama = True
+        except RuntimeError:
             rest = []
             for b in batches[bi - 1:]:
                 rest.extend(b)
             kw_rel, kw_rej = _keyword_filter(
-                rest, keywords, run_id, 'thermal cutover mid-run',
+                rest, keywords, run_id, 'critical heat during Ollama retry',
             )
             relevant.extend(kw_rel)
             rejected.extend(kw_rej)
             break
 
-        titles = [job.title for job in batch]
-        t0 = time.monotonic()
-        verdicts = _verdicts_for_batch(titles, keywords, run_id, bi, len(batches))
         kept = [job for job, keep in zip(batch, verdicts) if keep]
         dropped = [job for job, keep in zip(batch, verdicts) if not keep]
         relevant.extend(kept)
@@ -234,6 +279,13 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
             + (f' ({", ".join(j.title[:35] for j in dropped[:4])}'
                + ('…' if len(dropped) > 4 else '') + ')' if dropped else ''),
             run_id=run_id,
+        )
+
+    if used_ollama:
+        record_event_standalone(
+            'ollama_filter',
+            run_id=run_id,
+            detail=f'kept {len(relevant)}/{len(jobs)} for {keywords[:80]}',
         )
 
     console_log(

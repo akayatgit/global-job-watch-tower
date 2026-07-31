@@ -146,7 +146,8 @@ def _fetch_with_retries(engine, url: str, label: str, say) -> tuple[object, floa
 
 
 def scrape_search(keywords: str, geo_id: str, max_pages: int,
-                  on_page=None, should_continue=None, log=None) -> list[PageResult]:
+                  on_page=None, should_continue=None, log=None,
+                  run_id: int | None = None) -> list[PageResult]:
     """Scrape a LinkedIn job search, page by page, in one browser session.
 
     ``on_page(PageResult)`` is called after each page so the caller can
@@ -279,6 +280,15 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
     )
 
     say(f'Opening browser for "{keywords}" (past 24h, up to {max_pages} pages)…')
+    try:
+        from app.tower_health import record_event_standalone
+        record_event_standalone(
+            'browser_open',
+            run_id=run_id,
+            detail=f'{keywords[:120]} · pages≤{max_pages}',
+        )
+    except Exception:
+        pass
     with StealthySession(**session_kwargs) as engine:
         for page_num in range(max_pages):
             if should_continue is not None and not should_continue():

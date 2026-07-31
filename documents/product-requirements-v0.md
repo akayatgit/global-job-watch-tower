@@ -540,9 +540,11 @@ START OF EVERY SESSION
 
 **Docker v0 backup:** image `watch-tower:v0` + offline tarball `backups/watch-tower-v0.tar.gz` (~195MB). Compose file preserves API+DB+Redis skeleton.
 
-**Thermal-balanced Ollama (2026-08-01):** `RELEVANCE_MODE=auto` + `app/thermal.py`. Between AI batches: dynamic breaks (cool~8s / warm~25s / hot~60s / critical~120s). Critical heat or no GPU → keyword fallback. Beat skips new scrapes when hot/critical. Batch size shrinks when warm. Prefer `x86_pkg_temp` over noisy `acpitz`. Ollama on RTX A3000; Chrome stays headless.
+**Thermal-balanced Ollama (2026-08-01):** `RELEVANCE_MODE=ollama` + `app/thermal.py`. Between AI batches: dynamic breaks (cool~8s / warm~25s / hot~60s / critical~120s). **Keyword filter is Plan B only** (critical heat or no GPU) — never normal ops; keyword corrupts relevance. Beat skips new scrapes when hot/critical. Batch size shrinks when warm. Prefer `x86_pkg_temp` over noisy `acpitz`. Ollama on RTX A3000; Chrome stays headless.
 
-**Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
+**Tower Health (2026-08-01):** Sticky header vitals on every page + `/tower-health` tab — PC heat/memory/CPU, last Ollama vs Plan B search, searches today/24h, next-search countdown, last browser open, Ollama load (now/day/24h) and capacity estimate. North star: measure how many **Ollama** searches this laptop can sustain coolly, then scale with more laptops (one per industry OK) — not overload one machine.
+
+**Capacity goal:** Find the sustainable Ollama-search/day number for this P16 (early band ~60–90 with human dwell + heat breaks). Scale infra after that number is proven.
 
 ---
 

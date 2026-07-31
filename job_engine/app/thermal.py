@@ -129,14 +129,15 @@ def allow_ollama(run_id: int | None = None) -> bool:
     if snap.gpu_c is None and config.HEAT_REQUIRE_GPU:
         console_log(
             'ai',
-            f'NVIDIA unavailable ({snap.detail}) — keyword filter to protect host.',
+            f'NVIDIA unavailable ({snap.detail}) — Plan B keyword filter '
+            f'(emergency only; prefer fixing GPU).',
             run_id=run_id, level='warn',
         )
         return False
     if snap.level == 'critical':
         console_log(
             'ai',
-            f'Critical heat ({snap.detail}) — keyword filter this round.',
+            f'Critical heat ({snap.detail}) — Plan B keyword filter this round.',
             run_id=run_id, level='warn',
         )
         return False
