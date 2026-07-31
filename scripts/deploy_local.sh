@@ -46,9 +46,10 @@ source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
 
 stop_beat() {
+  log "pausing beat so no new searches enqueue..."
+  systemctl --user stop watch-tower-beat.service 2>/dev/null || true
   local pidfile="$DATA_DIR/beat.pid"
   if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
-    log "pausing beat (pid $(cat "$pidfile")) so no new searches enqueue..."
     kill "$(cat "$pidfile")" 2>/dev/null || true
     rm -f "$pidfile"
   fi

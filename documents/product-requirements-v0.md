@@ -40,7 +40,7 @@ Ashok can build from phone or any device: open a PR → merge to `main` → this
 |---|---|
 | Trigger | GitHub Actions on **push to `main` only** (never on open PRs/forks — public-repo safety) |
 | Runner | Self-hosted under `/home/user/actions-runner`, labels `self-hosted,linux,watch-tower`, systemd service |
-| Deploy script | [`scripts/deploy_local.sh`](../scripts/deploy_local.sh) — flock, **pause Celery beat + cancel queued**, wait for in-flight scrape only (cap 45 min), `git reset --hard origin/main`, `alembic upgrade head`, [`job_engine/restart_app.sh`](../job_engine/restart_app.sh) (orphan kill + `setsid --fork` so Actions job end cannot tear down the tower) |
+| Deploy script | [`scripts/deploy_local.sh`](../scripts/deploy_local.sh) — flock, **pause Celery beat + cancel queued**, wait for in-flight scrape only (cap 45 min), `git reset --hard origin/main`, `alembic upgrade head`, [`job_engine/restart_app.sh`](../job_engine/restart_app.sh) via **systemd --user** units `watch-tower-{api,worker,beat}` (survives Actions cgroup teardown; linger enabled) |
 | Ashok override | Vision owner can order “stop search and deploy now” — cancel active runs and proceed immediately |
 | Survives deploy | Postgres/Redis data, `.env`, Chrome LinkedIn session, Ollama |
 | Restarts | API `:8001`, Celery worker, Celery beat |
