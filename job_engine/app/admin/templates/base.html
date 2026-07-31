@@ -285,22 +285,99 @@
   .live-dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     background: var(--qt-ok); margin-right: 6px;
-    animation: pulse 1.6s infinite;
+    /* calm — only this tiny dot pulses, never the page */
+    animation: softPulse 2.8s ease-in-out infinite;
   }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+  .live-dot.warn { background: #ea580c; animation: softPulse 2.8s ease-in-out infinite; }
+  .live-dot.bad { background: var(--qt-fail); animation: none; box-shadow: 0 0 0 3px rgba(185,28,28,0.25); }
+  @keyframes softPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.92); }
   }
-  main > * { animation: rise .35s ease both; }
   @media (max-width: 700px) {
     header { padding: 12px 16px; }
     .scope-pill { margin-left: 0; }
     main { margin-top: 16px; }
   }
+  .status-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    width: 100%; margin-top: 2px;
+  }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 600; color: var(--qt-muted);
+  }
+  .status-chip .lbl { color: var(--qt-ink); }
+  .toggle-btn {
+    font: inherit; font-size: 12px; font-weight: 700;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--qt-line); background: #fff; color: var(--qt-ink);
+  }
+  .toggle-btn.on { border-color: var(--qt-blue-deep); color: var(--qt-blue-deep); background: rgba(10,102,194,0.08); }
+  .toggle-btn:hover { filter: brightness(0.98); }
+  body.tower-alert-planb header {
+    background: rgba(255, 237, 213, 0.92);
+    border-bottom-color: #fdba74;
+  }
+  body.tower-alert-blocked {
+    background: #450a0a !important;
+  }
+  body.tower-alert-blocked header {
+    background: #7f1d1d !important;
+    border-bottom-color: #fecaca;
+    color: #fff;
+  }
+  body.tower-alert-blocked .brand-text .product,
+  body.tower-alert-blocked .brand-text .tower,
+  body.tower-alert-blocked .brand-text .byline,
+  body.tower-alert-blocked nav a,
+  body.tower-alert-blocked .vital .vk,
+  body.tower-alert-blocked .vital .vv,
+  body.tower-alert-blocked .status-chip,
+  body.tower-alert-blocked .status-chip .lbl { color: #fff !important; }
+  body.tower-alert-blocked nav a.active { background: #fecaca; color: #7f1d1d !important; }
+  body.tower-alert-blocked .vital {
+    background: rgba(127,29,29,0.55); border-color: #fecaca;
+  }
+  body.tower-alert-blocked main { color: #fecaca; }
+  body.tower-alert-blocked .stat,
+  body.tower-alert-blocked table {
+    background: #7f1d1d !important; border-color: #fecaca !important; color: #fff !important;
+  }
+  .alert-banner {
+    display: none;
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #fecaca;
+    background: #991b1b;
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  body.tower-alert-blocked .alert-banner { display: block; }
+  .alert-banner h3 { margin: 0 0 6px; font-size: 15px; }
+  .alert-banner pre {
+    margin: 8px 0; max-height: 160px; overflow: auto;
+    background: rgba(0,0,0,0.35); padding: 10px; border-radius: 8px;
+    font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+  }
+  .alert-banner .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .alert-banner button {
+    background: #fff; color: #7f1d1d; border-color: #fff;
+  }
+  .planb-banner {
+    display: none; width: 100%; margin-top: 6px; padding: 8px 12px;
+    border-radius: 10px; border: 1px solid #fdba74; background: #ffedd5;
+    color: #9a3412; font-size: 12.5px; font-weight: 600;
+  }
+  body.tower-alert-planb .planb-banner { display: block; }
 </style>
 </head>
-<body data-refresh="{{ refresh or 0 }}">
+<body data-refresh="{{ refresh or 0 }}"
+      class="{% if vitals and vitals.alert_level == 'blocked' %}tower-alert-blocked{% elif vitals and vitals.alert_level == 'planb' %}tower-alert-planb{% endif %}"
+      data-alert="{{ vitals.alert_level if vitals else 'ok' }}">
 <header>
   <a class="brand" href="/">
     <div class="brand-mark" aria-hidden="true">Q</div>
@@ -310,6 +387,16 @@
       <div class="byline">Quanta HR Labs · AI Job Intelligence</div>
     </div>
   </a>
+  <div class="status-bar" style="margin-left:auto; width:auto;">
+    <span class="status-chip" id="tower-status" title="{{ vitals.alert_label if vitals else 'Tower' }}">
+      <span class="live-dot {% if vitals and vitals.alert_level == 'blocked' %}bad{% elif vitals and vitals.alert_level == 'planb' %}warn{% endif %}" id="status-dot" aria-hidden="true"></span>
+      <span class="lbl" id="status-label">{% if vitals %}{{ vitals.alert_label }}{% else %}Tower{% endif %}</span>
+    </span>
+    <button type="button" class="toggle-btn {% if vitals and not vitals.headless %}on{% endif %}" id="headless-toggle"
+            title="Hidden Chrome is still a real browser (stealth). Visible lets you watch the window.">
+      Browser: <span id="headless-label">{% if vitals and vitals.headless %}Hidden{% else %}Visible{% endif %}</span>
+    </button>
+  </div>
   <span class="scope-pill">Domestic &amp; Global 24×7</span>
   <nav>
     <a href="/" class="{{ 'active' if active == 'dashboard' }}">Tower</a>
@@ -321,6 +408,29 @@
     <a href="/console" class="{{ 'active' if active == 'console' }}">Live feed</a>
     <a href="/tower-health" class="{{ 'active' if active == 'tower_health' }}">Tower health</a>
   </nav>
+  <div class="planb-banner" id="planb-banner">
+    Plan B active — filtering without Ollama (data quality risk). Cool the laptop / restore GPU; this should be rare.
+    {% if vitals and vitals.planb_detail %}<span class="muted"> · {{ vitals.planb_detail }}</span>{% endif %}
+  </div>
+  <div class="alert-banner" id="block-banner" role="alert">
+    <h3>LinkedIn blocked this tower</h3>
+    <div id="block-reason">{% if vitals and vitals.block %}{{ vitals.block.reason }}{% endif %}</div>
+    <div class="muted" id="block-meta" style="color:#fecaca;margin-top:4px">
+      {% if vitals and vitals.block %}
+        {% if vitals.block.url %}URL: {{ vitals.block.url }} · {% endif %}
+        {% if vitals.block.http_status %}HTTP {{ vitals.block.http_status }} · {% endif %}
+        {% if vitals.block.raised_at %}{{ vitals.block.raised_at }}{% endif %}
+      {% endif %}
+    </div>
+    <pre id="block-evidence">{% if vitals and vitals.block %}{{ vitals.block.page_title or '' }}
+
+{{ vitals.block.page_text or vitals.block.html_excerpt or '(no page text captured)' }}{% endif %}</pre>
+    <div class="actions">
+      <button type="button" id="copy-block">Copy evidence</button>
+      <button type="button" id="dismiss-block">I fixed LinkedIn — clear alert</button>
+      <a href="/console" style="color:#fff;font-weight:700;align-self:center">Open live feed →</a>
+    </div>
+  </div>
   {% if vitals %}
   <div class="vitals" id="tower-vitals" title="Live laptop + search pulse — open Tower health for detail">
     <a class="vital {% if vitals.heat_label in ('Hot','Critical') %}bad{% elif vitals.heat_label == 'Warm' %}warn{% else %}ok{% endif %}" href="/tower-health" data-k="heat">
@@ -418,6 +528,7 @@ async function refreshVitals() {
     const res = await fetch('/api/tower-vitals', {headers: {'Accept': 'application/json'}});
     if (!res.ok) return;
     const v = await res.json();
+    applyAlert(v);
     const heatCls = (v.heat_label === 'Hot' || v.heat_label === 'Critical') ? 'bad'
       : (v.heat_label === 'Warm' ? 'warn' : 'ok');
     const heatTxt = (v.heat_c != null)
@@ -441,6 +552,88 @@ async function refreshVitals() {
     updateRelTimes(document.getElementById('tower-vitals'));
   } catch (e) { /* keep last values */ }
 }
+
+function applyAlert(v) {
+  const body = document.body;
+  body.classList.remove('tower-alert-blocked', 'tower-alert-planb');
+  if (v.alert_level === 'blocked') body.classList.add('tower-alert-blocked');
+  else if (v.alert_level === 'planb') body.classList.add('tower-alert-planb');
+  body.dataset.alert = v.alert_level || 'ok';
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  if (dot) {
+    dot.classList.remove('bad', 'warn');
+    if (v.alert_level === 'blocked') dot.classList.add('bad');
+    else if (v.alert_level === 'planb') dot.classList.add('warn');
+  }
+  if (label) label.textContent = v.alert_label || 'Tower healthy';
+  const hl = document.getElementById('headless-label');
+  const btn = document.getElementById('headless-toggle');
+  if (hl) hl.textContent = v.headless ? 'Hidden' : 'Visible';
+  if (btn) btn.classList.toggle('on', !v.headless);
+  if (v.alert_level === 'blocked' && v.block) {
+    const reason = document.getElementById('block-reason');
+    const meta = document.getElementById('block-meta');
+    const evidence = document.getElementById('block-evidence');
+    if (reason) reason.textContent = v.block.reason || '';
+    if (meta) {
+      meta.textContent = [
+        v.block.url ? ('URL: ' + v.block.url) : '',
+        v.block.http_status != null ? ('HTTP ' + v.block.http_status) : '',
+        v.block.raised_at || '',
+      ].filter(Boolean).join(' · ');
+    }
+    if (evidence) {
+      evidence.textContent = [
+        v.block.page_title || '',
+        '',
+        v.block.page_text || v.block.html_excerpt || '(no page text captured)',
+      ].join('\n');
+    }
+  }
+  const planb = document.getElementById('planb-banner');
+  if (planb && v.planb_detail) {
+    planb.innerHTML = 'Plan B active — filtering without Ollama (data quality risk). Cool the laptop / restore GPU; this should be rare.'
+      + ' <span class="muted"> · ' + v.planb_detail + '</span>';
+  }
+}
+
+document.getElementById('headless-toggle')?.addEventListener('click', async () => {
+  const btn = document.getElementById('headless-toggle');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/toggle-headless', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    const data = await res.json();
+    const hl = document.getElementById('headless-label');
+    if (hl) hl.textContent = data.headless ? 'Hidden' : 'Visible';
+    btn.classList.toggle('on', !data.headless);
+    btn.title = (data.note || '') + ' Now: ' + data.label;
+  } catch (e) {}
+  btn.disabled = false;
+});
+
+document.getElementById('dismiss-block')?.addEventListener('click', async () => {
+  await fetch('/api/dismiss-linkedin-alert', {method: 'POST'});
+  document.body.classList.remove('tower-alert-blocked');
+  const dot = document.getElementById('status-dot');
+  if (dot) dot.classList.remove('bad');
+  const label = document.getElementById('status-label');
+  if (label) label.textContent = 'Tower healthy';
+});
+
+document.getElementById('copy-block')?.addEventListener('click', async () => {
+  const text = [
+    document.getElementById('block-reason')?.textContent || '',
+    document.getElementById('block-meta')?.textContent || '',
+    document.getElementById('block-evidence')?.textContent || '',
+  ].join('\n\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    const b = document.getElementById('copy-block');
+    if (b) { const t = b.textContent; b.textContent = 'Copied'; setTimeout(() => b.textContent = t, 1500); }
+  } catch (e) {}
+});
+
 setInterval(refreshVitals, 3000);
 
 const refreshEvery = parseInt(document.body.dataset.refresh || '0', 10);

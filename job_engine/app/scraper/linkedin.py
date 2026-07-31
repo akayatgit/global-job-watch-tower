@@ -15,8 +15,12 @@ from urllib.parse import quote
 from scrapling.fetchers import StealthySession
 
 from app import config
-from app.scraper.parse import ParsedJob, parse_jobs, parse_results_count, looks_like_login_page
+from app.scraper.parse import (
+    ParsedJob, parse_jobs, parse_results_count, looks_like_login_page,
+    detect_linkedin_block,
+)
 from app.scraper.session import sync_linkedin_session
+from app.runtime_settings import get_headless, raise_linkedin_block
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +270,7 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
     total_results: int | None = None
 
     session_kwargs = dict(
-        headless=config.HEADLESS,
+        headless=get_headless(),
         real_chrome=True,
         user_data_dir=str(config.CHROME_BOT_PROFILE),
         # No network_idle: LinkedIn never stops firing background requests,
@@ -279,13 +283,14 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
         google_search=False,
     )
 
-    say(f'Opening browser for "{keywords}" (past 24h, up to {max_pages} pages)…')
+    mode = 'hidden (cooler)' if get_headless() else 'VISIBLE window'
+    say(f'Opening browser for "{keywords}" (past 24h, up to {max_pages} pages) — {mode}…')
     try:
         from app.tower_health import record_event_standalone
         record_event_standalone(
             'browser_open',
             run_id=run_id,
-            detail=f'{keywords[:120]} · pages≤{max_pages}',
+            detail=f'{keywords[:120]} · pages≤{max_pages} · headless={get_headless()}',
         )
     except Exception:
         pass
@@ -310,14 +315,42 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
             status = getattr(response, 'status', None)
             say(f'Page {page_num + 1} loaded in {took:.0f}s (HTTP {status}). Reading job cards…')
 
-            if looks_like_login_page(response):
+            jobs_probe = parse_jobs(response)
+            block = detect_linkedin_block(
+                response, http_status=status, had_job_cards=bool(jobs_probe),
+            )
+            if block or looks_like_login_page(response):
+                if not block:
+                    title, text, html = '', '', ''
+                    try:
+                        from app.scraper.parse import _page_blobs
+                        title, text, html = _page_blobs(response)
+                    except Exception:
+                        pass
+                    block = {
+                        'reason': 'LinkedIn showed the login / join wall',
+                        'page_title': title,
+                        'page_text': text[:4000],
+                        'html_excerpt': html[:6000],
+                        'http_status': status,
+                    }
+                raise_linkedin_block(
+                    reason=block['reason'],
+                    url=url,
+                    run_id=run_id,
+                    page_title=block.get('page_title', ''),
+                    page_text=block.get('page_text', ''),
+                    html_excerpt=block.get('html_excerpt', ''),
+                    http_status=block.get('http_status'),
+                )
                 result = PageResult(page_num=page_num + 1, url=url, http_status=status)
                 if on_page:
                     on_page(result)
-                say('LinkedIn showed the login page — aborting run.')
+                say(f'LINKEDIN BLOCK — {block["reason"]}')
                 raise RuntimeError(
-                    'LinkedIn returned the login page. Open Chrome, make sure '
-                    'you are logged into LinkedIn, then rerun.'
+                    f'LINKEDIN_BLOCK: {block["reason"]}. '
+                    'Open Chrome, confirm you are logged into LinkedIn, '
+                    'then clear the Tower alert and rerun.'
                 )
 
             if total_results is None:
@@ -326,7 +359,7 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
                     logger.info('LinkedIn reports %s results', total_results)
                     say(f'LinkedIn reports {total_results} result(s) for this search.')
 
-            jobs = parse_jobs(response)
+            jobs = jobs_probe
             # LinkedIn repeats cards across pages; only keep unseen ones
             new_jobs = [j for j in jobs if j.linkedin_job_id not in seen_ids]
             seen_ids.update(j.linkedin_job_id for j in new_jobs)

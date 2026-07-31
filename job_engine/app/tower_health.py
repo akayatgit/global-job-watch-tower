@@ -71,6 +71,13 @@ class TowerVitals:
     scrape_running: bool
     scrape_running_name: str
     filter_mode_policy: str
+    # Alert traffic light + browser mode
+    alert_level: str  # ok | planb | blocked
+    alert_label: str
+    headless: bool
+    block: dict | None
+    planb_detail: str
+    planb_at: str | None
 
 
 def _mem() -> tuple[int, int, float]:
@@ -238,6 +245,17 @@ def compute_vitals(db: Session) -> TowerVitals:
     # Also track high-water via events of kind ollama_filter
     capacity, capacity_note = _capacity_estimate(db, ollama_24h)
 
+    keyword_24h = _count_events(db, 'keyword_filter', since_24h)
+    # Orange if Plan B fired in the last 30 minutes
+    planb_recent = False
+    last_kw = _last_event(db, 'keyword_filter')
+    if last_kw is not None:
+        kw_ts = last_kw if last_kw.tzinfo else last_kw.replace(tzinfo=timezone.utc)
+        planb_recent = (now - kw_ts).total_seconds() < 1800
+
+    from app.runtime_settings import tower_alert_state, get_headless
+    alert = tower_alert_state(planb_recent=planb_recent)
+
     return TowerVitals(
         heat_c=snap.cpu_c if snap.cpu_c is not None else snap.gpu_c,
         heat_label=snap.level.title(),
@@ -248,14 +266,14 @@ def compute_vitals(db: Session) -> TowerVitals:
         load1=snap.load1,
         cpu_label=_cpu_label(snap.load1, snap.level),
         last_ollama_at=_last_event(db, 'ollama_filter'),
-        last_keyword_at=_last_event(db, 'keyword_filter'),
+        last_keyword_at=last_kw,
         last_browser_at=_last_event(db, 'browser_open'),
         searches_today=_count_runs(db, day_start),
         searches_24h=_count_runs(db, since_24h),
         ollama_today=ollama_today,
         ollama_24h=ollama_24h,
         keyword_today=_count_events(db, 'keyword_filter', day_start),
-        keyword_24h=_count_events(db, 'keyword_filter', since_24h),
+        keyword_24h=keyword_24h,
         ollama_running=ollama_running,
         ollama_max_24h=ollama_24h,  # sequential worker → max handled = completed count
         ollama_capacity_estimate=capacity,
@@ -266,6 +284,12 @@ def compute_vitals(db: Session) -> TowerVitals:
         scrape_running=running is not None,
         scrape_running_name=running_name,
         filter_mode_policy=config.RELEVANCE_MODE,
+        alert_level=alert['level'],
+        alert_label=alert['label'],
+        headless=get_headless(),
+        block=alert.get('block'),
+        planb_detail=alert.get('planb_detail') or '',
+        planb_at=alert.get('planb_at'),
     )
 
 

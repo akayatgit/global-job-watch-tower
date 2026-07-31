@@ -81,3 +81,8 @@ use — they should love opening the app, never fight it.
   critical heat / no GPU — never normal ops (corrupts relevance). Goal is
   max quality Ollama searches per laptop, then scale laptops (one per
   industry is fine) once capacity is measured.
+- Headless Chrome is still a real browser (stealth) — LinkedIn does not
+  see "no browser". Top-bar toggle: Browser Hidden ↔ Visible (next search).
+- Traffic light: calm green pulse dot only when healthy; orange header when
+  Plan B (no Ollama); full red + page evidence banner when LinkedIn blocks.
+  Never pulse the whole page (eye strain).

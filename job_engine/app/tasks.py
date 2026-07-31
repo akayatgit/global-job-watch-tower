@@ -23,6 +23,7 @@ RETRYABLE_MARKERS = (
 )
 NON_RETRYABLE_MARKERS = (
     'login page',
+    'linkedin_block',
     'no linkedin cookies',
     'search config deleted',
     'source chrome profile missing',

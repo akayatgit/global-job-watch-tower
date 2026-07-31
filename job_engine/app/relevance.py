@@ -192,6 +192,11 @@ def _keyword_filter(jobs: list[ParsedJob], keywords: str,
         run_id=run_id,
         detail=f'{reason}; kept {len(relevant)}/{len(jobs)}',
     )
+    try:
+        from app.runtime_settings import mark_plan_b_active
+        mark_plan_b_active(run_id=run_id, detail=reason)
+    except Exception:
+        pass
     return relevant, rejected
 
 

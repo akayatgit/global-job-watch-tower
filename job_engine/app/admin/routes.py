@@ -95,7 +95,41 @@ def _vitals_json(v) -> dict:
         'scrape_running': v.scrape_running,
         'scrape_running_name': v.scrape_running_name,
         'filter_mode_policy': v.filter_mode_policy,
+        'alert_level': v.alert_level,
+        'alert_label': v.alert_label,
+        'headless': v.headless,
+        'block': v.block,
+        'planb_detail': v.planb_detail,
+        'planb_at': v.planb_at,
     }
+
+
+@router.post('/api/toggle-headless')
+async def api_toggle_headless(request: Request):
+    """Flip invisible ↔ visible Chrome. Takes effect on the next search."""
+    from app.runtime_settings import get_headless, set_headless
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    if 'headless' in body:
+        val = bool(body['headless'])
+    else:
+        val = not get_headless()
+    set_headless(val)
+    return JSONResponse({
+        'headless': val,
+        'label': 'Hidden (cooler)' if val else 'Visible window',
+        'note': 'Applies to the next search open — current run keeps its mode.',
+    })
+
+
+@router.post('/api/dismiss-linkedin-alert')
+def api_dismiss_linkedin_alert():
+    from app.runtime_settings import dismiss_linkedin_block
+    dismiss_linkedin_block()
+    return JSONResponse({'ok': True})
 
 
 @router.get('/api/tower-vitals')
@@ -119,6 +153,7 @@ def tower_health(request: Request, db: Session = Depends(get_db)):
             'keyword_filter': 'Plan B keyword',
             'browser_open': 'Browser opened',
             'scrape_done': 'Search finished',
+            'linkedin_block': 'LinkedIn blocked us',
         },
     }, db)
 

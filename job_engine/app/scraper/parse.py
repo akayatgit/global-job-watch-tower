@@ -149,3 +149,110 @@ def parse_results_count(page) -> int | None:
 def looks_like_login_page(page) -> bool:
     text = ' '.join(page.css('h1::text, h2::text, button::text').getall()).lower()
     return ('sign in' in text or 'join linkedin' in text) and 'job' not in text
+
+
+def _page_blobs(page) -> tuple[str, str, str]:
+    """Return (title, visible_text, html_excerpt) best-effort from a Scrapling page."""
+    title = ''
+    text = ''
+    html = ''
+    try:
+        title = ' '.join(page.css('title::text').getall()).strip()
+    except Exception:
+        pass
+    try:
+        text = ' '.join(page.css('body ::text').getall())
+        text = ' '.join(text.split())
+    except Exception:
+        try:
+            text = ' '.join(page.css('::text').getall())
+            text = ' '.join(text.split())
+        except Exception:
+            text = ''
+    try:
+        html = (getattr(page, 'html_content', None) or getattr(page, 'body', None) or '')
+        if callable(html):
+            html = html()
+        html = str(html or '')[:8000]
+    except Exception:
+        html = ''
+    return title, text, html
+
+
+# Phrases that mean LinkedIn is challenging / blocking the session
+_BLOCK_MARKERS = (
+    'unusual activity',
+    'security verification',
+    'verify it.s you',
+    "verify it's you",
+    'verify your identity',
+    'captcha',
+    'challenge',
+    'authwall',
+    'auth wall',
+    'checkpoint',
+    'suspicious activity',
+    'we restricted your account',
+    'temporarily restricted',
+    'please complete a security check',
+    'are you a robot',
+    'enable javascript',
+    'join linkedin',
+    'sign in to continue',
+    'sign in to see',
+    'session expired',
+)
+
+
+def detect_linkedin_block(page, *, http_status: int | None = None,
+                          had_job_cards: bool = False) -> dict | None:
+    """If LinkedIn is blocking/challenging us, return evidence dict; else None.
+
+    Headless Chrome is still a real browser — this catches login walls,
+    captchas, auth walls, and challenge pages, not 'missing browser'.
+    """
+    title, text, html = _page_blobs(page)
+    blob = f'{title}\n{text}\n{html}'.lower()
+
+    if http_status in (401, 403, 429, 999):
+        return {
+            'reason': f'LinkedIn HTTP {http_status} — access denied / rate limited',
+            'page_title': title,
+            'page_text': text[:4000],
+            'html_excerpt': html[:6000],
+            'http_status': http_status,
+        }
+
+    if looks_like_login_page(page):
+        return {
+            'reason': 'LinkedIn showed the login / join wall — session cookies may be stale',
+            'page_title': title,
+            'page_text': text[:4000],
+            'html_excerpt': html[:6000],
+            'http_status': http_status,
+        }
+
+    for marker in _BLOCK_MARKERS:
+        if marker in blob:
+            # Avoid false positives on normal job results that mention "sign in"
+            if marker in ('join linkedin', 'sign in to continue', 'sign in to see'):
+                if had_job_cards and 'job' in blob:
+                    continue
+            return {
+                'reason': f'LinkedIn block / challenge detected (“{marker}”)',
+                'page_title': title,
+                'page_text': text[:4000],
+                'html_excerpt': html[:6000],
+                'http_status': http_status,
+            }
+
+    # Zero cards on page 1 with strong auth cues in URL-less HTML
+    if not had_job_cards and any(x in blob for x in ('authwall', '/login', 'checkpoint/challenge')):
+        return {
+            'reason': 'No job cards and auth/challenge markup present',
+            'page_title': title,
+            'page_text': text[:4000],
+            'html_excerpt': html[:6000],
+            'http_status': http_status,
+        }
+    return None
