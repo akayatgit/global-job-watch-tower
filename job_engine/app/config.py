@@ -48,7 +48,7 @@ RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'ollama').strip().lower()
 FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))
 
 # Runs stuck in "running" longer than this are marked failed (worker crash)
-STALE_RUN_MINUTES = int(os.getenv('STALE_RUN_MINUTES', '180'))
+STALE_RUN_MINUTES = int(os.getenv('STALE_RUN_MINUTES', '45'))
 
 # How often Beat scans for due configs / queued one-off runs (seconds).
 # Warm/hot host stretches this so new scrapes don't stack heat.

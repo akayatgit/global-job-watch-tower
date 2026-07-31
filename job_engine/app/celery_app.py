@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.signals import worker_ready
 
 from app import config
 
@@ -22,3 +23,26 @@ celery.conf.update(
         },
     },
 )
+
+
+@worker_ready.connect
+def _clear_orphans_on_boot(**_kwargs):
+    """Previous worker dies leave 'running' rows that block the whole queue."""
+    from datetime import datetime, timezone
+    from app.db import SessionLocal
+    from app.tasks import _reap_stale_runs
+
+    with SessionLocal() as db:
+        n = _reap_stale_runs(
+            db,
+            datetime.now(timezone.utc),
+            minutes=2,
+            reason=(
+                'Orphan cleared on worker start — previous browser session '
+                'did not finish (restart/crash).'
+            ),
+        )
+    if n:
+        import logging
+        logging.getLogger(__name__).warning('cleared %s orphan scrape(s) on boot', n)
+

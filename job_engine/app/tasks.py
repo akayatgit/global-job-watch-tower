@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 
 from croniter import croniter
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app import config as app_config
 from app.celery_app import celery
@@ -47,9 +47,11 @@ def _get_or_create_company(db, name: str | None) -> Company | None:
     return company
 
 
-def _reap_stale_runs(db, now: datetime) -> int:
+def _reap_stale_runs(db, now: datetime, *, minutes: int | None = None,
+                     reason: str | None = None) -> int:
     """Mark runs stuck in running/dispatched after a worker crash as failed."""
-    cutoff = now - timedelta(minutes=app_config.STALE_RUN_MINUTES)
+    mins = minutes if minutes is not None else app_config.STALE_RUN_MINUTES
+    cutoff = now - timedelta(minutes=mins)
     stale = db.execute(
         select(ScrapeRun).where(
             ScrapeRun.status.in_(('running', 'dispatched', 'cancel_requested')),
@@ -57,18 +59,59 @@ def _reap_stale_runs(db, now: datetime) -> int:
             ScrapeRun.started_at < cutoff,
         )
     ).scalars().all()
+    why = reason or (
+        f'Stale run reaped after {mins} minutes '
+        'with no finish (worker likely restarted).'
+    )
     for run in stale:
         run.status = 'failed'
-        run.error = (
-            f'Stale run reaped after {app_config.STALE_RUN_MINUTES} minutes '
-            'with no finish (worker likely restarted).'
-        )[:2000]
+        run.error = why[:2000]
         run.finished_at = now
         console_log('worker', f'Run #{run.id} reaped as stale/failed.',
                     run_id=run.id, level='warn')
     if stale:
         db.commit()
     return len(stale)
+
+
+def _reap_zombie_runs(db, now: datetime) -> int:
+    """Fail running scrapes with no console activity (browser/worker died quietly)."""
+    # A healthy page dwell logs every ~30–45s; 12 quiet minutes = dead.
+    quiet_after = now - timedelta(minutes=12)
+    started_before = now - timedelta(minutes=15)
+    candidates = db.execute(
+        select(ScrapeRun).where(
+            ScrapeRun.status.in_(('running', 'dispatched')),
+            ScrapeRun.started_at.is_not(None),
+            ScrapeRun.started_at < started_before,
+        )
+    ).scalars().all()
+    reaped = 0
+    for run in candidates:
+        last = db.execute(
+            select(ConsoleLog.ts).where(ConsoleLog.run_id == run.id)
+            .order_by(desc(ConsoleLog.id)).limit(1)
+        ).scalar_one_or_none()
+        last_ts = last or run.started_at
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        if last_ts > quiet_after:
+            continue
+        run.status = 'failed'
+        run.error = (
+            'Zombie run reaped — no live-feed activity for 12+ minutes '
+            '(browser/worker likely died; was blocking the search queue).'
+        )[:2000]
+        run.finished_at = now
+        console_log(
+            'worker',
+            f'Run #{run.id} reaped as zombie (silent too long).',
+            run_id=run.id, level='warn',
+        )
+        reaped += 1
+    if reaped:
+        db.commit()
+    return reaped
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -92,6 +135,7 @@ def enqueue_due_work():
         db.query(ConsoleLog).filter(ConsoleLog.ts < now - timedelta(days=3)).delete()
         db.commit()
         _reap_stale_runs(db, now)
+        _reap_zombie_runs(db, now)
 
         # Heat-aware beat: when hot, skip starting new scrapes this tick so
         # Ollama + Chrome can cool (matches Ashok's "save the heat" mandate).
