@@ -29,3 +29,12 @@ Akay’s mandate fails. **Protecting the local git history outranks features.**
 2. `git status` / `git diff` / `git log -5`.
 3. Restore from the last good commit before continuing features.
 4. Tell Ashok immediately what was at risk and what was saved.
+
+## Host / session safety (ThinkPad)
+
+- **Never** `systemctl restart systemd-logind` during a live desktop session
+  (caused black screen + crash 2026-08-01).
+- If the laptop overheats: stop Ollama, use `RELEVANCE_MODE=keyword`,
+  `HEADLESS=true`, run `scripts/host_health.sh`.
+- Docker image `watch-tower:v0` and `backups/watch-tower-v0.tar.gz` are
+  offline backups of the app brain — keep them alongside git.

@@ -39,6 +39,8 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:9b')
 # reliable throughput; set true only when debugging filter quality.
 OLLAMA_THINK = os.getenv('OLLAMA_THINK', 'false').lower() == 'true'
 OLLAMA_TIMEOUT_S = float(os.getenv('OLLAMA_TIMEOUT_S', '90'))
+# keyword = cool/fast (no GPU). ollama = quality when NVIDIA is healthy.
+RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'keyword').strip().lower()
 
 # Transient page-fetch retries inside one browser session
 FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))

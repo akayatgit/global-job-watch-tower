@@ -178,6 +178,21 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
     if not jobs:
         return [], []
 
+    # Cool path: no Ollama — keeps ThinkPad from melting when NVIDIA is down
+    # and llama runs on CPU at hundreds of percent.
+    if config.RELEVANCE_MODE in ('keyword', 'keywords', 'off', 'cool'):
+        titles = [j.title for j in jobs]
+        verdicts = _fallback_verdicts(titles, keywords)
+        relevant = [j for j, keep in zip(jobs, verdicts) if keep]
+        rejected = [j for j, keep in zip(jobs, verdicts) if not keep]
+        console_log(
+            'ai',
+            f'Cool filter (keyword): kept {len(relevant)} of {len(jobs)} '
+            f'title(s) for "{keywords}" — Ollama skipped to protect the host.',
+            run_id=run_id,
+        )
+        return relevant, rejected
+
     batches = [jobs[i:i + BATCH_SIZE] for i in range(0, len(jobs), BATCH_SIZE)]
     mode = 'thinking' if config.OLLAMA_THINK else 'fast JSON'
     console_log(

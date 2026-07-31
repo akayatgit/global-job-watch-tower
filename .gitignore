@@ -47,3 +47,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.code-workspace
+
+# Large offline docker image backups
+backups/
+*.tar.gz

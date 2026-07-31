@@ -466,6 +466,7 @@ START OF EVERY SESSION
 | v0.4 | 2026-08-01 | Akay | Once-daily cadence + 111 India searches seeded; first-mover mandate; enqueue throttle |
 | v0.5 | 2026-08-01 | Akay | Company Watchlist (star/unstar, velocity, Tower teaser); starter pin of top hirers |
 | v0.6 | 2026-08-01 | Akay | Local git repo + source-safety rule; absolute priority to protect codebase |
+| v0.7 | 2026-08-01 | Akay | Thermal save: keyword+headless; host_health; Docker watch-tower:v0; logind lesson |
 
 ### Phase 0 progress (living)
 
@@ -533,7 +534,11 @@ START OF EVERY SESSION
 **Standing YES (2026-08-01):** commit after every finished slice; keep collector running overnight unless Ashok says stop.  
 **Hardware note:** Tower is alive on this ThinkPad while awake. Lid-close/idle suspend disabled for overnight collection (2026-08-01). Prefer AC power + ventilation.  
 
-**Incident 2026-08-01 ~01:01:** Host **rebooted uncleanly** (`last` shows `crash`; uptime reset). All tower processes died mid-scrape (Junior Data Scientist). Restored via Postgres/Redis/API/worker/beat; reaped stuck run; collector resumed (GenAI Engineer). GNOME lid settings had reverted to `suspend` after reboot — re-applied `nothing`. systemd logind ignore drop-in survived. **Lesson:** lid-ignore ≠ crash-proof; after any reboot Akay must restore the tower first; verify gsettings still `nothing` before sleep.
+**Incident 2026-08-01 ~01:01 (black screen + crash):** After lid-policy change, Akay ran `systemctl restart systemd-logind` (required sudo password). That can **kill the graphical session** → black screen with typing cursor (see `/home/user/Videos/first crash.MOV`). Session later showed unclean reboot. **NEVER restart systemd-logind while Ashok is in a desktop session.** Prefer gsettings-only for lid; logind drop-in applies on next reboot.
+
+**Thermal / NVIDIA (2026-08-01):** `nvidia-smi` fails — driver packages built for kernel `6.8.0-31` but host runs `7.0.0-28-generic` (no nvidia module). Ollama then ran **qwen on CPU at ~400%** + headed Chrome → TCPU ~79°C+, load ~8. **Efficiency cutover:** `HEADLESS=true`, `RELEVANCE_MODE=keyword`, `systemctl stop/disable ollama` until NVIDIA matches kernel. Host monitor: `job_engine/scripts/host_health.sh` (logs `.data/logs/host_health.log`).
+
+**Docker v0 backup:** image `watch-tower:v0` + offline tarball `backups/watch-tower-v0.tar.gz` (~195MB). Compose file preserves API+DB+Redis skeleton.
 
 **Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
 
