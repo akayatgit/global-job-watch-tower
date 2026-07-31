@@ -179,40 +179,42 @@ def _page_blobs(page) -> tuple[str, str, str]:
     return title, text, html
 
 
-# Phrases that mean LinkedIn is challenging / blocking the session
-_BLOCK_MARKERS = (
+# Strong phrases — only count in *visible* text (never raw HTML: LinkedIn
+# always embeds "recaptcha" / "captcha" in scripts even on healthy pages).
+_HARD_VISIBLE_MARKERS = (
     'unusual activity',
     'security verification',
-    'verify it.s you',
     "verify it's you",
+    'verify it\'s you',
     'verify your identity',
-    'captcha',
-    'challenge',
-    'authwall',
-    'auth wall',
-    'checkpoint',
-    'suspicious activity',
     'we restricted your account',
     'temporarily restricted',
     'please complete a security check',
     'are you a robot',
-    'enable javascript',
-    'join linkedin',
+    'complete the captcha',
+    'solve this puzzle',
+    'let\'s do a quick security check',
+)
+
+# Soft auth cues in visible text — only a block if we also got ZERO job cards
+_SOFT_VISIBLE_MARKERS = (
     'sign in to continue',
     'sign in to see',
+    'join to view',
     'session expired',
 )
 
 
 def detect_linkedin_block(page, *, http_status: int | None = None,
                           had_job_cards: bool = False) -> dict | None:
-    """If LinkedIn is blocking/challenging us, return evidence dict; else None.
+    """Real LinkedIn blocks only — never false-alarm on healthy job results.
 
-    Headless Chrome is still a real browser — this catches login walls,
-    captchas, auth walls, and challenge pages, not 'missing browser'.
+    LinkedIn HTML always contains words like ``recaptcha`` / ``captcha`` in
+    scripts. If we already have job cards — or the visible page clearly shows
+    a results list — the page is usable: dismiss popups and keep scraping.
     """
     title, text, html = _page_blobs(page)
-    blob = f'{title}\n{text}\n{html}'.lower()
+    visible = f'{title}\n{text}'.lower()
 
     if http_status in (401, 403, 429, 999):
         return {
@@ -223,6 +225,20 @@ def detect_linkedin_block(page, *, http_status: int | None = None,
             'http_status': http_status,
         }
 
+    # Healthy results page signals (even if our card CSS missed some)
+    looks_like_results = (
+        had_job_cards
+        or 'jobs in' in visible
+        or 'actively hiring' in visible
+        or re.search(r'\d[\d,]*\+?\s+.+?\s+jobs', visible) is not None
+        or 'base-serp-page' in html.lower()
+        or 'jobs-guest-frontend' in html.lower()
+        or 'd_jobs_guest_search' in html.lower()
+        or 'jobs-search-results' in html.lower()
+    )
+    if looks_like_results:
+        return None
+
     if looks_like_login_page(page):
         return {
             'reason': 'LinkedIn showed the login / join wall — session cookies may be stale',
@@ -232,22 +248,28 @@ def detect_linkedin_block(page, *, http_status: int | None = None,
             'http_status': http_status,
         }
 
-    for marker in _BLOCK_MARKERS:
-        if marker in blob:
-            # Avoid false positives on normal job results that mention "sign in"
-            if marker in ('join linkedin', 'sign in to continue', 'sign in to see'):
-                if had_job_cards and 'job' in blob:
-                    continue
+    for marker in _HARD_VISIBLE_MARKERS:
+        if marker in visible:
             return {
-                'reason': f'LinkedIn block / challenge detected (“{marker}”)',
+                'reason': f'LinkedIn security challenge (“{marker}”) — no job cards on page',
                 'page_title': title,
                 'page_text': text[:4000],
                 'html_excerpt': html[:6000],
                 'http_status': http_status,
             }
 
-    # Zero cards on page 1 with strong auth cues in URL-less HTML
-    if not had_job_cards and any(x in blob for x in ('authwall', '/login', 'checkpoint/challenge')):
+    for marker in _SOFT_VISIBLE_MARKERS:
+        if marker in visible:
+            return {
+                'reason': f'LinkedIn auth wall (“{marker}”) — no job cards on page',
+                'page_title': title,
+                'page_text': text[:4000],
+                'html_excerpt': html[:6000],
+                'http_status': http_status,
+            }
+
+    html_l = html.lower()
+    if '/checkpoint/challenge' in html_l and 'job' not in visible:
         return {
             'reason': 'No job cards and auth/challenge markup present',
             'page_title': title,
