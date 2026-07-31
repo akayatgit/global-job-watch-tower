@@ -5,6 +5,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Actions runner is a system service — point at the login user's systemd bus
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+
 source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
 

@@ -32,6 +32,10 @@ if ! flock -n 9; then
   die "another deploy is already running (lock: $LOCK_FILE)"
 fi
 
+# Actions runner is a system service — talk to user systemd for pause/restart
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+
 log "=== Watch Tower deploy start ==="
 cd "$REPO_ROOT"
 
