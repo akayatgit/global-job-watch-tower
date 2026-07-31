@@ -532,6 +532,9 @@ START OF EVERY SESSION
 **While Ashok sleeps:** leave worker/beat collecting the 111-role first pass (one at a time).  
 **Standing YES (2026-08-01):** commit after every finished slice; keep collector running overnight unless Ashok says stop.  
 **Hardware note:** Tower is alive on this ThinkPad while awake. Lid-close/idle suspend disabled for overnight collection (2026-08-01). Prefer AC power + ventilation.  
+
+**Incident 2026-08-01 ~01:01:** Host **rebooted uncleanly** (`last` shows `crash`; uptime reset). All tower processes died mid-scrape (Junior Data Scientist). Restored via Postgres/Redis/API/worker/beat; reaped stuck run; collector resumed (GenAI Engineer). GNOME lid settings had reverted to `suspend` after reboot — re-applied `nothing`. systemd logind ignore drop-in survived. **Lesson:** lid-ignore ≠ crash-proof; after any reboot Akay must restore the tower first; verify gsettings still `nothing` before sleep.
+
 **Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
 
 ---
