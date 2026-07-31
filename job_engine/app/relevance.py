@@ -285,6 +285,11 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
                + ('…' if len(dropped) > 4 else '') + ')' if dropped else ''),
             run_id=run_id,
         )
+        record_event_standalone(
+            'ollama_batch',
+            run_id=run_id,
+            detail=f'{bi}/{len(batches)} kept {len(kept)}/{len(batch)}',
+        )
 
     if used_ollama:
         record_event_standalone(

@@ -91,7 +91,8 @@ def _vitals_json(v) -> dict:
         'next_search_at': iso(v.next_search_at),
         'next_search_name': v.next_search_name,
         'next_search_secs': v.next_search_secs,
-        'next_search_label': _fmt_countdown(v.next_search_secs),
+        'next_search_label': v.next_search_label,
+        'backlog_waiting': v.backlog_waiting,
         'scrape_running': v.scrape_running,
         'scrape_running_name': v.scrape_running_name,
         'filter_mode_policy': v.filter_mode_policy,
@@ -101,6 +102,9 @@ def _vitals_json(v) -> dict:
         'block': v.block,
         'planb_detail': v.planb_detail,
         'planb_at': v.planb_at,
+        'ollama_live': v.ollama_live,
+        'phase_label': v.phase_label,
+        'last_ollama_label': v.last_ollama_label,
     }
 
 

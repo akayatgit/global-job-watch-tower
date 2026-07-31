@@ -34,9 +34,16 @@
   </thead>
   <tbody>
     <tr>
+      <td>Search pulse</td>
+      <td><strong>{{ detail.next_search_label }}</strong></td>
+      <td>{% if detail.scrape_running %}Currently on {{ detail.scrape_running_name }}.{% endif %}
+        {% if detail.backlog_waiting %} {{ detail.backlog_waiting }} role(s) waiting in the daily backlog.{% endif %}
+        Next queued name: {{ detail.next_search_name }}.</td>
+    </tr>
+    <tr>
       <td>Last search with Ollama</td>
-      <td>{{ detail.last_ollama_at | rel }}</td>
-      <td>Quality filter path — this should be the normal heartbeat.</td>
+      <td>{% if detail.ollama_live %}<span class="status success">{{ detail.last_ollama_label }}</span>{% else %}{{ detail.last_ollama_at | rel }}{% endif %}</td>
+      <td>Quality filter path — “filtering now” means batches are actively running (not stuck).</td>
     </tr>
     <tr>
       <td>Last search without Ollama</td>
@@ -74,10 +81,11 @@
       <td>Should stay near zero. Spikes mean heat or GPU trouble.</td>
     </tr>
     <tr>
-      <td>Next search countdown</td>
-      <td><strong>{{ detail.next_search_secs | countdown }}</strong>
-        <span class="muted">· {{ detail.next_search_name }}</span></td>
-      <td>Nearest due search on the staggered daily schedule.</td>
+      <td>Search pulse</td>
+      <td><strong>{{ detail.next_search_label }}</strong></td>
+      <td>{% if detail.scrape_running %}Currently on {{ detail.scrape_running_name }}.{% endif %}
+        {% if detail.backlog_waiting %} {{ detail.backlog_waiting }} role(s) in the daily backlog.{% endif %}
+        Never shows a bare “due now” — you always see the role and waiting count.</td>
     </tr>
     <tr>
       <td>Last browser opened</td>

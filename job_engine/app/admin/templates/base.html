@@ -447,7 +447,7 @@
     </a>
     <a class="vital ok" href="/tower-health" data-k="last_ollama">
       <span class="vk">Last w/ Ollama</span>
-      <span class="vv" data-v="last_ollama">{% if vitals.last_ollama_at %}<time class="rel" datetime="{{ vitals.last_ollama_at.isoformat() }}">{{ vitals.last_ollama_at.isoformat() }}</time>{% else %}never{% endif %}</span>
+      <span class="vv" data-v="last_ollama">{% if vitals.ollama_live %}<span class="status success">{{ vitals.last_ollama_label }}</span>{% elif vitals.last_ollama_at %}<time class="rel" datetime="{{ vitals.last_ollama_at.isoformat() }}">{{ vitals.last_ollama_at.isoformat() }}</time>{% else %}never{% endif %}</span>
     </a>
     <a class="vital {% if vitals.last_keyword_at %}planb{% endif %}" href="/tower-health" data-k="last_keyword">
       <span class="vk">Last without</span>
@@ -470,8 +470,8 @@
       <span class="vv" data-v="cap">~{{ vitals.ollama_capacity_estimate }}/day</span>
     </a>
     <a class="vital" href="/tower-health" data-k="next">
-      <span class="vk">Next search</span>
-      <span class="vv" data-v="next">{{ vitals.next_search_secs | countdown }}</span>
+      <span class="vk">Search pulse</span>
+      <span class="vv" data-v="next">{{ vitals.next_search_label }}</span>
     </a>
     <a class="vital {% if not vitals.last_browser_at %}warn{% endif %}" href="/tower-health" data-k="browser">
       <span class="vk">Browser opened</span>
@@ -538,7 +538,11 @@ async function refreshVitals() {
       v.mem_pct >= 90 ? 'bad' : (v.mem_pct >= 75 ? 'warn' : ''));
     setVitalHtml('cpu', v.cpu_label + ' · ' + v.load1,
       v.cpu_label === 'Stressed' ? 'bad' : (v.cpu_label === 'Busy' ? 'warn' : 'ok'));
-    setVitalHtml('last_ollama', relOrNever(v.last_ollama_at, 'never'), 'ok');
+    setVitalHtml('last_ollama',
+      v.ollama_live
+        ? ('<span class="status success">' + (v.last_ollama_label || 'filtering now') + '</span>')
+        : relOrNever(v.last_ollama_at, 'never'),
+      'ok');
     setVitalHtml('last_keyword', relOrNever(v.last_keyword_at, 'never ✓'),
       v.last_keyword_at ? 'planb' : '');
     setVitalHtml('today', String(v.searches_today), '');
