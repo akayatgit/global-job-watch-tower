@@ -47,9 +47,24 @@ sleep 1
 
 start_bg() {
   local name="$1"; shift
-  echo "[restart] starting $name (log: $LOG_DIR/$name.log)"
-  nohup "$@" >> "$LOG_DIR/$name.log" 2>&1 &
-  echo $! > "$DATA_DIR/$name.pid"
+  local logfile="$LOG_DIR/$name.log"
+  local pidfile="$DATA_DIR/$name.pid"
+  local workdir
+  workdir="$(pwd)"
+  echo "[restart] starting $name (log: $logfile)"
+  # setsid --fork: new session so GitHub Actions job teardown cannot kill the tower
+  setsid --fork bash -c "
+    echo \$\$ > '$pidfile'
+    cd '$workdir' || exit 1
+    exec \"\$@\" >>'$logfile' 2>&1
+  " bash "$@"
+  sleep 0.4
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+    echo "[restart] $name up (pid $(cat "$pidfile"))"
+  else
+    echo "[restart] WARNING: $name failed to stay up — see $logfile"
+    return 1
+  fi
 }
 
 echo "[restart] bouncing app processes (Postgres/Redis untouched)..."
