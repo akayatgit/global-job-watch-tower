@@ -12,6 +12,7 @@
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
 | **First-mover mandate** | **Highest product priority:** start and sustain tower searches so Quanta is among the first to collect fresh job-market insights — coverage before polish |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
+| **Remote source + auto-deploy** | **Public GitHub:** [akayatgit/global-job-watch-tower](https://github.com/akayatgit/global-job-watch-tower). Merge/push to `main` triggers a **self-hosted Actions runner on this ThinkPad** → `scripts/deploy_local.sh` (wait for scrape idle → pull → migrate → restart API/worker/beat only). Secrets (`.env`, `.data`, Chrome profiles) never leave the laptop. |
 | **Lid / sleep policy** | **Configured 2026-08-01 for overnight collect:** GNOME lid-close + idle sleep = `nothing`; systemd-logind `HandleLidSwitch=ignore` via `/etc/systemd/logind.conf.d/99-watch-tower-lid.conf`. Lid close should **not** suspend. Keep on charger; allow airflow (laptop may run warm with lid closed). |
 | **Source of truth** | Pitch deck slides + this document (iterate in place; do not fork near-duplicates) |
 | **Existing seed** | `job_engine/` LinkedIn scrape + admin pilot (foundation for Discovery / Tracks) |
@@ -25,10 +26,27 @@ Ashok’s vision lives in this codebase. **Akay’s first duty is to keep source
 | Rule | Practice |
 |---|---|
 | Local git | Repo root: `/home/user/Documents` |
+| Remote git | Public: `https://github.com/akayatgit/global-job-watch-tower` (`origin` → `main`) |
 | Never commit | `.env`, passwords, `job_engine/.data/`, browser profiles |
 | Do commit | `job_engine/app`, migrations, templates, `documents/`, shared Cursor rules, `.env.example` |
 | Standing rule | `.cursor/rules/source-safety.mdc` (always apply) |
 | Failure mode | If source is lost/corrupted, stop feature work and restore from git first |
+
+### 0A.1 Remote develop → ThinkPad deploy (2026-08-01)
+
+Ashok can build from phone or any device: open a PR → merge to `main` → this laptop redeploys.
+
+| Piece | Detail |
+|---|---|
+| Trigger | GitHub Actions on **push to `main` only** (never on open PRs/forks — public-repo safety) |
+| Runner | Self-hosted under `/home/user/actions-runner`, labels `self-hosted,linux,watch-tower`, systemd service |
+| Deploy script | [`scripts/deploy_local.sh`](../scripts/deploy_local.sh) — flock, wait for idle scrapes (cap 45 min), `git reset --hard origin/main`, `alembic upgrade head`, [`job_engine/restart_app.sh`](../job_engine/restart_app.sh) |
+| Survives deploy | Postgres/Redis data, `.env`, Chrome LinkedIn session, Ollama |
+| Restarts | API `:8001`, Celery worker, Celery beat |
+| Stamp / logs | `job_engine/.data/last_deploy.json`, `job_engine/.data/logs/deploy.log` |
+| Branch protection | Recommended in GitHub: require PR before merge to `main` (UI setting) |
+
+**Mobile path:** GitHub app → branch → PR → merge → watch Actions on the ThinkPad runner → tower comes back on new SHA.
 
 ---
 

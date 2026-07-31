@@ -1,0 +1,13 @@
+name: Deploy ThinkPad
+
+# Public repo safety: only push to main — never pull_request / forks.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, watch-tower]
+    steps:
+      - name: Deploy Watch Tower
+        run: bash /home/user/Documents/scripts/deploy_local.sh
