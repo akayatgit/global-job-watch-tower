@@ -90,3 +90,6 @@ use — they should love opening the app, never fight it.
   words like captcha/recaptcha always appear in LinkedIn HTML. Only alert
   when there are no usable job results / real security wall. Dismissible
   popups are closed and scraping continues.
+- Big live countdown on every page: ticks to next search start (5…4…3…),
+  then “Searching {role}…” with seconds left (122…121…). Client ticks
+  every second; server sync every ~3s.
