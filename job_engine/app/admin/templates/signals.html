@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}Hiring signals{% endblock %}
+{% block content %}
+<style>
+.chip {
+  display: inline-block; padding: 5px 14px; border: 1px solid var(--qt-line);
+  border-radius: 999px; cursor: pointer; font-size: 12.5px; user-select: none;
+  color: var(--qt-muted); background: rgba(255,255,255,0.7); font-weight: 600;
+  text-decoration: none;
+}
+.chip:hover { border-color: var(--qt-blue-deep); color: var(--qt-blue-deep); }
+.chip.on {
+  color: #0B1220; background: var(--qt-lime); border-color: var(--qt-lime); font-weight: 700;
+}
+.headline {
+  margin: 14px 0 18px; padding: 16px 18px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(10,102,194,0.10), rgba(225,29,143,0.08));
+  border: 1px solid var(--qt-line); font-size: 15px; font-weight: 600; line-height: 1.45;
+}
+.pods {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.pod {
+  background: rgba(255,255,255,0.92); border: 1px solid var(--qt-line);
+  border-radius: 16px; padding: 14px 16px; box-shadow: var(--qt-shadow);
+}
+.pod .l { font-size: 11px; font-weight: 700; color: var(--qt-muted); text-transform: uppercase; letter-spacing: .05em; }
+.pod .n { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin-top: 4px; }
+.pod .h { font-size: 12px; color: var(--qt-muted); margin-top: 4px; font-weight: 600; }
+.up { color: var(--qt-ok); }
+.down { color: var(--qt-fail); }
+.flat { color: var(--qt-muted); }
+.grid2 {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px; margin: 18px 0;
+}
+.card {
+  background: rgba(255,255,255,0.92); border: 1px solid var(--qt-line);
+  border-radius: 16px; padding: 16px 18px; box-shadow: var(--qt-shadow);
+}
+.card h3 { margin: 0 0 4px; font-size: 15px; font-weight: 800; }
+.card .sub { color: var(--qt-muted); font-size: 12px; margin-bottom: 12px; font-weight: 500; }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 90px; margin-top: 8px; }
+.spark .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.spark .col i {
+  display: block; width: 100%; max-width: 28px;
+  background: linear-gradient(180deg, var(--qt-blue-royal), var(--qt-blue-deep));
+  border-radius: 3px 3px 0 0; min-height: 2px;
+}
+.spark .col .d { font-size: 9px; color: var(--qt-muted); font-weight: 600; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--qt-blue-deep); }
+th.sortable .arrow { font-size: 10px; margin-left: 3px; color: var(--qt-blue-deep); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bar-inline {
+  display: inline-block; height: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--qt-blue-deep), var(--qt-periwinkle));
+  vertical-align: middle; margin-right: 8px; min-width: 2px;
+}
+.count-line { font-size: 13px; color: var(--qt-muted); font-weight: 600; margin: 0 0 10px; }
+</style>
+
+<h1>Hiring signals <span class="sub">— openings trend, rising roles, company pace</span></h1>
+<p class="muted" style="margin:0 0 12px">Compared to the previous equal window. Live — change the period anytime.</p>
+
+<div class="group" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+  <span class="muted" style="font-size:12px;font-weight:700;margin-right:4px">Posted</span>
+  {% for value, label in window_options %}
+  <a class="chip {{ 'on' if signals.window_days == value }}" href="/signals?days={{ value }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="headline">{{ signals.headline }}</div>
+
+<div class="pods">
+  <div class="pod">
+    <div class="l">Openings now</div>
+    <div class="n">{{ signals.recent_total }}</div>
+    <div class="h">Last {{ signals.window_days }} days</div>
+  </div>
+  <div class="pod">
+    <div class="l">Prior window</div>
+    <div class="n">{{ signals.prior_total }}</div>
+    <div class="h">Previous {{ signals.window_days }} days</div>
+  </div>
+  <div class="pod">
+    <div class="l">Change</div>
+    <div class="n {% if signals.delta > 0 %}up{% elif signals.delta < 0 %}down{% else %}flat{% endif %}">
+      {{ signals.delta|delta }}
+    </div>
+    <div class="h">{{ signals.delta_pct|pct }} vs prior</div>
+  </div>
+  <div class="pod">
+    <div class="l">Companies hiring</div>
+    <div class="n">{{ signals.fastest_companies|length }}</div>
+    <div class="h">With openings in this window</div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3>Openings trend</h3>
+    <div class="sub">Jobs posted per day · last {{ signals.window_days }} days</div>
+    <div class="spark">
+      {% for d in signals.daily %}
+      <div class="col" title="{{ d.day }} — {{ d.n }} opening(s)">
+        <i style="height:{{ (d.n / signals.daily_max * 72)|round }}px"></i>
+        <span class="d">{{ d.day.strftime('%d') }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>What to do next</h3>
+    <div class="sub">Based on this window’s signals</div>
+    <ul style="margin:8px 0 0;padding-left:18px;font-size:13.5px;line-height:1.55">
+      {% if signals.fastest_companies %}
+      <li>Watch <strong>{{ signals.fastest_companies[0].name }}</strong> — fastest hiring pace ({{ signals.fastest_companies[0].recent }} openings).</li>
+      {% endif %}
+      {% if signals.growing_roles and signals.growing_roles[0].delta > 0 %}
+      <li>Lean into <strong>{{ signals.growing_roles[0].name }}</strong> — up {{ signals.growing_roles[0].delta|delta }} vs prior.</li>
+      {% endif %}
+      {% if signals.slowing_roles %}
+      <li><strong>{{ signals.slowing_roles[0].name }}</strong> cooled ({{ signals.slowing_roles[0].delta|delta }}) — check if the search needs a tweak.</li>
+      {% endif %}
+      {% if not signals.fastest_companies and not signals.growing_roles %}
+      <li>Run a search from Searches so the tower can start reading the market.</li>
+      {% endif %}
+      <li><a href="/jobs?posted=week">Browse openings</a> or <a href="/configs">adjust searches</a>.</li>
+    </ul>
+  </div>
+</div>
+
+{% set role_max = signals.role_recent_max %}
+{% set co_max = signals.company_recent_max %}
+
+<h2>Rising &amp; cooling roles</h2>
+<p class="count-line" id="role-count">
+  {{ signals.growing_roles|length }} role{{ 's' if signals.growing_roles|length != 1 }} with activity
+  · sorted by growth
+</p>
+<table id="roles-table">
+  <thead>
+    <tr>
+      <th class="num">#</th>
+      <th class="sortable" data-col="name">Role <span class="arrow"></span></th>
+      <th class="sortable num" data-col="recent" data-num>This window <span class="arrow">▼</span></th>
+      <th class="sortable num" data-col="prior" data-num>Prior <span class="arrow"></span></th>
+      <th class="sortable num" data-col="delta" data-num data-default="desc">Change <span class="arrow"></span></th>
+      <th class="sortable num" data-col="pct" data-num>Pace <span class="arrow"></span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in signals.growing_roles %}
+    <tr data-name="{{ r.name|lower }}" data-recent="{{ r.recent }}" data-prior="{{ r.prior }}"
+        data-delta="{{ r.delta }}" data-pct="{{ r.delta_pct if r.delta_pct is not none else 9999 }}">
+      <td class="num muted">{{ loop.index }}</td>
+      <td>
+        <strong>{{ r.name }}</strong>
+        <div class="muted">{{ r.keywords }}</div>
+        <div style="margin-top:6px">
+          <span class="bar-inline" style="width:{{ (r.recent / role_max * 120)|round }}px"></span>
+        </div>
+      </td>
+      <td class="num">{{ r.recent }}</td>
+      <td class="num muted">{{ r.prior }}</td>
+      <td class="num {% if r.delta > 0 %}up{% elif r.delta < 0 %}down{% endif %}">{{ r.delta|delta }}</td>
+      <td class="num {% if r.delta > 0 %}up{% elif r.delta < 0 %}down{% endif %}">{{ r.delta_pct|pct }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No role activity in this window yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Company hiring velocity</h2>
+<p class="count-line" id="co-count">
+  Showing {{ signals.fastest_companies|length }} compan{{ 'y' if signals.fastest_companies|length == 1 else 'ies' }}
+  · sorted by openings this window
+</p>
+<table id="companies-table">
+  <thead>
+    <tr>
+      <th class="num">#</th>
+      <th class="sortable" data-col="name">Company <span class="arrow"></span></th>
+      <th class="sortable num" data-col="recent" data-num data-default="desc">This window <span class="arrow">▼</span></th>
+      <th class="sortable num" data-col="prior" data-num>Prior <span class="arrow"></span></th>
+      <th class="sortable num" data-col="delta" data-num>Change <span class="arrow"></span></th>
+      <th class="sortable num" data-col="pct" data-num>Pace <span class="arrow"></span></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in signals.fastest_companies %}
+    <tr data-name="{{ c.name|lower }}" data-recent="{{ c.recent }}" data-prior="{{ c.prior }}"
+        data-delta="{{ c.delta }}" data-pct="{{ c.delta_pct if c.delta_pct is not none else 9999 }}">
+      <td class="num muted">{{ loop.index }}</td>
+      <td>
+        <strong>{{ c.name }}</strong>
+        <div style="margin-top:6px">
+          <span class="bar-inline" style="width:{{ (c.recent / co_max * 140)|round }}px"></span>
+        </div>
+      </td>
+      <td class="num">{{ c.recent }}</td>
+      <td class="num muted">{{ c.prior }}</td>
+      <td class="num {% if c.delta > 0 %}up{% elif c.delta < 0 %}down{% endif %}">{{ c.delta|delta }}</td>
+      <td class="num {% if c.delta > 0 %}up{% elif c.delta < 0 %}down{% endif %}">{{ c.delta_pct|pct }}</td>
+      <td>
+        <form method="post" action="/watchlist/{{ c.company_id }}/toggle" class="inline">
+          <input type="hidden" name="next" value="/signals?days={{ signals.window_days }}">
+          <button type="submit" style="border:1px solid var(--qt-line);background:{{ 'var(--qt-lime)' if c.watched else '#fff' }};border-radius:999px;padding:4px 12px;font-weight:700;font-size:12px;cursor:pointer;color:{{ '#0B1220' if c.watched else 'var(--qt-muted)' }}">
+            {{ 'Watching' if c.watched else 'Watch' }}
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No company openings in this window yet — catch some jobs first.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function sortTable(tableId, col, numeric, dir) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.dataset.name !== undefined);
+  rows.sort((a, b) => {
+    let av = a.dataset[col], bv = b.dataset[col];
+    if (numeric) { av = parseFloat(av); bv = parseFloat(bv); }
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  rows.forEach((r, i) => {
+    r.querySelector('td').textContent = i + 1;
+    tbody.appendChild(r);
+  });
+  table.querySelectorAll('th.sortable .arrow').forEach(a => a.textContent = '');
+  const th = table.querySelector(`th.sortable[data-col="${col}"]`);
+  if (th) th.querySelector('.arrow').textContent = dir === 'asc' ? '▲' : '▼';
+  table.dataset.sortCol = col;
+  table.dataset.sortDir = dir;
+}
+
+document.querySelectorAll('table').forEach(table => {
+  table.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      const numeric = th.hasAttribute('data-num');
+      const curCol = table.dataset.sortCol;
+      const curDir = table.dataset.sortDir || 'desc';
+      const next = (curCol === col && curDir === 'desc') ? 'asc' : 'desc';
+      sortTable(table.id, col, numeric, next);
+    });
+  });
+});
+
+// Default: roles by delta desc, companies already by recent
+const roles = document.getElementById('roles-table');
+if (roles) { roles.dataset.sortCol = 'delta'; roles.dataset.sortDir = 'desc'; sortTable('roles-table', 'delta', true, 'desc'); }
+const cos = document.getElementById('companies-table');
+if (cos) { cos.dataset.sortCol = 'recent'; cos.dataset.sortDir = 'desc'; }
+</script>
+{% endblock %}

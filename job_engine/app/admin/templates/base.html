@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WATCH TOWER — {% block title %}Tower{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --qt-ink: #0B1220;
+    --qt-muted: #5B6472;
+    --qt-paper: #F7F9FC;
+    --qt-paper-2: #EEF2FB;
+    --qt-blue-deep: #0A66C2;
+    --qt-blue-royal: #2563EB;
+    --qt-periwinkle: #A8B4F0;
+    --qt-lavender: #C4B5FD;
+    --qt-live-pink: #E11D8F;
+    --qt-coral: #F07167;
+    --qt-lime: #C8F135;
+    --qt-teal: #2DD4BF;
+    --qt-violet: #7C3AED;
+    --qt-yellow: #FACC15;
+    --qt-glass: rgba(255, 255, 255, 0.72);
+    --qt-glass-border: rgba(255, 255, 255, 0.85);
+    --qt-line: #D8DEE9;
+    --qt-ok: #15803d;
+    --qt-warn: #b45309;
+    --qt-fail: #b91c1c;
+    --qt-shadow: 0 18px 50px rgba(15, 23, 42, 0.10);
+
+    /* Compat aliases used by page templates */
+    --bg: var(--qt-paper);
+    --panel: #ffffff;
+    --ink: var(--qt-ink);
+    --muted: var(--qt-muted);
+    --line: var(--qt-line);
+    --border: var(--qt-line);
+    --accent: var(--qt-blue-deep);
+    --accent-ink: #ffffff;
+    --warn: var(--qt-warn);
+    --fail: var(--qt-fail);
+    --ok: var(--qt-ok);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+    color: var(--qt-ink);
+    background:
+      radial-gradient(ellipse 70% 50% at 100% -10%, rgba(10, 102, 194, 0.22), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 0% 100%, rgba(168, 180, 240, 0.35), transparent 50%),
+      linear-gradient(160deg, var(--qt-paper-2) 0%, var(--qt-paper) 45%, #ffffff 100%);
+    min-height: 100vh;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--qt-glass);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--qt-glass-border);
+    padding: 12px 28px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    background: var(--qt-lime);
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 18px;
+    color: #0B1220;
+    box-shadow: 0 4px 14px rgba(200, 241, 53, 0.45);
+    flex-shrink: 0;
+  }
+  .brand-text { line-height: 1.15; }
+  .brand-text .product {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .brand-text .tower {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .brand-text .live {
+    color: var(--qt-live-pink);
+    font-weight: 800;
+  }
+  .brand-text .byline {
+    font-size: 11px;
+    color: var(--qt-muted);
+    font-weight: 500;
+    margin-top: 1px;
+  }
+  .scope-pill {
+    margin-left: auto;
+    background: var(--qt-lime);
+    color: #0B1220;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 2px;
+    width: 100%;
+    padding-top: 2px;
+  }
+  nav a {
+    text-decoration: none;
+    color: var(--qt-muted);
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 999px;
+    transition: background .15s ease, color .15s ease;
+  }
+  nav a:hover { color: var(--qt-ink); background: rgba(10, 102, 194, 0.08); }
+  nav a.active {
+    color: #fff;
+    background: var(--qt-blue-deep);
+  }
+  main { max-width: 1120px; margin: 28px auto; padding: 0 20px 48px; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 800; letter-spacing: -0.02em; }
+  h1 .sub { font-weight: 500; font-size: 14px; color: var(--qt-muted); }
+  h2 { font-size: 15px; margin: 28px 0 12px; color: var(--qt-muted); font-weight: 700; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid var(--qt-line);
+    border-radius: 14px;
+    overflow: hidden;
+    font-size: 13.5px;
+    box-shadow: var(--qt-shadow);
+  }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--qt-line); vertical-align: top; }
+  th {
+    background: rgba(238, 242, 251, 0.95);
+    font-weight: 700;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--qt-muted);
+  }
+  tr:last-child td { border-bottom: none; }
+  .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin: 18px 0 8px; }
+  .stat {
+    background: rgba(255,255,255,0.9);
+    border: 1px solid var(--qt-line);
+    border-radius: 16px;
+    padding: 16px 20px;
+    min-width: 148px;
+    box-shadow: var(--qt-shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .stat::after {
+    content: "";
+    position: absolute;
+    right: -20px; top: -20px;
+    width: 70px; height: 70px;
+    border-radius: 50%;
+    background: rgba(10, 102, 194, 0.08);
+  }
+  .stat .n { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; position: relative; }
+  .stat .l {
+    font-size: 11.5px;
+    color: var(--qt-muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-weight: 600;
+    margin-top: 2px;
+    position: relative;
+  }
+  form.inline { display: inline; }
+  input, select {
+    font: inherit;
+    padding: 8px 11px;
+    border: 1px solid var(--qt-line);
+    background: #fff;
+    color: var(--qt-ink);
+    border-radius: 10px;
+  }
+  button {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--qt-blue-deep);
+    background: var(--qt-blue-deep);
+    color: #fff;
+    cursor: pointer;
+    border-radius: 10px;
+  }
+  button:hover { filter: brightness(1.05); }
+  button.ghost { background: transparent; color: var(--qt-blue-deep); }
+  button.danger {
+    border-color: var(--qt-fail);
+    background: transparent;
+    color: var(--qt-fail);
+  }
+  .status { font-weight: 700; font-size: 12.5px; }
+  .status.success { color: var(--qt-ok); }
+  .status.failed { color: var(--qt-fail); }
+  .status.running, .status.dispatched, .status.cancel_requested { color: var(--qt-warn); }
+  .status.queued, .status.cancelled { color: var(--qt-muted); }
+  .grid-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid var(--qt-line);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 20px;
+    box-shadow: var(--qt-shadow);
+  }
+  .grid-form label { font-size: 12px; color: var(--qt-muted); display: block; margin-bottom: 4px; font-weight: 600; }
+  .muted { color: var(--qt-muted); font-size: 12.5px; }
+  a { color: var(--qt-blue-deep); }
+  time.rel { white-space: nowrap; }
+  .live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--qt-ok); margin-right: 6px;
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  main > * { animation: rise .35s ease both; }
+  @media (max-width: 700px) {
+    header { padding: 12px 16px; }
+    .scope-pill { margin-left: 0; }
+    main { margin-top: 16px; }
+  }
+</style>
+</head>
+<body data-refresh="{{ refresh or 0 }}">
+<header>
+  <a class="brand" href="/">
+    <div class="brand-mark" aria-hidden="true">Q</div>
+    <div class="brand-text">
+      <div class="product">Global Job <span class="live">Live</span></div>
+      <div class="tower">Watch Tower</div>
+      <div class="byline">Quanta HR Labs · AI Job Intelligence</div>
+    </div>
+  </a>
+  <span class="scope-pill">Domestic &amp; Global 24×7</span>
+  <nav>
+    <a href="/" class="{{ 'active' if active == 'dashboard' }}">Tower</a>
+    <a href="/signals" class="{{ 'active' if active == 'signals' }}">Hiring signals</a>
+    <a href="/watchlist" class="{{ 'active' if active == 'watchlist' }}">Watchlist</a>
+    <a href="/configs" class="{{ 'active' if active == 'configs' }}">Searches</a>
+    <a href="/runs" class="{{ 'active' if active == 'runs' }}">Activity</a>
+    <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
+    <a href="/console" class="{{ 'active' if active == 'console' }}">Live feed</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+function relText(iso) {
+  const then = new Date(iso);
+  if (isNaN(then)) return iso;
+  let diff = (Date.now() - then.getTime()) / 1000;
+  const future = diff < 0;
+  diff = Math.abs(diff);
+  let value = diff, name = 'second';
+  const chain = [[1, 'second'], [60, 'minute'], [3600, 'hour'], [86400, 'day'], [2592000, 'month'], [31536000, 'year']];
+  for (const [secs, unit] of chain) {
+    if (diff >= secs) { value = Math.floor(diff / secs); name = unit; }
+  }
+  if (!future && diff < 45) return 'just now';
+  const label = value + ' ' + name + (value !== 1 ? 's' : '');
+  return future ? 'in ' + label : label + ' ago';
+}
+function updateRelTimes(root) {
+  (root || document).querySelectorAll('time.rel').forEach(el => {
+    const iso = el.getAttribute('datetime');
+    el.textContent = relText(iso);
+    el.title = new Date(iso).toLocaleString();
+  });
+}
+updateRelTimes();
+setInterval(() => updateRelTimes(), 30000);
+
+const refreshEvery = parseInt(document.body.dataset.refresh || '0', 10);
+if (refreshEvery > 0) {
+  setInterval(async () => {
+    const el = document.activeElement;
+    if (el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+    if (document.querySelector('details[open]')) return;
+    try {
+      const res = await fetch(location.href, {headers: {'X-Requested-With': 'refresh'}});
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const fresh = doc.querySelector('main');
+      if (fresh) {
+        document.querySelector('main').innerHTML = fresh.innerHTML;
+        updateRelTimes();
+        if (typeof onLiveRefresh === 'function') onLiveRefresh();
+      }
+    } catch (e) { /* retry next tick */ }
+  }, refreshEvery * 1000);
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,29 @@
+---
+description: FIRST PRIORITY — protect Watch Tower source with git; never risk Ashok’s vision
+alwaysApply: true
+---
+
+# Source safety — Akay’s first duty
+
+If source is corrupted, deleted, or misdirected, Ashok’s vision fails and
+Akay’s mandate fails. **Protecting the local git history outranks features.**
+
+## Always
+
+- Work inside the git repo at `/home/user/Documents` (Watch Tower workspace).
+- Before risky edits/refactors/deletes: `git status` + ensure a clean commit
+  or stash exists for the current good state.
+- After meaningful completed slices: remind Ashok to commit (or commit when
+  Ashok says YES / “save” / “commit”).
+- Never commit `.env`, passwords, Chrome profiles, or `job_engine/.data/`.
+- Never run destructive git (`reset --hard`, force-push, `clean -fdx`) unless
+  Ashok explicitly orders it.
+- Never delete the `.git` directory.
+- Prefer rename/move via git-aware commands; don’t “start over” by wiping trees.
+
+## If something looks wrong
+
+1. Stop destructive work.
+2. `git status` / `git diff` / `git log -5`.
+3. Restore from the last good commit before continuing features.
+4. Tell Ashok immediately what was at risk and what was saved.

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Searches{% endblock %}
+{% block content %}
+<h1>Searches <span class="muted" style="font-weight:400;font-size:14px">— the roles Watch Tower hunts for you</span></h1>
+
+<form class="grid-form" method="post" action="/configs/create">
+  <div><label>Name this search</label><input name="name" required placeholder="AI Product Owner — India"></div>
+  <div><label>Role to look for</label><input name="keywords" required placeholder="ai product owner"></div>
+  <div><label>LinkedIn location code</label><input name="geo_id" value="102713980" title="LinkedIn geoId — 102713980 is India"></div>
+  <div><label>Location name</label><input name="location_label" placeholder="India"></div>
+  <div>
+    <label>How often</label>
+    <select name="schedule_freq" class="sched-freq" style="width:100%" onchange="schedFields(this)">
+      {% for value, label in freq_options %}
+      <option value="{{ value }}" {{ 'selected' if value == 'daily' }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="sched-time" style="display:none">
+    <label>At what time (your local time)</label>
+    <input name="schedule_time" type="time" value="09:00" style="width:100%">
+  </div>
+  <div class="sched-day" style="display:none">
+    <label>Which day</label>
+    <select name="schedule_day" style="width:100%">
+      {% for d in weekdays %}<option>{{ d }}</option>{% endfor %}
+    </select>
+  </div>
+  <div><label>Pages per scrape</label><input name="max_pages" type="number" value="10" min="1" max="40"></div>
+  <div style="align-self:end"><button type="submit">Add search</button></div>
+</form>
+
+<table>
+  <tr><th>Name</th><th>Role</th><th>Location</th><th>How often</th><th>Pages</th><th>On/off</th><th>Last ran</th><th>Actions</th></tr>
+  {% for cfg in configs %}
+  <tr>
+    <td>{{ cfg.name }}</td>
+    <td>{{ cfg.keywords }}</td>
+    <td>{{ cfg.location_label or cfg.geo_id }}</td>
+    <td>
+      {{ cfg.schedule_cron|cron_human }}
+      <details style="margin-top:4px">
+        <summary class="muted" style="cursor:pointer">change</summary>
+        <form method="post" action="/configs/{{ cfg.id }}/schedule" style="margin-top:6px;display:grid;gap:6px;max-width:220px">
+          <select name="schedule_freq" class="sched-freq" onchange="schedFields(this)">
+            {% for value, label in freq_options %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <input name="schedule_time" type="time" value="09:00" class="sched-time" style="display:none">
+          <select name="schedule_day" class="sched-day" style="display:none">
+            {% for d in weekdays %}<option>{{ d }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="ghost">Save schedule</button>
+        </form>
+      </details>
+    </td>
+    <td>{{ cfg.max_pages }}</td>
+    <td>{{ 'on' if cfg.enabled else 'off' }}</td>
+    <td class="muted">{% if cfg.last_run_at %}{{ cfg.last_run_at|rel }}{% else %}never{% endif %}</td>
+    <td>
+      <form class="inline" method="post" action="/configs/{{ cfg.id }}/run">
+        <button type="submit">Run now</button>
+      </form>
+      <form class="inline" method="post" action="/configs/{{ cfg.id }}/run">
+        <input type="datetime-local" name="scheduled_for" required style="width:170px">
+        <button type="submit" class="ghost">Schedule one-off</button>
+      </form>
+      <form class="inline" method="post" action="/configs/{{ cfg.id }}/toggle">
+        <button type="submit" class="ghost">{{ 'Disable' if cfg.enabled else 'Enable' }}</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">No searches yet — add your first role above.</td></tr>
+  {% endfor %}
+</table>
+<p class="muted">Every search only looks at jobs posted in the past 24 hours. Times you pick are your local time.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function schedFields(sel) {
+  const form = sel.closest('form');
+  const needsTime = ['daily', 'weekly'].includes(sel.value);
+  const needsDay = sel.value === 'weekly';
+  form.querySelectorAll('.sched-time').forEach(el => { el.style.display = needsTime ? '' : 'none'; });
+  form.querySelectorAll('.sched-day').forEach(el => { el.style.display = needsDay ? '' : 'none'; });
+}
+document.querySelectorAll('.sched-freq').forEach(sel => schedFields(sel));
+</script>
+{% endblock %}

@@ -1,0 +1,4 @@
+scrapling[fetchers]
+ollama
+curl_cffi
+playwright

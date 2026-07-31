@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Live feed{% endblock %}
+{% block content %}
+<style>
+#console-box { position: relative; }
+#console-box .line { padding: 1px 0; }
+#console-box time.rel {
+  display: inline-block; min-width: 96px; color: var(--qt-muted); cursor: default;
+}
+#console-box .line .delta {
+  display: inline-block; min-width: 42px; text-align: right;
+  color: var(--qt-warn); font-size: 11px; margin-right: 6px;
+}
+#console-box .line.think .think-tail {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; color: var(--qt-muted); font-style: italic; cursor: help;
+  border-left: 2px solid var(--qt-periwinkle); padding-left: 8px; margin: 2px 0 2px 52px;
+  transition: max-height .15s ease;
+}
+#console-box .line.think:hover .think-tail {
+  -webkit-line-clamp: unset; max-height: 320px; overflow-y: auto;
+  background: rgba(238, 242, 251, 0.9); border-left-color: var(--qt-live-pink);
+}
+#console-box .line.hidden-by-filter { display: none; }
+.chip {
+  display: inline-block; padding: 3px 12px; border: 1px solid var(--border);
+  border-radius: 999px; cursor: pointer; font-size: 12px; user-select: none;
+  color: var(--muted); background: transparent;
+}
+.chip.on { color: #0B1220; background: var(--qt-lime); border-color: var(--qt-lime); font-weight: 600; }
+</style>
+
+<h1 style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <span><span class="live-dot"></span>Live feed</span>
+  <span class="muted" style="font-weight:400;font-size:14px">everything the discovery engine is doing, as it happens</span>
+  <button type="button" class="ghost" id="copy-console" style="margin-left:auto"
+          onclick="copyConsole(this)">Copy logs</button>
+  <button type="button" class="danger" onclick="clearConsole(this)">Clear logs</button>
+</h1>
+
+{% if running %}
+<div class="stat-row">
+  {% for run in running %}
+  <div class="stat">
+    <div class="n" style="font-size:16px">Run #{{ run.id }} — {{ configs[run.search_config_id].name if run.search_config_id in configs else '?' }}</div>
+    <div class="l">{{ run.status }} · page {{ run.pages_scraped }} · {{ run.jobs_inserted }} stored</div>
+    <div class="l" style="margin-top:4px;color:var(--qt-teal)" data-phase-run="{{ run.id }}">{{ phases.get(run.id, '—') }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Nothing scraping right now. The engine checks your schedules every minute — activity appears here the moment anything happens.</p>
+{% endif %}
+
+<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+  <span class="muted" style="font-size:12px">Show:</span>
+  <span class="chip on" data-filter="all" onclick="setFilter(this)">All</span>
+  <span class="chip" data-filter="scraper" onclick="setFilter(this)">Scraper</span>
+  <span class="chip" data-filter="ai" onclick="setFilter(this)">AI</span>
+  <span class="chip" data-filter="worker" onclick="setFilter(this)">Worker</span>
+  <span class="chip" data-filter="error" onclick="setFilter(this)">Errors only</span>
+</div>
+
+<div id="console-box" style="background:#101613;color:#cfe3d8;border:1px solid #24312a;padding:14px 16px;height:60vh;overflow-y:auto;font-family:'IBM Plex Mono','Cascadia Code',monospace;font-size:12.5px;line-height:1.55">
+  {% for e in display %}
+  {% if e.think %}
+  <div class="line think src-ai" data-run="{{ e.run_id or 0 }}">
+    <time class="rel" datetime="{{ e.ts.isoformat() }}">{{ e.ts.strftime('%H:%M:%S') }}</time>
+    <span class="delta">{{ e.delta }}</span>
+    <span style="color:#eab308">[ai{% if e.run_id %}#{{ e.run_id }}{% endif %} thinking — hover for full]</span>
+    <div class="think-tail" data-full="{{ e.full }}">{{ e.full }}</div>
+  </div>
+  {% else %}
+  <div class="line src-{{ e.source }} lvl-{{ e.level }}" data-run="{{ e.run_id or 0 }}">
+    <time class="rel" datetime="{{ e.ts.isoformat() }}">{{ e.ts.strftime('%H:%M:%S') }}</time>
+    <span class="delta">{{ e.delta }}</span>
+    <span style="color:{{ '#FACC15' if e.source == 'ai' else '#2DD4BF' if e.source == 'scraper' else '#0A66C2' }}">[{{ e.source }}{% if e.run_id %}#{{ e.run_id }}{% endif %}]</span>
+    <span style="{{ 'color:#f87171' if e.level == 'error' else 'color:#fbbf24' if e.level == 'warn' else '' }}">{{ e.full }}</span>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="muted">Console is empty — start a run to see live activity.</div>
+  {% endfor %}
+</div>
+<p class="muted" style="margin-top:8px">
+  Streams scraper navigation (with 10s heartbeats during page loads), AI thinking (collapsed to 3 lines — hover to read everything),
+  batch verdicts and run lifecycle. The <b>+Ns</b> badge shows seconds since that run's previous entry. Polls every 3 seconds.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let lastId = {{ last_id }};
+const box = document.getElementById('console-box');
+box.scrollTop = box.scrollHeight;
+
+const srcColor = s => s === 'ai' ? '#FACC15' : s === 'scraper' ? '#2DD4BF' : '#0A66C2';
+let activeFilter = 'all';
+const thinkEls = {};   // run key -> current thinking element being accumulated
+const lastTs = {};     // run key -> Date of that run's previous entry
+
+// Seed lastTs from server-rendered lines so deltas continue correctly
+for (const line of box.querySelectorAll('.line')) {
+  lastTs[line.dataset.run || 0] = null; // real times unknown; first poll delta is skipped
+}
+
+function setFilter(chip) {
+  activeFilter = chip.dataset.filter;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === chip));
+  applyFilter();
+}
+
+function lineMatches(line) {
+  if (activeFilter === 'all') return true;
+  if (activeFilter === 'error') return line.classList.contains('lvl-error') || line.classList.contains('lvl-warn');
+  return line.classList.contains('src-' + activeFilter);
+}
+
+function applyFilter() {
+  for (const line of box.querySelectorAll('.line')) {
+    line.classList.toggle('hidden-by-filter', !lineMatches(line));
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+async function clearConsole(btn) {
+  if (!confirm('Clear all console logs? Runs and jobs are not affected.')) return;
+  try {
+    const res = await fetch('/console/clear', {method: 'POST'});
+    const data = await res.json();
+    box.innerHTML = '<div class="muted">Console cleared — new activity will appear here live.</div>';
+    for (const k of Object.keys(thinkEls)) delete thinkEls[k];
+    btn.textContent = `Cleared ${data.cleared}`;
+    setTimeout(() => { btn.textContent = 'Clear logs'; }, 1500);
+  } catch (err) {
+    btn.textContent = 'Failed — retry';
+    setTimeout(() => { btn.textContent = 'Clear logs'; }, 1500);
+  }
+}
+
+function copyConsole(btn) {
+  const parts = [];
+  for (const line of box.querySelectorAll('.line')) {
+    if (line.classList.contains('hidden-by-filter')) continue;
+    const tail = line.querySelector('.think-tail');
+    if (tail) {
+      const head = [...line.children].filter(c => c !== tail).map(c => c.textContent.trim()).join(' ');
+      parts.push(head + ' ' + (tail.dataset.full || tail.textContent).trim());
+    } else {
+      parts.push(line.textContent.replace(/\s+/g, ' ').trim());
+    }
+  }
+  navigator.clipboard.writeText(parts.join('\n')).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy logs'; }, 1500);
+  });
+}
+
+function deltaFor(runKey, ts) {
+  const prev = lastTs[runKey];
+  lastTs[runKey] = ts;
+  if (!prev) return '';
+  const secs = Math.round((ts - prev) / 1000);
+  return secs >= 1 ? `+${secs}s` : '';
+}
+
+function makeHead(e, tsDate, delta, tagText, tagColor) {
+  const iso = tsDate.toISOString();
+  return `<time class="rel" datetime="${iso}" title="${tsDate.toLocaleString()}">${relText(iso)}</time>` +
+         `<span class="delta">${delta}</span>` +
+         `<span style="color:${tagColor}">${tagText}</span>`;
+}
+
+function appendEntry(e) {
+  const runKey = e.run_id || 0;
+  const tsDate = new Date(e.ts);
+  const isThink = e.level === 'think' || (e.source === 'ai' && e.message.startsWith('thinking: '));
+  const text = e.message.startsWith('thinking: ') ? e.message.slice(10) : e.message;
+
+  if (isThink) {
+    let el = thinkEls[runKey];
+    if (el) {
+      // Overwrite in place: accumulate full text, keep display clamped to 3 lines
+      const tail = el.querySelector('.think-tail');
+      tail.dataset.full += ' ' + text;
+      tail.textContent = tail.dataset.full;
+      return;
+    }
+    el = document.createElement('div');
+    el.className = 'line think src-ai';
+    el.dataset.run = runKey;
+    el.innerHTML = makeHead(e, tsDate, deltaFor(runKey, tsDate),
+      `[ai${e.run_id ? '#' + e.run_id : ''} thinking — hover for full]`, '#eab308');
+    const tail = document.createElement('div');
+    tail.className = 'think-tail';
+    tail.dataset.full = text;
+    tail.textContent = text;
+    el.appendChild(tail);
+    thinkEls[runKey] = el;
+    el.classList.toggle('hidden-by-filter', !lineMatches(el));
+    box.appendChild(el);
+    return;
+  }
+
+  // Any normal AI message (batch verdict, warnings…) closes the thinking block
+  if (e.source === 'ai') thinkEls[runKey] = null;
+
+  const div = document.createElement('div');
+  div.className = `line src-${e.source} lvl-${e.level}`;
+  div.dataset.run = runKey;
+  const tag = `[${e.source}${e.run_id ? '#' + e.run_id : ''}]`;
+  div.innerHTML = makeHead(e, tsDate, deltaFor(runKey, tsDate), tag, srcColor(e.source));
+  const msg = document.createElement('span');
+  if (e.level === 'error') msg.style.color = '#f87171';
+  else if (e.level === 'warn') msg.style.color = '#fbbf24';
+  msg.textContent = ' ' + text;
+  div.appendChild(msg);
+  div.classList.toggle('hidden-by-filter', !lineMatches(div));
+  box.appendChild(div);
+
+  // Update the "current phase" line on the matching run card, if visible
+  if (e.run_id && e.level !== 'think') {
+    const phase = document.querySelector(`[data-phase-run="${e.run_id}"]`);
+    if (phase) phase.textContent = text.slice(0, 90);
+  }
+}
+
+async function pollConsole() {
+  try {
+    const res = await fetch(`/api/console?after_id=${lastId}`);
+    const entries = await res.json();
+    if (!entries.length) return;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    for (const e of entries) {
+      lastId = Math.max(lastId, e.id);
+      appendEntry(e);
+    }
+    while (box.children.length > 1000) box.removeChild(box.firstChild);
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+  } catch (err) { /* transient; retry next tick */ }
+}
+setInterval(pollConsole, 3000);
+</script>
+{% endblock %}

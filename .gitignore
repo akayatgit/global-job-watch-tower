@@ -1,0 +1,49 @@
+# --- Secrets & local credentials (never commit) ---
+.env
+.env.*
+!.env.example
+.cursor/rules/password.mdc
+**/credentials*.json
+**/*secret*
+**/*.pem
+**/*.key
+
+# --- Runtime / local data (Watch Tower pilot) ---
+job_engine/.data/
+**/.data/
+**/pgdata/
+**/redis/
+*.pid
+celerybeat-schedule
+celerybeat-schedule.*
+
+# --- Logs & caches ---
+*.log
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.cache/
+*.egg-info/
+dist/
+build/
+
+# --- Virtual envs / OS junk ---
+.venv/
+venv/
+env/
+.Python
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Editor noise (keep shared Cursor project rules; ignore local junk) ---
+.cursor/*.log
+.idea/
+.vscode/
+*.code-workspace

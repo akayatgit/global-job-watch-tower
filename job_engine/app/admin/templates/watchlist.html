@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Watchlist{% endblock %}
+{% block content %}
+<style>
+.chip {
+  display: inline-block; padding: 5px 14px; border: 1px solid var(--qt-line);
+  border-radius: 999px; cursor: pointer; font-size: 12.5px; user-select: none;
+  color: var(--qt-muted); background: rgba(255,255,255,0.7); font-weight: 600;
+  text-decoration: none;
+}
+.chip:hover { border-color: var(--qt-blue-deep); color: var(--qt-blue-deep); }
+.chip.on { color: #0B1220; background: var(--qt-lime); border-color: var(--qt-lime); font-weight: 700; }
+.headline {
+  margin: 14px 0 18px; padding: 16px 18px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(200,241,53,0.22), rgba(10,102,194,0.08));
+  border: 1px solid var(--qt-line); font-size: 15px; font-weight: 600; line-height: 1.45;
+}
+.up { color: var(--qt-ok); } .down { color: var(--qt-fail); }
+.star-btn {
+  border: 1px solid var(--qt-line); background: #fff; border-radius: 999px;
+  padding: 4px 12px; font-weight: 700; font-size: 12px; cursor: pointer; color: var(--qt-muted);
+}
+.star-btn.on { background: var(--qt-lime); color: #0B1220; border-color: var(--qt-lime); }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 8px; }
+.filter-row input[type="search"] {
+  min-width: 220px; border-radius: 999px; padding: 7px 14px;
+}
+.count-line { font-size: 13px; color: var(--qt-muted); font-weight: 600; margin: 0 0 10px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bar-inline {
+  display: inline-block; height: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--qt-blue-deep), var(--qt-periwinkle));
+  vertical-align: middle; margin-right: 8px; min-width: 2px;
+}
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; margin-top: 8px; }
+</style>
+
+<h1>Company watchlist <span class="sub">— the orgs you’re tracking for hiring pace</span></h1>
+<p class="muted" style="margin:0 0 10px">Star companies to keep them in view. Live filters — type anytime. Destructive? Never — unstar only removes from this list.</p>
+
+<div class="filter-row">
+  <span class="muted" style="font-size:12px;font-weight:700">Posted</span>
+  {% for value, label in window_options %}
+  <a class="chip {{ 'on' if days == value }}"
+     href="/watchlist?days={{ value }}&q={{ f_q|urlencode }}&add={{ f_add|urlencode }}">{{ label }}</a>
+  {% endfor %}
+  <input type="search" id="watch-q" value="{{ f_q }}" placeholder="Filter watched…" list="company-suggestions" autocomplete="off">
+</div>
+
+{% set top = watched[0] if watched else none %}
+<div class="headline">
+  {% if top and top.recent %}
+  Fastest on your list: <strong>{{ top.name }}</strong> with {{ top.recent }} opening{{ 's' if top.recent != 1 }} in the last {{ days }} days
+  ({{ top.delta|delta }} vs prior).
+  {% elif watched %}
+  {{ watched|length }} compan{{ 'y' if watched|length == 1 else 'ies' }} watched — waiting for openings in this window.
+  {% else %}
+  No companies watched yet — star fast hirers below to start your list.
+  {% endif %}
+</div>
+
+{% set wmax = (watched|map(attribute='recent')|max) if watched else 1 %}
+{% if wmax < 1 %}{% set wmax = 1 %}{% endif %}
+<p class="count-line">{{ watched|length }} watched · sorted by hiring pace</p>
+<table>
+  <tr>
+    <th class="num">#</th>
+    <th>Company</th>
+    <th class="num">This window</th>
+    <th class="num">Prior</th>
+    <th class="num">Change</th>
+    <th class="num">Pace</th>
+    <th></th>
+  </tr>
+  {% for c in watched %}
+  <tr>
+    <td class="num muted">{{ loop.index }}</td>
+    <td>
+      <strong>{{ c.name }}</strong>
+      <div style="margin-top:6px">
+        <span class="bar-inline" style="width:{{ (c.recent / wmax * 140)|round }}px"></span>
+      </div>
+    </td>
+    <td class="num">{{ c.recent }}</td>
+    <td class="num muted">{{ c.prior }}</td>
+    <td class="num {% if c.delta > 0 %}up{% elif c.delta < 0 %}down{% endif %}">{{ c.delta|delta }}</td>
+    <td class="num {% if c.delta > 0 %}up{% elif c.delta < 0 %}down{% endif %}">{{ c.delta_pct|pct }}</td>
+    <td>
+      <form method="post" action="/watchlist/{{ c.company_id }}/toggle" class="inline">
+        <input type="hidden" name="next" value="/watchlist?days={{ days }}&q={{ f_q }}&add={{ f_add }}">
+        <button type="submit" class="star-btn on" title="Remove from watchlist">Watching</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">Nothing on the watchlist — add companies from the directory below.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Add companies</h2>
+<div class="filter-row">
+  <input type="search" id="add-q" value="{{ f_add }}" placeholder="Search all companies…" list="company-suggestions" autocomplete="off">
+  <span class="muted">Suggestions from companies the tower has already seen.</span>
+</div>
+<datalist id="company-suggestions">
+  {% for c in directory %}
+  <option value="{{ c.name }}"></option>
+  {% endfor %}
+</datalist>
+
+<p class="count-line">Showing {{ directory|length }} compan{{ 'y' if directory|length == 1 else 'ies' }}</p>
+<table>
+  <tr>
+    <th class="num">#</th>
+    <th>Company</th>
+    <th class="num">Last 7 days</th>
+    <th class="num">Prior 7</th>
+    <th></th>
+  </tr>
+  {% for c in directory %}
+  <tr>
+    <td class="num muted">{{ loop.index }}</td>
+    <td><strong>{{ c.name }}</strong></td>
+    <td class="num">{{ c.recent }}</td>
+    <td class="num muted">{{ c.prior }}</td>
+    <td>
+      <form method="post" action="/watchlist/{{ c.company_id }}/toggle" class="inline">
+        <input type="hidden" name="next" value="/watchlist?days={{ days }}&q={{ f_q }}&add={{ f_add }}">
+        <button type="submit" class="star-btn {{ 'on' if c.watched }}" title="{{ 'Remove from watchlist' if c.watched else 'Add to watchlist' }}">
+          {{ 'Watching' if c.watched else 'Watch' }}
+        </button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">No companies match — run more searches so the tower can discover hirers.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function liveNav(param, value) {
+  const url = new URL(location.href);
+  url.searchParams.set(param, value);
+  if (!url.searchParams.get('days')) url.searchParams.set('days', '{{ days }}');
+  location.href = url.pathname + '?' + url.searchParams.toString();
+}
+let t1, t2;
+const wq = document.getElementById('watch-q');
+const aq = document.getElementById('add-q');
+if (wq) wq.addEventListener('input', () => {
+  clearTimeout(t1);
+  t1 = setTimeout(() => liveNav('q', wq.value), 400);
+});
+if (aq) aq.addEventListener('input', () => {
+  clearTimeout(t2);
+  t2 = setTimeout(() => liveNav('add', aq.value), 400);
+});
+</script>
+{% endblock %}

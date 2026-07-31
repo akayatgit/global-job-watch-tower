@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Tower{% endblock %}
+{% block content %}
+<style>
+.tower-hero {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+}
+.flywheel {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: 12px; font-weight: 700; color: var(--qt-muted);
+}
+.flywheel .step {
+  background: rgba(168, 180, 240, 0.35);
+  color: var(--qt-ink);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+.flywheel .step.on { background: var(--qt-blue-deep); color: #fff; }
+.flywheel .arrow { opacity: .45; }
+
+.pods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin: 20px 0 8px;
+}
+.pod {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid var(--qt-line);
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  box-shadow: var(--qt-shadow);
+  position: relative;
+  overflow: hidden;
+  min-height: 118px;
+}
+.pod::before {
+  content: "";
+  position: absolute; inset: auto -30% -40% auto;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(10, 102, 194, 0.10);
+}
+.pod.jobs::before { background: rgba(250, 204, 21, 0.22); }
+.pod.companies::before { background: rgba(45, 212, 191, 0.20); }
+.pod.fresh::before { background: rgba(225, 29, 143, 0.12); }
+.pod.signal::before { background: rgba(124, 58, 237, 0.14); }
+.pod .label {
+  font-size: 12px; font-weight: 700; color: var(--qt-muted);
+  text-transform: uppercase; letter-spacing: .05em; position: relative;
+}
+.pod .value {
+  font-size: 34px; font-weight: 800; letter-spacing: -0.04em;
+  margin-top: 6px; position: relative; line-height: 1;
+}
+.pod .hint { font-size: 12px; color: var(--qt-muted); margin-top: 8px; position: relative; }
+.pod .hint strong { color: var(--qt-ink); font-weight: 700; }
+
+.insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 22px 0; }
+.card {
+  border: 1px solid var(--qt-line); border-radius: 16px; padding: 16px 18px;
+  background: rgba(255,255,255,0.9); box-shadow: var(--qt-shadow);
+}
+.card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; }
+.card h3 .sub { color: var(--qt-muted); font-weight: 500; font-size: 12px; }
+.bar-row { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: 12.5px; }
+.bar-row .name { flex: 0 0 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.bar-row .bar { flex: 1; height: 10px; border-radius: 5px; background: rgba(10,102,194,0.10); overflow: hidden; }
+.bar-row .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--qt-blue-deep), var(--qt-periwinkle)); border-radius: 5px; }
+.bar-row .n { flex: 0 0 30px; text-align: right; color: var(--qt-muted); font-weight: 600; }
+.spark { display: flex; align-items: flex-end; gap: 4px; height: 74px; margin-top: 6px; }
+.spark .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.spark .col i {
+  display: block; width: 100%;
+  background: linear-gradient(180deg, var(--qt-blue-royal), var(--qt-blue-deep));
+  border-radius: 3px 3px 0 0; opacity: .9; min-height: 2px;
+}
+.spark .col .d { font-size: 9.5px; color: var(--qt-muted); font-weight: 600; }
+.catch { padding: 8px 0; border-bottom: 1px solid var(--qt-line); font-size: 12.5px; }
+.catch:last-child { border-bottom: none; }
+.catch a { color: inherit; text-decoration: none; font-weight: 600; }
+.catch a:hover { color: var(--qt-blue-deep); }
+.catch .meta { color: var(--qt-muted); margin-top: 2px; }
+.banner-ok { color: var(--qt-ok); font-weight: 700; }
+.banner-fail { color: var(--qt-fail); font-weight: 700; }
+</style>
+
+<div class="tower-hero">
+  <div>
+    <h1>Tower Overview <span class="sub">— intelligent insights <span style="color:var(--qt-live-pink);font-weight:800">live</span> from your job market</span></h1>
+    <p class="muted" style="margin:0">What happened · what’s interesting · what to do next. Numbers below are from your pilot — honest, not pitch theater.</p>
+  </div>
+  <div class="flywheel" title="Pitch flywheel — Tracks is live in this pilot">
+    <span class="step on">Tracks</span>
+    <span class="arrow">→</span>
+    <span class="step">Maps</span>
+    <span class="arrow">→</span>
+    <span class="step">Predicts</span>
+  </div>
+</div>
+
+{% if request.query_params.get('reset_done') %}
+<p class="banner-ok">All data wiped — fresh start. Your searches were kept.</p>
+{% elif request.query_params.get('reset_blocked') %}
+<p class="banner-fail">Reset blocked: a scrape is in progress. Stop it first on Activity.</p>
+{% endif %}
+
+<div class="pods">
+  <div class="pod jobs">
+    <div class="label">Jobs</div>
+    <div class="value">{{ stats.total_jobs }}</div>
+    <div class="hint">Tracked openings in the tower</div>
+  </div>
+  <div class="pod companies">
+    <div class="label">Companies</div>
+    <div class="value">{{ stats.companies }}</div>
+    <div class="hint">Hiring orgs seen · watchlist seed</div>
+  </div>
+  <div class="pod fresh">
+    <div class="label">Fresh today</div>
+    <div class="value">{{ stats.jobs_today }}</div>
+    <div class="hint">New catches since midnight UTC</div>
+  </div>
+  <div class="pod signal">
+    <div class="label">Hiring pulse</div>
+    <div class="value">{% if stats.runs_active %}<span class="live-dot"></span>{{ stats.runs_active }}{% else %}{{ stats.configs_enabled }}{% endif %}</div>
+    <div class="hint">
+      {% if stats.runs_active %}
+      <strong>Scraping now</strong>
+      {% else %}
+      <strong>{{ stats.configs_enabled }}</strong> searches on · idle
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<a href="/signals" class="signals-teaser" style="display:block;text-decoration:none;color:inherit;margin:16px 0 8px;padding:16px 18px;border-radius:16px;border:1px solid var(--qt-line);background:linear-gradient(135deg,rgba(10,102,194,0.10),rgba(225,29,143,0.08));box-shadow:var(--qt-shadow)">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:baseline">
+    <strong style="font-size:14px">Hiring signals <span style="color:var(--qt-live-pink)">live</span></strong>
+    <span class="muted" style="font-size:12px;font-weight:700">Open full view →</span>
+  </div>
+  <p style="margin:8px 0 0;font-size:13.5px;font-weight:600;line-height:1.4">{{ signals.headline }}</p>
+  <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:12px;font-weight:700;color:var(--qt-muted)">
+    <span>Last 7d: <strong style="color:var(--qt-ink)">{{ signals.recent_total }}</strong></span>
+    <span>vs prior: <strong style="color:{% if signals.delta > 0 %}var(--qt-ok){% elif signals.delta < 0 %}var(--qt-fail){% else %}var(--qt-ink){% endif %}">{{ signals.delta|delta }} ({{ signals.delta_pct|pct }})</strong></span>
+    {% if signals.fastest_companies %}
+    <span>Top pace: <strong style="color:var(--qt-ink)">{{ signals.fastest_companies[0].name }}</strong></span>
+    {% endif %}
+  </div>
+</a>
+
+<a href="/watchlist" style="display:block;text-decoration:none;color:inherit;margin:12px 0 8px;padding:16px 18px;border-radius:16px;border:1px solid var(--qt-line);background:linear-gradient(135deg,rgba(200,241,53,0.20),rgba(10,102,194,0.06));box-shadow:var(--qt-shadow)">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:baseline">
+    <strong style="font-size:14px">Company watchlist</strong>
+    <span class="muted" style="font-size:12px;font-weight:700">Manage →</span>
+  </div>
+  {% if watched %}
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12.5px;font-weight:600">
+    {% for c in watched %}
+    <span style="background:rgba(255,255,255,0.85);border:1px solid var(--qt-line);border-radius:999px;padding:5px 12px">
+      {{ c.name }} <span class="muted">· {{ c.recent }}</span>
+    </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin:8px 0 0;font-size:13px">Star fast hirers to pin them here.</p>
+  {% endif %}
+</a>
+
+<div class="insights">
+  <div class="card">
+    <h3>Who’s hiring <span class="sub">— last 7 days</span></h3>
+    {% for name, n in top_companies %}
+    <div class="bar-row">
+      <span class="name" title="{{ name }}">{{ name }}</span>
+      <span class="bar"><i style="width:{{ (n / top_company_max * 100)|round }}%"></i></span>
+      <span class="n">{{ n }}</span>
+    </div>
+    {% else %}
+    <p class="muted">No jobs yet this week — insights appear after the first catch.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Jobs per role <span class="sub">— all time</span></h3>
+    {% for name, n in per_role %}
+    <div class="bar-row">
+      <span class="name" title="{{ name }}">{{ name }}</span>
+      <span class="bar"><i style="width:{{ (n / per_role_max * 100)|round }}%"></i></span>
+      <span class="n">{{ n }}</span>
+    </div>
+    {% else %}
+    <p class="muted">No jobs collected yet — add a search and run it.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Daily catch <span class="sub">— posted per day, last 14 days</span></h3>
+    <div class="spark">
+      {% for d in daily_series %}
+      <div class="col" title="{{ d.day }} — {{ d.n }} job(s)">
+        <i style="height:{{ (d.n / daily_max * 60)|round }}px"></i>
+        <span class="d">{{ d.day.strftime('%d') }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Freshest catches</h3>
+    {% for job, company_name in latest_jobs %}
+    <div class="catch">
+      <a href="{{ job.job_url }}" target="_blank" rel="noopener">{{ job.title }}</a>
+      <div class="meta">{{ company_name or '—' }} · {{ job.location or '' }} · caught {{ job.scraped_at|rel }}</div>
+    </div>
+    {% else %}
+    <p class="muted">Nothing caught yet — run a search from Searches.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<h2>Recent activity</h2>
+<table>
+  <tr><th>Search</th><th>How</th><th>Status</th><th>Pages</th><th>Seen</th><th>New</th><th>Started</th><th>Problem</th></tr>
+  {% for run in recent_runs %}
+  <tr>
+    <td>{{ configs[run.search_config_id].name if run.search_config_id in configs else '—' }}</td>
+    <td class="muted">{{ 'scheduled' if run.run_type == 'scheduled' else 'manual' }}</td>
+    <td><span class="status {{ run.status }}">{{ run.status }}</span></td>
+    <td>{{ run.pages_scraped }}</td>
+    <td>{{ run.jobs_found }}</td>
+    <td>{{ run.jobs_inserted }}</td>
+    <td class="muted">{{ run.started_at|rel }}</td>
+    <td class="muted">{{ (run.error or '')[:80] or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">No scrapes yet — add a search and press Run now.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Danger zone</h2>
+<form method="post" action="/reset"
+      onsubmit="return confirm('This deletes ALL collected jobs, companies and scrape history (your searches are kept). Continue?')">
+  <button type="submit" class="danger">Reset all data</button>
+  <span class="muted" style="margin-left:10px">Wipes every job, company and scrape record. Your searches stay.</span>
+</form>
+{% endblock %}

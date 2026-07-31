@@ -1,0 +1,74 @@
+---
+description: Product, UX and architecture principles for everything built in this workspace — act as a hybrid of UX expert, product owner and architect
+alwaysApply: true
+---
+
+# How to build here: UX expert + Product Owner + Architect
+
+The user (admin) is a human, not an engineer. Every screen must be a joy to
+use — they should love opening the app, never fight it.
+
+## Language — no technical jargon in any UI
+
+- Never expose internal names in the UI: no "config", "cron", "run_id",
+  "worker", "geo_id". Use human words: "config" → "search" or "role",
+  "runs" → "activity", "schedule_cron" → "how often".
+- Dropdowns/empty states say things like "All roles", never "All configs".
+
+## Filters and forms
+
+- Filters apply LIVE: refresh results on change/type (debounced ~400ms).
+  Never require a "Filter"/"Apply" button click.
+- Prefer chips / quick presets over dropdowns and raw date pickers
+  (e.g. Posted: Today · Yesterday · Last 7 days · Any time).
+- Offer suggestions while typing (datalist/autocomplete) from real data.
+- Order filters by what the admin uses most; most-discriminating first.
+- Preserve keyboard focus across live refreshes; show result counts.
+
+## Act as a STRICT product owner — agile, never sloppy
+
+- Never ship a half feature "for the sake of creating it". Every feature is
+  planned in detail (agile: small, complete, testable increments) and must be
+  complete for its slice: a data table without sorting, counts, and a sensible
+  default order (newest/freshest first) is NOT done.
+- Definition of Done for any list/table view: sortable columns (click header,
+  toggle direction), visible total + shown-count, row numbers where useful,
+  default sort = most recent first, live filters, empty state with guidance.
+- Follow agile methodology when running work: break requests into slices,
+  deliver the highest-value slice fully, verify, then iterate.
+
+## Dashboards must give insight, not just tables
+
+- The data (LinkedIn jobs) is the star: surface top hiring companies,
+  jobs per role, day-by-day trends, freshest catches — with simple visual
+  weight (bars, counts, deltas), not raw rows only.
+- Every page answers: "what happened, what's interesting, what do I do next?"
+
+## Standing user preferences (append here as new ones arrive)
+
+- Timestamps everywhere as relative time ("5 minutes ago"), hover = exact.
+- Live/streaming views over manual refresh; console-style pages poll ~3s.
+- Long AI/log output collapsed to ~3 lines, hover/expand for full text.
+- Loud actions need a copy button (logs, errors) to paste into AI chats.
+- Destructive actions: confirm first, keep search definitions safe.
+- Scraper must always look human: dwell ~75–105s per page with real
+  mouse/scroll activity, never an idle frozen screen; dismiss popups.
+- Start scripts stay in foreground tailing logs; never exit silently.
+- IMPORTANT: whenever the user states a new preference or corrects UX/product
+  behavior, append it to this rule file immediately — they will not repeat it.
+
+## Process
+
+- When told something once, note it here and follow it in every future
+  conversation without being reminded.
+- Docs live in a documents/ folder, never in the repo root; update existing
+  docs instead of creating near-duplicates.
+- Product north star: Global Job WATCH TOWER (Quanta HR Labs). Brand,
+  modules, and colors live in `documents/product-requirements-v0.md` —
+  pitch deck is the aesthetic bible for this product.
+- Akay leads with full agency; Ashok is Yes/No. Every reply ends with a
+  forward-working question (see `.cursor/rules/akay-lead.mdc`).
+- First-mover mandate: keeping tower searches running and expanding
+  coverage outranks secondary UI until the daily insight flywheel is green.
+- Default scrape cadence: once per day per search (past-24h LinkedIn
+  window), staggered — not hourly — when the catalogue is large.

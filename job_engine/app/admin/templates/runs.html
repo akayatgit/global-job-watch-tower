@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<h1>Activity <span class="muted" style="font-weight:400;font-size:14px">— every scrape, live and past</span></h1>
+
+<table>
+  <tr><th>#</th><th>Search</th><th>How</th><th>Status</th><th>Scheduled for</th><th>Pages</th><th>Seen</th><th>New</th><th>Last request</th><th>Problem</th><th></th></tr>
+  {% for run in runs %}
+  <tr>
+    <td>{{ run.id }}</td>
+    <td>{{ configs[run.search_config_id].name if run.search_config_id in configs else run.search_config_id }}</td>
+    <td class="muted">{{ 'scheduled' if run.run_type == 'scheduled' else 'manual' }}</td>
+    <td><span class="status {{ run.status }}">{{ run.status }}</span></td>
+    <td class="muted">{% if run.scheduled_for %}{{ run.scheduled_for|rel }}{% else %}now{% endif %}</td>
+    <td>{{ run.pages_scraped }}</td>
+    <td>{{ run.jobs_found }}</td>
+    <td>{{ run.jobs_inserted }}</td>
+    <td class="muted">{{ run.last_request_at|rel }}</td>
+    <td class="muted" style="max-width:280px">
+      {% if run.error %}
+      <details>
+        <summary style="cursor:pointer">{{ run.error[:60] }}{{ '…' if run.error|length > 60 }}</summary>
+        <pre style="white-space:pre-wrap;word-break:break-word;font-size:11.5px;margin:6px 0">{{ run.error }}</pre>
+      </details>
+      <button type="button" class="ghost" style="font-size:11.5px;padding:2px 8px"
+              data-err="{{ run.error }}"
+              onclick="navigator.clipboard.writeText(this.dataset.err).then(() => { this.textContent='Copied!'; setTimeout(() => this.textContent='Copy error', 1500); })">Copy error</button>
+      {% else %}—{% endif %}
+    </td>
+    <td>
+      {% if run.status in ('queued', 'dispatched') %}
+      <form class="inline" method="post" action="/runs/{{ run.id }}/cancel">
+        <button type="submit" class="danger">Cancel</button>
+      </form>
+      {% elif run.status == 'running' %}
+      <form class="inline" method="post" action="/runs/{{ run.id }}/cancel">
+        <button type="submit" class="danger">Stop</button>
+      </form>
+      {% elif run.status == 'cancel_requested' %}
+      <span class="muted">stopping…</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="11" class="muted">Nothing yet — start a scrape from the Searches page.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Pages fetched recently</h2>
+<table>
+  <tr><th>Scrape</th><th>Page</th><th>Status</th><th>Fetched</th><th>URL</th></tr>
+  {% for log in logs %}
+  <tr>
+    <td>{{ log.scrape_run_id }}</td>
+    <td>{{ log.page_num }}</td>
+    <td>{{ log.http_status or '—' }}</td>
+    <td class="muted">{{ log.fetched_at|rel }}</td>
+    <td class="muted" style="word-break:break-all">{{ log.url }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">No requests logged yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
