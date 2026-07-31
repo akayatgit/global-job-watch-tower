@@ -45,7 +45,7 @@ Ashok can build from phone or any device: open a PR → merge to `main` → this
 | Survives deploy | Postgres/Redis data, `.env`, Chrome LinkedIn session, Ollama |
 | Restarts | API `:8001`, Celery worker, Celery beat |
 | Stamp / logs | `job_engine/.data/last_deploy.json`, `job_engine/.data/logs/deploy.log` |
-| Branch protection | Recommended in GitHub: require PR before merge to `main` (UI setting) |
+| Branch protection | **Enabled 2026-08-01:** `main` requires a pull request before merge; force-push and branch delete blocked. Admin bypass left on so this ThinkPad can still push hotfixes when needed. |
 
 **Mobile path:** GitHub app → branch → PR → merge → watch Actions on the ThinkPad runner → tower comes back on new SHA.
 
