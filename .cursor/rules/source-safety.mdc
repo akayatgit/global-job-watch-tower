@@ -13,8 +13,10 @@ Akay’s mandate fails. **Protecting the local git history outranks features.**
 - Work inside the git repo at `/home/user/Documents` (Watch Tower workspace).
 - Before risky edits/refactors/deletes: `git status` + ensure a clean commit
   or stash exists for the current good state.
-- After meaningful completed slices: remind Ashok to commit (or commit when
-  Ashok says YES / “save” / “commit”).
+- After every meaningful completed slice: **commit** (Ashok standing YES
+  2026-08-01 — “end of hour / end of slice commits”). Use clear messages;
+  never commit secrets. Leave the collector running overnight when Ashok rests
+  unless he says stop.
 - Never commit `.env`, passwords, Chrome profiles, or `job_engine/.data/`.
 - Never run destructive git (`reset --hard`, force-push, `clean -fdx`) unless
   Ashok explicitly orders it.

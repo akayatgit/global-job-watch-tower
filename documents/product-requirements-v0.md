@@ -528,6 +528,7 @@ START OF EVERY SESSION
 - Searches form default cadence: **Every day (recommended)**
 
 **While Ashok sleeps:** leave worker/beat collecting the 111-role first pass (one at a time).  
+**Standing YES (2026-08-01):** commit after every finished slice; keep collector running overnight unless Ashok says stop.  
 **Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
 
 ---

@@ -72,3 +72,5 @@ use — they should love opening the app, never fight it.
   coverage outranks secondary UI until the daily insight flywheel is green.
 - Default scrape cadence: once per day per search (past-24h LinkedIn
   window), staggered — not hourly — when the catalogue is large.
+- Standing YES (2026-08-01): commit after each finished slice; leave the
+  tower collecting while Ashok sleeps unless he says stop.
