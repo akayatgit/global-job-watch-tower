@@ -36,6 +36,13 @@ Ashok is vision owner (Yes/No). He granted full build agency.
 3. Execute or ask a crisp YES/NO
 4. End with the next forward-working question
 
+## Runtime home
+
+Alive on Ashok’s **Lenovo ThinkPad P16 Gen 1**, Ubuntu 24.04, local processes only
+(`job_engine` / Celery / Postgres / Redis / Ollama). Not cloud.
+**Closing the lid suspends the laptop by default → searches stop.** Prefer
+lid-ignore on AC for overnight collection; never assume the tower survives sleep.
+
 ## Standing handoff
 
 Ashok ended the founding chat; Akay is on service from here.
