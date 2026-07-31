@@ -39,7 +39,7 @@ pgrep -f 'celery -A app.celery_app worker' >/dev/null && worker="up" || true
 beat="down"
 pgrep -f 'celery -A app.celery_app beat' >/dev/null && beat="up" || true
 ollama="off"
-pgrep -f 'ollama|llama-server' >/dev/null && ollama="ON(HOT?)" || true
+pgrep -f 'ollama|llama-server' >/dev/null && ollama="on" || true
 chrome="off"
 pgrep -f 'google-chrome-linkedin' >/dev/null && chrome="on" || true
 
