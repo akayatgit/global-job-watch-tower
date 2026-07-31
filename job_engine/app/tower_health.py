@@ -87,6 +87,7 @@ class TowerVitals:
     countdown_mode: str  # searching | to_start | paused | idle
     countdown_secs: int
     countdown_title: str
+    countdown_role: str
     scrape_started_at: datetime | None
     avg_search_secs: int
 
@@ -320,29 +321,29 @@ def _countdown_clock(
     heat_level: str,
     avg_secs: int,
     now: datetime,
-) -> tuple[str, int, str, datetime | None]:
-    """mode, secs, title, scrape_started_at — for the big live counter."""
+) -> tuple[str, int, str, str, datetime | None]:
+    """mode, secs, title, role, scrape_started_at — for the square live card."""
     if running is not None and running.started_at is not None:
         started = _aware(running.started_at)
         elapsed = max(0, int((now - started).total_seconds()))
         remaining = max(20, avg_secs - elapsed)
         short = running_name if len(running_name) <= 36 else running_name[:33] + '…'
-        return 'searching', remaining, f'Searching {short}', started
+        return 'searching', remaining, f'Searching {short}', short, started
 
     name = sched.get('name') or '—'
     short = name if len(name) <= 36 else name[:33] + '…'
 
     if not allow_new and heat_level in ('hot', 'critical'):
-        return 'paused', 0, f'Paused (heat) · next {short}', None
+        return 'paused', 0, f'Paused (heat) · next {short}', short, None
 
     if sched.get('mode') == 'backlog':
         wait = int(getattr(config, 'BEAT_SCAN_INTERVAL_S', 90) or 90)
-        return 'to_start', wait, f'Next · {short}', None
+        return 'to_start', wait, f'Next · {short}', short, None
 
     if sched.get('mode') == 'scheduled' and sched.get('secs') is not None:
-        return 'to_start', int(sched['secs']), f'Next · {short}', None
+        return 'to_start', int(sched['secs']), f'Next · {short}', short, None
 
-    return 'idle', 0, 'Tower idle', None
+    return 'idle', 0, 'Tower idle', '—', None
 
 
 def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
@@ -430,7 +431,7 @@ def compute_vitals(db: Session) -> TowerVitals:
         sched=sched,
     )
     avg_secs = _avg_search_secs(db)
-    cd_mode, cd_secs, cd_title, scrape_started = _countdown_clock(
+    cd_mode, cd_secs, cd_title, cd_role, scrape_started = _countdown_clock(
         running=running,
         running_name=running_name,
         sched=sched,
@@ -482,6 +483,7 @@ def compute_vitals(db: Session) -> TowerVitals:
         countdown_mode=cd_mode,
         countdown_secs=cd_secs,
         countdown_title=cd_title,
+        countdown_role=cd_role,
         scrape_started_at=scrape_started,
         avg_search_secs=avg_secs,
     )
