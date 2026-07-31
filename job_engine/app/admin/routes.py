@@ -105,6 +105,11 @@ def _vitals_json(v) -> dict:
         'ollama_live': v.ollama_live,
         'phase_label': v.phase_label,
         'last_ollama_label': v.last_ollama_label,
+        'countdown_mode': v.countdown_mode,
+        'countdown_secs': v.countdown_secs,
+        'countdown_title': v.countdown_title,
+        'scrape_started_at': iso(v.scrape_started_at),
+        'avg_search_secs': v.avg_search_secs,
     }
 
 

@@ -373,6 +373,70 @@
     color: #9a3412; font-size: 12.5px; font-weight: 600;
   }
   body.tower-alert-planb .planb-banner { display: block; }
+  .live-clock {
+    width: 100%;
+    margin-top: 8px;
+    padding: 14px 18px 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(10,102,194,0.10), rgba(200,241,53,0.18));
+    border: 1px solid var(--qt-line);
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .live-clock.searching {
+    background: linear-gradient(135deg, rgba(10,102,194,0.14), rgba(45,212,191,0.16));
+  }
+  .live-clock.to_start {
+    background: linear-gradient(135deg, rgba(250,204,21,0.22), rgba(10,102,194,0.08));
+  }
+  .live-clock.paused {
+    background: linear-gradient(135deg, rgba(185,28,28,0.12), rgba(250,204,21,0.12));
+  }
+  body.tower-alert-blocked .live-clock {
+    background: rgba(0,0,0,0.25);
+    border-color: #fecaca;
+  }
+  .live-clock .clock-title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  .live-clock .clock-num {
+    font-variant-numeric: tabular-nums;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--qt-ink);
+    min-width: 2.4ch;
+    text-align: right;
+  }
+  .live-clock.to_start .clock-num { color: #a16207; }
+  .live-clock.searching .clock-num { color: var(--qt-blue-deep); }
+  .live-clock .clock-unit {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--qt-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    align-self: flex-end;
+    padding-bottom: 8px;
+  }
+  .live-clock .clock-sub {
+    width: 100%;
+    font-size: 12.5px;
+    color: var(--qt-muted);
+    font-weight: 500;
+    margin-top: -4px;
+  }
+  @media (max-width: 700px) {
+    .live-clock .clock-num { font-size: 40px; }
+    .live-clock .clock-title { font-size: 16px; }
+  }
 </style>
 </head>
 <body data-refresh="{{ refresh or 0 }}"
@@ -430,6 +494,16 @@
       <button type="button" id="dismiss-block">I fixed LinkedIn — clear alert</button>
       <a href="/console" style="color:#fff;font-weight:700;align-self:center">Open live feed →</a>
     </div>
+  </div>
+  <div class="live-clock {% if vitals %}{{ vitals.countdown_mode }}{% endif %}" id="live-clock"
+       data-mode="{{ vitals.countdown_mode if vitals else 'idle' }}"
+       data-secs="{{ vitals.countdown_secs if vitals else 0 }}"
+       data-title="{{ vitals.countdown_title if vitals else 'Tower' }}"
+       data-synced="{{ '' }}">
+    <div class="clock-title" id="clock-title">{% if vitals %}{{ vitals.countdown_title }}{% else %}Tower{% endif %}</div>
+    <div class="clock-num" id="clock-num">{% if vitals %}{{ vitals.countdown_secs }}{% else %}—{% endif %}</div>
+    <div class="clock-unit" id="clock-unit">sec</div>
+    <div class="clock-sub" id="clock-sub">Live countdown · updates every second</div>
   </div>
   {% if vitals %}
   <div class="vitals" id="tower-vitals" title="Live laptop + search pulse — open Tower health for detail">
@@ -509,6 +583,61 @@ function updateRelTimes(root) {
 updateRelTimes();
 setInterval(() => updateRelTimes(), 30000);
 
+/* —— Big live countdown: 5…4…3… Searching Role… 122…121… —— */
+const clockState = {
+  mode: document.getElementById('live-clock')?.dataset.mode || 'idle',
+  secs: parseInt(document.getElementById('live-clock')?.dataset.secs || '0', 10) || 0,
+  title: document.getElementById('live-clock')?.dataset.title || 'Tower',
+  syncedAt: Date.now(),
+};
+function clockUnit(secs) {
+  if (secs >= 3600) return 'hrs';
+  return 'sec';
+}
+function clockDisplay(secs) {
+  if (secs >= 3600) return String(Math.ceil(secs / 3600));
+  return String(Math.max(0, secs));
+}
+function clockSub(mode, secs, title) {
+  if (mode === 'searching') {
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return 'About ' + m + 'm ' + s + 's left on this search · then the next role starts';
+  }
+  if (mode === 'to_start') {
+    if (secs <= 5) return 'Almost there — browser opening next…';
+    return 'Countdown to next search start';
+  }
+  if (mode === 'paused') return 'Waiting for the laptop to cool before the next search';
+  return 'No search queued right now';
+}
+function paintClock() {
+  const root = document.getElementById('live-clock');
+  if (!root) return;
+  const elapsed = Math.floor((Date.now() - clockState.syncedAt) / 1000);
+  let secs = Math.max(0, clockState.secs - elapsed);
+  // When searching and we hit 0, hold at 0 until vitals refresh (“finishing”)
+  const num = document.getElementById('clock-num');
+  const title = document.getElementById('clock-title');
+  const unit = document.getElementById('clock-unit');
+  const sub = document.getElementById('clock-sub');
+  if (num) num.textContent = clockDisplay(secs);
+  if (unit) unit.textContent = clockUnit(secs);
+  if (title) title.textContent = clockState.title;
+  if (sub) sub.textContent = clockSub(clockState.mode, secs, clockState.title);
+  root.classList.remove('searching', 'to_start', 'paused', 'idle');
+  root.classList.add(clockState.mode || 'idle');
+  root.dataset.mode = clockState.mode;
+}
+function syncClockFromVitals(v) {
+  clockState.mode = v.countdown_mode || 'idle';
+  clockState.secs = parseInt(v.countdown_secs, 10) || 0;
+  clockState.title = v.countdown_title || 'Tower';
+  clockState.syncedAt = Date.now();
+  paintClock();
+}
+setInterval(paintClock, 1000);
+paintClock();
+
 function setVitalHtml(key, html, cls) {
   const el = document.querySelector('#tower-vitals [data-v="' + key + '"]');
   if (!el) return;
@@ -529,6 +658,7 @@ async function refreshVitals() {
     if (!res.ok) return;
     const v = await res.json();
     applyAlert(v);
+    syncClockFromVitals(v);
     const heatCls = (v.heat_label === 'Hot' || v.heat_label === 'Critical') ? 'bad'
       : (v.heat_label === 'Warm' ? 'warn' : 'ok');
     const heatTxt = (v.heat_c != null)

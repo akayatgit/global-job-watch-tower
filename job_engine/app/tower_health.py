@@ -83,6 +83,12 @@ class TowerVitals:
     ollama_live: bool
     phase_label: str
     last_ollama_label: str
+    # Big live countdown clock
+    countdown_mode: str  # searching | to_start | paused | idle
+    countdown_secs: int
+    countdown_title: str
+    scrape_started_at: datetime | None
+    avg_search_secs: int
 
 
 def _mem() -> tuple[int, int, float]:
@@ -282,9 +288,7 @@ def _next_search(db: Session, now: datetime) -> tuple[datetime | None, str]:
     return snap.get('when'), snap.get('name') or '—'
 
 
-def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
-    """Estimate sustainable Ollama-filtered searches / day on this laptop."""
-    # Use avg duration of successful runs in last 24h that had ollama events
+def _avg_search_secs(db: Session) -> int:
     since = utcnow() - timedelta(hours=24)
     runs = db.execute(
         select(ScrapeRun).where(
@@ -298,16 +302,54 @@ def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
     for r in runs:
         try:
             secs = (r.finished_at - r.started_at).total_seconds()
-            # Ignore aborted blips — real searches include ~75–105s dwell/page
             if secs >= 300:
                 durations.append(secs)
         except Exception:
             continue
     if durations:
-        avg = sum(durations) / len(durations)
-        # One worker; add thermal breathing room (~25%)
+        return int(sum(durations) / len(durations))
+    return 720  # ~12 min default with dwell + Ollama
+
+
+def _countdown_clock(
+    *,
+    running: ScrapeRun | None,
+    running_name: str,
+    sched: dict,
+    allow_new: bool,
+    heat_level: str,
+    avg_secs: int,
+    now: datetime,
+) -> tuple[str, int, str, datetime | None]:
+    """mode, secs, title, scrape_started_at — for the big live counter."""
+    if running is not None and running.started_at is not None:
+        started = _aware(running.started_at)
+        elapsed = max(0, int((now - started).total_seconds()))
+        remaining = max(20, avg_secs - elapsed)
+        short = running_name if len(running_name) <= 36 else running_name[:33] + '…'
+        return 'searching', remaining, f'Searching {short}', started
+
+    name = sched.get('name') or '—'
+    short = name if len(name) <= 36 else name[:33] + '…'
+
+    if not allow_new and heat_level in ('hot', 'critical'):
+        return 'paused', 0, f'Paused (heat) · next {short}', None
+
+    if sched.get('mode') == 'backlog':
+        wait = int(getattr(config, 'BEAT_SCAN_INTERVAL_S', 90) or 90)
+        return 'to_start', wait, f'Next · {short}', None
+
+    if sched.get('mode') == 'scheduled' and sched.get('secs') is not None:
+        return 'to_start', int(sched['secs']), f'Next · {short}', None
+
+    return 'idle', 0, 'Tower idle', None
+
+
+def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
+    """Estimate sustainable Ollama-filtered searches / day on this laptop."""
+    avg = float(_avg_search_secs(db))
+    if avg >= 300:
         per_day = int((86400 / max(avg, 480)) * 0.75)
-        # Cap early optimism: human stealth + Ollama rarely exceeds ~120/day
         per_day = max(24, min(per_day, 120))
         note = (
             f'Based on ~{avg / 60:.0f} min/search average with heat breaks; '
@@ -315,7 +357,6 @@ def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
             f'{max(40, per_day - 15)}–{per_day + 10} Ollama searches/day before scaling laptops.'
         )
         return per_day, note
-    # Prior: ~14 min stagger × human dwell → with Ollama GPU ~60–90
     return 72, (
         'Early estimate (not enough finished runs yet): ~60–90 Ollama searches/day '
         'on this P16 with headless Chrome + GPU filter + heat breaks. '
@@ -388,6 +429,16 @@ def compute_vitals(db: Session) -> TowerVitals:
         allow_new=allow_new,
         sched=sched,
     )
+    avg_secs = _avg_search_secs(db)
+    cd_mode, cd_secs, cd_title, scrape_started = _countdown_clock(
+        running=running,
+        running_name=running_name,
+        sched=sched,
+        allow_new=allow_new,
+        heat_level=snap.level,
+        avg_secs=avg_secs,
+        now=now,
+    )
 
     return TowerVitals(
         heat_c=snap.cpu_c if snap.cpu_c is not None else snap.gpu_c,
@@ -428,13 +479,19 @@ def compute_vitals(db: Session) -> TowerVitals:
         ollama_live=ollama_live,
         phase_label=phase,
         last_ollama_label=ollama_lbl,
+        countdown_mode=cd_mode,
+        countdown_secs=cd_secs,
+        countdown_title=cd_title,
+        scrape_started_at=scrape_started,
+        avg_search_secs=avg_secs,
     )
 
 
 def vitals_dict(db: Session) -> dict:
     v = compute_vitals(db)
     d = asdict(v)
-    for key in ('last_ollama_at', 'last_keyword_at', 'last_browser_at', 'next_search_at'):
+    for key in ('last_ollama_at', 'last_keyword_at', 'last_browser_at', 'next_search_at',
+                'scrape_started_at'):
         val = d.get(key)
         d[key] = val.isoformat() if isinstance(val, datetime) else None
     d['vitals'] = v
