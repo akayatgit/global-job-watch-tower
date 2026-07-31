@@ -536,7 +536,7 @@ START OF EVERY SESSION
 
 **Incident 2026-08-01 ~01:01 (black screen + crash):** After lid-policy change, Akay ran `systemctl restart systemd-logind` (required sudo password). That can **kill the graphical session** → black screen with typing cursor (see `/home/user/Videos/first crash.MOV`). Session later showed unclean reboot. **NEVER restart systemd-logind while Ashok is in a desktop session.** Prefer gsettings-only for lid; logind drop-in applies on next reboot.
 
-**Thermal / NVIDIA (2026-08-01):** `nvidia-smi` fails — driver packages built for kernel `6.8.0-31` but host runs `7.0.0-28-generic` (no nvidia module). Ollama then ran **qwen on CPU at ~400%** + headed Chrome → TCPU ~79°C+, load ~8. **Efficiency cutover:** `HEADLESS=true`, `RELEVANCE_MODE=keyword`, `systemctl stop/disable ollama` until NVIDIA matches kernel. Host monitor: `job_engine/scripts/host_health.sh` (logs `.data/logs/host_health.log`).
+**Thermal / NVIDIA (2026-08-01):** Root cause: kernel `7.0.0-28-generic` but only `linux-modules-nvidia-535-6.8.0-31` installed → no module → `nvidia-smi` failed → Ollama fell back to **CPU ~400%** → overheat. **Fixed:** installed `nvidia-driver-595` + `linux-modules-nvidia-595-7.0.0-28-generic` (Ubuntu recommended). `nvidia-smi` OK — RTX A3000 12GB. Still defaulting to cool scrape (`HEADLESS=true`, `RELEVANCE_MODE=keyword`, Ollama disabled) until Ashok YES to re-enable GPU Ollama carefully. Host monitor: `scripts/host_health.sh`.
 
 **Docker v0 backup:** image `watch-tower:v0` + offline tarball `backups/watch-tower-v0.tar.gz` (~195MB). Compose file preserves API+DB+Redis skeleton.
 
