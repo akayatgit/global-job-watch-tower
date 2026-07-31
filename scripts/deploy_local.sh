@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploy origin/main onto this ThinkPad live tree.
-# Waits for scrape idle, pulls code, migrates, restarts api/worker/beat only.
+# Pauses beat, waits for in-flight scrape to finish (or Ashok stop),
+# pulls code, migrates, restarts api/worker/beat only.
 set -euo pipefail
 
 REPO_ROOT="/home/user/Documents"
@@ -25,7 +26,7 @@ die() {
   exit 1
 }
 
-# Exclusive lock — overlapping deploys are refused / queued by flock
+# Exclusive lock — overlapping deploys are refused
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die "another deploy is already running (lock: $LOCK_FILE)"
@@ -44,28 +45,54 @@ fi
 source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
 
+stop_beat() {
+  local pidfile="$DATA_DIR/beat.pid"
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+    log "pausing beat (pid $(cat "$pidfile")) so no new searches enqueue..."
+    kill "$(cat "$pidfile")" 2>/dev/null || true
+    rm -f "$pidfile"
+  fi
+  pkill -f 'celery -A app.celery_app beat' 2>/dev/null || true
+}
+
+cancel_queued() {
+  if ! pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1; then
+    return
+  fi
+  local n
+  n="$(psql -h 127.0.0.1 -p 5433 -U jobengine -d jobengine -Atqc \
+    "UPDATE scrape_runs SET status='cancelled', finished_at=now(), error='paused for deploy'
+     WHERE status='queued' RETURNING id;" 2>/dev/null | wc -l | tr -d ' ')"
+  log "cancelled queued searches: ${n:-0}"
+}
+
 active_scrape_count() {
   if ! pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1; then
     echo 0
     return
   fi
+  # After beat pause + queued cancel, only in-flight work can block
   psql -h 127.0.0.1 -p 5433 -U jobengine -d jobengine -Atqc \
-    "SELECT COUNT(*) FROM scrape_runs WHERE status IN ('queued','dispatched','running','cancel_requested');" \
+    "SELECT COUNT(*) FROM scrape_runs WHERE status IN ('dispatched','running','cancel_requested');" \
     2>/dev/null || echo 0
 }
 
-log "waiting for scrape idle (cap ${WAIT_CAP_S}s)..."
+# Critical: stop the schedule first or idle never arrives on a live catalogue
+stop_beat
+cancel_queued
+
+log "waiting for in-flight scrape to finish (cap ${WAIT_CAP_S}s)..."
 elapsed=0
 while true; do
-  count="$(active_scrape_count)"
+  count="$(active_scrape_count | tr -d '[:space:]')"
   if [ "${count:-0}" -eq 0 ]; then
-    log "scrape idle (active runs: 0)"
+    log "scrape idle (in-flight runs: 0)"
     break
   fi
   if [ "$elapsed" -ge "$WAIT_CAP_S" ]; then
-    die "timed out after ${WAIT_CAP_S}s waiting for idle (still $count active)"
+    die "timed out after ${WAIT_CAP_S}s waiting for idle (still $count in-flight)"
   fi
-  log "active scrapes: $count — sleeping ${WAIT_POLL_S}s (${elapsed}s elapsed)"
+  log "in-flight scrapes: $count — sleeping ${WAIT_POLL_S}s (${elapsed}s elapsed)"
   sleep "$WAIT_POLL_S"
   elapsed=$((elapsed + WAIT_POLL_S))
 done
