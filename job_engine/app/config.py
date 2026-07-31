@@ -39,8 +39,9 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:9b')
 # reliable throughput; set true only when debugging filter quality.
 OLLAMA_THINK = os.getenv('OLLAMA_THINK', 'false').lower() == 'true'
 OLLAMA_TIMEOUT_S = float(os.getenv('OLLAMA_TIMEOUT_S', '90'))
-# keyword = cool/fast (no GPU). ollama = quality when NVIDIA is healthy.
-RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'keyword').strip().lower()
+# keyword = cool/fast. ollama = GPU quality with thermal breaks.
+# auto = ollama when GPU healthy + cool enough, else keyword.
+RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'auto').strip().lower()
 
 # Transient page-fetch retries inside one browser session
 FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))
@@ -48,5 +49,22 @@ FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))
 # Runs stuck in "running" longer than this are marked failed (worker crash)
 STALE_RUN_MINUTES = int(os.getenv('STALE_RUN_MINUTES', '180'))
 
-# How often Beat scans for due configs / queued one-off runs (seconds)
-BEAT_SCAN_INTERVAL_S = int(os.getenv('BEAT_SCAN_INTERVAL_S', '60'))
+# How often Beat scans for due configs / queued one-off runs (seconds).
+# Warm/hot host stretches this so new scrapes don't stack heat.
+BEAT_SCAN_INTERVAL_S = int(os.getenv('BEAT_SCAN_INTERVAL_S', '90'))
+BEAT_SCAN_WARM_S = int(os.getenv('BEAT_SCAN_WARM_S', '180'))
+BEAT_SCAN_HOT_S = int(os.getenv('BEAT_SCAN_HOT_S', '300'))
+
+# --- Thermal governor (ThinkPad P16 / RTX A3000) ---
+HEAT_COOL_MAX_C = float(os.getenv('HEAT_COOL_MAX_C', '65'))
+HEAT_WARM_MAX_C = float(os.getenv('HEAT_WARM_MAX_C', '75'))
+HEAT_HOT_MAX_C = float(os.getenv('HEAT_HOT_MAX_C', '85'))
+HEAT_WARM_LOAD = float(os.getenv('HEAT_WARM_LOAD', '4'))
+HEAT_HOT_LOAD = float(os.getenv('HEAT_HOT_LOAD', '7'))
+HEAT_CRITICAL_LOAD = float(os.getenv('HEAT_CRITICAL_LOAD', '10'))
+HEAT_BREAK_COOL_S = float(os.getenv('HEAT_BREAK_COOL_S', '8'))
+HEAT_BREAK_WARM_S = float(os.getenv('HEAT_BREAK_WARM_S', '25'))
+HEAT_BREAK_HOT_S = float(os.getenv('HEAT_BREAK_HOT_S', '60'))
+HEAT_BREAK_CRITICAL_S = float(os.getenv('HEAT_BREAK_CRITICAL_S', '120'))
+HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
+OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '10'))

@@ -540,6 +540,8 @@ START OF EVERY SESSION
 
 **Docker v0 backup:** image `watch-tower:v0` + offline tarball `backups/watch-tower-v0.tar.gz` (~195MB). Compose file preserves API+DB+Redis skeleton.
 
+**Thermal-balanced Ollama (2026-08-01):** `RELEVANCE_MODE=auto` + `app/thermal.py`. Between AI batches: dynamic breaks (cool~8s / warm~25s / hot~60s / critical~120s). Critical heat or no GPU → keyword fallback. Beat skips new scrapes when hot/critical. Batch size shrinks when warm. Prefer `x86_pkg_temp` over noisy `acpitz`. Ollama on RTX A3000; Chrome stays headless.
+
 **Next waking slice:** Skills Radar (EI-05) or Competitor Intelligence depth on watchlist — recommend Skills Radar.
 
 ---

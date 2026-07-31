@@ -83,6 +83,8 @@ def _is_retryable(exc: Exception) -> bool:
 @celery.task(name='app.tasks.enqueue_due_work')
 def enqueue_due_work():
     """Beat task: dispatch due recurring configs and due one-off runs."""
+    from app import thermal
+
     now = utcnow()
     dispatched = 0
     with SessionLocal() as db:
@@ -90,6 +92,19 @@ def enqueue_due_work():
         db.query(ConsoleLog).filter(ConsoleLog.ts < now - timedelta(days=3)).delete()
         db.commit()
         _reap_stale_runs(db, now)
+
+        # Heat-aware beat: when hot, skip starting new scrapes this tick so
+        # Ollama + Chrome can cool (matches Ashok's "save the heat" mandate).
+        ok_to_scrape, heat = thermal.allow_new_scrape()
+        if not ok_to_scrape:
+            console_log(
+                'beat',
+                f'Heat pause — no new scrapes ({heat.level}: {heat.detail}). '
+                f'Next beat will re-check after cool-down.',
+                level='warn',
+            )
+            return {'dispatched': 0, 'heat': heat.level, 'paused': True}
+
         # 1. One-off runs whose time has come
         one_offs = db.execute(
             select(ScrapeRun).where(

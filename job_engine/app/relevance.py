@@ -1,19 +1,11 @@
 """Filter scraped jobs by title relevance using the local Ollama model.
 
 The searched role (e.g. "ai product owner") must actually match the job
-title: "AI Product Owner" and "Product Owner" are relevant; "Product
-Manager", "Tech Lead", "Scrum Master" are not. Irrelevant jobs are not
-stored in the database at all.
+title. Irrelevant jobs are not stored.
 
-Default path is fast JSON mode (no thinking) — thinking streamed to the
-Console can take many minutes per batch and stalled whole runs. Opt in
-with OLLAMA_THINK=true when debugging filter quality.
-
-Titles are checked in small batches. If a batch's answer is not valid
-JSON, it is retried once, then falls back to keyword matching.
-
-TODO: later, store the filtered-out (rejected) jobs too so we can make
-use of that data (analytics on adjacent roles, model tuning, etc.).
+Uses fast JSON mode by default. Between batches, the thermal governor
+inserts dynamic breaks so GPU/CPU heat stays under control. On critical
+heat or missing NVIDIA, falls back to keyword matching for that round.
 """
 
 import json
@@ -27,10 +19,10 @@ import ollama
 from app import config
 from app.console import console_log
 from app.scraper.parse import ParsedJob
+from app import thermal
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 15
 FLUSH_EVERY_S = 2.5
 
 PROMPT = """You are filtering job search results.
@@ -63,11 +55,9 @@ def _parse_verdicts(content: str, n: int) -> list[bool]:
         raise ValueError('no JSON object in model reply')
     payload = json.loads(content[start:end + 1])
     verdicts = payload.get('relevant', payload)
-    # Models sometimes return a bare bool or wrong-length list — normalize.
     if isinstance(verdicts, bool):
         raise ValueError(f'expected {n} verdicts, got single bool {verdicts!r}')
     if isinstance(verdicts, dict):
-        # e.g. {"1": true, "2": false, ...}
         try:
             verdicts = [verdicts[str(i)] for i in range(1, n + 1)]
         except KeyError as exc:
@@ -86,26 +76,22 @@ def _prompt_for(titles: list[str], keywords: str) -> str:
 
 
 def _with_timeout(fn, timeout_s: float):
-    """Run a blocking Ollama call with a hard timeout."""
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(fn)
         return future.result(timeout=timeout_s)
 
 
 def _stream_verdicts(titles: list[str], keywords: str, run_id: int | None) -> list[bool]:
-    """Ask with streaming; thinking goes to the Console as `think` entries."""
     stream = ollama.chat(
         model=config.OLLAMA_MODEL,
         messages=[{'role': 'user', 'content': _prompt_for(titles, keywords)}],
         stream=True,
         think=True,
-        options={'temperature': 0},
+        options={'temperature': 0, 'num_ctx': 2048},
     )
-
     thinking_buf = ''
     content = ''
     last_flush = time.monotonic()
-
     for chunk in stream:
         msg = chunk.get('message') or {}
         thinking_buf += msg.get('thinking') or ''
@@ -114,20 +100,18 @@ def _stream_verdicts(titles: list[str], keywords: str, run_id: int | None) -> li
             console_log('ai', thinking_buf.strip(), run_id=run_id, level='think')
             thinking_buf = ''
             last_flush = time.monotonic()
-
     if thinking_buf.strip():
         console_log('ai', thinking_buf.strip(), run_id=run_id, level='think')
     return _parse_verdicts(content, len(titles))
 
 
 def _plain_verdicts(titles: list[str], keywords: str) -> list[bool]:
-    """Primary path: no thinking, JSON-forced — fast and reliable."""
     response = ollama.chat(
         model=config.OLLAMA_MODEL,
         messages=[{'role': 'user', 'content': _prompt_for(titles, keywords)}],
         format='json',
         think=False,
-        options={'temperature': 0},
+        options={'temperature': 0, 'num_ctx': 2048},
     )
     return _parse_verdicts(response['message']['content'], len(titles))
 
@@ -149,7 +133,6 @@ def _verdicts_for_batch(titles: list[str], keywords: str,
                 'retrying fast JSON…',
                 run_id=run_id, level='warn',
             )
-
     try:
         return _with_timeout(lambda: _plain_verdicts(titles, keywords), timeout)
     except FuturesTimeout:
@@ -172,33 +155,49 @@ def _verdicts_for_batch(titles: list[str], keywords: str,
         return _fallback_verdicts(titles, keywords)
 
 
+def _keyword_filter(jobs: list[ParsedJob], keywords: str,
+                    run_id: int | None, reason: str):
+    titles = [j.title for j in jobs]
+    verdicts = _fallback_verdicts(titles, keywords)
+    relevant = [j for j, keep in zip(jobs, verdicts) if keep]
+    rejected = [j for j, keep in zip(jobs, verdicts) if not keep]
+    console_log(
+        'ai',
+        f'Keyword filter ({reason}): kept {len(relevant)} of {len(jobs)} '
+        f'title(s) for "{keywords}".',
+        run_id=run_id,
+    )
+    return relevant, rejected
+
+
 def filter_relevant(jobs: list[ParsedJob], keywords: str,
                     run_id: int | None = None) -> tuple[list[ParsedJob], list[ParsedJob]]:
     """Split jobs into (relevant, rejected) based on title vs searched role."""
     if not jobs:
         return [], []
 
-    # Cool path: no Ollama — keeps ThinkPad from melting when NVIDIA is down
-    # and llama runs on CPU at hundreds of percent.
-    if config.RELEVANCE_MODE in ('keyword', 'keywords', 'off', 'cool'):
-        titles = [j.title for j in jobs]
-        verdicts = _fallback_verdicts(titles, keywords)
-        relevant = [j for j, keep in zip(jobs, verdicts) if keep]
-        rejected = [j for j, keep in zip(jobs, verdicts) if not keep]
-        console_log(
-            'ai',
-            f'Cool filter (keyword): kept {len(relevant)} of {len(jobs)} '
-            f'title(s) for "{keywords}" — Ollama skipped to protect the host.',
-            run_id=run_id,
-        )
-        return relevant, rejected
+    mode = config.RELEVANCE_MODE
+    if mode in ('keyword', 'keywords', 'off', 'cool'):
+        return _keyword_filter(jobs, keywords, run_id, 'forced cool mode')
 
-    batches = [jobs[i:i + BATCH_SIZE] for i in range(0, len(jobs), BATCH_SIZE)]
-    mode = 'thinking' if config.OLLAMA_THINK else 'fast JSON'
+    # auto / ollama: respect thermal governor
+    use_ollama = mode in ('ollama', 'auto', 'gpu')
+    if use_ollama and not thermal.allow_ollama(run_id):
+        return _keyword_filter(jobs, keywords, run_id, 'thermal/GPU guard')
+
+    batch_size = max(4, config.OLLAMA_BATCH_SIZE)
+    snap = thermal.snapshot()
+    if snap.level == 'warm':
+        batch_size = max(4, batch_size - 2)
+    elif snap.level == 'hot':
+        batch_size = max(4, batch_size // 2)
+
+    batches = [jobs[i:i + batch_size] for i in range(0, len(jobs), batch_size)]
     console_log(
         'ai',
         f'Checking {len(jobs)} title(s) against "{keywords}" with '
-        f'{config.OLLAMA_MODEL} ({mode}) in {len(batches)} batch(es)…',
+        f'{config.OLLAMA_MODEL} (fast JSON, heat={snap.level} {snap.detail}) '
+        f'in {len(batches)} batch(es) of ~{batch_size}…',
         run_id=run_id,
     )
 
@@ -206,6 +205,21 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
     rejected: list[ParsedJob] = []
 
     for bi, batch in enumerate(batches, start=1):
+        # Dynamic break before every batch (including first — lets GPU settle
+        # after Chrome dwell). Longer when warm/hot.
+        thermal.wait_for_breath(run_id, why=f'batch {bi}/{len(batches)}')
+        if not thermal.allow_ollama(run_id):
+            # Finish the rest with keyword so we don't keep heating
+            rest = []
+            for b in batches[bi - 1:]:
+                rest.extend(b)
+            kw_rel, kw_rej = _keyword_filter(
+                rest, keywords, run_id, 'thermal cutover mid-run',
+            )
+            relevant.extend(kw_rel)
+            rejected.extend(kw_rej)
+            break
+
         titles = [job.title for job in batch]
         t0 = time.monotonic()
         verdicts = _verdicts_for_batch(titles, keywords, run_id, bi, len(batches))
