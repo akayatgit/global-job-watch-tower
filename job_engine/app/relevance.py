@@ -297,6 +297,8 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
             run_id=run_id,
             detail=f'kept {len(relevant)}/{len(jobs)} for {keywords[:80]}',
         )
+        from app.runtime_settings import clear_plan_b
+        clear_plan_b()  # Plan A restored — drop orange banner immediately
 
     console_log(
         'ai',

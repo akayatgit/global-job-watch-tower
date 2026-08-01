@@ -121,10 +121,22 @@ def wait_for_breath(run_id: int | None = None, *, why: str = 'batch') -> HeatSna
     return snap
 
 
+def ollama_path_open() -> bool:
+    """Quiet check — True when Plan A (Ollama) is allowed right now."""
+    snap = snapshot()
+    if snap.gpu_c is None and config.HEAT_REQUIRE_GPU:
+        return False
+    if snap.level == 'critical':
+        return False
+    return True
+
+
 def allow_ollama(run_id: int | None = None) -> bool:
     """False → caller should use keyword filter (critical heat / no GPU)."""
     from app.console import console_log
 
+    if ollama_path_open():
+        return True
     snap = snapshot()
     if snap.gpu_c is None and config.HEAT_REQUIRE_GPU:
         console_log(
@@ -134,14 +146,12 @@ def allow_ollama(run_id: int | None = None) -> bool:
             run_id=run_id, level='warn',
         )
         return False
-    if snap.level == 'critical':
-        console_log(
-            'ai',
-            f'Critical heat ({snap.detail}) — Plan B keyword filter this round.',
-            run_id=run_id, level='warn',
-        )
-        return False
-    return True
+    console_log(
+        'ai',
+        f'Critical heat ({snap.detail}) — Plan B keyword filter this round.',
+        run_id=run_id, level='warn',
+    )
+    return False
 
 
 def allow_new_scrape() -> tuple[bool, HeatSnapshot]:

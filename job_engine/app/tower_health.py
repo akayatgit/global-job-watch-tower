@@ -409,9 +409,11 @@ def compute_vitals(db: Session) -> TowerVitals:
     capacity, capacity_note = _capacity_estimate(db, ollama_24h)
 
     keyword_24h = _count_events(db, 'keyword_filter', since_24h)
-    planb_recent = False
     last_kw = _last_event(db, 'keyword_filter')
-    if last_kw is not None:
+    # Sticky Plan B banner only while Ollama is still blocked — clear as soon
+    # as heat/GPU recover (do not keep orange for 30 minutes after recovery).
+    planb_recent = False
+    if last_kw is not None and not thermal.ollama_path_open():
         kw_ts = _aware(last_kw)
         planb_recent = (now - kw_ts).total_seconds() < 1800
 

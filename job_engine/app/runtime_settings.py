@@ -137,8 +137,41 @@ def mark_plan_b_active(run_id: int | None = None, detail: str = '') -> None:
         _write(data)
 
 
+def clear_plan_b() -> None:
+    """Drop Plan B orange banner immediately (Ollama path is open again)."""
+    with _LOCK:
+        data = _read()
+        changed = False
+        if data.get('alert_level') == 'planb':
+            data['alert_level'] = 'ok'
+            changed = True
+        if data.get('planb_at') or data.get('planb_detail') or data.get('planb_run_id') is not None:
+            data.pop('planb_at', None)
+            data.pop('planb_detail', None)
+            data.pop('planb_run_id', None)
+            data['planb_cleared_at'] = _utcnow_iso()
+            changed = True
+        if changed:
+            _write(data)
+
+
+def clear_plan_b_if_recovered() -> bool:
+    """Clear Plan B banner as soon as Ollama is allowed again (not a 30‑min wait)."""
+    from app.thermal import ollama_path_open
+    if not ollama_path_open():
+        return False
+    with _LOCK:
+        data = _read()
+        sticky = data.get('alert_level') == 'planb' or bool(data.get('planb_at'))
+    if sticky:
+        clear_plan_b()
+        return True
+    return False
+
+
 def clear_plan_b_if_stale(max_age_s: int = 1800) -> None:
-    """Drop orange after 30 minutes without a fresh Plan B event."""
+    """Safety net: drop orange after 30 minutes even if recovery check missed."""
+    clear_plan_b_if_recovered()
     with _LOCK:
         data = _read()
         ts = data.get('planb_at')
@@ -156,6 +189,9 @@ def clear_plan_b_if_stale(max_age_s: int = 1800) -> None:
             age = 99999
         if age > max_age_s and data.get('alert_level') == 'planb':
             data['alert_level'] = 'ok'
+            data.pop('planb_at', None)
+            data.pop('planb_detail', None)
+            data.pop('planb_run_id', None)
             _write(data)
 
 
@@ -172,6 +208,7 @@ def tower_alert_state(planb_recent: bool = False) -> dict[str, Any]:
             'headless': get_headless(),
             'block': block,
         }
+    # planb_recent only counts while Ollama is still blocked
     if data.get('alert_level') == 'planb' or planb_recent:
         return {
             'level': 'planb',

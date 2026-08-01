@@ -93,6 +93,13 @@ use — they should love opening the app, never fight it.
 - Big live countdown on every page: ticks to next search start (5…4…3…),
   then “Searching {role}…” with seconds left (122…121…). Client ticks
   every second; server sync every ~3s.
-- Header layout: brand + nav + status on one row; countdown card sits beside
-  a search-pulse summary panel (no dead space); Tower health chips in a
-  collapsible grid (default collapsed); no “Domestic & Global 24×7” pill.
+- Header layout: brand + nav + status on one row; one strip = countdown +
+  search-pulse + HealthBoard filling remaining width; no “Domestic & Global
+  24×7” pill.
+- HealthBoard: icon-first colourful status tiles (green/amber/red/blue/purple);
+  minimal text (numbers + ON/OK); hover title for meaning; at-a-glance only.
+- Plan B orange banner clears as soon as Ollama is allowed again (heat &lt; 85°C
+  and GPU readable) — not a sticky 30‑minute wait after recovery.
+- Dashboard uses full viewport width (no narrow centered column); insight cards
+  in a compact masonry grid (natural card heights, no row stretching); long
+  lists capped at ~8 rows with Show more; teasers side-by-side; tight padding.
