@@ -93,3 +93,6 @@ use — they should love opening the app, never fight it.
 - Big live countdown on every page: ticks to next search start (5…4…3…),
   then “Searching {role}…” with seconds left (122…121…). Client ticks
   every second; server sync every ~3s.
+- Header layout: brand + nav + status on one row; countdown card sits beside
+  a search-pulse summary panel (no dead space); Tower health chips in a
+  collapsible grid (default collapsed); no “Domestic & Global 24×7” pill.

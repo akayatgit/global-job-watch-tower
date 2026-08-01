@@ -62,21 +62,111 @@
     background: var(--qt-glass);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--qt-glass-border);
-    padding: 12px 28px 10px;
+    padding: 10px 24px 8px;
+  }
+  .header-row {
     display: flex;
     align-items: center;
-    gap: 28px;
+    gap: 12px 18px;
     flex-wrap: wrap;
   }
-  .vitals {
-    width: 100%;
+  .header-row.top {
+    justify-content: space-between;
+    padding-bottom: 8px;
+  }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .tower-strip {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    padding: 8px 0 6px;
+    border-top: 1px solid rgba(216, 222, 233, 0.55);
+  }
+  .pulse-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(216, 222, 233, 0.85);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  }
+  .pulse-panel .pulse-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--qt-muted);
+  }
+  .pulse-panel .pulse-main {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--qt-ink);
+    line-height: 1.35;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .pulse-panel .pulse-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 8px;
-    padding: 8px 0 2px;
-    border-top: 1px solid rgba(216, 222, 233, 0.65);
-    margin-top: 4px;
+    gap: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--qt-muted);
   }
+  .pulse-panel .pulse-stats span strong {
+    color: var(--qt-ink);
+    font-weight: 800;
+  }
+  .vitals-panel {
+    border-top: 1px solid rgba(216, 222, 233, 0.55);
+    padding-top: 4px;
+    margin-top: 2px;
+  }
+  .vitals-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 4px;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: var(--qt-muted);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-align: left;
+  }
+  .vitals-toggle:hover { color: var(--qt-ink); }
+  .vitals-toggle .chev {
+    display: inline-block;
+    transition: transform .18s ease;
+    font-size: 10px;
+  }
+  .vitals-panel.open .vitals-toggle .chev { transform: rotate(180deg); }
+  .vitals {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 6px;
+    padding: 4px 0 6px;
+  }
+  .vitals.collapsed { display: none; }
   .vital {
     display: flex;
     flex-direction: column;
@@ -150,23 +240,13 @@
     font-weight: 500;
     margin-top: 1px;
   }
-  .scope-pill {
-    margin-left: auto;
-    background: var(--qt-lime);
-    color: #0B1220;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 5px 12px;
-    border-radius: 999px;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-  }
   nav {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 2px;
-    width: 100%;
-    padding-top: 2px;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-start;
   }
   nav a {
     text-decoration: none;
@@ -295,13 +375,17 @@
     50% { opacity: 0.55; transform: scale(0.92); }
   }
   @media (max-width: 700px) {
-    header { padding: 12px 16px; }
-    .scope-pill { margin-left: 0; }
+    header { padding: 10px 14px 8px; }
+    .header-row.top { flex-direction: column; align-items: flex-start; }
+    .header-controls { margin-left: 0; width: 100%; justify-content: flex-start; }
+    nav { width: 100%; }
+    .tower-strip { flex-direction: column; }
+    .live-clock { width: 100%; height: auto; min-height: 120px; }
+    .vitals { grid-template-columns: repeat(2, 1fr); }
     main { margin-top: 16px; }
   }
   .status-bar {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    width: 100%; margin-top: 2px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   }
   .status-chip {
     display: inline-flex; align-items: center; gap: 8px;
@@ -374,9 +458,9 @@
   }
   body.tower-alert-planb .planb-banner { display: block; }
   .live-clock {
-    width: 168px;
-    height: 168px;
-    margin-top: 8px;
+    width: 152px;
+    height: 152px;
+    margin-top: 0;
     padding: 16px 14px;
     border-radius: 18px;
     background: rgba(255,255,255,0.92);
@@ -438,41 +522,51 @@
   body.tower-alert-blocked .live-clock .clock-verb,
   body.tower-alert-blocked .live-clock .clock-role,
   body.tower-alert-blocked .live-clock .clock-eta { color: #fff; }
+  body.tower-alert-blocked .pulse-panel {
+    background: rgba(0,0,0,0.25);
+    border-color: #fecaca;
+    color: #fff;
+  }
+  body.tower-alert-blocked .pulse-panel .pulse-label,
+  body.tower-alert-blocked .pulse-panel .pulse-main,
+  body.tower-alert-blocked .pulse-panel .pulse-stats,
+  body.tower-alert-blocked .pulse-panel .pulse-stats span strong { color: #fff; }
 </style>
 </head>
 <body data-refresh="{{ refresh or 0 }}"
       class="{% if vitals and vitals.alert_level == 'blocked' %}tower-alert-blocked{% elif vitals and vitals.alert_level == 'planb' %}tower-alert-planb{% endif %}"
       data-alert="{{ vitals.alert_level if vitals else 'ok' }}">
 <header>
-  <a class="brand" href="/">
-    <div class="brand-mark" aria-hidden="true">Q</div>
-    <div class="brand-text">
-      <div class="product">Global Job <span class="live">Live</span></div>
-      <div class="tower">Watch Tower</div>
-      <div class="byline">Quanta HR Labs · AI Job Intelligence</div>
+  <div class="header-row top">
+    <a class="brand" href="/">
+      <div class="brand-mark" aria-hidden="true">Q</div>
+      <div class="brand-text">
+        <div class="product">Global Job <span class="live">Live</span></div>
+        <div class="tower">Watch Tower</div>
+        <div class="byline">Quanta HR Labs · AI Job Intelligence</div>
+      </div>
+    </a>
+    <nav>
+      <a href="/" class="{{ 'active' if active == 'dashboard' }}">Tower</a>
+      <a href="/signals" class="{{ 'active' if active == 'signals' }}">Hiring signals</a>
+      <a href="/watchlist" class="{{ 'active' if active == 'watchlist' }}">Watchlist</a>
+      <a href="/configs" class="{{ 'active' if active == 'configs' }}">Searches</a>
+      <a href="/runs" class="{{ 'active' if active == 'runs' }}">Activity</a>
+      <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
+      <a href="/console" class="{{ 'active' if active == 'console' }}">Live feed</a>
+      <a href="/tower-health" class="{{ 'active' if active == 'tower_health' }}">Tower health</a>
+    </nav>
+    <div class="header-controls">
+      <span class="status-chip" id="tower-status" title="{{ vitals.alert_label if vitals else 'Tower' }}">
+        <span class="live-dot {% if vitals and vitals.alert_level == 'blocked' %}bad{% elif vitals and vitals.alert_level == 'planb' %}warn{% endif %}" id="status-dot" aria-hidden="true"></span>
+        <span class="lbl" id="status-label">{% if vitals %}{{ vitals.alert_label }}{% else %}Tower{% endif %}</span>
+      </span>
+      <button type="button" class="toggle-btn {% if vitals and not vitals.headless %}on{% endif %}" id="headless-toggle"
+              title="Hidden Chrome is still a real browser (stealth). Visible lets you watch the window.">
+        Browser: <span id="headless-label">{% if vitals and vitals.headless %}Hidden{% else %}Visible{% endif %}</span>
+      </button>
     </div>
-  </a>
-  <div class="status-bar" style="margin-left:auto; width:auto;">
-    <span class="status-chip" id="tower-status" title="{{ vitals.alert_label if vitals else 'Tower' }}">
-      <span class="live-dot {% if vitals and vitals.alert_level == 'blocked' %}bad{% elif vitals and vitals.alert_level == 'planb' %}warn{% endif %}" id="status-dot" aria-hidden="true"></span>
-      <span class="lbl" id="status-label">{% if vitals %}{{ vitals.alert_label }}{% else %}Tower{% endif %}</span>
-    </span>
-    <button type="button" class="toggle-btn {% if vitals and not vitals.headless %}on{% endif %}" id="headless-toggle"
-            title="Hidden Chrome is still a real browser (stealth). Visible lets you watch the window.">
-      Browser: <span id="headless-label">{% if vitals and vitals.headless %}Hidden{% else %}Visible{% endif %}</span>
-    </button>
   </div>
-  <span class="scope-pill">Domestic &amp; Global 24×7</span>
-  <nav>
-    <a href="/" class="{{ 'active' if active == 'dashboard' }}">Tower</a>
-    <a href="/signals" class="{{ 'active' if active == 'signals' }}">Hiring signals</a>
-    <a href="/watchlist" class="{{ 'active' if active == 'watchlist' }}">Watchlist</a>
-    <a href="/configs" class="{{ 'active' if active == 'configs' }}">Searches</a>
-    <a href="/runs" class="{{ 'active' if active == 'runs' }}">Activity</a>
-    <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
-    <a href="/console" class="{{ 'active' if active == 'console' }}">Live feed</a>
-    <a href="/tower-health" class="{{ 'active' if active == 'tower_health' }}">Tower health</a>
-  </nav>
   <div class="planb-banner" id="planb-banner">
     Plan B active — filtering without Ollama (data quality risk). Cool the laptop / restore GPU; this should be rare.
     {% if vitals and vitals.planb_detail %}<span class="muted"> · {{ vitals.planb_detail }}</span>{% endif %}
@@ -496,16 +590,36 @@
       <a href="/console" style="color:#fff;font-weight:700;align-self:center">Open live feed →</a>
     </div>
   </div>
-  <div class="live-clock {% if vitals %}{{ vitals.countdown_mode }}{% endif %}" id="live-clock"
-       data-mode="{{ vitals.countdown_mode if vitals else 'idle' }}"
-       data-secs="{{ vitals.countdown_secs if vitals else 0 }}"
-       data-role="{{ vitals.countdown_role if vitals else '—' }}">
-    <div class="clock-verb" id="clock-verb">{% if vitals and vitals.countdown_mode == 'searching' %}Searching...{% elif vitals and vitals.countdown_mode == 'to_start' %}Next...{% elif vitals and vitals.countdown_mode == 'paused' %}Paused{% else %}Idle{% endif %}</div>
-    <div class="clock-role" id="clock-role">{% if vitals %}{{ vitals.countdown_role }}{% else %}—{% endif %}</div>
-    <div class="clock-eta" id="clock-eta">{% if vitals and vitals.countdown_secs %}{{ (vitals.countdown_secs // 60) }}m {{ '%02d'|format(vitals.countdown_secs % 60) }}s to Go!{% else %}—{% endif %}</div>
+  <div class="tower-strip">
+    <div class="live-clock {% if vitals %}{{ vitals.countdown_mode }}{% endif %}" id="live-clock"
+         data-mode="{{ vitals.countdown_mode if vitals else 'idle' }}"
+         data-secs="{{ vitals.countdown_secs if vitals else 0 }}"
+         data-role="{{ vitals.countdown_role if vitals else '—' }}">
+      <div class="clock-verb" id="clock-verb">{% if vitals and vitals.countdown_mode == 'searching' %}Searching...{% elif vitals and vitals.countdown_mode == 'to_start' %}Next...{% elif vitals and vitals.countdown_mode == 'paused' %}Paused{% else %}Idle{% endif %}</div>
+      <div class="clock-role" id="clock-role">{% if vitals %}{{ vitals.countdown_role }}{% else %}—{% endif %}</div>
+      <div class="clock-eta" id="clock-eta">{% if vitals and vitals.countdown_secs %}{{ (vitals.countdown_secs // 60) }}m {{ '%02d'|format(vitals.countdown_secs % 60) }}s to Go!{% else %}—{% endif %}</div>
+    </div>
+    <div class="pulse-panel" id="pulse-panel">
+      <div class="pulse-label">Search pulse</div>
+      <div class="pulse-main" id="pulse-main">{% if vitals %}{{ vitals.next_search_label }}{% else %}—{% endif %}</div>
+      <div class="pulse-stats" id="pulse-stats">
+        {% if vitals %}
+        <span>Searches today <strong data-v="today-inline">{{ vitals.searches_today }}</strong></span>
+        <span>Last 24h <strong data-v="h24-inline">{{ vitals.searches_24h }}</strong></span>
+        <span>Ollama <strong data-v="ollama-inline">{{ vitals.ollama_running }} · {{ vitals.ollama_today }} · {{ vitals.ollama_24h }}</strong></span>
+        <span>Capacity <strong data-v="cap-inline">~{{ vitals.ollama_capacity_estimate }}/day</strong></span>
+        {% endif %}
+      </div>
+    </div>
   </div>
   {% if vitals %}
-  <div class="vitals" id="tower-vitals" title="Live laptop + search pulse — open Tower health for detail">
+  <div class="vitals-panel" id="vitals-panel">
+    <button type="button" class="vitals-toggle" id="vitals-toggle" aria-expanded="false" aria-controls="tower-vitals">
+      <span class="chev" aria-hidden="true">▼</span>
+      <span>Tower health</span>
+      <span class="muted" style="font-weight:600;text-transform:none;letter-spacing:0">— laptop + search checks</span>
+    </button>
+    <div class="vitals collapsed" id="tower-vitals" title="Live laptop + search pulse — open Tower health for detail">
     <a class="vital {% if vitals.heat_label in ('Hot','Critical') %}bad{% elif vitals.heat_label == 'Warm' %}warn{% else %}ok{% endif %}" href="/tower-health" data-k="heat">
       <span class="vk">PC heat</span>
       <span class="vv" data-v="heat">{% if vitals.heat_c is not none %}{{ '%.0f'|format(vitals.heat_c) }}° · {{ vitals.heat_label }}{% else %}{{ vitals.heat_label }}{% endif %}</span>
@@ -542,14 +656,11 @@
       <span class="vk">Capacity target</span>
       <span class="vv" data-v="cap">~{{ vitals.ollama_capacity_estimate }}/day</span>
     </a>
-    <a class="vital" href="/tower-health" data-k="next">
-      <span class="vk">Search pulse</span>
-      <span class="vv" data-v="next">{{ vitals.next_search_label }}</span>
-    </a>
     <a class="vital {% if not vitals.last_browser_at %}warn{% endif %}" href="/tower-health" data-k="browser">
       <span class="vk">Browser opened</span>
       <span class="vv" data-v="browser">{% if vitals.last_browser_at %}<time class="rel" datetime="{{ vitals.last_browser_at.isoformat() }}">{{ vitals.last_browser_at.isoformat() }}</time>{% else %}waiting{% endif %}</span>
     </a>
+    </div>
   </div>
   {% endif %}
 </header>
@@ -667,9 +778,18 @@ async function refreshVitals() {
     setVitalHtml('ollama_load',
       v.ollama_running + ' · ' + v.ollama_today + ' · ' + v.ollama_24h, 'ok');
     setVitalHtml('cap', '~' + v.ollama_capacity_estimate + '/day', '');
-    setVitalHtml('next', v.next_search_label || '—', '');
     setVitalHtml('browser', relOrNever(v.last_browser_at, 'waiting'),
       v.last_browser_at ? '' : 'warn');
+    const pulseMain = document.getElementById('pulse-main');
+    if (pulseMain) pulseMain.textContent = v.next_search_label || '—';
+    const setInline = (key, val) => {
+      const el = document.querySelector('[data-v="' + key + '"]');
+      if (el) el.textContent = val;
+    };
+    setInline('today-inline', String(v.searches_today));
+    setInline('h24-inline', String(v.searches_24h));
+    setInline('ollama-inline', v.ollama_running + ' · ' + v.ollama_today + ' · ' + v.ollama_24h);
+    setInline('cap-inline', '~' + v.ollama_capacity_estimate + '/day');
     updateRelTimes(document.getElementById('tower-vitals'));
   } catch (e) { /* keep last values */ }
 }
@@ -756,6 +876,27 @@ document.getElementById('copy-block')?.addEventListener('click', async () => {
 });
 
 setInterval(refreshVitals, 3000);
+
+(function initVitalsPanel() {
+  const panel = document.getElementById('vitals-panel');
+  const toggle = document.getElementById('vitals-toggle');
+  const grid = document.getElementById('tower-vitals');
+  if (!panel || !toggle || !grid) return;
+  const KEY = 'tower-vitals-open';
+  function setOpen(open) {
+    panel.classList.toggle('open', open);
+    grid.classList.toggle('collapsed', !open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) {}
+  }
+  let open = false;
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved === '1') open = true;
+  } catch (e) {}
+  setOpen(open);
+  toggle.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
+})();
 
 const refreshEvery = parseInt(document.body.dataset.refresh || '0', 10);
 if (refreshEvery > 0) {
