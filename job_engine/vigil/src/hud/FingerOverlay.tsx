@@ -68,9 +68,21 @@ export function FingerOverlay() {
   const ix = index.x * 100
   const iy = index.y * 100
 
+  const fist = Boolean(hands.right?.fist || hands.left?.fist)
+  const anyHand = Boolean(hands.right || hands.left)
+
   return (
-    <div className="finger-layer">
+    <div className={`finger-layer ${anyHand ? 'hand-live' : ''}`}>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        {/* Soft spotlight under the primary fingertip */}
+        {anyHand && (
+          <circle
+            cx={ix}
+            cy={iy}
+            r="6.5"
+            fill={fist ? 'rgba(239,68,68,0.18)' : 'rgba(255,170,0,0.14)'}
+          />
+        )}
         {magnet && (
           <line
             x1={ix}
@@ -97,20 +109,20 @@ export function FingerOverlay() {
           <HandGuides
             index={index}
             thumb={thumb}
-            pinch={rightPinch}
-            color="#ffaa00"
-            thumbColor="#cc1100"
-            label="R"
+            pinch={rightPinch || fist}
+            color={fist ? '#ef4444' : '#ffaa00'}
+            thumbColor={fist ? '#991b1b' : '#cc1100'}
+            label={fist ? 'FIST' : 'R'}
           />
         )}
         {!hands.right && hands.left && (
           <HandGuides
             index={index}
             thumb={thumb}
-            pinch={leftPinch}
-            color="#22d3ee"
-            thumbColor="#0891b2"
-            label="L"
+            pinch={leftPinch || fist}
+            color={fist ? '#ef4444' : '#22d3ee'}
+            thumbColor={fist ? '#991b1b' : '#0891b2'}
+            label={fist ? 'FIST' : 'L'}
           />
         )}
         {press > 0 && (

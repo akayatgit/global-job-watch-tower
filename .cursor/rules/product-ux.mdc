@@ -116,7 +116,11 @@ use — they should love opening the app, never fight it.
   MediaPipe hand control with finger guides. Orbit dots hide when OFF. Spec:
   `documents/vigil-hand-gesture-interface.md` — update whenever gestures change.
 - **VIGIL Training Ground (2026-08-02):** Top-right **Train** opens a
-  **separate dummy screen** (not the live tower). Drills: pinch, move, scroll,
-  window zoom, two-hand core, close. Stuck/timeout → copyable calibration JSON
-  for Akay. Live gestures: pinch-header move, pinch-body scroll, 2-hand window
-  zoom, 2-hand empty core zoom, pinch-empty canvas pan. R=amber L=cyan guides.
+  **separate dummy screen** with a **practice hub**: skip anytime, guided tour
+  optional, or pick any drill (no robotic one-by-one). Training feel +
+  illumination apply to the live tower. Log all gesture interactions for Akay.
+- **VIGIL layer stack (2026-08-02):** Focused window is the only interactive
+  layer; blur core/background/other windows so dwell cannot poke through.
+- **VIGIL extra gestures (2026-08-02):** Flick-release (pinch→snap wide fast) =
+  max zoom current window; five-finger fist = close window under hand.
+  Spec: `documents/vigil-hand-gesture-interface.md`.

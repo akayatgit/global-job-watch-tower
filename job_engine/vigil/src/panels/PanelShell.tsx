@@ -12,12 +12,20 @@ export function PanelShell({
   const focused = useVigilStore((s) => s.focusedPanel === id)
   const grabbed = useVigilStore((s) => s.grabTarget === id)
   const vigilMode = useVigilStore((s) => s.vigilMode)
+  const focusedPanel = useVigilStore((s) => s.focusedPanel)
+  const hoverTarget = useVigilStore((s) => s.hoverTarget)
   const closePanel = useVigilStore((s) => s.closePanel)
   const focusPanel = useVigilStore((s) => s.focusPanel)
   const movePanel = useVigilStore((s) => s.movePanel)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
 
   if (!panel.open) return null
+
+  const layerDimmed = Boolean(focusedPanel && !focused)
+  const handHot =
+    hoverTarget === `panel:${id}` ||
+    hoverTarget === `body:${id}` ||
+    Boolean(hoverTarget?.includes(`close-${id}`))
 
   const onHeaderDown = (e: ReactMouseEvent) => {
     focusPanel(id)
@@ -45,7 +53,7 @@ export function PanelShell({
 
   return (
     <div
-      className={`float-panel ${focused ? 'focused' : ''} ${grabbed ? 'grabbed' : ''}`}
+      className={`float-panel ${focused ? 'focused' : ''} ${grabbed ? 'grabbed' : ''} ${layerDimmed ? 'layer-dimmed' : ''} ${handHot ? 'hand-hot' : ''}`}
       data-panel-id={id}
       style={{
         left: `${panel.x}%`,

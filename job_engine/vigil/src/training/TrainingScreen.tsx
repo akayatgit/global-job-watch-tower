@@ -12,28 +12,48 @@ import {
   resetSamples,
 } from './sampleBus'
 import { endTrainLog, logTrain } from './sessionLog'
+import type { TrainingStepId } from '../store/vigilStore'
 
 const STEPS = [
-  { id: 'intro', title: 'Welcome', hint: 'This is a dummy training room — not the live tower.' },
+  {
+    id: 'hub',
+    title: 'Practice hub',
+    hint: 'Skip anytime, or pick any drill. Guided tour is optional — spend as long as you want.',
+  },
+  { id: 'intro', title: 'Welcome', hint: 'Guided tour — dummy room, not the live tower.' },
   { id: 'show_hand', title: 'Show hand', hint: 'Raise either hand. Watch the bar fill to 100%, or click Continue when HAND SEEN.' },
-  { id: 'pinch', title: 'Pinch', hint: 'Pinch thumb + index 5 times (amber hand).' },
+  { id: 'pinch', title: 'Pinch', hint: 'Pinch thumb + index 5 times.' },
   {
     id: 'move',
     title: 'Move window',
-    hint: '1) Point the L/R dot at the amber SAMPLE title bar  2) Pinch (keep pinched)  3) Drag into DROP ZONE  4) Open fingers to drop.',
+    hint: '1) Point L/R at SAMPLE title  2) Pinch  3) Drag to DROP ZONE  4) Hold or open fingers.',
   },
   {
     id: 'scroll',
     title: 'Scroll window',
-    hint: 'Pinch inside the long SAMPLE list (not the title), keep pinched, move hand up/down until the bar fills.',
+    hint: 'Pinch inside the SAMPLE list and move hand up/down.',
   },
-  { id: 'zoom_window', title: 'Zoom window', hint: 'Both hands pinch over SAMPLE — slowly apart/together (wait for lock).' },
-  { id: 'two_hand', title: 'Two-hand core', hint: 'Both hands pinch over empty space (not the window) — slow apart.' },
-  { id: 'close', title: 'Close', hint: 'Hold on the big CLOSE TARGET until 100%.' },
+  { id: 'zoom_window', title: 'Zoom window', hint: 'Both hands pinch over SAMPLE — slowly apart, or flick-release for max zoom.' },
+  { id: 'flick_zoom', title: 'Flick zoom', hint: 'Pinch on SAMPLE, then snap fingers wide & fast → window zooms to max.' },
+  { id: 'two_hand', title: 'Two-hand core', hint: 'Both hands pinch over empty space — slow apart.' },
+  { id: 'fist_close', title: 'Fist close', hint: 'Curl all five fingers (fist) over SAMPLE to close it.' },
+  { id: 'close', title: 'Close (dwell)', hint: 'Hold on the big CLOSE TARGET until 100%.' },
   { id: 'press', title: 'Confirm', hint: 'Hold on CONFIRM to save your calibration.' },
   { id: 'done', title: 'Saved', hint: 'Feel is stored. Exit back to the live tower.' },
   { id: 'fail', title: 'Needs help', hint: 'Copy the report below and paste it to Akay.' },
 ] as const
+
+const PRACTICE_DRILLS: { id: (typeof STEPS)[number]['id']; label: string }[] = [
+  { id: 'show_hand', label: 'Show hand' },
+  { id: 'pinch', label: 'Pinch' },
+  { id: 'move', label: 'Move window' },
+  { id: 'scroll', label: 'Scroll list' },
+  { id: 'zoom_window', label: 'Two-hand zoom' },
+  { id: 'flick_zoom', label: 'Flick zoom max' },
+  { id: 'fist_close', label: 'Fist close' },
+  { id: 'close', label: 'Dwell close' },
+  { id: 'two_hand', label: 'Core zoom' },
+]
 
 const DUMMY_ROWS = Array.from(
   { length: 48 },
@@ -47,6 +67,7 @@ export function TrainingScreen() {
   const setStep = useVigilStore((s) => s.setTrainingStep)
   const setFeedback = useVigilStore((s) => s.setTrainingFeedback)
   const setFailReport = useVigilStore((s) => s.setTrainingFailReport)
+  const setPractice = useVigilStore((s) => s.setTrainingPractice)
   const stopTraining = useVigilStore((s) => s.stopTraining)
   const setCalibration = useVigilStore((s) => s.setCalibration)
   const calibration = useVigilStore((s) => s.calibration)
@@ -85,17 +106,48 @@ export function TrainingScreen() {
   const handSeen = Boolean(hands.left || hands.right)
   const statusLine = useVigilStore((s) => s.statusLine)
 
+  const passOrHub = (next: TrainingStepId, msg: string) => {
+    const st = useVigilStore.getState()
+    logTrain('practice_pass', { step: st.trainingStep, next, practice: st.trainingPractice })
+    if (st.trainingPractice) {
+      setFeedback(`${msg} — back to hub`)
+      setPractice(false)
+      setStep('hub')
+      return
+    }
+    setFeedback(msg)
+    setStep(next)
+  }
+
+  const startPractice = (id: TrainingStepId) => {
+    resetSamples()
+    setPinchCount(0)
+    setScrollDelta(0)
+    zoneHold.current = 0
+    setPractice(true)
+    setSampleOpen(true)
+    const st = useVigilStore.getState()
+    st.openPanel('tower')
+    st.movePanel('tower', 18, 28)
+    st.scalePanel('tower', 1)
+    logTrain('practice_select', { id })
+    setStep(id)
+    setFeedback(`Practice: ${id.replace('_', ' ')} — take your time`)
+    stepStarted.current = performance.now()
+  }
+
   useEffect(() => {
     resetSamples()
     setPinchCount(0)
     setSampleOpen(true)
     setScrollDelta(0)
     zoneHold.current = 0
-    setStep('intro')
-    setFeedback('Dummy training room — wait for CAMERA LIVE, then Begin')
+    setPractice(false)
+    setStep('hub')
+    setFeedback('Pick any drill, start a guided tour, or skip to the tower')
     stepStarted.current = performance.now()
     logTrain('training_screen_mount')
-  }, [setStep, setFeedback])
+  }, [setStep, setFeedback, setPractice])
 
   useEffect(() => {
     stepStarted.current = performance.now()
@@ -106,7 +158,7 @@ export function TrainingScreen() {
   const [holdPct, setHoldPct] = useState(0)
 
   useEffect(() => {
-    if (step === 'idle' || step === 'intro' || step === 'done' || step === 'fail') return
+    if (step === 'idle' || step === 'hub' || step === 'intro' || step === 'done' || step === 'fail') return
     let raf = 0
     let lastTick = performance.now()
     holdMs.current = 0
@@ -121,9 +173,14 @@ export function TrainingScreen() {
       const dt = Math.min(100, now - lastTick)
       lastTick = now
 
-      // Timeout per step (45s) → fail with dump
-      if (now - stepStarted.current > 45000 && !['done', 'fail'].includes(currentStep)) {
-        failStep(`Timed out on step "${currentStep}" after 45s`)
+      // Free practice: no timeout. Guided tour: 90s soft fail.
+      const limit = st.trainingPractice ? 0 : 90000
+      if (
+        limit > 0 &&
+        now - stepStarted.current > limit &&
+        !['done', 'fail', 'hub'].includes(currentStep)
+      ) {
+        failStep(`Timed out on step "${currentStep}" after ${limit / 1000}s`)
         return
       }
 
@@ -151,8 +208,7 @@ export function TrainingScreen() {
           setFeedback(`Hand seen — hold steady… ${pct}%`)
           if (holdMs.current >= 1000) {
             logTrain('show_hand_pass', { holdMs: holdMs.current, which: st.hands.right ? 'R' : 'L' })
-            setFeedback('Hand locked — next: pinch')
-            setStep('pinch')
+            passOrHub('pinch', 'Hand locked')
           }
         } else {
           holdMs.current = Math.max(0, holdMs.current - dt * 2)
@@ -172,10 +228,7 @@ export function TrainingScreen() {
               st.movePanel('tower', 18, 28)
               st.scalePanel('tower', 1)
               setSampleOpen(true)
-              window.setTimeout(() => {
-                setStep('move')
-                setFeedback('Pinch SAMPLE header → drag to drop zone')
-              }, 300)
+              window.setTimeout(() => passOrHub('move', 'Pinch OK'), 300)
             }
             return n
           })
@@ -195,29 +248,26 @@ export function TrainingScreen() {
             setFeedback(`In DROP ZONE — hold… ${Math.min(100, Math.round((zoneHold.current / 500) * 100))}%`)
             if (zoneHold.current >= 500) {
               logTrain('move_pass', { x: p.x, y: p.y })
-              setFeedback('Move OK — next: scroll the list')
               const body = document.querySelector(
                 '[data-panel-id="tower"] .panel-body',
               ) as HTMLElement | null
               scrollStart.current = body?.scrollTop || 0
               setScrollDelta(0)
               zoneHold.current = 0
-              setStep('scroll')
+              passOrHub('scroll', 'Move OK')
             }
           } else {
             zoneHold.current = 0
             setFeedback('Dragging… keep pinch, move into the glowing DROP ZONE')
           }
         } else if (inZone && st.gestureMode === 'none') {
-          // Released already inside zone
           logTrain('move_pass_release', { x: p.x, y: p.y })
-          setFeedback('Move OK — next: scroll the list')
           const body = document.querySelector(
             '[data-panel-id="tower"] .panel-body',
           ) as HTMLElement | null
           scrollStart.current = body?.scrollTop || 0
           setScrollDelta(0)
-          setStep('scroll')
+          passOrHub('scroll', 'Move OK')
         } else if (st.hoverTarget === 'panel:tower') {
           setFeedback('GRAB READY — pinch now, then drag to DROP ZONE')
         } else {
@@ -240,23 +290,33 @@ export function TrainingScreen() {
         }
         if (delta > 40) {
           zoomBase.current = st.panels.tower.scale
-          setFeedback('Scroll OK — both-hand zoom on the window')
-          setStep('zoom_window')
+          passOrHub('zoom_window', 'Scroll OK')
         }
       }
 
-      if (currentStep === 'zoom_window') {
+      if (currentStep === 'zoom_window' || currentStep === 'flick_zoom') {
         const scale = st.panels.tower.scale
         if (st.gestureMode === 'zoom_panel') {
           setFeedback(`Zooming window… scale ${scale.toFixed(2)}`)
+        } else if (currentStep === 'flick_zoom') {
+          setFeedback('Pinch then snap fingers wide & fast for MAX zoom')
         } else {
-          setFeedback('Both hands pinch OVER the sample window — hold 0.3s then slowly move apart')
+          setFeedback('Both hands pinch OVER SAMPLE — or flick-release for max zoom')
         }
-        if (Math.abs(scale - zoomBase.current) > 0.12) {
+        if (scale >= 1.75 || Math.abs(scale - zoomBase.current) > 0.12) {
           twoBase.current = st.coreScale
           st.movePanel('tower', 12, 30)
-          setFeedback('Window zoom OK — two-hand over EMPTY space for core')
-          setStep('two_hand')
+          passOrHub('two_hand', 'Zoom OK')
+        }
+      }
+
+      if (currentStep === 'fist_close') {
+        if (!st.panels.tower.open) {
+          passOrHub('hub', 'Fist close OK')
+        } else if (primary?.fist) {
+          setFeedback('Fist detected — closing…')
+        } else {
+          setFeedback('Curl all five fingers into a fist over SAMPLE')
         }
       }
 
@@ -269,8 +329,7 @@ export function TrainingScreen() {
           setFeedback('Pinch BOTH hands in empty space (not on the window)')
         }
         if (Math.abs(st.coreScale - twoBase.current) > 0.15) {
-          setFeedback('Two-hand OK — close target next')
-          setStep('close')
+          passOrHub('fist_close', 'Two-hand OK')
         }
       }
 
@@ -354,23 +413,70 @@ export function TrainingScreen() {
           {calibration.sessionsCompleted}
         </p>
 
-        {step === 'intro' && (
+        {step === 'hub' && (
+          <>
+            <button
+              type="button"
+              className="chip active train-hit"
+              data-gesture-action="train-skip-all"
+              onClick={() => {
+                logTrain('training_skipped')
+                stopTraining()
+              }}
+            >
+              Skip training — go to tower
+            </button>
+            <button
+              type="button"
+              className="chip train-hit"
+              data-gesture-action="train-guided"
+              onClick={() => {
+                resetSamples()
+                setPractice(false)
+                logTrain('guided_tour_start', { handSeen })
+                setStep('show_hand')
+                setFeedback(
+                  handSeen
+                    ? 'Guided tour — hand already seen, hold steady'
+                    : 'Guided tour — show hand until HAND SEEN',
+                )
+              }}
+            >
+              Start guided tour
+            </button>
+            <p className="muted" style={{ marginTop: 10 }}>
+              Practice any drill (no timer):
+            </p>
+            <div className="training-hub-grid">
+              {PRACTICE_DRILLS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className="chip train-hit"
+                  data-gesture-action={`train-practice-${d.id}`}
+                  onClick={() => startPractice(d.id as TrainingStepId)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {step !== 'hub' && step !== 'done' && step !== 'fail' && (
           <button
             type="button"
-            className="chip active train-hit"
-            data-gesture-action="train-begin"
+            className="chip train-hit"
+            data-gesture-action="train-back-hub"
             onClick={() => {
-              resetSamples()
-              logTrain('step_begin_click', { handSeen })
-              setStep('show_hand')
-              setFeedback(
-                handSeen
-                  ? 'Hand already seen — hold steady'
-                  : 'Show hand to the webcam (PiP bottom-right) until HAND SEEN',
-              )
+              logTrain('back_to_hub', { from: step })
+              setPractice(false)
+              setStep('hub')
+              setFeedback('Back at hub — pick another drill or skip')
             }}
+            style={{ marginTop: 8 }}
           >
-            Begin
+            ← Practice hub
           </button>
         )}
 
@@ -519,7 +625,10 @@ export function TrainingScreen() {
             <span>drag SAMPLE here</span>
           </div>
         )}
-        {sampleOpen && ['move', 'scroll', 'zoom_window', 'two_hand', 'close'].includes(step) && (
+        {sampleOpen &&
+          ['move', 'scroll', 'zoom_window', 'flick_zoom', 'two_hand', 'fist_close', 'close'].includes(
+            step,
+          ) && (
           <TrainingSamplePanel
             rows={DUMMY_ROWS}
             step={step}

@@ -4,7 +4,7 @@ Living spec for air control of the Watch Tower ops shell.
 **Face name:** VIGIL · **Backend:** `ultron`  
 **Code:** `job_engine/vigil/src/gestures/` · `job_engine/vigil/src/training/`
 
-Last updated: 2026-08-02 (show-hand hold loop fix)
+Last updated: 2026-08-02 (layer stack + free practice + flick/fist)
 
 ---
 
@@ -14,21 +14,38 @@ Last updated: 2026-08-02 (show-hand hold loop fix)
 |---|---|---|
 | **Desktop (default)** | VIGIL Mode OFF | Mouse / keyboard |
 | **VIGIL Mode** | VIGIL Mode ON | Webcam hands |
-| **Training Ground** | **Train** button | **Separate dummy screen** (not the live tower) |
+| **Training Ground** | **Train** button | **Separate dummy screen** + practice hub |
 
 - Desktop: no orbit dots; bottom ModuleDock only  
-- Training: full-screen dummy room; live panels/core hidden  
-- Stuck / timeout 45s / **I'm stuck — dump data** → JSON report to copy for Akay  
+- Training: hub → skip, guided tour, or pick any drill anytime  
+- Calibration + feel from training apply to the live tower  
 
 ---
 
-## Hand guides
+## Layer stack (one window at a time)
+
+When a window is **focused / on top**:
+
+- Core, canvas, dock (VIGIL Mode), and **all other windows** blur and dim  
+- Hand dwell / pinch / scroll only hit the **focused** window (+ its Close)  
+- Opening another window (dock / orbit when no focus lock) brings it to top  
+- Closing promotes the next highest open window  
+
+Goal: stop accidental dwell on everything behind the active dialog.
+
+---
+
+## Hand guides (training = live)
 
 | Hand | Color | Label |
 |---|---|---|
 | Right (primary) | Amber `#FFAA00` / crimson thumb | **R** |
 | Left (second) | Cyan `#22D3EE` | **L** |
-| Two-hand stretch | Purple dashed line between centroids | — |
+| Fist | Red | **FIST** |
+| Two-hand stretch | Purple dashed line | — |
+
+- Soft spotlight under the fingertip + glow (same illumination as training)  
+- Window under the hand gets **hand-hot** cyan border / luminance  
 
 ---
 
@@ -36,87 +53,35 @@ Last updated: 2026-08-02 (show-hand hold loop fix)
 
 | Gesture | Where | Action |
 |---|---|---|
-| **Dwell / press-by-dot** | Button / chip | Click (sticky dwell) |
-| **Pinch + drag** | Panel **header** (title area) | Move window |
-| **Pinch + move up/down** | Panel **body** | Scroll list inside window |
-| **Two-hand pinch** (locked ~0.3s) | Over a **window** | Zoom that window (scale) |
-| **Two-hand pinch** (locked ~0.3s) | **Empty canvas** | Zoom energy core |
-| **One-hand pinch + move** | Empty canvas | Pan canvas left/right |
+| **Dwell** | Button on focused layer | Click |
+| **Pinch + drag** | Panel header (or whole panel in move drill) | Move window |
+| **Pinch + move** | Panel body | Scroll list |
+| **Two-hand pinch** (lock ~0.3s) | Over window | Zoom window |
+| **Two-hand pinch** (lock ~0.3s) | Empty canvas (no layer lock) | Zoom energy core |
+| **Flick zoom** | Pinch then snap fingers wide & fast | Max zoom current window |
+| **Fist (5 fingers curled)** | Over / focused window | Close that window |
+| **One-hand pinch + move** | Empty canvas (no layer lock) | Pan canvas |
 
-Two-hand zoom uses a **lock delay + dead zone** so the core does not jump randomly.
-
-Status badge shows live mode: `SCROLL PANEL`, `ZOOM PANEL`, `PAN CANVAS`, `CORE ZOOM`, etc.
+Status badge: `SCROLL PANEL`, `ZOOM PANEL`, `FLICK ZOOM`, `FIST CLOSE`, etc.
 
 ---
 
-## Training steps (dummy screen)
+## Training hub
 
-1. Welcome → Begin  
-2. Show hand (either hand, ~1s hold bar, or **Hand seen — continue**)  
-3. Pinch ×5  
-4. Move SAMPLE window into drop zone  
-5. Scroll SAMPLE list (pinch in body)  
-6. Zoom SAMPLE (two-hand over window)  
-7. Two-hand core (two-hand over empty space)  
-8. Close TARGET  
-9. Confirm → save calibration  
-10. Fail dump if stuck / timeout  
+1. **Skip training — go to tower**  
+2. **Start guided tour** (optional chain)  
+3. **Practice any drill** (no timer): show hand, pinch, move, scroll, zoom, flick zoom, fist close, dwell close, core zoom  
+4. **← Practice hub** from any drill  
+
+Logs: every hover, drag, scroll, dwell fire, flick, fist, practice select/pass →  
+`localStorage` `vigil.training.logs` + `job_engine/.data/vigil_training/`  
+Live VIGIL Mode also starts a `live-*` session log.
 
 Calibration keys: `pinchThreshold`, `dwellMs`, `hitPx`, `lerpFactor` in `localStorage` `vigil.calibration.v1`.
 
-### Camera note (2026-08-02)
-
-Training used to remount `<video>` and kill MediaPipe. Webcam is now a **stable
-singleton** in `App.tsx`. Coach shows **HAND SEEN / NO HAND YET** plus camera status.
-
-### Show-hand stuck fix (2026-08-02)
-
-Bug: training `requestAnimationFrame` effect depended on `hands` every frame →
-loop restarted constantly → hold timer never reached 1s (stuck on “Show hand”
-while status showed `HAND SEEN · PAN CANVAS`).
-
-Fix: read hands from `getState()` inside the tick; deps = `[step]` only; accept
-L or R; progress bar; Continue button; disable pan/scroll/zoom during early
-train steps so status does not steal to `PAN CANVAS`.
-
-### Guides buried under training (2026-08-02)
-
-Training screen `z-index: 50` covered finger guides (`30`) and webcam PiP — Ashok
-saw HAND SEEN but no aiming dots. Guides → `z-index: 80`, webcam wrap → `90`.
-Pan canvas disabled for all training so status stays clean.
-
-### Move / scroll feel (2026-08-02)
-
-Ashok timed out on move: pinch-drag felt random; scroll list looked empty.
-
-- One visible SAMPLE = real hit target (removed ghost/visual split)
-- Move: grab from whole window; fat title bar; hold 0.5s in bigger DROP ZONE
-- Pinch hysteresis (release needs wider open) to stop grab flicker
-- Scroll: 48 rows, tall list, 40px pass, 2.2× scroll boost in training
-- Skip buttons for move/scroll if stuck
-
-### Session logs
-
-Every Train session writes events (camera boot, hand seen/lost, step enter/fail,
-calibration save) to:
-
-- Browser: `localStorage` `vigil.training.logs`
-- Disk: `job_engine/.data/vigil_training/{id}.json` via `POST /api/ultron/training-log`
-- Latest pointer: `job_engine/.data/vigil_training/latest.json`
-
-Akay reads these to improve gestures after Ashok trains.
-
 ---
 
-## Related files
+## History fixes (2026-08-02)
 
-| Path | Role |
-|---|---|
-| `gestures/useGestureOS.ts` | State machine |
-| `gestures/hitTest.ts` | Hits / scroll helper |
-| `gestures/useHandTracking.ts` | MediaPipe + dual smooth hands |
-| `hud/FingerOverlay.tsx` | R/L guides |
-| `training/TrainingScreen.tsx` | Separate training room |
-| `training/buildFailReport.ts` | Copy-paste debug JSON |
-
-Update this file whenever gestures change.
+- Show-hand rAF dependency bug; guides under training z-index; move ghost panel; long scroll list  
+- Layer stack + flick/fist + free practice hub (this slice)  

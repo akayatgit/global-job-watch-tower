@@ -40,6 +40,41 @@ button, input, select {
   background: var(--vg-bg);
 }
 
+/* Layer stack: focused window sharp; everything behind soft + non-interactive in VIGIL */
+.vigil-root.layer-focus .vigil-canvas {
+  filter: blur(10px) brightness(0.42) saturate(0.7);
+  pointer-events: none;
+  transition: filter 0.25s ease;
+}
+
+.vigil-root.layer-focus.mode-vigil .module-dock {
+  filter: blur(7px) brightness(0.55);
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.vigil-root.layer-focus .float-panel.layer-dimmed {
+  filter: blur(6px) brightness(0.55);
+  opacity: 0.5;
+  pointer-events: none;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.vigil-root.layer-focus .float-panel.focused {
+  filter: none;
+  opacity: 1;
+  box-shadow: 0 0 56px rgba(255, 170, 0, 0.45);
+}
+
+.float-panel.hand-hot {
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.5) !important;
+}
+
+.finger-layer.hand-live svg circle {
+  filter: drop-shadow(0 0 5px rgba(255, 170, 0, 0.85));
+}
+
 .vigil-canvas {
   position: absolute;
   inset: 0;
@@ -698,8 +733,23 @@ button, input, select {
   z-index: 80;
 }
 
-.mode-training .finger-layer svg circle {
+.mode-training .finger-layer svg circle,
+.mode-vigil .finger-layer svg circle {
   filter: drop-shadow(0 0 4px rgba(255, 170, 0, 0.75));
+}
+
+.training-hub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.training-hub-grid .chip {
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  padding: 8px 10px;
 }
 
 .finger-layer svg {

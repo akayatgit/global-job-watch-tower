@@ -28,6 +28,8 @@ export type HandSample = {
   thumb: { x: number; y: number } | null
   pinch: boolean
   pinchDist: number
+  /** All five digits curled (fist) — close window under hand */
+  fist: boolean
   centroid: { x: number; y: number } | null
 }
 
@@ -80,6 +82,7 @@ function readStoredVigilMode(): boolean {
 
 export type TrainingStepId =
   | 'idle'
+  | 'hub'
   | 'intro'
   | 'show_hand'
   | 'pinch'
@@ -91,6 +94,8 @@ export type TrainingStepId =
   | 'press'
   | 'done'
   | 'fail'
+  | 'flick_zoom'
+  | 'fist_close'
 
 export type GestureMode =
   | 'none'
@@ -110,11 +115,14 @@ type VigilStore = {
   trainingStep: TrainingStepId
   trainingFeedback: string
   trainingFailReport: string
+  /** Free practice: pick any drill, return to hub on pass (no robotic chain) */
+  trainingPractice: boolean
   startTraining: () => void
   stopTraining: () => void
   setTrainingStep: (step: TrainingStepId) => void
   setTrainingFeedback: (text: string) => void
   setTrainingFailReport: (text: string) => void
+  setTrainingPractice: (on: boolean) => void
   statusLine: string
   setStatus: (text: string) => void
   coreScale: number
@@ -181,6 +189,8 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     } catch {
       /* ignore */
     }
+    if (on && !get().trainingActive) startTrainLog('live')
+    else if (!on && !get().trainingActive) endTrainLog({ reason: 'vigil_off' })
     set({
       vigilMode: on,
       pressProgress: 0,
@@ -205,18 +215,20 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   trainingStep: 'idle',
   trainingFeedback: '',
   trainingFailReport: '',
+  trainingPractice: false,
   startTraining: () => {
     try {
       localStorage.setItem('vigil.mode', 'on')
     } catch {
       /* ignore */
     }
-    startTrainLog()
+    startTrainLog('training')
     set({
       vigilMode: true,
       trainingActive: true,
-      trainingStep: 'intro',
-      trainingFeedback: 'Training ground — allow camera, then Begin',
+      trainingStep: 'hub',
+      trainingPractice: false,
+      trainingFeedback: 'Pick a drill anytime — or skip back to the tower',
       trainingFailReport: '',
       statusLine: 'TRAINING GROUND',
       pressProgress: 0,
@@ -227,9 +239,11 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   stopTraining: () => {
     endTrainLog({ reason: 'exit' })
+    if (get().vigilMode) startTrainLog('live')
     set({
       trainingActive: false,
       trainingStep: 'idle',
+      trainingPractice: false,
       trainingFeedback: '',
       trainingFailReport: '',
       gestureMode: 'none',
@@ -241,6 +255,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   setTrainingStep: (step) => set({ trainingStep: step }),
   setTrainingFeedback: (text) => set({ trainingFeedback: text }),
   setTrainingFailReport: (text) => set({ trainingFailReport: text }),
+  setTrainingPractice: (on) => set({ trainingPractice: on }),
   statusLine: readStoredVigilMode()
     ? 'VIGIL MODE ON — HAND CONTROL'
     : 'DESKTOP MODE — MOUSE & KEYBOARD',
@@ -287,10 +302,16 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   closePanel: (id) => {
     const panels = { ...get().panels }
     panels[id] = { ...panels[id], open: false }
+    const remaining = Object.values(panels)
+      .filter((p) => p.open)
+      .sort((a, b) => b.z - a.z)
+    const next = remaining[0]?.id ?? null
     set({
       panels,
-      focusedPanel: get().focusedPanel === id ? null : get().focusedPanel,
-      statusLine: `CLOSED ${panels[id].title}`,
+      focusedPanel: next,
+      statusLine: next
+        ? `CLOSED ${panels[id].title} → ${panels[next].title}`
+        : `CLOSED ${panels[id].title}`,
     })
   },
   movePanel: (id, x, y) => {

@@ -9,6 +9,7 @@ export type TrainLogEvent = {
 
 type Session = {
   id: string
+  kind: 'training' | 'live'
   startedAt: string
   events: TrainLogEvent[]
 }
@@ -51,11 +52,18 @@ async function flushServer() {
   }
 }
 
-export function startTrainLog() {
+export function startTrainLog(kind: 'training' | 'live' = 'training') {
+  if (current && current.kind === kind) return current.id
+  if (current) {
+    current.events.push(nowEvent('session_end', { reason: 'switch', next: kind }))
+    persistLocal()
+    void flushServer()
+  }
   current = {
-    id: `train-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind,
     startedAt: new Date().toISOString(),
-    events: [nowEvent('session_start')],
+    events: [nowEvent('session_start', { kind })],
   }
   persistLocal()
   void flushServer()
@@ -70,15 +78,23 @@ export function logTrain(type: string, detail?: Record<string, unknown>) {
   }
   // Persist every few events + on important ones
   if (
-    current!.events.length % 8 === 0 ||
+    current!.events.length % 6 === 0 ||
     type.startsWith('step_') ||
+    type.startsWith('gesture_') ||
+    type.startsWith('practice_') ||
     type.includes('fail') ||
     type.includes('camera') ||
     type.includes('hand_')
   ) {
     persistLocal()
   }
-  if (type.startsWith('step_') || type.includes('fail') || type === 'session_end') {
+  if (
+    type.startsWith('step_') ||
+    type.startsWith('gesture_') ||
+    type.startsWith('practice_') ||
+    type.includes('fail') ||
+    type === 'session_end'
+  ) {
     void flushServer()
   }
 }

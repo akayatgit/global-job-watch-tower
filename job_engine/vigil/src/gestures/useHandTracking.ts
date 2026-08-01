@@ -3,6 +3,7 @@ import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { useVigilStore, type HandSample, type HandsState } from '../store/vigilStore'
 import { lerp } from '../lib/lerp'
 import { logTrain } from '../training/sessionLog'
+import { isFist, pinchDistance } from './handShape'
 
 const WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
@@ -16,16 +17,18 @@ function sampleFromLandmarks(
 ): HandSample {
   const thumb = lms[4]
   const index = lms[8]
-  const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y)
+  const pinchDist = pinchDistance(lms)
   // Hysteresis: easy to start pinch, must open wider to release (stops grab flicker)
   const pinch = wasPinching
     ? pinchDist < pinchThreshold * 1.7
     : pinchDist < pinchThreshold
+  const fist = !pinch && isFist(lms)
   return {
     index: { x: 1 - index.x, y: index.y },
     thumb: { x: 1 - thumb.x, y: thumb.y },
     pinch,
     pinchDist,
+    fist,
     centroid: {
       x: 1 - (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,

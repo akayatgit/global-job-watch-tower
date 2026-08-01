@@ -21,13 +21,20 @@ export function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | 'remo
   return best?.id ?? null
 }
 
-export function hitPanelHeader(nx: number, ny: number, padPx = 0): PanelId | null {
+export function hitPanelHeader(
+  nx: number,
+  ny: number,
+  padPx = 0,
+  /** Layer stack: only the focused window receives hits */
+  onlyId?: PanelId | null,
+): PanelId | null {
   const panels = useVigilStore.getState().panels
   const pt = screenPoint(nx, ny)
   let best: PanelId | null = null
   let bestZ = -1
   for (const p of Object.values(panels)) {
     if (!p.open) continue
+    if (onlyId && p.id !== onlyId) continue
     const el = document.querySelector(`[data-panel-id="${p.id}"]`) as HTMLElement | null
     if (!el) continue
     const head = el.querySelector('.panel-head') as HTMLElement | null
@@ -51,13 +58,18 @@ export function hitPanelHeader(nx: number, ny: number, padPx = 0): PanelId | nul
   return best
 }
 
-export function hitPanelBody(nx: number, ny: number): PanelId | null {
+export function hitPanelBody(
+  nx: number,
+  ny: number,
+  onlyId?: PanelId | null,
+): PanelId | null {
   const panels = useVigilStore.getState().panels
   const pt = screenPoint(nx, ny)
   let best: PanelId | null = null
   let bestZ = -1
   for (const p of Object.values(panels)) {
     if (!p.open) continue
+    if (onlyId && p.id !== onlyId) continue
     const el = document.querySelector(`[data-panel-id="${p.id}"]`) as HTMLElement | null
     if (!el) continue
     const body = el.querySelector('.panel-body') as HTMLElement | null
@@ -72,11 +84,23 @@ export function hitPanelBody(nx: number, ny: number): PanelId | null {
   return best
 }
 
-export function hitAnyPanel(nx: number, ny: number): PanelId | null {
-  return hitPanelHeader(nx, ny) || hitPanelBody(nx, ny)
+export function hitAnyPanel(
+  nx: number,
+  ny: number,
+  onlyId?: PanelId | null,
+): PanelId | null {
+  return hitPanelHeader(nx, ny, 0, onlyId) || hitPanelBody(nx, ny, onlyId)
 }
 
-export function hitPanelAction(nx: number, ny: number, padPx: number): HTMLElement | null {
+export function hitPanelAction(
+  nx: number,
+  ny: number,
+  padPx: number,
+  /** When set, only actions inside that panel (plus train/hud chips outside panels) */
+  onlyPanelId?: PanelId | null,
+  /** Layer focus: ignore dock / orbit chrome so dwell can't poke through */
+  layerLock?: boolean,
+): HTMLElement | null {
   const pt = screenPoint(nx, ny)
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>(
@@ -86,6 +110,23 @@ export function hitPanelAction(nx: number, ny: number, padPx: number): HTMLEleme
   let best: { el: HTMLElement; d: number } | null = null
   for (const el of candidates) {
     if ((el instanceof HTMLButtonElement && el.disabled) || el.offsetParent === null) continue
+    const action = el.dataset.gestureAction || ''
+    if (layerLock) {
+      const inPanel = el.closest('[data-panel-id]') as HTMLElement | null
+      const panelId = inPanel?.dataset.panelId
+      const isHud =
+        action.startsWith('train-') ||
+        action === 'start-training' ||
+        el.closest('.status-right') != null ||
+        el.closest('.training-coach') != null
+      if (onlyPanelId) {
+        if (panelId && panelId !== onlyPanelId) continue
+        if (!panelId && !isHud && action.startsWith('dock-')) continue
+        if (!panelId && action.startsWith('dock-')) continue
+      } else if (action.startsWith('dock-')) {
+        continue
+      }
+    }
     const r = el.getBoundingClientRect()
     if (
       pt.x >= r.left - padPx &&
