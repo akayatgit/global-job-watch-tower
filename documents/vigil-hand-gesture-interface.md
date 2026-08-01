@@ -4,7 +4,7 @@ Living spec for air control of the Watch Tower ops shell.
 **Face name:** VIGIL · **Backend:** `ultron`  
 **Code:** `job_engine/vigil/src/gestures/` · `job_engine/vigil/src/training/`
 
-Last updated: 2026-08-02 (camera mount + session logs)
+Last updated: 2026-08-02 (show-hand hold loop fix)
 
 ---
 
@@ -52,7 +52,7 @@ Status badge shows live mode: `SCROLL PANEL`, `ZOOM PANEL`, `PAN CANVAS`, `CORE 
 ## Training steps (dummy screen)
 
 1. Welcome → Begin  
-2. Show hand (R amber)  
+2. Show hand (either hand, ~1s hold bar, or **Hand seen — continue**)  
 3. Pinch ×5  
 4. Move SAMPLE window into drop zone  
 5. Scroll SAMPLE list (pinch in body)  
@@ -68,6 +68,16 @@ Calibration keys: `pinchThreshold`, `dwellMs`, `hitPx`, `lerpFactor` in `localSt
 
 Training used to remount `<video>` and kill MediaPipe. Webcam is now a **stable
 singleton** in `App.tsx`. Coach shows **HAND SEEN / NO HAND YET** plus camera status.
+
+### Show-hand stuck fix (2026-08-02)
+
+Bug: training `requestAnimationFrame` effect depended on `hands` every frame →
+loop restarted constantly → hold timer never reached 1s (stuck on “Show hand”
+while status showed `HAND SEEN · PAN CANVAS`).
+
+Fix: read hands from `getState()` inside the tick; deps = `[step]` only; accept
+L or R; progress bar; Continue button; disable pan/scroll/zoom during early
+train steps so status does not steal to `PAN CANVAS`.
 
 ### Session logs
 

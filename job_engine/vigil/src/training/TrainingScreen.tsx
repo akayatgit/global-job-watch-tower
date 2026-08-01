@@ -42,15 +42,11 @@ export function TrainingScreen() {
   const hands = useVigilStore((s) => s.hands)
   const pressProgress = useVigilStore((s) => s.pressProgress)
   const gestureMode = useVigilStore((s) => s.gestureMode)
-  const grabTarget = useVigilStore((s) => s.grabTarget)
 
   const [pinchCount, setPinchCount] = useState(0)
   const [sampleOpen, setSampleOpen] = useState(true)
   const [samplePos, setSamplePos] = useState({ x: 18, y: 28 })
   const [sampleScale, setSampleScale] = useState(1)
-  const [scrollOk, setScrollOk] = useState(false)
-  const [zoomOk, setZoomOk] = useState(false)
-  const [twoOk, setTwoOk] = useState(false)
   const [copied, setCopied] = useState(false)
   const lastPinch = useRef(false)
   const lastPos = useRef<{ x: number; y: number; t: number } | null>(null)
@@ -84,9 +80,6 @@ export function TrainingScreen() {
     setSampleOpen(true)
     setSamplePos({ x: 18, y: 28 })
     setSampleScale(1)
-    setScrollOk(false)
-    setZoomOk(false)
-    setTwoOk(false)
     setStep('intro')
     setFeedback('Dummy training room — wait for CAMERA LIVE, then Begin')
     stepStarted.current = performance.now()
@@ -156,7 +149,8 @@ export function TrainingScreen() {
       }
 
       if (currentStep === 'show_hand') {
-        if (primary?.index) {
+        // Accept either hand presence (index tip optional — MediaPipe can lag a frame)
+        if (st.hands.left || st.hands.right) {
           holdMs.current += dt
           const pct = Math.min(100, Math.round((holdMs.current / 1000) * 100))
           setHoldPct(pct)
@@ -215,7 +209,6 @@ export function TrainingScreen() {
         }
         if (delta > 80) {
           zoomBase.current = st.panels.tower.scale
-          setScrollOk(true)
           setFeedback('Scroll OK — both-hand zoom on the window')
           setStep('zoom_window')
         }
@@ -230,7 +223,6 @@ export function TrainingScreen() {
           setFeedback('Both hands pinch OVER the sample window — hold 0.3s then slowly move apart')
         }
         if (Math.abs(scale - zoomBase.current) > 0.12) {
-          setZoomOk(true)
           twoBase.current = st.coreScale
           st.movePanel('tower', 8, 55)
           setFeedback('Window zoom OK — two-hand over EMPTY space for core')
@@ -247,7 +239,6 @@ export function TrainingScreen() {
           setFeedback('Pinch BOTH hands in empty space (not on the window)')
         }
         if (Math.abs(st.coreScale - twoBase.current) > 0.15) {
-          setTwoOk(true)
           setFeedback('Two-hand OK — close target next')
           setStep('close')
         }
