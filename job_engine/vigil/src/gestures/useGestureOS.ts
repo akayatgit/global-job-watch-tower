@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react'
 import { ORBIT_NODES, useVigilStore, type PanelId } from '../store/vigilStore'
 import { dist2 } from '../lib/lerp'
 import { sendUltron } from '../lib/ultronWs'
+import { pushDwell } from '../training/sampleBus'
 
 function screenPoint(nx: number, ny: number) {
   return { x: nx * window.innerWidth, y: ny * window.innerHeight }
 }
 
 function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | 'remote' | null {
-  // Orbit nodes are projected roughly around center (VIGIL Mode only)
   const cx = window.innerWidth / 2
   const cy = window.innerHeight / 2
   const px = nx * window.innerWidth
@@ -33,13 +33,16 @@ function hitPanelHeader(nx: number, ny: number): PanelId | null {
     if (!p.open) continue
     const el = document.querySelector(`[data-panel-id="${p.id}"]`) as HTMLElement | null
     if (!el) continue
-    const rect = el.getBoundingClientRect()
-    const headerH = 42
+    const head = el.querySelector('.panel-head') as HTMLElement | null
+    const rect = (head || el).getBoundingClientRect()
+    // Exclude the ops/buttons strip on the right so Close is not stolen as "panel"
+    const ops = el.querySelector('.panel-head .ops') as HTMLElement | null
+    const opsLeft = ops ? ops.getBoundingClientRect().left - 8 : rect.right
     if (
       pt.x >= rect.left &&
-      pt.x <= rect.right &&
+      pt.x < opsLeft &&
       pt.y >= rect.top &&
-      pt.y <= rect.top + headerH
+      pt.y <= rect.bottom
     ) {
       if (p.z >= bestZ) {
         best = p.id
@@ -50,20 +53,43 @@ function hitPanelHeader(nx: number, ny: number): PanelId | null {
   return best
 }
 
-function hitPanelAction(nx: number, ny: number): HTMLElement | null {
+/** Inflated hit-test for buttons/chips — survives hand jitter. */
+function hitPanelAction(nx: number, ny: number, padPx: number): HTMLElement | null {
   const pt = screenPoint(nx, ny)
-  const els = document.elementsFromPoint(pt.x, pt.y)
-  for (const el of els) {
-    if (!(el instanceof HTMLElement)) continue
-    if (el.dataset.gestureAction || el.classList.contains('chip') || el.tagName === 'BUTTON') {
-      return el
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      'button[data-gesture-action], .chip[data-gesture-action], button.chip, .panel-head .ops button',
+    ),
+  )
+  let best: { el: HTMLElement; d: number } | null = null
+  for (const el of candidates) {
+    if (el.disabled || el.offsetParent === null) continue
+    const r = el.getBoundingClientRect()
+    const left = r.left - padPx
+    const right = r.right + padPx
+    const top = r.top - padPx
+    const bottom = r.bottom + padPx
+    if (pt.x >= left && pt.x <= right && pt.y >= top && pt.y <= bottom) {
+      const cx = (r.left + r.right) / 2
+      const cy = (r.top + r.bottom) / 2
+      const d = dist2(pt.x, pt.y, cx, cy)
+      if (!best || d < best.d) best = { el, d }
     }
   }
-  return null
+  return best?.el ?? null
+}
+
+function actionHoverId(el: HTMLElement): string {
+  return `action:${el.dataset.gestureAction || el.textContent?.trim() || 'btn'}`
 }
 
 export function useGestureOS() {
-  const dwellRef = useRef<{ id: string; since: number } | null>(null)
+  const dwellRef = useRef<{
+    id: string
+    since: number
+    el: HTMLElement | null
+    lostSince: number | null
+  } | null>(null)
   const grabOffset = useRef<{ dx: number; dy: number } | null>(null)
   const lastTwoDist = useRef<number | null>(null)
   const lastPinch = useRef(false)
@@ -72,7 +98,6 @@ export function useGestureOS() {
     let raf = 0
     const tick = () => {
       const st = useVigilStore.getState()
-      // Desktop mode: hands never drive panels — mouse/keyboard only
       if (!st.vigilMode) {
         if (st.pressProgress !== 0 || st.hoverTarget || st.grabTarget) {
           st.setPressProgress(0)
@@ -80,6 +105,7 @@ export function useGestureOS() {
           st.setGrabTarget(null)
           st.setMagnet(null)
         }
+        dwellRef.current = null
         raf = requestAnimationFrame(tick)
         return
       }
@@ -89,8 +115,10 @@ export function useGestureOS() {
       const pinching = Boolean(primary?.pinch)
       const dwellMs = st.calibration.dwellMs
       const hitPx = st.calibration.hitPx
+      // Sticky grace + fat buttons — scaled by calibrated jitter feel
+      const stickMs = Math.max(280, Math.min(600, Math.round(dwellMs * 0.55)))
+      const btnPad = Math.max(28, Math.min(56, Math.round(hitPx * 0.55)))
 
-      // Two-hand pinch zoom → core scale
       if (hands.twoHandPinch) {
         if (lastTwoDist.current != null) {
           const delta = hands.twoHandDist - lastTwoDist.current
@@ -109,23 +137,24 @@ export function useGestureOS() {
         lastTwoDist.current = null
       }
 
-      // During training move/close, skip orbit opens so Ashok focuses on the drill
       const training = st.trainingActive
       const orbit =
-        training && ['pinch', 'move', 'close', 'press', 'show_hand', 'intro'].includes(st.trainingStep)
+        training &&
+        ['pinch', 'move', 'close', 'press', 'show_hand', 'intro'].includes(st.trainingStep)
           ? null
           : hitOrbit(idx.x, idx.y, hitPx)
-      const header = hitPanelHeader(idx.x, idx.y)
-      const actionEl = hitPanelAction(idx.x, idx.y)
+
+      // Buttons FIRST — Close must win over panel header
+      const actionEl = hitPanelAction(idx.x, idx.y, btnPad)
+      const header = actionEl ? null : hitPanelHeader(idx.x, idx.y)
 
       let hover: string | null = null
-      if (header) hover = `panel:${header}`
+      if (actionEl) hover = actionHoverId(actionEl)
+      else if (header) hover = `panel:${header}`
       else if (orbit) hover = `orbit:${orbit}`
-      else if (actionEl) hover = `action:${actionEl.dataset.gestureAction || actionEl.textContent}`
 
       st.setHoverTarget(hover)
 
-      // Magnet toward nearest orbit
       if (orbit) {
         const cx = window.innerWidth / 2
         const cy = window.innerHeight / 2
@@ -139,7 +168,7 @@ export function useGestureOS() {
         st.setMagnet(null)
       }
 
-      // Grab / drag panels
+      // Grab only on header title area (not Close)
       if (pinching && !lastPinch.current) {
         if (header) {
           st.setGrabTarget(header)
@@ -184,46 +213,89 @@ export function useGestureOS() {
       }
       lastPinch.current = pinching
 
-      // Press-by-dot dwell (when not grabbing)
-      if (!pinching && !st.grabTarget && hover) {
-        const now = performance.now()
-        if (!dwellRef.current || dwellRef.current.id !== hover) {
-          dwellRef.current = { id: hover, since: now }
-          st.setPressProgress(0)
-        } else {
-          const prog = Math.min(1, (now - dwellRef.current.since) / dwellMs)
-          st.setPressProgress(prog)
-          if (prog >= 1) {
-            // Fire once
-            dwellRef.current = { id: hover + ':done', since: now }
-            st.setPressProgress(0)
-            if (hover.startsWith('orbit:')) {
-              const id = hover.slice(6) as PanelId | 'remote'
-              if (id === 'remote') {
-                st.openPanel('jobs')
-                st.setStatus('REMOTE TRENDS → JOBS FILTER')
-                sendUltron({ type: 'ultron.command', command: 'open_panel', panel: 'jobs' })
-              } else {
-                st.openPanel(id)
-                sendUltron({ type: 'ultron.command', command: 'open_panel', panel: id })
+      // Press-by-dot with sticky dwell (grace before reset)
+      const now = performance.now()
+      if (!pinching && !st.grabTarget) {
+        if (hover) {
+          if (!dwellRef.current || dwellRef.current.id !== hover) {
+            // Only hard-switch if we weren't mid-progress, or new target is a button
+            const switchingToAction = hover.startsWith('action:')
+            const mid = dwellRef.current && now - dwellRef.current.since > 80
+            if (!dwellRef.current || switchingToAction || !mid) {
+              dwellRef.current = {
+                id: hover,
+                since: now,
+                el: actionEl,
+                lostSince: null,
               }
-              st.triggerBurst()
-            } else if (hover.startsWith('panel:')) {
-              st.focusPanel(hover.slice(6) as PanelId)
-            } else if (actionEl) {
-              actionEl.click()
-              st.setStatus(`TRIGGER ${actionEl.textContent?.trim() || 'ACTION'}`)
-              sendUltron({
-                type: 'ultron.command',
-                command: 'click',
-                label: actionEl.textContent?.trim(),
-              })
+              st.setPressProgress(0)
+            }
+          } else {
+            dwellRef.current.lostSince = null
+            if (actionEl) dwellRef.current.el = actionEl
+            const prog = Math.min(1, (now - dwellRef.current.since) / dwellMs)
+            st.setPressProgress(prog)
+            if (prog >= 1) {
+              const held = now - dwellRef.current.since
+              pushDwell(held)
+              const fireId = dwellRef.current.id
+              const fireEl = dwellRef.current.el
+              dwellRef.current = { id: fireId + ':done', since: now, el: null, lostSince: null }
+              st.setPressProgress(0)
+              if (fireId.startsWith('orbit:')) {
+                const id = fireId.slice(6) as PanelId | 'remote'
+                if (id === 'remote') {
+                  st.openPanel('jobs')
+                  st.setStatus('REMOTE TRENDS → JOBS FILTER')
+                  sendUltron({ type: 'ultron.command', command: 'open_panel', panel: 'jobs' })
+                } else {
+                  st.openPanel(id)
+                  sendUltron({ type: 'ultron.command', command: 'open_panel', panel: id })
+                }
+                st.triggerBurst()
+              } else if (fireId.startsWith('panel:')) {
+                st.focusPanel(fireId.slice(6) as PanelId)
+              } else if (fireEl) {
+                fireEl.click()
+                st.setStatus(`TRIGGER ${fireEl.textContent?.trim() || 'ACTION'}`)
+                sendUltron({
+                  type: 'ultron.command',
+                  command: 'click',
+                  label: fireEl.textContent?.trim(),
+                })
+              }
             }
           }
+        } else if (dwellRef.current && !dwellRef.current.id.endsWith(':done')) {
+          // Sticky: keep filling for stickMs after leaving target
+          if (dwellRef.current.lostSince == null) {
+            dwellRef.current.lostSince = now
+          }
+          const lostFor = now - dwellRef.current.lostSince
+          if (lostFor < stickMs) {
+            const prog = Math.min(1, (now - dwellRef.current.since) / dwellMs)
+            st.setPressProgress(prog)
+            if (prog >= 1 && dwellRef.current.el) {
+              const held = now - dwellRef.current.since
+              pushDwell(held)
+              const el = dwellRef.current.el
+              dwellRef.current = {
+                id: dwellRef.current.id + ':done',
+                since: now,
+                el: null,
+                lostSince: null,
+              }
+              st.setPressProgress(0)
+              el.click()
+              st.setStatus(`TRIGGER ${el.textContent?.trim() || 'ACTION'}`)
+            }
+          } else {
+            dwellRef.current = null
+            st.setPressProgress(0)
+          }
+        } else {
+          st.setPressProgress(0)
         }
-      } else if (!hover) {
-        dwellRef.current = null
-        st.setPressProgress(0)
       }
 
       raf = requestAnimationFrame(tick)

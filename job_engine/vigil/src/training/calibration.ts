@@ -22,8 +22,8 @@ export const DEFAULT_CALIBRATION: VigilCalibration = {
   version: 1,
   updatedAt: '',
   pinchThreshold: 0.045,
-  dwellMs: 700,
-  hitPx: 64,
+  dwellMs: 550,
+  hitPx: 72,
   lerpFactor: 0.15,
   sessionsCompleted: 0,
   handSpeed: 0,
@@ -91,29 +91,37 @@ export function computeCalibration(
     pinchThreshold = Math.min(0.08, Math.max(0.025, mid * 1.05))
   }
 
-  let dwellMs = prev.dwellMs
-  if (samples.dwellDurations.length >= 2) {
-    const avg =
-      samples.dwellDurations.reduce((a, b) => a + b, 0) / samples.dwellDurations.length
-    // Slightly under average success time so it feels responsive
-    dwellMs = Math.min(1200, Math.max(350, Math.round(avg * 0.85)))
-  }
-
   const avgSpeed =
     samples.speeds.length > 0
       ? samples.speeds.reduce((a, b) => a + b, 0) / samples.speeds.length
       : prev.handSpeed
 
-  // Faster hands → higher lerp (less lag); jittery → lower lerp
   const avgJitter =
     samples.jitters.length > 0
       ? samples.jitters.reduce((a, b) => a + b, 0) / samples.jitters.length
       : 0.01
+
+  // Dwell: if Ashok needs longer holds (jitter resets), train toward a shorter
+  // required time AND larger hit pads — not a longer impossible hold.
+  let dwellMs = prev.dwellMs
+  if (samples.dwellDurations.length >= 1) {
+    const sorted = [...samples.dwellDurations].sort((a, b) => a - b)
+    const med = percentile(sorted, 0.5)
+    // Target slightly under median successful hold
+    dwellMs = Math.min(900, Math.max(320, Math.round(med * 0.75)))
+  } else if (avgJitter > 0.012) {
+    // Jittery hands, no completed dwell yet — ease the requirement
+    dwellMs = Math.min(prev.dwellMs, 480)
+  }
+
   let lerpFactor = 0.12 + Math.min(0.18, avgSpeed * 0.8) - Math.min(0.08, avgJitter * 4)
   lerpFactor = Math.min(0.28, Math.max(0.08, lerpFactor))
 
-  // Larger hit targets if movement is fast
-  const hitPx = Math.min(96, Math.max(48, Math.round(56 + avgSpeed * 80)))
+  // Larger hit targets when jittery or fast
+  const hitPx = Math.min(
+    110,
+    Math.max(56, Math.round(64 + avgSpeed * 80 + avgJitter * 1200)),
+  )
 
   return {
     version: 1,

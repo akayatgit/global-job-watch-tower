@@ -46,8 +46,14 @@ Entry: **Train** button (top right, next to VIGIL Mode).
 | 2 Show hand | Hold hand in frame ~1.5s | Tracking lock |
 | 3 Pinch | Pinch 5× | Pinch / open distance samples |
 | 4 Move | Drag Tower panel into drop zone | Speed + grab reliability |
-| 5 Close | Dwell on Close | Dwell timing |
+| 5 Close | Dwell on **big CLOSE TARGET** (sticky ring) | Dwell timing + jitter |
 | 6 Press | Dwell on Confirm | Dwell timing |
+
+**Close fix (2026-08-02):** Press-by-dot was resetting ~70% because (1) panel
+header stole hover from the Close button, (2) any 1-frame miss zeroed progress.
+Now: **buttons win over headers**, **inflated button hit pads**, **sticky dwell
+grace** (~half of `dwellMs`) before reset, and training uses a large CLOSE TARGET.
+Successful hold time is written into calibration.
 | 7 Done | Saves calibration | Updates live feel |
 
 After each completed session, `computeCalibration()` updates:

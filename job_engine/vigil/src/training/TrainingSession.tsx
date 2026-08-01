@@ -16,7 +16,7 @@ const STEPS = [
   { id: 'show_hand', title: '2 · Show your hand', hint: 'Raise one hand so the amber guide follows your index finger.' },
   { id: 'pinch', title: '3 · Pinch', hint: 'Pinch thumb + index 5 times. Hold each pinch briefly.' },
   { id: 'move', title: '4 · Move a widget', hint: 'Pinch the TRAIN panel header and drag it into the glowing drop zone.' },
-  { id: 'close', title: '5 · Close', hint: 'Point at Close and hold until the ring fills (press-by-dot).' },
+  { id: 'close', title: '5 · Close', hint: 'Point at the big CLOSE TARGET and hold until 100%. The ring stays sticky — small shakes are OK.' },
   { id: 'press', title: '6 · Press a chip', hint: 'Point at CONFIRM and hold until it lights up.' },
   { id: 'done', title: '7 · Calibrated', hint: 'Your feel is saved. Keep training daily to refine.' },
 ] as const
@@ -35,6 +35,7 @@ export function TrainingSession() {
   const pressProgress = useVigilStore((s) => s.pressProgress)
   const panels = useVigilStore((s) => s.panels)
   const openPanel = useVigilStore((s) => s.openPanel)
+  const closePanel = useVigilStore((s) => s.closePanel)
   const movePanel = useVigilStore((s) => s.movePanel)
 
   const [pinchCount, setPinchCount] = useState(0)
@@ -143,18 +144,14 @@ export function TrainingSession() {
       }
 
       if (step === 'close') {
-        const p = st.panels.tower
-        if (!p.open && !closedOk) {
-          setClosedOk(true)
-          pushDwell(st.calibration.dwellMs)
-          setFeedback('Closed — last step: press CONFIRM')
-          setStep('press')
+        if (closedOk) {
+          /* wait for press step */
         } else if (st.pressProgress > 0) {
           if (!dwellStart.current) dwellStart.current = now
-          setFeedback(`Hold on Close… ${Math.round(st.pressProgress * 100)}%`)
+          setFeedback(`Hold on CLOSE TARGET… ${Math.round(st.pressProgress * 100)}% — shakes OK`)
         } else {
           dwellStart.current = null
-          if (p.open) setFeedback('Point at Close on the panel and hold still')
+          setFeedback('Point the amber guide at the big CLOSE TARGET')
         }
       }
 
@@ -223,7 +220,27 @@ export function TrainingSession() {
         )}
 
         {step === 'close' && (
-          <p className="muted">Press progress: {Math.round(pressProgress * 100)}%</p>
+          <>
+            <p className="muted">Press progress: {Math.round(pressProgress * 100)}%</p>
+            <button
+              type="button"
+              className="training-close-target"
+              data-gesture-action="train-close"
+              onClick={() => {
+                const held = dwellStart.current
+                  ? performance.now() - dwellStart.current
+                  : calibration.dwellMs
+                pushDwell(held)
+                closePanel('tower')
+                setClosedOk(true)
+                setFeedback('Closed — last step: press CONFIRM')
+                setStep('press')
+              }}
+            >
+              CLOSE TARGET
+              <span>Hold the amber ring here</span>
+            </button>
+          </>
         )}
 
         {step === 'press' && (
