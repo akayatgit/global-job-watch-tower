@@ -276,10 +276,13 @@ Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the Think
 |---|---|
 | Entry | `GET /` serves VIGIL SPA (`job_engine/vigil/`); legacy Jinja at `/legacy/` |
 | Visual | Deep `#050302`, fiery orange `#FF5500`, amber `#FFAA00`, crimson `#CC1100`, bloom core |
-| Interaction | MediaPipe hands — press-by-dot, pinch-grab-move, two-hand pinch-zoom; on-screen finger guides |
+| Interaction | MediaPipe hands — dwell, pinch-move, pinch-scroll, two-hand zoom, **flick max-zoom**, **fist close**; finger glow + hand-hot windows |
+| Layer stack | Focused window only interactive; blur core / background / other panels (stops accidental dwell) |
+| Training | Practice hub: skip, guided tour, or pick any drill; calibration applies to live; gesture logs for Akay |
 | Modules | Floating panels: Tower, Hiring signals, Watchlist, Searches, Activity, Jobs, Live feed, Tower health |
 | Sync | WebSocket `/ws/ultron` + REST `/api/ultron/*` and existing `/api/*` |
 | Deep links | `/?panel=jobs` (old paths redirect here) |
+| Spec | `documents/vigil-hand-gesture-interface.md` |
 
 ---
 
@@ -592,6 +595,7 @@ START OF EVERY SESSION
 | v0.6 | 2026-08-01 | Akay | Local git repo + source-safety rule; absolute priority to protect codebase |
 | v0.7 | 2026-08-01 | Akay | Thermal save: keyword+headless; host_health; Docker watch-tower:v0; logind lesson |
 | v0.8 | 2026-08-01 | Akay | **VIGIL** ops shell (Ultron backend): single-canvas R3F + MediaPipe hands; all modules as floating panels; `/ws/ultron` |
+| v0.9 | 2026-08-02 | Akay | VIGIL layer stack, flick/fist gestures, free practice hub, live=training illumination + gesture logs |
 
 ### Phase 0 progress (living)
 
