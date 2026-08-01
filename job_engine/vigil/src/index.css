@@ -67,6 +67,144 @@ button, input, select {
   align-items: flex-start;
 }
 
+.status-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: 62%;
+}
+
+.vigil-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--vg-line);
+  border-radius: 6px;
+  background: var(--vg-glass);
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 0 24px rgba(255, 85, 0, 0.15);
+}
+
+.vigil-mode-switch.on {
+  border-color: var(--vg-amber);
+  box-shadow: 0 0 28px rgba(255, 170, 0, 0.35);
+}
+
+.vigil-mode-switch .switch-label {
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--vg-amber);
+  text-transform: uppercase;
+}
+
+.vigil-mode-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vigil-mode-switch .switch-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 85, 0, 0.2);
+  border: 1px solid var(--vg-line);
+  position: relative;
+  transition: background 0.2s;
+}
+
+.vigil-mode-switch.on .switch-track {
+  background: rgba(255, 170, 0, 0.35);
+  border-color: var(--vg-amber);
+}
+
+.vigil-mode-switch .switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--vg-muted);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.vigil-mode-switch.on .switch-knob {
+  transform: translateX(20px);
+  background: var(--vg-amber);
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.8);
+}
+
+.vigil-mode-switch .switch-state {
+  font-family: var(--font-hud);
+  font-size: 12px;
+  color: var(--vg-ink);
+  min-width: 28px;
+}
+
+.module-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(920px, 92vw);
+  pointer-events: auto;
+}
+
+.dock-chip {
+  border: 1px solid var(--vg-line);
+  background: rgba(12, 6, 2, 0.88);
+  color: var(--vg-ink);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.dock-chip:hover {
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+}
+
+.dock-chip.active {
+  background: rgba(255, 170, 0, 0.18);
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+  box-shadow: 0 0 16px rgba(255, 85, 0, 0.25);
+}
+
+.webcam-wrap.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.mode-desktop .float-panel {
+  pointer-events: auto;
+}
+
+.mode-desktop .panel-body input,
+.mode-desktop .panel-body textarea,
+.mode-desktop .panel-body select {
+  pointer-events: auto;
+}
+
 .brand-block h1 {
   margin: 0;
   font-family: var(--font-hud);

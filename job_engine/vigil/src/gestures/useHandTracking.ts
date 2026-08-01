@@ -28,10 +28,16 @@ function sampleFromLandmarks(lms: { x: number; y: number; z: number }[]): HandSa
 
 export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const setHands = useVigilStore((s) => s.setHands)
+  const vigilMode = useVigilStore((s) => s.vigilMode)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const rafRef = useRef(0)
 
   useEffect(() => {
+    if (!vigilMode) {
+      setHands({ left: null, right: null, twoHandPinch: false, twoHandDist: 0 })
+      return
+    }
+
     let active = true
     let stream: MediaStream | null = null
 
@@ -58,12 +64,16 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
         loop()
       } catch (err) {
         console.warn('VIGIL hand tracking unavailable', err)
-        useVigilStore.getState().setStatus('CAMERA OFFLINE — POINTER FALLBACK')
+        useVigilStore.getState().setStatus('CAMERA OFFLINE — TURN VIGIL MODE OFF FOR MOUSE')
       }
     }
 
     const loop = () => {
       if (!active) return
+      if (!useVigilStore.getState().vigilMode) {
+        rafRef.current = requestAnimationFrame(loop)
+        return
+      }
       const video = videoRef.current
       const lm = landmarkerRef.current
       if (video && lm && video.readyState >= 2) {
@@ -124,6 +134,8 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
       stream?.getTracks().forEach((t) => t.stop())
       landmarkerRef.current?.close()
       landmarkerRef.current = null
+      const video = videoRef.current
+      if (video) video.srcObject = null
     }
-  }, [setHands, videoRef])
+  }, [setHands, videoRef, vigilMode])
 }

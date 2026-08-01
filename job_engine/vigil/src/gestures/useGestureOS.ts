@@ -75,6 +75,17 @@ export function useGestureOS() {
     let raf = 0
     const tick = () => {
       const st = useVigilStore.getState()
+      // Desktop mode: hands never drive panels — mouse/keyboard only
+      if (!st.vigilMode) {
+        if (st.pressProgress !== 0 || st.hoverTarget || st.grabTarget) {
+          st.setPressProgress(0)
+          st.setHoverTarget(null)
+          st.setGrabTarget(null)
+          st.setMagnet(null)
+        }
+        raf = requestAnimationFrame(tick)
+        return
+      }
       const idx = st.smoothIndex
       const hands = st.hands
       const primary = hands.right || hands.left

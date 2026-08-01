@@ -64,7 +64,18 @@ export const ORBIT_NODES: OrbitNode[] = [
   { id: 'remote', label: 'Remote Trends', angle: 5.0, radius: 2.55 },
 ]
 
+function readStoredVigilMode(): boolean {
+  try {
+    return localStorage.getItem('vigil.mode') === 'on'
+  } catch {
+    return false
+  }
+}
+
 type VigilStore = {
+  /** When true: hand-gesture OS. When false: normal mouse/keyboard (default). */
+  vigilMode: boolean
+  setVigilMode: (on: boolean) => void
   statusLine: string
   setStatus: (text: string) => void
   coreScale: number
@@ -114,7 +125,28 @@ function initialPanels(): Record<PanelId, PanelState> {
 }
 
 export const useVigilStore = create<VigilStore>((set, get) => ({
-  statusLine: 'VIGIL ONLINE — JOB MARKET CORE ACTIVE',
+  vigilMode: readStoredVigilMode(),
+  setVigilMode: (on) => {
+    try {
+      localStorage.setItem('vigil.mode', on ? 'on' : 'off')
+    } catch {
+      /* ignore */
+    }
+    set({
+      vigilMode: on,
+      pressProgress: 0,
+      hoverTarget: null,
+      grabTarget: null,
+      magnet: null,
+      hands: { left: null, right: null, twoHandPinch: false, twoHandDist: 0 },
+      statusLine: on
+        ? 'VIGIL MODE ON — HAND CONTROL'
+        : 'DESKTOP MODE — MOUSE & KEYBOARD',
+    })
+  },
+  statusLine: readStoredVigilMode()
+    ? 'VIGIL MODE ON — HAND CONTROL'
+    : 'DESKTOP MODE — MOUSE & KEYBOARD',
   setStatus: (text) => set({ statusLine: text }),
   coreScale: 1,
   setCoreScale: (n) => set({ coreScale: Math.max(0.7, Math.min(2.2, n)) }),
