@@ -203,7 +203,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     per_role = db.execute(
         select(SearchConfig.name, func.count(JobMaster.id).label('n'))
         .join(JobMaster, JobMaster.search_config_id == SearchConfig.id)
-        .group_by(SearchConfig.name).order_by(desc('n'))
+        .group_by(SearchConfig.name).order_by(desc('n')).limit(40)
     ).all()
     daily = dict(db.execute(
         select(JobMaster.posted_date, func.count(JobMaster.id))
