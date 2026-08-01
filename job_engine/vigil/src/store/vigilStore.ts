@@ -1,4 +1,9 @@
 import { create } from 'zustand'
+import {
+  loadCalibration,
+  saveCalibration,
+  type VigilCalibration,
+} from '../training/calibration'
 
 export type PanelId =
   | 'tower'
@@ -72,10 +77,29 @@ function readStoredVigilMode(): boolean {
   }
 }
 
+export type TrainingStepId =
+  | 'idle'
+  | 'intro'
+  | 'show_hand'
+  | 'pinch'
+  | 'move'
+  | 'close'
+  | 'press'
+  | 'done'
+
 type VigilStore = {
   /** When true: hand-gesture OS. When false: normal mouse/keyboard (default). */
   vigilMode: boolean
   setVigilMode: (on: boolean) => void
+  calibration: VigilCalibration
+  setCalibration: (c: VigilCalibration) => void
+  trainingActive: boolean
+  trainingStep: TrainingStepId
+  trainingFeedback: string
+  startTraining: () => void
+  stopTraining: () => void
+  setTrainingStep: (step: TrainingStepId) => void
+  setTrainingFeedback: (text: string) => void
   statusLine: string
   setStatus: (text: string) => void
   coreScale: number
@@ -132,6 +156,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     } catch {
       /* ignore */
     }
+    const trainingActive = get().trainingActive
     set({
       vigilMode: on,
       pressProgress: 0,
@@ -139,11 +164,49 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       grabTarget: null,
       magnet: null,
       hands: { left: null, right: null, twoHandPinch: false, twoHandDist: 0 },
+      // Leaving VIGIL Mode exits training
+      trainingActive: on ? trainingActive : false,
+      trainingStep: on ? get().trainingStep : 'idle',
       statusLine: on
         ? 'VIGIL MODE ON — HAND CONTROL'
         : 'DESKTOP MODE — MOUSE & KEYBOARD',
     })
   },
+  calibration: loadCalibration(),
+  setCalibration: (c) => {
+    saveCalibration(c)
+    set({ calibration: c })
+  },
+  trainingActive: false,
+  trainingStep: 'idle',
+  trainingFeedback: '',
+  startTraining: () => {
+    try {
+      localStorage.setItem('vigil.mode', 'on')
+    } catch {
+      /* ignore */
+    }
+    set({
+      vigilMode: true,
+      trainingActive: true,
+      trainingStep: 'intro',
+      trainingFeedback: 'Welcome to VIGIL training ground',
+      statusLine: 'TRAINING GROUND — FOLLOW THE STEPS',
+      pressProgress: 0,
+      grabTarget: null,
+    })
+  },
+  stopTraining: () =>
+    set({
+      trainingActive: false,
+      trainingStep: 'idle',
+      trainingFeedback: '',
+      statusLine: get().vigilMode
+        ? 'VIGIL MODE ON — HAND CONTROL'
+        : 'DESKTOP MODE — MOUSE & KEYBOARD',
+    }),
+  setTrainingStep: (step) => set({ trainingStep: step }),
+  setTrainingFeedback: (text) => set({ trainingFeedback: text }),
   statusLine: readStoredVigilMode()
     ? 'VIGIL MODE ON — HAND CONTROL'
     : 'DESKTOP MODE — MOUSE & KEYBOARD',

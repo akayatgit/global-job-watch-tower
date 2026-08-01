@@ -3,15 +3,12 @@ import { ORBIT_NODES, useVigilStore, type PanelId } from '../store/vigilStore'
 import { dist2 } from '../lib/lerp'
 import { sendUltron } from '../lib/ultronWs'
 
-const DWELL_MS = 700
-const HIT_PX = 56
-
 function screenPoint(nx: number, ny: number) {
   return { x: nx * window.innerWidth, y: ny * window.innerHeight }
 }
 
-function hitOrbit(nx: number, ny: number): PanelId | 'remote' | null {
-  // Orbit nodes are projected roughly around center
+function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | 'remote' | null {
+  // Orbit nodes are projected roughly around center (VIGIL Mode only)
   const cx = window.innerWidth / 2
   const cy = window.innerHeight / 2
   const px = nx * window.innerWidth
@@ -22,7 +19,7 @@ function hitOrbit(nx: number, ny: number): PanelId | 'remote' | null {
     const x = cx + Math.cos(node.angle) * r
     const y = cy + Math.sin(node.angle) * r * 0.72
     const d = dist2(px, py, x, y)
-    if (d < HIT_PX && (!best || d < best.d)) best = { id: node.id, d }
+    if (d < hitPx && (!best || d < best.d)) best = { id: node.id, d }
   }
   return best?.id ?? null
 }
@@ -90,6 +87,8 @@ export function useGestureOS() {
       const hands = st.hands
       const primary = hands.right || hands.left
       const pinching = Boolean(primary?.pinch)
+      const dwellMs = st.calibration.dwellMs
+      const hitPx = st.calibration.hitPx
 
       // Two-hand pinch zoom → core scale
       if (hands.twoHandPinch) {
@@ -110,7 +109,12 @@ export function useGestureOS() {
         lastTwoDist.current = null
       }
 
-      const orbit = hitOrbit(idx.x, idx.y)
+      // During training move/close, skip orbit opens so Ashok focuses on the drill
+      const training = st.trainingActive
+      const orbit =
+        training && ['pinch', 'move', 'close', 'press', 'show_hand', 'intro'].includes(st.trainingStep)
+          ? null
+          : hitOrbit(idx.x, idx.y, hitPx)
       const header = hitPanelHeader(idx.x, idx.y)
       const actionEl = hitPanelAction(idx.x, idx.y)
 
@@ -187,7 +191,7 @@ export function useGestureOS() {
           dwellRef.current = { id: hover, since: now }
           st.setPressProgress(0)
         } else {
-          const prog = Math.min(1, (now - dwellRef.current.since) / DWELL_MS)
+          const prog = Math.min(1, (now - dwellRef.current.since) / dwellMs)
           st.setPressProgress(prog)
           if (prog >= 1) {
             // Fire once

@@ -3,21 +3,22 @@ import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { useVigilStore, type HandSample, type HandsState } from '../store/vigilStore'
 import { lerp } from '../lib/lerp'
 
-const PINCH_THRESHOLD = 0.04
 const WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
 const MODEL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
-function sampleFromLandmarks(lms: { x: number; y: number; z: number }[]): HandSample {
+function sampleFromLandmarks(
+  lms: { x: number; y: number; z: number }[],
+  pinchThreshold: number,
+): HandSample {
   const thumb = lms[4]
   const index = lms[8]
   const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y)
-  // Mirror X so movement matches screen (selfie view)
   return {
     index: { x: 1 - index.x, y: index.y },
     thumb: { x: 1 - thumb.x, y: thumb.y },
-    pinch: pinchDist < PINCH_THRESHOLD,
+    pinch: pinchDist < pinchThreshold,
     pinchDist,
     centroid: {
       x: 1 - (thumb.x + index.x) / 2,
@@ -76,6 +77,7 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
       }
       const video = videoRef.current
       const lm = landmarkerRef.current
+      const cal = useVigilStore.getState().calibration
       if (video && lm && video.readyState >= 2) {
         const result = lm.detectForVideo(video, performance.now())
         const hands: HandsState = {
@@ -87,7 +89,7 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
         const samples: HandSample[] = []
         result.landmarks.forEach((landmarks, i) => {
           const handed = result.handednesses?.[i]?.[0]?.categoryName
-          const sample = sampleFromLandmarks(landmarks)
+          const sample = sampleFromLandmarks(landmarks, cal.pinchThreshold)
           samples.push(sample)
           if (handed === 'Left') hands.left = sample
           else hands.right = sample
@@ -105,12 +107,13 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
 
         const primary = hands.right?.index || hands.left?.index
         const thumb = hands.right?.thumb || hands.left?.thumb
+        const factor = cal.lerpFactor
         const st = useVigilStore.getState()
         if (primary) {
           useVigilStore.setState({
             smoothIndex: {
-              x: lerp(st.smoothIndex.x, primary.x, 0.15),
-              y: lerp(st.smoothIndex.y, primary.y, 0.15),
+              x: lerp(st.smoothIndex.x, primary.x, factor),
+              y: lerp(st.smoothIndex.y, primary.y, factor),
             },
           })
         }
@@ -118,8 +121,8 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
           const s2 = useVigilStore.getState()
           useVigilStore.setState({
             smoothThumb: {
-              x: lerp(s2.smoothThumb.x, thumb.x, 0.15),
-              y: lerp(s2.smoothThumb.y, thumb.y, 0.15),
+              x: lerp(s2.smoothThumb.x, thumb.x, factor),
+              y: lerp(s2.smoothThumb.y, thumb.y, factor),
             },
           })
         }

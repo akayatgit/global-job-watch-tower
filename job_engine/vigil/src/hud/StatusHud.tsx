@@ -16,6 +16,9 @@ export function StatusHud() {
   const latencyMs = useVigilStore((s) => s.latencyMs)
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const setVigilMode = useVigilStore((s) => s.setVigilMode)
+  const trainingActive = useVigilStore((s) => s.trainingActive)
+  const startTraining = useVigilStore((s) => s.startTraining)
+  const sessions = useVigilStore((s) => s.calibration.sessionsCompleted)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -91,21 +94,33 @@ export function StatusHud() {
             </button>
           </div>
 
-          <label
-            className={`vigil-mode-switch ${vigilMode ? 'on' : 'off'}`}
-            title={vigilMode ? 'Hand control on — click to use mouse & keyboard' : 'Mouse & keyboard — click to enable hand control'}
-          >
-            <span className="switch-label">VIGIL Mode</span>
-            <input
-              type="checkbox"
-              checked={vigilMode}
-              onChange={(e) => setVigilMode(e.target.checked)}
-            />
-            <span className="switch-track" aria-hidden>
-              <span className="switch-knob" />
-            </span>
-            <span className="switch-state">{vigilMode ? 'ON' : 'OFF'}</span>
-          </label>
+          <div className="vigil-controls">
+            <button
+              type="button"
+              className={`train-btn ${trainingActive ? 'active' : ''}`}
+              data-gesture-action="start-training"
+              disabled={trainingActive}
+              onClick={() => startTraining()}
+              title="Guided hand training + calibration"
+            >
+              Train{sessions > 0 ? ` · ${sessions}` : ''}
+            </button>
+            <label
+              className={`vigil-mode-switch ${vigilMode ? 'on' : 'off'}`}
+              title={vigilMode ? 'Hand control on — click to use mouse & keyboard' : 'Mouse & keyboard — click to enable hand control'}
+            >
+              <span className="switch-label">VIGIL Mode</span>
+              <input
+                type="checkbox"
+                checked={vigilMode}
+                onChange={(e) => setVigilMode(e.target.checked)}
+              />
+              <span className="switch-track" aria-hidden>
+                <span className="switch-knob" />
+              </span>
+              <span className="switch-state">{vigilMode ? 'ON' : 'OFF'}</span>
+            </label>
+          </div>
         </div>
       </div>
 

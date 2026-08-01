@@ -4,6 +4,28 @@ import { EnergyCore } from './EnergyCore'
 import { Starfield } from './Starfield'
 import { OrbitNodes } from './OrbitNodes'
 import { CameraRig } from './CameraRig'
+import { useVigilStore } from '../store/vigilStore'
+
+function SceneBody() {
+  const vigilMode = useVigilStore((s) => s.vigilMode)
+  return (
+    <>
+      <Starfield />
+      <EnergyCore />
+      {/* Orbit dots only in VIGIL Mode — desktop uses bottom module chips */}
+      {vigilMode && <OrbitNodes />}
+      <CameraRig />
+      <EffectComposer multisampling={0}>
+        <Bloom
+          intensity={1.35}
+          luminanceThreshold={0.18}
+          luminanceSmoothing={0.7}
+          mipmapBlur
+        />
+      </EffectComposer>
+    </>
+  )
+}
 
 export function VigilCanvas() {
   return (
@@ -17,18 +39,7 @@ export function VigilCanvas() {
         <ambientLight intensity={0.35} />
         <pointLight position={[4, 3, 4]} intensity={1.2} color="#ff5500" />
         <pointLight position={[-3, -2, 2]} intensity={0.6} color="#ffaa00" />
-        <Starfield />
-        <EnergyCore />
-        <OrbitNodes />
-        <CameraRig />
-        <EffectComposer multisampling={0}>
-          <Bloom
-            intensity={1.35}
-            luminanceThreshold={0.18}
-            luminanceSmoothing={0.7}
-            mipmapBlur
-          />
-        </EffectComposer>
+        <SceneBody />
       </Canvas>
     </div>
   )

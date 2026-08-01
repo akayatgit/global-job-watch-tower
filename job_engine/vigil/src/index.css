@@ -78,6 +78,36 @@ button, input, select {
   max-width: 62%;
 }
 
+.vigil-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.train-btn {
+  border: 1px solid var(--vg-line);
+  background: var(--vg-glass);
+  color: var(--vg-amber);
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.train-btn:hover:not(:disabled) {
+  border-color: var(--vg-amber);
+  box-shadow: 0 0 16px rgba(255, 170, 0, 0.3);
+}
+
+.train-btn:disabled,
+.train-btn.active {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .vigil-mode-switch {
   display: flex;
   align-items: center;
@@ -206,6 +236,122 @@ button, input, select {
 .mode-desktop .panel-body textarea,
 .mode-desktop .panel-body select {
   pointer-events: auto;
+}
+
+.training-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.training-layer .interactive,
+.training-card,
+.training-card button {
+  pointer-events: auto;
+}
+
+.training-card {
+  position: absolute;
+  top: 96px;
+  left: 20px;
+  width: min(380px, 42vw);
+  padding: 14px 16px;
+  background: var(--vg-glass);
+  border: 1px solid var(--vg-amber);
+  border-radius: 8px;
+  box-shadow: 0 0 40px rgba(255, 85, 0, 0.25);
+}
+
+.training-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.training-head h2 {
+  margin: 0;
+  flex: 1;
+  font-family: var(--font-hud);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--vg-amber);
+}
+
+.training-card h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-hud);
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--vg-ink);
+}
+
+.training-hint {
+  margin: 0 0 8px;
+  color: var(--vg-muted);
+  font-size: 14px;
+}
+
+.training-feedback {
+  margin: 0 0 10px;
+  color: var(--vg-amber);
+  font-size: 15px;
+  min-height: 1.4em;
+}
+
+.training-meter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.training-cal {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.training-dropzone {
+  position: absolute;
+  right: 8%;
+  top: 28%;
+  width: 22%;
+  height: 28%;
+  border: 2px dashed var(--vg-amber);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-hud);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: var(--vg-amber);
+  background: rgba(255, 170, 0, 0.06);
+  box-shadow: inset 0 0 40px rgba(255, 85, 0, 0.12);
+  pointer-events: none;
+  animation: dropPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dropPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.training-sample-label {
+  position: absolute;
+  right: 8%;
+  top: 22%;
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--vg-muted);
+  pointer-events: none;
+}
+
+.mode-training .countdown-big {
+  opacity: 0.35;
 }
 
 .brand-block h1 {
