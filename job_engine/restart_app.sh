@@ -66,6 +66,20 @@ start_unit() {
   fi
 }
 
+# Build VIGIL air ops shell (React / R3F) before API comes up
+NODE_BIN="/home/user/actions-runner/externals/node20/bin"
+if [ -d "$WORKDIR/vigil" ] && [ -x "$NODE_BIN/npm" ]; then
+  echo "[restart] building VIGIL…"
+  (
+    cd "$WORKDIR/vigil"
+    export PATH="$NODE_BIN:$PATH"
+    if [ ! -d node_modules ]; then
+      npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+    fi
+    npm run build
+  ) || echo "[restart] WARNING: VIGIL build failed — /legacy shell still available"
+fi
+
 echo "[restart] bouncing app processes (Postgres/Redis untouched)..."
 stop_unit beat
 stop_unit worker

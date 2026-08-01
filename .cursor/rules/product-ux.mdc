@@ -105,3 +105,10 @@ use — they should love opening the app, never fight it.
 - Dashboard uses full viewport width (no narrow centered column); insight cards
   in a compact masonry grid (natural card heights, no row stretching); long
   lists capped at ~8 rows with Show more; teasers side-by-side; tight padding.
+- **VIGIL ops UI (2026-08-01):** Primary admin surface is the VIGIL single-page
+  canvas (no document scroll). Face name **VIGIL**; backend namespace **ultron**.
+  All former pages are floating panels around the Ultron energy core. Hand-first:
+  on-screen index/thumb guides, press-by-dot dwell, pinch-grab-move panels,
+  two-hand pinch to expand core. Palette `#050302` / `#FF5500` / `#FFAA00` /
+  `#CC1100` / `#FF7700` with bloom. Legacy Jinja recovery at `/legacy/`.
+  Pitch light brand stays investor-deck truth; ops UI follows VIGIL.

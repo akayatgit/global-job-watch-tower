@@ -32,6 +32,11 @@ htmlcov/
 dist/
 build/
 
+# --- Frontend (VIGIL builds on deploy) ---
+node_modules/
+job_engine/vigil/node_modules/
+job_engine/vigil/dist/
+
 # --- Virtual envs / OS junk ---
 .venv/
 venv/

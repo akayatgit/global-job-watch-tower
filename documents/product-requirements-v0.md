@@ -196,6 +196,8 @@ The pitch is the brand bible. UI and marketing surfaces must feel like the deck:
 | Lab / parent | Quanta HR Labs |
 | Logo mark | Lime-green square with stylized black **Q** (Quanta) |
 | Voice | Confident, clear, human. No jargon in the UI (see product-ux rule). |
+| **Ops AI face** | **VIGIL** — air-driven tower mind (Jarvis-class). What Ashok sees and gestures to. |
+| **Ops AI backend** | **`ultron`** — code/package/WS namespace (`job_engine/app/ultron/`, `/ws/ultron`, `ultron.*` events). Not shown as the product name in chrome. |
 
 ### 2.2 Color system (CSS tokens — target)
 
@@ -265,6 +267,19 @@ Align with standing workspace UX rule:
 - Dashboards = insight first
 - Destructive actions confirmed; search definitions protected
 - Scraper behavior stays human-like (dwell, mouse, popup dismiss)
+
+### 2.6 VIGIL ops shell (Ashok YES 2026-08-01)
+
+Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the ThinkPad** is VIGIL — a single no-scroll Ultron-core canvas:
+
+| Trait | Spec |
+|---|---|
+| Entry | `GET /` serves VIGIL SPA (`job_engine/vigil/`); legacy Jinja at `/legacy/` |
+| Visual | Deep `#050302`, fiery orange `#FF5500`, amber `#FFAA00`, crimson `#CC1100`, bloom core |
+| Interaction | MediaPipe hands — press-by-dot, pinch-grab-move, two-hand pinch-zoom; on-screen finger guides |
+| Modules | Floating panels: Tower, Hiring signals, Watchlist, Searches, Activity, Jobs, Live feed, Tower health |
+| Sync | WebSocket `/ws/ultron` + REST `/api/ultron/*` and existing `/api/*` |
+| Deep links | `/?panel=jobs` (old paths redirect here) |
 
 ---
 
@@ -576,18 +591,20 @@ START OF EVERY SESSION
 | v0.5 | 2026-08-01 | Akay | Company Watchlist (star/unstar, velocity, Tower teaser); starter pin of top hirers |
 | v0.6 | 2026-08-01 | Akay | Local git repo + source-safety rule; absolute priority to protect codebase |
 | v0.7 | 2026-08-01 | Akay | Thermal save: keyword+headless; host_health; Docker watch-tower:v0; logind lesson |
+| v0.8 | 2026-08-01 | Akay | **VIGIL** ops shell (Ultron backend): single-canvas R3F + MediaPipe hands; all modules as floating panels; `/ws/ultron` |
 
 ### Phase 0 progress (living)
 
 | Slice | Status |
 |---|---|
-| Brand tokens + Quanta Q + Live naming on admin shell | Done |
-| Nav: Tower · Searches · Activity · Jobs · Live feed | Done |
+| Brand tokens + Quanta Q + Live naming on admin shell | Done (legacy `/legacy`) |
+| Nav: Tower · Searches · Activity · Jobs · Live feed | Done → VIGIL orbit nodes + panels |
 | Tower Overview pods (honest pilot metrics) + Tracks flywheel cue | Done |
 | Harden discovery pipeline / scrape reliability | Done (v0.2) |
 | Hiring Signals (Phase 1) | Done (v0.3) |
 | Once-daily cadence + ~100 fresher/major role catalogue | Done (v0.4) |
 | Company Watchlist (EC-01) | Done (v0.5) |
+| VIGIL air ops shell (hand-first, Ultron bus) | Done (v0.8) |
 
 ### Cadence policy (v0.4) — how often to run
 
