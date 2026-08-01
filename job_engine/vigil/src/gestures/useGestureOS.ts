@@ -145,14 +145,15 @@ export function useGestureOS() {
           modeRef.current = 'drag_panel'
           st.setStatus(`MOVE ${p.title}`)
           st.triggerBurst()
-        } else if (body) {
+        } else if (body && (!training || st.trainingStep === 'scroll')) {
           scrollPanel.current = body
           lastY.current = idx.y
           st.focusPanel(body)
           st.setGestureMode('scroll_panel')
           modeRef.current = 'scroll_panel'
           st.setStatus(`SCROLL ${body.toUpperCase()}`)
-        } else if (!actionEl && !orbit) {
+        } else if (!actionEl && !orbit && !training) {
+          // Never pan during training — it steals aim and hides intent
           lastX.current = idx.x
           lastY.current = idx.y
           st.setGestureMode('pan_canvas')

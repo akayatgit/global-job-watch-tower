@@ -79,6 +79,12 @@ Fix: read hands from `getState()` inside the tick; deps = `[step]` only; accept
 L or R; progress bar; Continue button; disable pan/scroll/zoom during early
 train steps so status does not steal to `PAN CANVAS`.
 
+### Guides buried under training (2026-08-02)
+
+Training screen `z-index: 50` covered finger guides (`30`) and webcam PiP — Ashok
+saw HAND SEEN but no aiming dots. Guides → `z-index: 80`, webcam wrap → `90`.
+Pan canvas disabled for all training so status stays clean.
+
 ### Session logs
 
 Every Train session writes events (camera boot, hand seen/lost, step enter/fail,

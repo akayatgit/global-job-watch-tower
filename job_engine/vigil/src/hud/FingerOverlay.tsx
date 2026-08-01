@@ -82,8 +82,8 @@ export function FingerOverlay() {
             strokeDasharray="0.8 0.6"
           />
         )}
-        {/* Left hand — cyan */}
-        {leftVisible && hands.left && (
+        {/* Both hands: L cyan + R amber. Left-only: one big cyan L (primary cursor). */}
+        {hands.right && leftVisible && hands.left && (
           <HandGuides
             index={leftIndex}
             thumb={leftThumb}
@@ -93,15 +93,26 @@ export function FingerOverlay() {
             label="L"
           />
         )}
-        {/* Right / primary — amber */}
-        <HandGuides
-          index={index}
-          thumb={thumb}
-          pinch={rightPinch || (!hands.right && Boolean(hands.left?.pinch))}
-          color="#ffaa00"
-          thumbColor="#cc1100"
-          label="R"
-        />
+        {hands.right && (
+          <HandGuides
+            index={index}
+            thumb={thumb}
+            pinch={rightPinch}
+            color="#ffaa00"
+            thumbColor="#cc1100"
+            label="R"
+          />
+        )}
+        {!hands.right && hands.left && (
+          <HandGuides
+            index={index}
+            thumb={thumb}
+            pinch={leftPinch}
+            color="#22d3ee"
+            thumbColor="#0891b2"
+            label="L"
+          />
+        )}
         {press > 0 && (
           <circle
             cx={ix}

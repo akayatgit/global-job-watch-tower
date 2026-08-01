@@ -464,7 +464,7 @@ export function TrainingScreen() {
           </div>
         )}
         <p className="training-legend">
-          R amber = primary · L cyan = second hand · purple line = two-hand stretch
+          Aim with the glowing L/R dots on screen · webcam PiP bottom-right · pinch SAMPLE title bar → drag to DROP ZONE
         </p>
       </div>
 

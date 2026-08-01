@@ -219,13 +219,23 @@ button, input, select {
   box-shadow: 0 0 16px rgba(255, 85, 0, 0.25);
 }
 
-.webcam-wrap.hidden {
+.webcam-wrap {
   position: absolute;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.webcam-wrap .webcam-pip {
+  pointer-events: auto;
+}
+
+.webcam-wrap.hidden {
   width: 1px;
   height: 1px;
   opacity: 0;
-  pointer-events: none;
   overflow: hidden;
+  z-index: 0;
 }
 
 .mode-desktop .float-panel {
@@ -642,7 +652,12 @@ button, input, select {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 30;
+  /* Above training screen (50) so Ashok can aim during drills */
+  z-index: 80;
+}
+
+.mode-training .finger-layer svg circle {
+  filter: drop-shadow(0 0 4px rgba(255, 170, 0, 0.75));
 }
 
 .finger-layer svg {
