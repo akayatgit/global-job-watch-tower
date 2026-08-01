@@ -12,7 +12,7 @@
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
 | **First-mover mandate** | **Highest product priority:** start and sustain tower searches so Quanta is among the first to collect fresh job-market insights — coverage before polish |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
-| **Remote source + auto-deploy** | **Public GitHub:** [akayatgit/global-job-watch-tower](https://github.com/akayatgit/global-job-watch-tower). Merge/push to `main` triggers a **self-hosted Actions runner on this ThinkPad** → `scripts/deploy_local.sh` (wait for scrape idle → pull → migrate → restart API/worker/beat only). Secrets (`.env`, `.data`, Chrome profiles) never leave the laptop. |
+| **Remote source + auto-deploy** | **Public GitHub:** [akayatgit/global-job-watch-tower](https://github.com/akayatgit/global-job-watch-tower). Merge/push to `main` triggers a **self-hosted Actions runner on this ThinkPad** → `scripts/deploy_local.sh` (**deploy wins**: pause beat → cancel active searches → pull → migrate → restart → retrigger cancelled roles; LinkedIn job ids prevent duplicates). Secrets (`.env`, `.data`, Chrome profiles) never leave the laptop. |
 | **Lid / sleep policy** | **Configured 2026-08-01 for overnight collect:** GNOME lid-close + idle sleep = `nothing`; systemd-logind `HandleLidSwitch=ignore` via `/etc/systemd/logind.conf.d/99-watch-tower-lid.conf`. Lid close should **not** suspend. Keep on charger; allow airflow (laptop may run warm with lid closed). |
 | **Source of truth** | Pitch deck slides + this document (iterate in place; do not fork near-duplicates) |
 | **Existing seed** | `job_engine/` LinkedIn scrape + admin pilot (foundation for Discovery / Tracks) |
@@ -40,8 +40,8 @@ Ashok can build from phone or any device: open a PR → merge to `main` → this
 |---|---|
 | Trigger | GitHub Actions on **push to `main` only** (never on open PRs/forks — public-repo safety) |
 | Runner | Self-hosted under `/home/user/actions-runner`, labels `self-hosted,linux,watch-tower`, systemd service |
-| Deploy script | [`scripts/deploy_local.sh`](../scripts/deploy_local.sh) — flock, **pause Celery beat + cancel queued**, wait for in-flight scrape only (cap 45 min), `git reset --hard origin/main`, `alembic upgrade head`, [`job_engine/restart_app.sh`](../job_engine/restart_app.sh) via **systemd --user** units `watch-tower-{api,worker,beat}` (survives Actions cgroup teardown; linger enabled) |
-| Ashok override | Vision owner can order “stop search and deploy now” — cancel active runs and proceed immediately |
+| Deploy script | [`scripts/deploy_local.sh`](../scripts/deploy_local.sh) — flock, **pause beat → cancel all active searches (queued/dispatched/running) → stop worker →** `git reset --hard origin/main` → `alembic upgrade head` → [`job_engine/restart_app.sh`](../job_engine/restart_app.sh) → **retrigger cancelled roles** as one-off runs. systemd --user units `watch-tower-{api,worker,beat}` (survives Actions cgroup teardown; linger enabled) |
+| Deploy priority | **Deploy outranks in-flight searches** (2026-08-01). Do not wait for scrape idle. Compromising a few searches is OK — LinkedIn job ids dedupe on retrigger. |
 | Survives deploy | Postgres/Redis data, `.env`, Chrome LinkedIn session, Ollama |
 | Restarts | API `:8001`, Celery worker, Celery beat |
 | Stamp / logs | `job_engine/.data/last_deploy.json`, `job_engine/.data/logs/deploy.log` |
