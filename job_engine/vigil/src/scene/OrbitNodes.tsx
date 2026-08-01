@@ -1,9 +1,12 @@
-import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import * as THREE from 'three'
 import { ORBIT_NODES, useVigilStore } from '../store/vigilStore'
 
+/**
+ * Glowing orbit nodes only — no DOM Html labels.
+ * Labels live in ModuleDock (and finger magnets) so they never cover panels.
+ */
 export function OrbitNodes() {
   const group = useRef<THREE.Group>(null)
   const hover = useVigilStore((s) => s.hoverTarget)
@@ -36,22 +39,6 @@ export function OrbitNodes() {
                 side={THREE.DoubleSide}
               />
             </mesh>
-            <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
-              <div
-                style={{
-                  color: active ? '#fff' : '#ffaa00',
-                  fontFamily: 'Orbitron, sans-serif',
-                  fontSize: 10,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  textShadow: '0 0 10px rgba(255,85,0,0.8)',
-                  marginTop: 28,
-                }}
-              >
-                {node.label}
-              </div>
-            </Html>
           </group>
         )
       })}

@@ -4,7 +4,7 @@ Living spec for air control of the Watch Tower ops shell.
 **Face name:** VIGIL · **Backend:** `ultron` (`/ws/ultron`)  
 **Code:** `job_engine/vigil/src/gestures/` · `job_engine/vigil/src/hud/FingerOverlay.tsx`
 
-Last updated: 2026-08-01
+Last updated: 2026-08-02
 
 ---
 
@@ -62,7 +62,11 @@ Pinch threshold and dwell time live in `useGestureOS.ts` / `useHandTracking.ts` 
 
 ## Module map (orbit / dock)
 
-| Node label | Panel id |
+Readable names live **only** on the bottom **ModuleDock** chips (and status line).  
+3D orbit spheres are unlabeled so HTML labels never stack above floating panels
+(fixed 2026-08-02 — drei `Html` was painting over widgets).
+
+| Node label (dock) | Panel id |
 |---|---|
 | Tech Jobs | `jobs` |
 | Hiring Signals | `signals` |

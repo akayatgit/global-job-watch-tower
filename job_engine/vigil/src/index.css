@@ -43,6 +43,9 @@ button, input, select {
 .vigil-canvas {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  /* Keep any R3F/drei DOM overlays under HUD + floating panels */
+  isolation: isolate;
 }
 
 .vigil-hud {
