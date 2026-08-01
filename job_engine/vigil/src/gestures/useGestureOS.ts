@@ -131,8 +131,11 @@ export function useGestureOS() {
         zoomPanel.current = null
       }
 
+      // Early training steps: only dwell/pinch practice — no pan/scroll steal
+      const trainLock = training && ['intro', 'show_hand', 'pinch', 'close', 'press'].includes(st.trainingStep)
+
       // ——— One-hand pinch start ———
-      if (pinching && !lastPinch.current) {
+      if (pinching && !lastPinch.current && !trainLock) {
         if (header) {
           st.setGrabTarget(header)
           st.focusPanel(header)

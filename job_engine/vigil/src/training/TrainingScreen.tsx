@@ -15,7 +15,7 @@ import { endTrainLog, logTrain } from './sessionLog'
 
 const STEPS = [
   { id: 'intro', title: 'Welcome', hint: 'This is a dummy training room — not the live tower.' },
-  { id: 'show_hand', title: 'Show hand', hint: 'Raise your right hand until the amber R guide locks.' },
+  { id: 'show_hand', title: 'Show hand', hint: 'Raise either hand. Watch the bar fill to 100%, or click Continue when HAND SEEN.' },
   { id: 'pinch', title: 'Pinch', hint: 'Pinch thumb + index 5 times (amber hand).' },
   { id: 'move', title: 'Move window', hint: 'Pinch the SAMPLE header and drag into the drop zone.' },
   { id: 'scroll', title: 'Scroll window', hint: 'Pinch inside the SAMPLE list and move hand up/down to scroll.' },
@@ -115,18 +115,28 @@ export function TrainingScreen() {
     return () => clearInterval(id)
   }, [step, sampleScale])
 
+  const holdMs = useRef(0)
+  const [holdPct, setHoldPct] = useState(0)
+
   useEffect(() => {
     if (step === 'idle' || step === 'intro' || step === 'done' || step === 'fail') return
     let raf = 0
+    let lastTick = performance.now()
+    holdMs.current = 0
+    setHoldPct(0)
+
     const tick = () => {
       const st = useVigilStore.getState()
+      const currentStep = st.trainingStep
       const primary = st.hands.right || st.hands.left
       const idx = st.smoothIndex
       const now = performance.now()
+      const dt = Math.min(100, now - lastTick)
+      lastTick = now
 
       // Timeout per step (45s) → fail with dump
-      if (now - stepStarted.current > 45000 && !['done', 'fail'].includes(step)) {
-        failStep(`Timed out on step "${step}" after 45s`)
+      if (now - stepStarted.current > 45000 && !['done', 'fail'].includes(currentStep)) {
+        failStep(`Timed out on step "${currentStep}" after 45s`)
         return
       }
 
@@ -134,10 +144,10 @@ export function TrainingScreen() {
         if (primary.pinch) pushPinch(primary.pinchDist)
         else if (primary.pinchDist > 0) pushOpen(primary.pinchDist)
         if (lastPos.current) {
-          const dt = (now - lastPos.current.t) / 1000
-          if (dt > 0.01 && dt < 0.2) {
+          const dtp = (now - lastPos.current.t) / 1000
+          if (dtp > 0.01 && dtp < 0.2) {
             pushSpeed(
-              Math.hypot(idx.x - lastPos.current.x, idx.y - lastPos.current.y) / dt,
+              Math.hypot(idx.x - lastPos.current.x, idx.y - lastPos.current.y) / dtp,
             )
           }
         }
@@ -145,27 +155,31 @@ export function TrainingScreen() {
         pushJitter(0.008)
       }
 
-      if (step === 'show_hand') {
+      if (currentStep === 'show_hand') {
         if (primary?.index) {
-          if (now - stepStarted.current > 1200) {
-            setFeedback('Hand locked')
+          holdMs.current += dt
+          const pct = Math.min(100, Math.round((holdMs.current / 1000) * 100))
+          setHoldPct(pct)
+          setFeedback(`Hand seen — hold steady… ${pct}%`)
+          if (holdMs.current >= 1000) {
+            logTrain('show_hand_pass', { holdMs: holdMs.current, which: st.hands.right ? 'R' : 'L' })
+            setFeedback('Hand locked — next: pinch')
             setStep('pinch')
-          } else {
-            setFeedback(`Hold steady… ${Math.round(((now - stepStarted.current) / 1200) * 100)}%`)
           }
         } else {
-          stepStarted.current = now
-          setFeedback('Raise amber (R) hand into camera')
+          holdMs.current = Math.max(0, holdMs.current - dt * 2)
+          setHoldPct(Math.min(100, Math.round((holdMs.current / 1000) * 100)))
+          setFeedback('Raise either hand until HAND SEEN stays on')
         }
       }
 
-      if (step === 'pinch' && primary) {
+      if (currentStep === 'pinch' && primary) {
         if (primary.pinch && !lastPinch.current) {
           setPinchCount((c) => {
             const n = c + 1
             setFeedback(n >= 5 ? 'Pinch OK' : `Pinch ${n}/5`)
+            logTrain('pinch_count', { n })
             if (n >= 5) {
-              // Open dummy via real tower panel for gesture OS hit-testing
               st.openPanel('tower')
               st.movePanel('tower', 18, 28)
               st.scalePanel('tower', 1)
@@ -181,7 +195,7 @@ export function TrainingScreen() {
         lastPinch.current = primary.pinch
       }
 
-      if (step === 'move') {
+      if (currentStep === 'move') {
         const p = st.panels.tower
         setSamplePos({ x: p.x, y: p.y })
         if (p.open && p.x > 55 && p.x < 80 && p.y > 18 && p.y < 55 && !st.grabTarget) {
@@ -189,24 +203,25 @@ export function TrainingScreen() {
           const body = document.querySelector('[data-panel-id="tower"] .panel-body') as HTMLElement | null
           scrollStart.current = body?.scrollTop || 0
           setStep('scroll')
-        } else if (grabTarget) setFeedback('Dragging… drop in the zone')
+        } else if (st.grabTarget) setFeedback('Dragging… drop in the zone')
+        else setFeedback('Pinch the SAMPLE title bar and drag to the glowing DROP ZONE')
       }
 
-      if (step === 'scroll') {
+      if (currentStep === 'scroll') {
         const body = document.querySelector('[data-panel-id="tower"] .panel-body') as HTMLElement | null
         const delta = Math.abs((body?.scrollTop || 0) - scrollStart.current)
         if (st.gestureMode === 'scroll_panel') {
           setFeedback(`Scrolling… ${Math.round(delta)}px (need 80+)`)
         }
-        if (delta > 80 && !scrollOk) {
-          setScrollOk(true)
+        if (delta > 80) {
           zoomBase.current = st.panels.tower.scale
+          setScrollOk(true)
           setFeedback('Scroll OK — both-hand zoom on the window')
           setStep('zoom_window')
         }
       }
 
-      if (step === 'zoom_window') {
+      if (currentStep === 'zoom_window') {
         const scale = st.panels.tower.scale
         setSampleScale(scale)
         if (st.gestureMode === 'zoom_panel') {
@@ -214,7 +229,7 @@ export function TrainingScreen() {
         } else {
           setFeedback('Both hands pinch OVER the sample window — hold 0.3s then slowly move apart')
         }
-        if (Math.abs(scale - zoomBase.current) > 0.12 && !zoomOk) {
+        if (Math.abs(scale - zoomBase.current) > 0.12) {
           setZoomOk(true)
           twoBase.current = st.coreScale
           st.movePanel('tower', 8, 55)
@@ -223,7 +238,7 @@ export function TrainingScreen() {
         }
       }
 
-      if (step === 'two_hand') {
+      if (currentStep === 'two_hand') {
         if (st.gestureMode === 'core_zoom') {
           setFeedback(`Core zoom… ${st.coreScale.toFixed(2)}`)
         } else if (st.hands.twoHandPinch) {
@@ -231,14 +246,14 @@ export function TrainingScreen() {
         } else {
           setFeedback('Pinch BOTH hands in empty space (not on the window)')
         }
-        if (Math.abs(st.coreScale - twoBase.current) > 0.15 && !twoOk) {
+        if (Math.abs(st.coreScale - twoBase.current) > 0.15) {
           setTwoOk(true)
           setFeedback('Two-hand OK — close target next')
           setStep('close')
         }
       }
 
-      if (step === 'close') {
+      if (currentStep === 'close') {
         if (st.pressProgress > 0) {
           if (!dwellStart.current) dwellStart.current = now
           setFeedback(`Close… ${Math.round(st.pressProgress * 100)}%`)
@@ -249,7 +264,8 @@ export function TrainingScreen() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [step, setStep, setFeedback, grabTarget, scrollOk, zoomOk, twoOk, calibration, gestureMode, hands])
+    // Only rebind when the step changes — never on every hands frame
+  }, [step, setStep, setFeedback])
 
   const meta = STEPS.find((s) => s.id === step) || STEPS[0]
 
@@ -335,6 +351,31 @@ export function TrainingScreen() {
           >
             Begin
           </button>
+        )}
+
+        {step === 'show_hand' && (
+          <>
+            <div className="training-meter">
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${holdPct}%` }} />
+              </div>
+              <span>{holdPct}%</span>
+            </div>
+            {handSeen && (
+              <button
+                type="button"
+                className="chip active train-hit"
+                data-gesture-action="train-skip-hand"
+                onClick={() => {
+                  logTrain('show_hand_manual_continue')
+                  setFeedback('Hand accepted — pinch next')
+                  setStep('pinch')
+                }}
+              >
+                Hand seen — continue
+              </button>
+            )}
+          </>
         )}
 
         {step === 'pinch' && (
