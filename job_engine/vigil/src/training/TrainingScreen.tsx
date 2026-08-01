@@ -11,6 +11,7 @@ import {
   pushSpeed,
   resetSamples,
 } from './sampleBus'
+import { endTrainLog, logTrain } from './sessionLog'
 
 const STEPS = [
   { id: 'intro', title: 'Welcome', hint: 'This is a dummy training room — not the live tower.' },
@@ -67,10 +68,15 @@ export function TrainingScreen() {
       handsSummary: `L=${hands.left ? 'yes' : 'no'} R=${hands.right ? 'yes' : 'no'} two=${hands.twoHandPinch}`,
       gestureMode,
     })
+    logTrain('step_fail', { step, why })
+    endTrainLog({ reason: 'fail', step, why })
     setFailReport(report)
     setFeedback(why)
     setStep('fail')
   }
+
+  const handSeen = Boolean(hands.left || hands.right)
+  const statusLine = useVigilStore((s) => s.statusLine)
 
   useEffect(() => {
     resetSamples()
@@ -82,12 +88,14 @@ export function TrainingScreen() {
     setZoomOk(false)
     setTwoOk(false)
     setStep('intro')
-    setFeedback('Dummy training room — Begin when ready')
+    setFeedback('Dummy training room — wait for CAMERA LIVE, then Begin')
     stepStarted.current = performance.now()
+    logTrain('training_screen_mount')
   }, [setStep, setFeedback])
 
   useEffect(() => {
     stepStarted.current = performance.now()
+    logTrain('step_enter', { step })
   }, [step])
 
   // Drive dummy panel from real gesture mode during move/scroll/zoom
@@ -248,6 +256,8 @@ export function TrainingScreen() {
   const finish = () => {
     const next = computeCalibration(getSamples(), calibration)
     setCalibration(next)
+    logTrain('calibration_saved', { ...next })
+    endTrainLog({ reason: 'success', sessionsCompleted: next.sessionsCompleted })
     setStep('done')
     setFeedback(
       `Saved pinch=${next.pinchThreshold.toFixed(3)} dwell=${next.dwellMs}ms hit=${next.hitPx} #${next.sessionsCompleted}`,
@@ -299,6 +309,9 @@ export function TrainingScreen() {
         <h2>{meta.title}</h2>
         <p className="training-hint">{meta.hint}</p>
         <p className="training-feedback">{feedback}</p>
+        <p className={`train-cam-status ${handSeen ? 'ok' : 'warn'}`}>
+          {handSeen ? 'HAND SEEN' : 'NO HAND YET'} · {statusLine}
+        </p>
         <p className="muted">
           Mode: {gestureMode} · L:{hands.left ? 'on' : '—'} R:{hands.right ? 'on' : '—'} · sessions{' '}
           {calibration.sessionsCompleted}
@@ -311,8 +324,13 @@ export function TrainingScreen() {
             data-gesture-action="train-begin"
             onClick={() => {
               resetSamples()
+              logTrain('step_begin_click', { handSeen })
               setStep('show_hand')
-              setFeedback('Show amber (R) hand')
+              setFeedback(
+                handSeen
+                  ? 'Hand already seen — hold steady'
+                  : 'Show hand to the webcam (PiP bottom-right) until HAND SEEN',
+              )
             }}
           >
             Begin

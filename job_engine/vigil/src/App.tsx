@@ -16,7 +16,9 @@ export default function App() {
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const trainingActive = useVigilStore((s) => s.trainingActive)
 
-  useHandTracking(videoRef)
+  // Camera stays mounted — remounting the <video> killed hand tracking in Train
+  const cameraOn = vigilMode || trainingActive
+  useHandTracking(videoRef, cameraOn)
   useGestureOS()
   useUltronSocket()
 
@@ -31,27 +33,26 @@ export default function App() {
     document.body.dataset.vigilMode = vigilMode ? 'on' : 'off'
   }, [vigilMode])
 
-  // Full separate training room — not an overlay on the live tower
-  if (trainingActive) {
-    return (
-      <div className="vigil-root mode-vigil mode-training">
-        <TrainingScreen />
-        <FingerOverlay />
-        <div className="webcam-wrap">
-          <WebcamPip ref={videoRef} />
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className={`vigil-root ${vigilMode ? 'mode-vigil' : 'mode-desktop'}`}>
-      <VigilCanvas />
-      <StatusHud />
-      <ModuleDock />
-      <PanelHost />
-      {vigilMode && <FingerOverlay />}
-      <div className={vigilMode ? 'webcam-wrap' : 'webcam-wrap hidden'} aria-hidden={!vigilMode}>
+    <div
+      className={`vigil-root ${trainingActive ? 'mode-vigil mode-training' : vigilMode ? 'mode-vigil' : 'mode-desktop'}`}
+    >
+      {trainingActive ? (
+        <TrainingScreen />
+      ) : (
+        <>
+          <VigilCanvas />
+          <StatusHud />
+          <ModuleDock />
+          <PanelHost />
+        </>
+      )}
+
+      {cameraOn && <FingerOverlay />}
+      <div
+        className={cameraOn ? 'webcam-wrap' : 'webcam-wrap hidden'}
+        aria-hidden={!cameraOn}
+      >
         <WebcamPip ref={videoRef} />
       </div>
     </div>

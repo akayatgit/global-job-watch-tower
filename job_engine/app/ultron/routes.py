@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -242,6 +243,36 @@ async def ultron_dismiss_alert():
     dismiss_linkedin_block()
     await hub.broadcast({'type': 'ultron.command', 'command': 'dismiss_alert'})
     return {'ok': True}
+
+
+@router.post('/api/ultron/training-log')
+async def ultron_training_log(payload: dict):
+    """Persist VIGIL training session logs for gesture tuning (Akay)."""
+    data_dir = Path(__file__).resolve().parents[2] / '.data' / 'vigil_training'
+    data_dir.mkdir(parents=True, exist_ok=True)
+    sid = str(payload.get('id') or f'session-{datetime.now(timezone.utc).timestamp()}')
+    safe = ''.join(c if c.isalnum() or c in '-_' else '_' for c in sid)[:80]
+    path = data_dir / f'{safe}.json'
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding='utf-8')
+    (data_dir / 'latest.json').write_text(
+        json.dumps({'id': safe, 'path': str(path), 'at': _iso(datetime.now(timezone.utc))}),
+        encoding='utf-8',
+    )
+    await hub.broadcast({'type': 'ultron.training_log', 'id': safe})
+    return {'ok': True, 'id': safe, 'path': str(path)}
+
+
+@router.get('/api/ultron/training-log/latest')
+def ultron_training_log_latest():
+    data_dir = Path(__file__).resolve().parents[2] / '.data' / 'vigil_training'
+    latest = data_dir / 'latest.json'
+    if not latest.exists():
+        return JSONResponse({'ok': False, 'error': 'no logs yet'}, status_code=404)
+    meta = json.loads(latest.read_text(encoding='utf-8'))
+    path = Path(meta.get('path') or '')
+    if not path.is_file():
+        return JSONResponse({'ok': False, 'error': 'missing file'}, status_code=404)
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
 @router.post('/api/ultron/configs/{config_id}/run')

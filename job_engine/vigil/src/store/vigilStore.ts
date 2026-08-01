@@ -4,6 +4,7 @@ import {
   saveCalibration,
   type VigilCalibration,
 } from '../training/calibration'
+import { endTrainLog, startTrainLog } from '../training/sessionLog'
 
 export type PanelId =
   | 'tower'
@@ -210,12 +211,12 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     } catch {
       /* ignore */
     }
-    // Leave main app — training is its own screen
+    startTrainLog()
     set({
       vigilMode: true,
       trainingActive: true,
       trainingStep: 'intro',
-      trainingFeedback: 'Training ground — dummy widgets only',
+      trainingFeedback: 'Training ground — allow camera, then Begin',
       trainingFailReport: '',
       statusLine: 'TRAINING GROUND',
       pressProgress: 0,
@@ -224,7 +225,8 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       canvasPan: { x: 0, y: 0 },
     })
   },
-  stopTraining: () =>
+  stopTraining: () => {
+    endTrainLog({ reason: 'exit' })
     set({
       trainingActive: false,
       trainingStep: 'idle',
@@ -234,7 +236,8 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: get().vigilMode
         ? 'VIGIL MODE ON — HAND CONTROL'
         : 'DESKTOP MODE — MOUSE & KEYBOARD',
-    }),
+    })
+  },
   setTrainingStep: (step) => set({ trainingStep: step }),
   setTrainingFeedback: (text) => set({ trainingFeedback: text }),
   setTrainingFailReport: (text) => set({ trainingFailReport: text }),

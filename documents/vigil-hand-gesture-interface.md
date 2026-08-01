@@ -4,7 +4,7 @@ Living spec for air control of the Watch Tower ops shell.
 **Face name:** VIGIL · **Backend:** `ultron`  
 **Code:** `job_engine/vigil/src/gestures/` · `job_engine/vigil/src/training/`
 
-Last updated: 2026-08-02
+Last updated: 2026-08-02 (camera mount + session logs)
 
 ---
 
@@ -63,6 +63,22 @@ Status badge shows live mode: `SCROLL PANEL`, `ZOOM PANEL`, `PAN CANVAS`, `CORE 
 10. Fail dump if stuck / timeout  
 
 Calibration keys: `pinchThreshold`, `dwellMs`, `hitPx`, `lerpFactor` in `localStorage` `vigil.calibration.v1`.
+
+### Camera note (2026-08-02)
+
+Training used to remount `<video>` and kill MediaPipe. Webcam is now a **stable
+singleton** in `App.tsx`. Coach shows **HAND SEEN / NO HAND YET** plus camera status.
+
+### Session logs
+
+Every Train session writes events (camera boot, hand seen/lost, step enter/fail,
+calibration save) to:
+
+- Browser: `localStorage` `vigil.training.logs`
+- Disk: `job_engine/.data/vigil_training/{id}.json` via `POST /api/ultron/training-log`
+- Latest pointer: `job_engine/.data/vigil_training/latest.json`
+
+Akay reads these to improve gestures after Ashok trains.
 
 ---
 

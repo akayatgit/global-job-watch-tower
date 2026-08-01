@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { useVigilStore, type HandSample, type HandsState } from '../store/vigilStore'
 import { lerp } from '../lib/lerp'
+import { logTrain } from '../training/sessionLog'
 
 const WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
@@ -27,14 +28,31 @@ function sampleFromLandmarks(
   }
 }
 
-export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | null>) {
+async function waitForVideo(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  active: () => boolean,
+  tries = 40,
+): Promise<HTMLVideoElement | null> {
+  for (let i = 0; i < tries; i++) {
+    if (!active()) return null
+    const v = videoRef.current
+    if (v) return v
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return videoRef.current
+}
+
+export function useHandTracking(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  cameraOn: boolean,
+) {
   const setHands = useVigilStore((s) => s.setHands)
-  const vigilMode = useVigilStore((s) => s.vigilMode)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const rafRef = useRef(0)
+  const sawHand = useRef(false)
 
   useEffect(() => {
-    if (!vigilMode) {
+    if (!cameraOn) {
       setHands({ left: null, right: null, twoHandPinch: false, twoHandDist: 0 })
       useVigilStore.setState({ leftHandVisible: false })
       return
@@ -42,16 +60,18 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
 
     let active = true
     let stream: MediaStream | null = null
+    sawHand.current = false
 
     const boot = async () => {
       try {
+        logTrain('camera_boot_start')
         const vision = await FilesetResolver.forVisionTasks(WASM)
         if (!active) return
         landmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' },
           runningMode: 'VIDEO',
           numHands: 2,
-          minHandDetectionConfidence: 0.55,
+          minHandDetectionConfidence: 0.5,
           minHandPresenceConfidence: 0.5,
           minTrackingConfidence: 0.5,
         })
@@ -59,23 +79,32 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
           video: { facingMode: 'user', width: 640, height: 480 },
           audio: false,
         })
-        const video = videoRef.current
-        if (!video || !active) return
+        const video = await waitForVideo(videoRef, () => active)
+        if (!video || !active) {
+          logTrain('camera_boot_fail', { reason: 'no_video_element' })
+          useVigilStore.getState().setStatus('CAMERA ELEMENT MISSING — RETRY TRAIN')
+          return
+        }
         video.srcObject = stream
         await video.play()
+        logTrain('camera_boot_ok', {
+          w: video.videoWidth,
+          h: video.videoHeight,
+          readyState: video.readyState,
+        })
+        useVigilStore.getState().setStatus('CAMERA LIVE — SHOW YOUR HAND')
         loop()
       } catch (err) {
         console.warn('VIGIL hand tracking unavailable', err)
-        useVigilStore.getState().setStatus('CAMERA OFFLINE — USE DESKTOP MODE')
+        logTrain('camera_boot_fail', {
+          reason: err instanceof Error ? err.message : String(err),
+        })
+        useVigilStore.getState().setStatus('CAMERA OFFLINE — ALLOW WEBCAM ACCESS')
       }
     }
 
     const loop = () => {
       if (!active) return
-      if (!useVigilStore.getState().vigilMode) {
-        rafRef.current = requestAnimationFrame(loop)
-        return
-      }
       const video = videoRef.current
       const lm = landmarkerRef.current
       const cal = useVigilStore.getState().calibration
@@ -90,7 +119,6 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
         result.landmarks.forEach((landmarks, i) => {
           const handed = result.handednesses?.[i]?.[0]?.categoryName
           const sample = sampleFromLandmarks(landmarks, cal.pinchThreshold)
-          // MediaPipe "Left" is mirrored selfie left (= user's right). Swap for natural feel.
           if (handed === 'Left') hands.right = sample
           else if (handed === 'Right') hands.left = sample
           else hands.right = hands.right || sample
@@ -106,6 +134,19 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
           )
         }
         setHands(hands)
+
+        const anyHand = Boolean(hands.left || hands.right)
+        if (anyHand && !sawHand.current) {
+          sawHand.current = true
+          logTrain('hand_first_seen', {
+            left: Boolean(hands.left),
+            right: Boolean(hands.right),
+          })
+        }
+        if (!anyHand && sawHand.current) {
+          sawHand.current = false
+          logTrain('hand_lost')
+        }
 
         const factor = cal.lerpFactor
         const st = useVigilStore.getState()
@@ -138,7 +179,6 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
             y: lerp(s.smoothLeftThumb.y, hands.left.thumb.y, factor),
           }
         }
-        // If only left hand, drive primary cursor from it too
         if (!hands.right && hands.left?.index) {
           const s = useVigilStore.getState()
           patch.smoothIndex = {
@@ -166,6 +206,7 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
       landmarkerRef.current = null
       const video = videoRef.current
       if (video) video.srcObject = null
+      logTrain('camera_teardown')
     }
-  }, [setHands, videoRef, vigilMode])
+  }, [setHands, videoRef, cameraOn])
 }
