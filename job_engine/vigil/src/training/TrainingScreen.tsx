@@ -17,8 +17,16 @@ const STEPS = [
   { id: 'intro', title: 'Welcome', hint: 'This is a dummy training room — not the live tower.' },
   { id: 'show_hand', title: 'Show hand', hint: 'Raise either hand. Watch the bar fill to 100%, or click Continue when HAND SEEN.' },
   { id: 'pinch', title: 'Pinch', hint: 'Pinch thumb + index 5 times (amber hand).' },
-  { id: 'move', title: 'Move window', hint: 'Pinch the SAMPLE header and drag into the drop zone.' },
-  { id: 'scroll', title: 'Scroll window', hint: 'Pinch inside the SAMPLE list and move hand up/down to scroll.' },
+  {
+    id: 'move',
+    title: 'Move window',
+    hint: '1) Point the L/R dot at the amber SAMPLE title bar  2) Pinch (keep pinched)  3) Drag into DROP ZONE  4) Open fingers to drop.',
+  },
+  {
+    id: 'scroll',
+    title: 'Scroll window',
+    hint: 'Pinch inside the long SAMPLE list (not the title), keep pinched, move hand up/down until the bar fills.',
+  },
   { id: 'zoom_window', title: 'Zoom window', hint: 'Both hands pinch over SAMPLE — slowly apart/together (wait for lock).' },
   { id: 'two_hand', title: 'Two-hand core', hint: 'Both hands pinch over empty space (not the window) — slow apart.' },
   { id: 'close', title: 'Close', hint: 'Hold on the big CLOSE TARGET until 100%.' },
@@ -27,7 +35,10 @@ const STEPS = [
   { id: 'fail', title: 'Needs help', hint: 'Copy the report below and paste it to Akay.' },
 ] as const
 
-const DUMMY_ROWS = Array.from({ length: 24 }, (_, i) => `Sample row ${i + 1} — scroll practice line`)
+const DUMMY_ROWS = Array.from(
+  { length: 48 },
+  (_, i) => `Sample row ${i + 1} — scroll practice line · keep pinching and move hand`,
+)
 
 export function TrainingScreen() {
   const step = useVigilStore((s) => s.trainingStep)
@@ -45,9 +56,9 @@ export function TrainingScreen() {
 
   const [pinchCount, setPinchCount] = useState(0)
   const [sampleOpen, setSampleOpen] = useState(true)
-  const [samplePos, setSamplePos] = useState({ x: 18, y: 28 })
-  const [sampleScale, setSampleScale] = useState(1)
   const [copied, setCopied] = useState(false)
+  const [scrollDelta, setScrollDelta] = useState(0)
+  const zoneHold = useRef(0)
   const lastPinch = useRef(false)
   const lastPos = useRef<{ x: number; y: number; t: number } | null>(null)
   const stepStarted = useRef(performance.now())
@@ -78,8 +89,8 @@ export function TrainingScreen() {
     resetSamples()
     setPinchCount(0)
     setSampleOpen(true)
-    setSamplePos({ x: 18, y: 28 })
-    setSampleScale(1)
+    setScrollDelta(0)
+    zoneHold.current = 0
     setStep('intro')
     setFeedback('Dummy training room — wait for CAMERA LIVE, then Begin')
     stepStarted.current = performance.now()
@@ -90,23 +101,6 @@ export function TrainingScreen() {
     stepStarted.current = performance.now()
     logTrain('step_enter', { step })
   }, [step])
-
-  // Drive dummy panel from real gesture mode during move/scroll/zoom
-  useEffect(() => {
-    if (step !== 'move' && step !== 'scroll' && step !== 'zoom_window') return
-    const id = window.setInterval(() => {
-      const st = useVigilStore.getState()
-      // Hijack tower panel geometry for training drills visually via local state
-      if (step === 'move' && st.grabTarget === 'tower') {
-        const p = st.panels.tower
-        setSamplePos({ x: p.x, y: p.y })
-      }
-      if (step === 'zoom_window' && st.gestureMode === 'zoom_panel') {
-        setSampleScale(st.panels.tower?.scale || sampleScale)
-      }
-    }, 50)
-    return () => clearInterval(id)
-  }, [step, sampleScale])
 
   const holdMs = useRef(0)
   const [holdPct, setHoldPct] = useState(0)
@@ -191,23 +185,60 @@ export function TrainingScreen() {
 
       if (currentStep === 'move') {
         const p = st.panels.tower
-        setSamplePos({ x: p.x, y: p.y })
-        if (p.open && p.x > 55 && p.x < 80 && p.y > 18 && p.y < 55 && !st.grabTarget) {
-          setFeedback('Move OK — next: scroll')
-          const body = document.querySelector('[data-panel-id="tower"] .panel-body') as HTMLElement | null
+        // Panel center vs DROP ZONE (right side of stage)
+        const cx = p.x + 14
+        const cy = p.y + 12
+        const inZone = cx >= 58 && cx <= 94 && cy >= 18 && cy <= 62
+        if (st.grabTarget === 'tower') {
+          if (inZone) {
+            zoneHold.current += dt
+            setFeedback(`In DROP ZONE — hold… ${Math.min(100, Math.round((zoneHold.current / 500) * 100))}%`)
+            if (zoneHold.current >= 500) {
+              logTrain('move_pass', { x: p.x, y: p.y })
+              setFeedback('Move OK — next: scroll the list')
+              const body = document.querySelector(
+                '[data-panel-id="tower"] .panel-body',
+              ) as HTMLElement | null
+              scrollStart.current = body?.scrollTop || 0
+              setScrollDelta(0)
+              zoneHold.current = 0
+              setStep('scroll')
+            }
+          } else {
+            zoneHold.current = 0
+            setFeedback('Dragging… keep pinch, move into the glowing DROP ZONE')
+          }
+        } else if (inZone && st.gestureMode === 'none') {
+          // Released already inside zone
+          logTrain('move_pass_release', { x: p.x, y: p.y })
+          setFeedback('Move OK — next: scroll the list')
+          const body = document.querySelector(
+            '[data-panel-id="tower"] .panel-body',
+          ) as HTMLElement | null
           scrollStart.current = body?.scrollTop || 0
+          setScrollDelta(0)
           setStep('scroll')
-        } else if (st.grabTarget) setFeedback('Dragging… drop in the zone')
-        else setFeedback('Pinch the SAMPLE title bar and drag to the glowing DROP ZONE')
+        } else if (st.hoverTarget === 'panel:tower') {
+          setFeedback('GRAB READY — pinch now, then drag to DROP ZONE')
+        } else {
+          setFeedback('Point L/R dot at amber SAMPLE title → pinch → drag to DROP ZONE')
+        }
       }
 
       if (currentStep === 'scroll') {
-        const body = document.querySelector('[data-panel-id="tower"] .panel-body') as HTMLElement | null
+        const body = document.querySelector(
+          '[data-panel-id="tower"] .panel-body',
+        ) as HTMLElement | null
         const delta = Math.abs((body?.scrollTop || 0) - scrollStart.current)
+        setScrollDelta(delta)
         if (st.gestureMode === 'scroll_panel') {
-          setFeedback(`Scrolling… ${Math.round(delta)}px (need 80+)`)
+          setFeedback(`Scrolling… ${Math.round(delta)}px (need 40+)`)
+        } else if (st.hoverTarget === 'body:tower') {
+          setFeedback('Over the list — pinch and move hand up/down')
+        } else {
+          setFeedback('Point at the SAMPLE list (below title), pinch, move hand up/down')
         }
-        if (delta > 80) {
+        if (delta > 40) {
           zoomBase.current = st.panels.tower.scale
           setFeedback('Scroll OK — both-hand zoom on the window')
           setStep('zoom_window')
@@ -216,7 +247,6 @@ export function TrainingScreen() {
 
       if (currentStep === 'zoom_window') {
         const scale = st.panels.tower.scale
-        setSampleScale(scale)
         if (st.gestureMode === 'zoom_panel') {
           setFeedback(`Zooming window… scale ${scale.toFixed(2)}`)
         } else {
@@ -224,7 +254,7 @@ export function TrainingScreen() {
         }
         if (Math.abs(scale - zoomBase.current) > 0.12) {
           twoBase.current = st.coreScale
-          st.movePanel('tower', 8, 55)
+          st.movePanel('tower', 12, 30)
           setFeedback('Window zoom OK — two-hand over EMPTY space for core')
           setStep('two_hand')
         }
@@ -378,6 +408,52 @@ export function TrainingScreen() {
           </div>
         )}
 
+        {step === 'move' && (
+          <button
+            type="button"
+            className="chip train-hit"
+            data-gesture-action="train-skip-move"
+            onClick={() => {
+              logTrain('move_manual_skip')
+              const st = useVigilStore.getState()
+              st.movePanel('tower', 62, 30)
+              const body = document.querySelector(
+                '[data-panel-id="tower"] .panel-body',
+              ) as HTMLElement | null
+              scrollStart.current = body?.scrollTop || 0
+              setScrollDelta(0)
+              setFeedback('Skipped move — scroll the SAMPLE list next')
+              setStep('scroll')
+            }}
+          >
+            Skip move — I understand
+          </button>
+        )}
+
+        {step === 'scroll' && (
+          <>
+            <div className="training-meter">
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${Math.min(100, (scrollDelta / 40) * 100)}%` }} />
+              </div>
+              <span>{Math.round(scrollDelta)}/40px</span>
+            </div>
+            <button
+              type="button"
+              className="chip train-hit"
+              data-gesture-action="train-skip-scroll"
+              onClick={() => {
+                logTrain('scroll_manual_skip')
+                zoomBase.current = useVigilStore.getState().panels.tower.scale
+                setFeedback('Skipped scroll — zoom next')
+                setStep('zoom_window')
+              }}
+            >
+              Skip scroll — I understand
+            </button>
+          </>
+        )}
+
         {step === 'close' && (
           <button
             type="button"
@@ -435,75 +511,69 @@ export function TrainingScreen() {
         )}
       </aside>
 
-      {/* Dummy workspace */}
+      {/* Dummy workspace — one visible SAMPLE = real hit target */}
       <div className="training-stage">
-        {(step === 'move' || step === 'scroll' || step === 'zoom_window') && (
-          <div className="training-dropzone">DROP ZONE</div>
-        )}
-        {sampleOpen && ['move', 'scroll', 'zoom_window', 'two_hand', 'close'].includes(step) && (
-          <div
-            className="float-panel focused training-dummy-visual"
-            style={{
-              left: `${samplePos.x}%`,
-              top: `${samplePos.y}%`,
-              transform: `scale(${sampleScale})`,
-              transformOrigin: 'top left',
-              pointerEvents: 'none',
-            }}
-          >
-            <div className="panel-head">
-              <h2>SAMPLE WIDGET</h2>
-              <div className="ops"><span className="muted">visual</span></div>
-            </div>
-            <div className="panel-body">
-              <p className="muted">Real hit-target is the live panel under this (synced).</p>
-              {DUMMY_ROWS.slice(0, 6).map((r) => (
-                <div className="list-row" key={r}><div>{r}</div></div>
-              ))}
-            </div>
+        {step === 'move' && (
+          <div className={`training-dropzone ${gestureMode === 'drag_panel' ? 'hot' : ''}`}>
+            DROP ZONE
+            <span>drag SAMPLE here</span>
           </div>
         )}
+        {sampleOpen && ['move', 'scroll', 'zoom_window', 'two_hand', 'close'].includes(step) && (
+          <TrainingSamplePanel
+            rows={DUMMY_ROWS}
+            step={step}
+            grabbed={gestureMode === 'drag_panel'}
+          />
+        )}
         <p className="training-legend">
-          Aim with the glowing L/R dots on screen · webcam PiP bottom-right · pinch SAMPLE title bar → drag to DROP ZONE
+          Glowing L/R dots = your fingers · pinch on what you see (SAMPLE is the real target)
         </p>
-      </div>
-
-      {/* Hidden-but-real panel for gesture hit testing during drills */}
-      <div className="training-hit-host" aria-hidden>
-        <TrainingHitPanel rows={DUMMY_ROWS} />
       </div>
     </div>
   )
 }
 
-function TrainingHitPanel({ rows }: { rows: string[] }) {
+function TrainingSamplePanel({
+  rows,
+  step,
+  grabbed,
+}: {
+  rows: string[]
+  step: string
+  grabbed: boolean
+}) {
   const panel = useVigilStore((s) => s.panels.tower)
-  const closePanel = useVigilStore((s) => s.closePanel)
+  const hoverTarget = useVigilStore((s) => s.hoverTarget)
   if (!panel.open) return null
+  const grabReady = hoverTarget === 'panel:tower' || hoverTarget === 'body:tower'
   return (
     <div
-      className="float-panel focused"
+      className={`float-panel focused training-sample ${grabbed ? 'grabbed' : ''} ${grabReady ? 'grab-ready' : ''}`}
       data-panel-id="tower"
       style={{
         left: `${panel.x}%`,
         top: `${panel.y}%`,
-        zIndex: 5,
         transform: `scale(${panel.scale})`,
         transformOrigin: 'top left',
-        opacity: 0.12,
       }}
     >
-      <div className="panel-head">
-        <h2>SAMPLE</h2>
+      <div className="panel-head training-grab-bar">
+        <h2>SAMPLE — PINCH HERE TO MOVE</h2>
         <div className="ops">
-          <button type="button" data-gesture-action="close-tower" onClick={() => closePanel('tower')}>
-            Close
-          </button>
+          <span className="muted">{step === 'move' ? 'grab bar' : 'title'}</span>
         </div>
       </div>
-      <div className="panel-body" style={{ maxHeight: 220 }}>
+      <div className="panel-body training-scroll-body">
+        <p className="muted">
+          {step === 'scroll'
+            ? 'Pinch in this list and move your hand up/down — 48 rows to scroll.'
+            : 'This window is the real target (what you see is what you grab).'}
+        </p>
         {rows.map((r) => (
-          <div className="list-row" key={r}><div>{r}</div></div>
+          <div className="list-row" key={r}>
+            <div>{r}</div>
+          </div>
         ))}
       </div>
     </div>

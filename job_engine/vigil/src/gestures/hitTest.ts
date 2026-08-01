@@ -21,7 +21,7 @@ export function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | 'remo
   return best?.id ?? null
 }
 
-export function hitPanelHeader(nx: number, ny: number): PanelId | null {
+export function hitPanelHeader(nx: number, ny: number, padPx = 0): PanelId | null {
   const panels = useVigilStore.getState().panels
   const pt = screenPoint(nx, ny)
   let best: PanelId | null = null
@@ -33,9 +33,15 @@ export function hitPanelHeader(nx: number, ny: number): PanelId | null {
     const head = el.querySelector('.panel-head') as HTMLElement | null
     if (!head) continue
     const rect = head.getBoundingClientRect()
+    // Title bar is the grab strip — ignore tiny Close buttons unless pad is huge
     const ops = head.querySelector('.ops') as HTMLElement | null
     const opsLeft = ops ? ops.getBoundingClientRect().left - 8 : rect.right
-    if (pt.x >= rect.left && pt.x < opsLeft && pt.y >= rect.top && pt.y <= rect.bottom) {
+    if (
+      pt.x >= rect.left - padPx &&
+      pt.x < opsLeft + padPx &&
+      pt.y >= rect.top - padPx &&
+      pt.y <= rect.bottom + padPx
+    ) {
       if (p.z >= bestZ) {
         best = p.id
         bestZ = p.z

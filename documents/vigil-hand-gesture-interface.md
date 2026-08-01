@@ -85,6 +85,16 @@ Training screen `z-index: 50` covered finger guides (`30`) and webcam PiP — As
 saw HAND SEEN but no aiming dots. Guides → `z-index: 80`, webcam wrap → `90`.
 Pan canvas disabled for all training so status stays clean.
 
+### Move / scroll feel (2026-08-02)
+
+Ashok timed out on move: pinch-drag felt random; scroll list looked empty.
+
+- One visible SAMPLE = real hit target (removed ghost/visual split)
+- Move: grab from whole window; fat title bar; hold 0.5s in bigger DROP ZONE
+- Pinch hysteresis (release needs wider open) to stop grab flicker
+- Scroll: 48 rows, tall list, 40px pass, 2.2× scroll boost in training
+- Skip buttons for move/scroll if stuck
+
 ### Session logs
 
 Every Train session writes events (camera boot, hand seen/lost, step enter/fail,

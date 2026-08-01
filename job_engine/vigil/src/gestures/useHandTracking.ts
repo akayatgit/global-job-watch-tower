@@ -12,14 +12,19 @@ const MODEL =
 function sampleFromLandmarks(
   lms: { x: number; y: number; z: number }[],
   pinchThreshold: number,
+  wasPinching: boolean,
 ): HandSample {
   const thumb = lms[4]
   const index = lms[8]
   const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y)
+  // Hysteresis: easy to start pinch, must open wider to release (stops grab flicker)
+  const pinch = wasPinching
+    ? pinchDist < pinchThreshold * 1.7
+    : pinchDist < pinchThreshold
   return {
     index: { x: 1 - index.x, y: index.y },
     thumb: { x: 1 - thumb.x, y: thumb.y },
-    pinch: pinchDist < pinchThreshold,
+    pinch,
     pinchDist,
     centroid: {
       x: 1 - (thumb.x + index.x) / 2,
@@ -48,6 +53,7 @@ export function useHandTracking(
 ) {
   const setHands = useVigilStore((s) => s.setHands)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
+  const pinchLatch = useRef({ left: false, right: false })
   const rafRef = useRef(0)
   const sawHand = useRef(false)
 
@@ -118,13 +124,35 @@ export function useHandTracking(
         }
         result.landmarks.forEach((landmarks, i) => {
           const handed = result.handednesses?.[i]?.[0]?.categoryName
-          const sample = sampleFromLandmarks(landmarks, cal.pinchThreshold)
-          if (handed === 'Left') hands.right = sample
-          else if (handed === 'Right') hands.left = sample
-          else hands.right = hands.right || sample
+          // MediaPipe "Left" = person's left = mirrored right on screen for selfie cam
+          if (handed === 'Left') {
+            hands.right = sampleFromLandmarks(
+              landmarks,
+              cal.pinchThreshold,
+              pinchLatch.current.right,
+            )
+          } else if (handed === 'Right') {
+            hands.left = sampleFromLandmarks(
+              landmarks,
+              cal.pinchThreshold,
+              pinchLatch.current.left,
+            )
+          } else {
+            hands.right =
+              hands.right ||
+              sampleFromLandmarks(landmarks, cal.pinchThreshold, pinchLatch.current.right)
+          }
         })
         if (!hands.right && !hands.left && result.landmarks[0]) {
-          hands.right = sampleFromLandmarks(result.landmarks[0], cal.pinchThreshold)
+          hands.right = sampleFromLandmarks(
+            result.landmarks[0],
+            cal.pinchThreshold,
+            pinchLatch.current.right,
+          )
+        }
+        pinchLatch.current = {
+          left: Boolean(hands.left?.pinch),
+          right: Boolean(hands.right?.pinch),
         }
         if (hands.left?.pinch && hands.right?.pinch && hands.left.centroid && hands.right.centroid) {
           hands.twoHandPinch = true

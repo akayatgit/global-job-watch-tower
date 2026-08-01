@@ -67,15 +67,23 @@ export function useGestureOS() {
       const training = st.trainingActive
       const now = performance.now()
 
+      const trainStep = st.trainingStep
+      const trainMove = training && trainStep === 'move'
+      const trainScroll = training && trainStep === 'scroll'
+      const headerPad = trainMove ? Math.max(48, Math.round(hitPx * 0.7)) : 0
+
       const actionEl = hitPanelAction(idx.x, idx.y, btnPad)
-      const header = actionEl ? null : hitPanelHeader(idx.x, idx.y)
-      const body = actionEl || header ? null : hitPanelBody(idx.x, idx.y)
+      // During move/scroll drills: ignore random buttons, keep Skip chips usable
+      const skipAction = Boolean(actionEl?.dataset.gestureAction?.startsWith('train-skip'))
+      const action = (trainMove || trainScroll) && !skipAction ? null : actionEl
+      const header = action ? null : hitPanelHeader(idx.x, idx.y, headerPad)
+      const body = action || header ? null : hitPanelBody(idx.x, idx.y)
       const overPanel = hitAnyPanel(idx.x, idx.y)
       const orbit =
         training || overPanel ? null : hitOrbit(idx.x, idx.y, hitPx)
 
       let hover: string | null = null
-      if (actionEl) hover = actionHoverId(actionEl)
+      if (action) hover = actionHoverId(action)
       else if (header) hover = `panel:${header}`
       else if (body) hover = `body:${body}`
       else if (orbit) hover = `orbit:${orbit}`
@@ -132,28 +140,29 @@ export function useGestureOS() {
       }
 
       // Early training steps: only dwell/pinch practice — no pan/scroll steal
-      const trainLock = training && ['intro', 'show_hand', 'pinch', 'close', 'press'].includes(st.trainingStep)
+      const trainLock = training && ['intro', 'show_hand', 'pinch', 'close', 'press'].includes(trainStep)
 
       // ——— One-hand pinch start ———
       if (pinching && !lastPinch.current && !trainLock) {
-        if (header) {
-          st.setGrabTarget(header)
-          st.focusPanel(header)
-          const p = st.panels[header]
+        // Move drill: grab from title bar OR anywhere on the SAMPLE window
+        const grabId = header || (trainMove ? body || overPanel : null)
+        if (grabId) {
+          st.setGrabTarget(grabId)
+          st.focusPanel(grabId)
+          const p = st.panels[grabId]
           grabOffset.current = { dx: idx.x * 100 - p.x, dy: idx.y * 100 - p.y }
           st.setGestureMode('drag_panel')
           modeRef.current = 'drag_panel'
           st.setStatus(`MOVE ${p.title}`)
           st.triggerBurst()
-        } else if (body && (!training || st.trainingStep === 'scroll')) {
+        } else if (body && (!training || trainScroll)) {
           scrollPanel.current = body
           lastY.current = idx.y
           st.focusPanel(body)
           st.setGestureMode('scroll_panel')
           modeRef.current = 'scroll_panel'
           st.setStatus(`SCROLL ${body.toUpperCase()}`)
-        } else if (!actionEl && !orbit && !training) {
-          // Never pan during training — it steals aim and hides intent
+        } else if (!action && !orbit && !training) {
           lastX.current = idx.x
           lastY.current = idx.y
           st.setGestureMode('pan_canvas')
@@ -162,20 +171,22 @@ export function useGestureOS() {
         }
       }
 
-      // Drag panel
+      // Drag panel (training allows farther right into DROP ZONE)
       if (pinching && modeRef.current === 'drag_panel' && st.grabTarget && grabOffset.current) {
         const id = st.grabTarget as PanelId
+        const maxX = training ? 88 : 70
+        const maxY = training ? 72 : 70
         st.movePanel(
           id,
-          Math.max(1, Math.min(70, idx.x * 100 - grabOffset.current.dx)),
-          Math.max(8, Math.min(70, idx.y * 100 - grabOffset.current.dy)),
+          Math.max(1, Math.min(maxX, idx.x * 100 - grabOffset.current.dx)),
+          Math.max(8, Math.min(maxY, idx.y * 100 - grabOffset.current.dy)),
         )
       }
 
       // Scroll panel body (pinch + move up/down)
       if (pinching && modeRef.current === 'scroll_panel' && scrollPanel.current && lastY.current != null) {
-        const dy = (idx.y - lastY.current) * window.innerHeight
-        // Move hand up → content scrolls up (natural)
+        const boost = training ? 2.2 : 1
+        const dy = (idx.y - lastY.current) * window.innerHeight * boost
         scrollPanelBody(scrollPanel.current, dy)
         lastY.current = idx.y
       }
@@ -214,13 +225,13 @@ export function useGestureOS() {
             const switchingToAction = hover.startsWith('action:')
             const mid = dwellRef.current && now - dwellRef.current.since > 80
             if (!dwellRef.current || switchingToAction || !mid) {
-              dwellRef.current = { id: hover, since: now, el: actionEl, lostSince: null }
+              dwellRef.current = { id: hover, since: now, el: action, lostSince: null }
               st.setPressProgress(0)
               st.setGestureMode('dwell')
             }
           } else {
             dwellRef.current.lostSince = null
-            if (actionEl) dwellRef.current.el = actionEl
+            if (action) dwellRef.current.el = action
             const prog = Math.min(1, (now - dwellRef.current.since) / dwellMs)
             st.setPressProgress(prog)
             if (prog >= 1) {
