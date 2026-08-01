@@ -115,7 +115,8 @@ use — they should love opening the app, never fight it.
   mouse click, drag panel headers, keyboard/typing, module dock chips. **ON** =
   MediaPipe hand control with finger guides. Orbit dots hide when OFF. Spec:
   `documents/vigil-hand-gesture-interface.md` — update whenever gestures change.
-- **VIGIL Training Ground (2026-08-02):** Top-right **Train** runs a guided
-  webcam session (show hand, pinch, move, close, press). Saves calibration
-  (pinch / dwell / lerp / hit size) to localStorage for Ashok’s hand feel.
-  Re-train over days to fine-tune.
+- **VIGIL Training Ground (2026-08-02):** Top-right **Train** opens a
+  **separate dummy screen** (not the live tower). Drills: pinch, move, scroll,
+  window zoom, two-hand core, close. Stuck/timeout → copyable calibration JSON
+  for Akay. Live gestures: pinch-header move, pinch-body scroll, 2-hand window
+  zoom, 2-hand empty core zoom, pinch-empty canvas pan. R=amber L=cyan guides.

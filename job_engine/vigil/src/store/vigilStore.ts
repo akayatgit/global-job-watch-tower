@@ -83,12 +83,24 @@ export type TrainingStepId =
   | 'show_hand'
   | 'pinch'
   | 'move'
+  | 'scroll'
+  | 'zoom_window'
+  | 'two_hand'
   | 'close'
   | 'press'
   | 'done'
+  | 'fail'
+
+export type GestureMode =
+  | 'none'
+  | 'dwell'
+  | 'drag_panel'
+  | 'scroll_panel'
+  | 'zoom_panel'
+  | 'pan_canvas'
+  | 'core_zoom'
 
 type VigilStore = {
-  /** When true: hand-gesture OS. When false: normal mouse/keyboard (default). */
   vigilMode: boolean
   setVigilMode: (on: boolean) => void
   calibration: VigilCalibration
@@ -96,31 +108,43 @@ type VigilStore = {
   trainingActive: boolean
   trainingStep: TrainingStepId
   trainingFeedback: string
+  trainingFailReport: string
   startTraining: () => void
   stopTraining: () => void
   setTrainingStep: (step: TrainingStepId) => void
   setTrainingFeedback: (text: string) => void
+  setTrainingFailReport: (text: string) => void
   statusLine: string
   setStatus: (text: string) => void
   coreScale: number
   setCoreScale: (n: number) => void
   coreBurst: number
   triggerBurst: () => void
+  canvasPan: { x: number; y: number }
+  setCanvasPan: (p: { x: number; y: number }) => void
   hands: HandsState
   setHands: (h: HandsState) => void
+  /** Primary (right) hand guides */
   smoothIndex: { x: number; y: number }
   smoothThumb: { x: number; y: number }
+  /** Secondary (left) hand guides — cyan */
+  smoothLeftIndex: { x: number; y: number }
+  smoothLeftThumb: { x: number; y: number }
+  leftHandVisible: boolean
   pressProgress: number
   setPressProgress: (n: number) => void
   hoverTarget: string | null
   setHoverTarget: (id: string | null) => void
   grabTarget: string | null
   setGrabTarget: (id: string | null) => void
+  gestureMode: GestureMode
+  setGestureMode: (m: GestureMode) => void
   focusedPanel: PanelId | null
   panels: Record<PanelId, PanelState>
   openPanel: (id: PanelId) => void
   closePanel: (id: PanelId) => void
   movePanel: (id: PanelId, x: number, y: number) => void
+  scalePanel: (id: PanelId, scale: number) => void
   focusPanel: (id: PanelId) => void
   vitals: any | null
   setVitals: (v: any) => void
@@ -156,16 +180,15 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     } catch {
       /* ignore */
     }
-    const trainingActive = get().trainingActive
     set({
       vigilMode: on,
       pressProgress: 0,
       hoverTarget: null,
       grabTarget: null,
       magnet: null,
+      gestureMode: 'none',
       hands: { left: null, right: null, twoHandPinch: false, twoHandDist: 0 },
-      // Leaving VIGIL Mode exits training
-      trainingActive: on ? trainingActive : false,
+      trainingActive: on ? get().trainingActive : false,
       trainingStep: on ? get().trainingStep : 'idle',
       statusLine: on
         ? 'VIGIL MODE ON — HAND CONTROL'
@@ -180,20 +203,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   trainingActive: false,
   trainingStep: 'idle',
   trainingFeedback: '',
+  trainingFailReport: '',
   startTraining: () => {
     try {
       localStorage.setItem('vigil.mode', 'on')
     } catch {
       /* ignore */
     }
+    // Leave main app — training is its own screen
     set({
       vigilMode: true,
       trainingActive: true,
       trainingStep: 'intro',
-      trainingFeedback: 'Welcome to VIGIL training ground',
-      statusLine: 'TRAINING GROUND — FOLLOW THE STEPS',
+      trainingFeedback: 'Training ground — dummy widgets only',
+      trainingFailReport: '',
+      statusLine: 'TRAINING GROUND',
       pressProgress: 0,
       grabTarget: null,
+      gestureMode: 'none',
+      canvasPan: { x: 0, y: 0 },
     })
   },
   stopTraining: () =>
@@ -201,30 +229,46 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       trainingActive: false,
       trainingStep: 'idle',
       trainingFeedback: '',
+      trainingFailReport: '',
+      gestureMode: 'none',
       statusLine: get().vigilMode
         ? 'VIGIL MODE ON — HAND CONTROL'
         : 'DESKTOP MODE — MOUSE & KEYBOARD',
     }),
   setTrainingStep: (step) => set({ trainingStep: step }),
   setTrainingFeedback: (text) => set({ trainingFeedback: text }),
+  setTrainingFailReport: (text) => set({ trainingFailReport: text }),
   statusLine: readStoredVigilMode()
     ? 'VIGIL MODE ON — HAND CONTROL'
     : 'DESKTOP MODE — MOUSE & KEYBOARD',
   setStatus: (text) => set({ statusLine: text }),
   coreScale: 1,
-  setCoreScale: (n) => set({ coreScale: Math.max(0.7, Math.min(2.2, n)) }),
+  setCoreScale: (n) => set({ coreScale: Math.max(0.7, Math.min(2.4, n)) }),
   coreBurst: 0,
   triggerBurst: () => set({ coreBurst: performance.now() }),
+  canvasPan: { x: 0, y: 0 },
+  setCanvasPan: (p) =>
+    set({
+      canvasPan: {
+        x: Math.max(-2.5, Math.min(2.5, p.x)),
+        y: Math.max(-1.5, Math.min(1.5, p.y)),
+      },
+    }),
   hands: { left: null, right: null, twoHandPinch: false, twoHandDist: 0 },
   setHands: (h) => set({ hands: h }),
   smoothIndex: { x: 0.5, y: 0.5 },
   smoothThumb: { x: 0.5, y: 0.55 },
+  smoothLeftIndex: { x: 0.35, y: 0.5 },
+  smoothLeftThumb: { x: 0.32, y: 0.55 },
+  leftHandVisible: false,
   pressProgress: 0,
   setPressProgress: (n) => set({ pressProgress: n }),
   hoverTarget: null,
   setHoverTarget: (id) => set({ hoverTarget: id }),
   grabTarget: null,
   setGrabTarget: (id) => set({ grabTarget: id }),
+  gestureMode: 'none',
+  setGestureMode: (m) => set({ gestureMode: m }),
   focusedPanel: null,
   panels: initialPanels(),
   openPanel: (id) => {
@@ -249,6 +293,14 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   movePanel: (id, x, y) => {
     const panels = { ...get().panels }
     panels[id] = { ...panels[id], x, y }
+    set({ panels })
+  },
+  scalePanel: (id, scale) => {
+    const panels = { ...get().panels }
+    panels[id] = {
+      ...panels[id],
+      scale: Math.max(0.65, Math.min(1.8, scale)),
+    }
     set({ panels })
   },
   focusPanel: (id) => {

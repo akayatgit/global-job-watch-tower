@@ -52,6 +52,7 @@ export function PanelShell({
         top: `${panel.y}%`,
         zIndex: 20 + panel.z,
         transform: `scale(${panel.scale})`,
+        transformOrigin: 'top left',
       }}
       onMouseDown={() => focusPanel(id)}
     >

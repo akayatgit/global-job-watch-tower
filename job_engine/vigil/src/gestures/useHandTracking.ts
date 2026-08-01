@@ -36,6 +36,7 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
   useEffect(() => {
     if (!vigilMode) {
       setHands({ left: null, right: null, twoHandPinch: false, twoHandDist: 0 })
+      useVigilStore.setState({ leftHandVisible: false })
       return
     }
 
@@ -65,7 +66,7 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
         loop()
       } catch (err) {
         console.warn('VIGIL hand tracking unavailable', err)
-        useVigilStore.getState().setStatus('CAMERA OFFLINE — TURN VIGIL MODE OFF FOR MOUSE')
+        useVigilStore.getState().setStatus('CAMERA OFFLINE — USE DESKTOP MODE')
       }
     }
 
@@ -86,46 +87,72 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement | nul
           twoHandPinch: false,
           twoHandDist: 0,
         }
-        const samples: HandSample[] = []
         result.landmarks.forEach((landmarks, i) => {
           const handed = result.handednesses?.[i]?.[0]?.categoryName
           const sample = sampleFromLandmarks(landmarks, cal.pinchThreshold)
-          samples.push(sample)
-          if (handed === 'Left') hands.left = sample
-          else hands.right = sample
+          // MediaPipe "Left" is mirrored selfie left (= user's right). Swap for natural feel.
+          if (handed === 'Left') hands.right = sample
+          else if (handed === 'Right') hands.left = sample
+          else hands.right = hands.right || sample
         })
-        if (samples.length === 1) {
-          hands.right = samples[0]
+        if (!hands.right && !hands.left && result.landmarks[0]) {
+          hands.right = sampleFromLandmarks(result.landmarks[0], cal.pinchThreshold)
         }
-        if (samples.length >= 2 && samples[0].pinch && samples[1].pinch) {
-          const a = samples[0].centroid!
-          const b = samples[1].centroid!
+        if (hands.left?.pinch && hands.right?.pinch && hands.left.centroid && hands.right.centroid) {
           hands.twoHandPinch = true
-          hands.twoHandDist = Math.hypot(a.x - b.x, a.y - b.y)
+          hands.twoHandDist = Math.hypot(
+            hands.left.centroid.x - hands.right.centroid.x,
+            hands.left.centroid.y - hands.right.centroid.y,
+          )
         }
         setHands(hands)
 
-        const primary = hands.right?.index || hands.left?.index
-        const thumb = hands.right?.thumb || hands.left?.thumb
         const factor = cal.lerpFactor
         const st = useVigilStore.getState()
-        if (primary) {
-          useVigilStore.setState({
-            smoothIndex: {
-              x: lerp(st.smoothIndex.x, primary.x, factor),
-              y: lerp(st.smoothIndex.y, primary.y, factor),
-            },
-          })
+        const patch: Record<string, unknown> = { leftHandVisible: Boolean(hands.left) }
+
+        if (hands.right?.index) {
+          patch.smoothIndex = {
+            x: lerp(st.smoothIndex.x, hands.right.index.x, factor),
+            y: lerp(st.smoothIndex.y, hands.right.index.y, factor),
+          }
         }
-        if (thumb) {
-          const s2 = useVigilStore.getState()
-          useVigilStore.setState({
-            smoothThumb: {
-              x: lerp(s2.smoothThumb.x, thumb.x, factor),
-              y: lerp(s2.smoothThumb.y, thumb.y, factor),
-            },
-          })
+        if (hands.right?.thumb) {
+          const s = useVigilStore.getState()
+          patch.smoothThumb = {
+            x: lerp(s.smoothThumb.x, hands.right.thumb.x, factor),
+            y: lerp(s.smoothThumb.y, hands.right.thumb.y, factor),
+          }
         }
+        if (hands.left?.index) {
+          const s = useVigilStore.getState()
+          patch.smoothLeftIndex = {
+            x: lerp(s.smoothLeftIndex.x, hands.left.index.x, factor),
+            y: lerp(s.smoothLeftIndex.y, hands.left.index.y, factor),
+          }
+        }
+        if (hands.left?.thumb) {
+          const s = useVigilStore.getState()
+          patch.smoothLeftThumb = {
+            x: lerp(s.smoothLeftThumb.x, hands.left.thumb.x, factor),
+            y: lerp(s.smoothLeftThumb.y, hands.left.thumb.y, factor),
+          }
+        }
+        // If only left hand, drive primary cursor from it too
+        if (!hands.right && hands.left?.index) {
+          const s = useVigilStore.getState()
+          patch.smoothIndex = {
+            x: lerp(s.smoothIndex.x, hands.left.index.x, factor),
+            y: lerp(s.smoothIndex.y, hands.left.index.y, factor),
+          }
+          if (hands.left.thumb) {
+            patch.smoothThumb = {
+              x: lerp(s.smoothThumb.x, hands.left.thumb.x, factor),
+              y: lerp(s.smoothThumb.y, hands.left.thumb.y, factor),
+            }
+          }
+        }
+        useVigilStore.setState(patch)
       }
       rafRef.current = requestAnimationFrame(loop)
     }

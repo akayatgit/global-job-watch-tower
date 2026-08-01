@@ -153,8 +153,8 @@ export function StatusHud() {
 
       <div className="orbit-hint">
         {vigilMode
-          ? 'VIGIL Mode ON · point · dwell · pinch · two-hand zoom · switch OFF for mouse'
-          : 'Desktop mode · click modules below · drag panel headers · type in fields · switch VIGIL Mode ON for hands'}
+          ? 'Pinch header=move · pinch body=scroll · 2-hand on window=zoom · 2-hand empty=core · pinch empty=pan · Train for practice'
+          : 'Desktop · click modules · drag headers · Train opens a separate practice room'}
       </div>
     </div>
   )

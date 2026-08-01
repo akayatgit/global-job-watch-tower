@@ -383,6 +383,127 @@ button, input, select {
   font-family: var(--font-body);
 }
 
+.gesture-mode-badge {
+  position: absolute;
+  left: 50%;
+  top: 88px;
+  transform: translateX(-50%);
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--vg-amber);
+  background: rgba(12, 6, 2, 0.75);
+  border: 1px solid var(--vg-line);
+  padding: 4px 12px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.training-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 40%, rgba(255, 85, 0, 0.12), transparent 60%),
+    #050302;
+  color: var(--vg-ink);
+  overflow: hidden;
+}
+
+.training-screen-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.training-screen-bar h1 {
+  margin: 0;
+  font-family: var(--font-hud);
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  color: var(--vg-amber);
+}
+
+.training-screen-bar p {
+  margin: 4px 0 0;
+  color: var(--vg-muted);
+  font-size: 13px;
+}
+
+.training-screen-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.training-coach {
+  position: absolute;
+  left: 20px;
+  top: 88px;
+  width: min(360px, 38vw);
+  padding: 14px;
+  background: var(--vg-glass);
+  border: 1px solid var(--vg-amber);
+  border-radius: 8px;
+  z-index: 60;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.training-coach h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-hud);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.training-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+
+.training-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--vg-muted);
+  letter-spacing: 0.06em;
+}
+
+.training-fail-dump {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  background: #000;
+  border: 1px solid var(--vg-line);
+  color: #fde68a;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.training-hit-host {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.training-hit-host .float-panel {
+  pointer-events: auto;
+}
+
+.training-dummy-visual {
+  z-index: 46 !important;
+  border-style: dashed;
+}
+
 .panel-head .ops button {
   min-width: 64px;
   min-height: 32px;
