@@ -63,7 +63,7 @@ function hitPanelAction(nx: number, ny: number, padPx: number): HTMLElement | nu
   )
   let best: { el: HTMLElement; d: number } | null = null
   for (const el of candidates) {
-    if (el.disabled || el.offsetParent === null) continue
+    if ((el instanceof HTMLButtonElement && el.disabled) || el.offsetParent === null) continue
     const r = el.getBoundingClientRect()
     const left = r.left - padPx
     const right = r.right + padPx
