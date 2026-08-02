@@ -141,6 +141,17 @@ export const api = {
   cancelRun: (id: number) => postJson<any>(`/api/runs/${id}/cancel`),
 }
 
+/** Shared time-window chips when an API payload has not arrived yet. */
+export const WINDOW_FALLBACK = [
+  { days: 0, label: 'Last 24 hours' },
+  { days: 1, label: 'Today' },
+  { days: 2, label: 'Last 2 days' },
+  { days: 4, label: 'Last 4 days' },
+  { days: 7, label: 'Last 7 days' },
+  { days: 14, label: 'Last 14 days' },
+  { days: 30, label: 'Last 30 days' },
+]
+
 export function chipLabel(days: number, label?: string): string {
   if (label) {
     if (days === 0) return '24h'

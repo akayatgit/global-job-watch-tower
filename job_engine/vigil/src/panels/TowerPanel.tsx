@@ -42,6 +42,8 @@ export function TowerPanel() {
   const maxC = Math.max(...top.map((c: any) => c.n), 1)
   const roles = (data?.per_role || []).slice(0, 8)
   const maxR = Math.max(...roles.map((r: any) => r.n), 1)
+  const topCities = data?.top_cities || []
+  const maxCity = Math.max(...topCities.map((c: any) => c.recent), 1)
   const latest = data?.latest_jobs || []
   const moreRoles = (data?.per_role || []).length > 8
 
@@ -60,7 +62,7 @@ export function TowerPanel() {
             <div className="stat-card"><div className="n">{stats.runs_active}</div><div className="l">Active</div></div>
           </div>
 
-          {(data.top_cities || []).length > 0 && (
+          {topCities.length > 0 && (
             <>
               <div className="section-head">
                 <span className="muted">Top cities (7d)</span>
@@ -73,7 +75,7 @@ export function TowerPanel() {
                   City signals
                 </button>
               </div>
-              {(data.top_cities || []).slice(0, 6).map((c: any) => (
+              {topCities.slice(0, 6).map((c: any) => (
                 <button
                   type="button"
                   className="bar-row clickable"
@@ -89,9 +91,7 @@ export function TowerPanel() {
                     <div className="bar-track">
                       <div
                         className="bar-fill"
-                        style={{
-                          width: `${(c.recent / Math.max(...(data.top_cities || []).map((x: any) => x.recent), 1)) * 100}%`,
-                        }}
+                        style={{ width: `${(c.recent / maxCity) * 100}%` }}
                       />
                     </div>
                   </div>

@@ -1,19 +1,8 @@
 import { useEffect, useState } from 'react'
-import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
-import { api, chipLabel } from '../lib/api'
+import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
-
-const FALLBACK_WINDOWS = [
-  { days: 0, label: 'Last 24 hours' },
-  { days: 1, label: 'Today' },
-  { days: 2, label: 'Last 2 days' },
-  { days: 4, label: 'Last 4 days' },
-  { days: 7, label: 'Last 7 days' },
-  { days: 14, label: 'Last 14 days' },
-  { days: 30, label: 'Last 30 days' },
-]
 
 export function CitiesPanel() {
   const [days, setDays] = useState(7)
@@ -58,7 +47,7 @@ export function CitiesPanel() {
     }
   }, [pickA, pickB, days, sectorFilter])
 
-  const windows = data?.window_options || FALLBACK_WINDOWS
+  const windows = data?.window_options || WINDOW_FALLBACK
   const cities = data?.cities || []
   const maxN = data?.max || Math.max(...cities.map((c: any) => c.recent), 1)
   const cityOpts = (data?.city_options || []).filter((o: any) => o.id)
@@ -221,9 +210,6 @@ export function CitiesPanel() {
               {compare.leader} leads by {compare.gap} openings
             </p>
           ) : null}
-
-          <div className="muted" style={{ marginTop: 12 }}>Global city filter</div>
-          <CityChips actionPrefix="cities-global" />
         </>
       )}
     </PanelShell>

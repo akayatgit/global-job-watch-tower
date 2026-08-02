@@ -26,7 +26,7 @@ from app.signals import (
     watchlist_rows,
 )
 from app.ai_capacity import compute_ai_capacity
-from app.cities import CRITICAL_CITIES, city_options, normalize_city_filter
+from app.cities import city_options, normalize_city_filter
 from app.city_analytics import compare_cities, compute_city_signals
 from app.filter_compare import ALLOWED_FILTER_WINDOWS, compute_filter_compare
 from app.hermes_ask import ask_hermes
@@ -206,7 +206,6 @@ def ultron_tower(
         'city': city or '',
         'sectors': CRITICAL_SECTORS,
         'sector_options': sector_options(),
-        'cities': CRITICAL_CITIES,
         'city_options': city_options(),
         'top_cities': (city_teaser.get('cities') or [])[:6],
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],

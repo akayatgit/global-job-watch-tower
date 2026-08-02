@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
-import { api, chipLabel } from '../lib/api'
+import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
 
@@ -51,15 +51,7 @@ export function RoleHirePanel() {
   const cities = data?.cities || []
   const maxN = data?.max || Math.max(...companies.map((c: any) => c.recent), 1)
   const maxCity = data?.max_city || Math.max(...cities.map((c: any) => c.n), 1)
-  const windows = data?.window_options || [
-    { days: 0, label: 'Last 24 hours' },
-    { days: 1, label: 'Today' },
-    { days: 2, label: 'Last 2 days' },
-    { days: 4, label: 'Last 4 days' },
-    { days: 7, label: 'Last 7 days' },
-    { days: 14, label: 'Last 14 days' },
-    { days: 30, label: 'Last 30 days' },
-  ]
+  const windows = data?.window_options || WINDOW_FALLBACK
 
   return (
     <PanelShell id="role_hire">

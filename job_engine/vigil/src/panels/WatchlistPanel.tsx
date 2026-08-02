@@ -1,19 +1,9 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
-import { api, chipLabel } from '../lib/api'
+import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { PanelShell } from './PanelShell'
 import { useVigilStore } from '../store/vigilStore'
-
-const FALLBACK_WINDOWS = [
-  { days: 0, label: 'Last 24 hours' },
-  { days: 1, label: 'Today' },
-  { days: 2, label: 'Last 2 days' },
-  { days: 4, label: 'Last 4 days' },
-  { days: 7, label: 'Last 7 days' },
-  { days: 14, label: 'Last 14 days' },
-  { days: 30, label: 'Last 30 days' },
-]
 
 export function WatchlistPanel() {
   const [days, setDays] = useState(7)
@@ -39,7 +29,7 @@ export function WatchlistPanel() {
     reload()
   }, [days, sectorFilter, cityFilter])
 
-  const windows = data?.window_options || FALLBACK_WINDOWS
+  const windows = data?.window_options || WINDOW_FALLBACK
 
   return (
     <PanelShell id="watchlist">
