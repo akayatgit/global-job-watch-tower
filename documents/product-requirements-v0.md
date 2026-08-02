@@ -283,7 +283,8 @@ Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the Think
 | Window stack | All panels open large + centered (layered stack). Orb + module dock always under windows |
 | Pin dashboard | Tower Insights always pinned right. Pin any main widget; layout persists (admin canvas) |
 | Hermes CIO | Local Hermes Agent (Ollama 4b) + MCP read tools; VIGIL Ask + Telegram-ready briefs. Scrape wins capacity — see `documents/hermes-agent-integration.md` |
-| Insight windows | Signals/Watchlist: 24h · Today · 2d · 4d · 7d · 14d · 30d. Role click → companies max→min bars; company click → filtered Jobs |
+| Insight windows | Signals/Watchlist: 24h · Today · 2d · 4d · 7d · 14d · 30d. Role click → companies max→min glass pillars; company click → filtered Jobs |
+| Compare visuals | Glass-pillar charts (crystal bars, orange base glow, cyan leader) for city/company/role/watchlist/filter comparisons; flex to panel width |
 | Sync | WebSocket `/ws/ultron` + REST `/api/ultron/*` and existing `/api/*` |
 | Deep links | `/?panel=jobs` (old paths redirect here) |
 | Spec | `documents/vigil-hand-gesture-interface.md` |
