@@ -219,15 +219,16 @@ export function useGestureOS() {
         }
       }
 
-      // Drag panel (training allows farther right into DROP ZONE)
+      // Drag panel — x/y are window center % (training allows farther right into DROP ZONE)
       if (pinching && modeRef.current === 'drag_panel' && st.grabTarget && grabOffset.current) {
         const id = st.grabTarget as PanelId
-        const maxX = training ? 88 : 70
-        const maxY = training ? 72 : 70
+        const maxX = training ? 88 : 78
+        const maxY = training ? 78 : 78
+        const minXY = training ? 12 : 22
         st.movePanel(
           id,
-          Math.max(1, Math.min(maxX, idx.x * 100 - grabOffset.current.dx)),
-          Math.max(8, Math.min(maxY, idx.y * 100 - grabOffset.current.dy)),
+          Math.max(minXY, Math.min(maxX, idx.x * 100 - grabOffset.current.dx)),
+          Math.max(minXY, Math.min(maxY, idx.y * 100 - grabOffset.current.dy)),
         )
       }
 

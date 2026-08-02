@@ -32,6 +32,7 @@ export function PanelShell({
     if (vigilMode) return
     if ((e.target as HTMLElement).closest('button')) return
     e.preventDefault()
+    // panel.x/y are the center of the window
     dragRef.current = {
       dx: e.clientX - (panel.x / 100) * window.innerWidth,
       dy: e.clientY - (panel.y / 100) * window.innerHeight,
@@ -40,7 +41,7 @@ export function PanelShell({
       if (!dragRef.current) return
       const x = ((ev.clientX - dragRef.current.dx) / window.innerWidth) * 100
       const y = ((ev.clientY - dragRef.current.dy) / window.innerHeight) * 100
-      movePanel(id, Math.max(1, Math.min(70, x)), Math.max(8, Math.min(70, y)))
+      movePanel(id, x, y)
     }
     const onUp = () => {
       dragRef.current = null
@@ -58,9 +59,9 @@ export function PanelShell({
       style={{
         left: `${panel.x}%`,
         top: `${panel.y}%`,
-        zIndex: 20 + panel.z,
-        transform: `scale(${panel.scale})`,
-        transformOrigin: 'top left',
+        zIndex: panel.z,
+        transform: `translate(-50%, -50%) scale(${panel.scale})`,
+        transformOrigin: 'center center',
       }}
       onMouseDown={() => focusPanel(id)}
     >

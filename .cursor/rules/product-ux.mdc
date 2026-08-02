@@ -131,3 +131,6 @@ use — they should love opening the app, never fight it.
   24h · Today · 2d · 4d · 7d · 14d · 30d. Clicking a role opens a larger
   Companies Hiring window (bars max→min); clicking a company opens filtered
   Jobs. Every insight row should lead deeper.
+- **Layered stack windows (2026-08-02):** Every panel opens large and centered
+  (same readable size as Companies Hiring). Orb + module dock stay under
+  windows (never cover open panels). Focused window on top; others dim.

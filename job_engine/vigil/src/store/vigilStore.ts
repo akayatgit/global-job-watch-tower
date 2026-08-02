@@ -57,16 +57,19 @@ export type PanelState = {
   z: number
 }
 
+/** x/y are viewport % of the panel CENTER (transform translate -50%-50%). */
+const PANEL_CENTER = { x: 50, y: 48 }
+
 const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
-  { id: 'tower', title: 'TOWER INSIGHTS', x: 4, y: 14 },
-  { id: 'signals', title: 'HIRING SIGNALS', x: 58, y: 12 },
-  { id: 'watchlist', title: 'WATCHLIST', x: 62, y: 48 },
-  { id: 'searches', title: 'SEARCHES', x: 6, y: 48 },
-  { id: 'activity', title: 'ACTIVITY', x: 32, y: 56 },
-  { id: 'jobs', title: 'JOBS', x: 55, y: 30 },
-  { id: 'live', title: 'LIVE FEED', x: 8, y: 30 },
-  { id: 'health', title: 'TOWER HEALTH', x: 38, y: 10 },
-  { id: 'role_hire', title: 'COMPANIES HIRING', x: 18, y: 10 },
+  { id: 'tower', title: 'TOWER INSIGHTS', ...PANEL_CENTER },
+  { id: 'signals', title: 'HIRING SIGNALS', ...PANEL_CENTER },
+  { id: 'watchlist', title: 'WATCHLIST', ...PANEL_CENTER },
+  { id: 'searches', title: 'SEARCHES', ...PANEL_CENTER },
+  { id: 'activity', title: 'ACTIVITY', ...PANEL_CENTER },
+  { id: 'jobs', title: 'JOBS', ...PANEL_CENTER },
+  { id: 'live', title: 'LIVE FEED', ...PANEL_CENTER },
+  { id: 'health', title: 'TOWER HEALTH', ...PANEL_CENTER },
+  { id: 'role_hire', title: 'COMPANIES HIRING', ...PANEL_CENTER },
 ]
 
 export const ORBIT_NODES: OrbitNode[] = [
@@ -305,15 +308,14 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
-    const next = {
+    panels[id] = {
       ...panels[id],
       open: true,
       z: maxZ + 1,
-      ...(id === 'role_hire'
-        ? { x: 12, y: 8, scale: Math.max(panels[id].scale, 1.15) }
-        : {}),
+      x: PANEL_CENTER.x,
+      y: PANEL_CENTER.y,
+      scale: 1,
     }
-    panels[id] = next
     set({
       panels,
       focusedPanel: id,
@@ -338,14 +340,19 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   movePanel: (id, x, y) => {
     const panels = { ...get().panels }
-    panels[id] = { ...panels[id], x, y }
+    // Center-point clamps — keep window mostly on-screen
+    panels[id] = {
+      ...panels[id],
+      x: Math.max(22, Math.min(78, x)),
+      y: Math.max(22, Math.min(78, y)),
+    }
     set({ panels })
   },
   scalePanel: (id, scale) => {
     const panels = { ...get().panels }
     panels[id] = {
       ...panels[id],
-      scale: Math.max(0.65, Math.min(1.8, scale)),
+      scale: Math.max(0.75, Math.min(1.6, scale)),
     }
     set({ panels })
   },
@@ -362,9 +369,9 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       ...panels.role_hire,
       open: true,
       z: maxZ + 1,
-      x: 12,
-      y: 8,
-      scale: Math.max(panels.role_hire.scale, 1.2),
+      x: PANEL_CENTER.x,
+      y: PANEL_CENTER.y,
+      scale: 1,
       title: `HIRING · ${name.toUpperCase()}`,
     }
     set({
@@ -381,6 +388,9 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       ...panels.jobs,
       open: true,
       z: maxZ + 1,
+      x: PANEL_CENTER.x,
+      y: PANEL_CENTER.y,
+      scale: 1,
       title: `JOBS · ${name.toUpperCase()}`,
     }
     set({
@@ -397,6 +407,9 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       ...panels.jobs,
       open: true,
       z: maxZ + 1,
+      x: PANEL_CENTER.x,
+      y: PANEL_CENTER.y,
+      scale: 1,
       title: `JOBS · ${name.toUpperCase()}`,
     }
     set({

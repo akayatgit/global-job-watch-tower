@@ -47,10 +47,11 @@ button, input, select {
   transition: filter 0.25s ease;
 }
 
-.vigil-root.layer-focus.mode-vigil .module-dock {
+/* Dock + orb stay under windows in the layered stack */
+.vigil-root.layer-focus .module-dock {
   filter: blur(7px) brightness(0.55);
   pointer-events: none;
-  opacity: 0.55;
+  opacity: 0.45;
 }
 
 .vigil-root.layer-focus .float-panel.layer-dimmed {
@@ -219,7 +220,8 @@ button, input, select {
   left: 50%;
   bottom: 72px;
   transform: translateX(-50%);
-  z-index: 25;
+  /* Under panel-layer (20) + orb/canvas (1) — never cover open windows */
+  z-index: 5;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -797,29 +799,25 @@ button, input, select {
 .panel-layer {
   position: absolute;
   inset: 0;
+  /* Above canvas (1) and module-dock (5); below status chrome / training */
   z-index: 20;
   pointer-events: none;
 }
 
 .float-panel {
   position: absolute;
-  width: min(420px, 42vw);
-  max-height: min(62vh, 560px);
+  /* All insight windows: large, readable, layered-stack size */
+  width: min(560px, 56vw);
+  max-height: min(78vh, 720px);
   display: flex;
   flex-direction: column;
   pointer-events: auto;
-  background: var(--vg-glass);
+  background: rgba(8, 6, 4, 0.94);
   border: 1px solid var(--vg-line);
   border-radius: 6px;
   box-shadow: 0 0 40px rgba(255, 85, 0, 0.18);
   backdrop-filter: blur(10px);
   overflow: hidden;
-}
-
-.float-panel[data-panel-id='role_hire'] {
-  width: min(560px, 56vw);
-  max-height: min(78vh, 720px);
-  background: rgba(8, 6, 4, 0.94);
 }
 
 .float-panel.focused {
