@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -61,12 +62,23 @@ export function RankListPanel() {
 
   const isCompanies = rankFocus.kind === 'companies'
   const rows = isCompanies ? data?.companies || [] : data?.roles || []
-  const maxN = isCompanies
-    ? data?.max || Math.max(...rows.map((r: any) => r.n), 1)
-    : mode === 'rate'
-      ? data?.max_rate || Math.max(...rows.map((r: any) => r.rate), 0.01)
-      : data?.max || Math.max(...rows.map((r: any) => r.n), 1)
   const windows = data?.window_options || WINDOW_FALLBACK
+  const glassItems = rows.slice(0, 12).map((r: any) => {
+    if (isCompanies) {
+      return {
+        id: String(r.company_id),
+        label: r.name,
+        value: r.n as number,
+      }
+    }
+    const value = mode === 'rate' ? Number(r.rate) : Number(r.n)
+    return {
+      id: String(r.search_id),
+      label: r.name,
+      value,
+      meta: mode === 'rate' ? `${r.n} total` : r.sector_label || undefined,
+    }
+  })
 
   return (
     <PanelShell id="rank_list">
@@ -119,49 +131,30 @@ export function RankListPanel() {
       ) : null}
       {error ? (
         <div className="empty fail">{error}</div>
-      ) : rows.length === 0 ? (
-        <div className="empty">Nothing in this window yet</div>
       ) : (
-        <div className="hire-bars">
-          {rows.map((r: any) => {
-            const value = isCompanies ? r.n : mode === 'rate' ? r.rate : r.n
-            return (
-              <button
-                type="button"
-                className="hire-bar-row clickable"
-                key={isCompanies ? r.company_id : r.search_id}
-                data-gesture-action={
-                  isCompanies ? `rank-co-${r.company_id}` : `rank-role-${r.search_id}`
-                }
-                onClick={() => {
-                  if (isCompanies) openCompanyJobs(r.company_id, r.name, days)
-                  else openRoleHire(r.search_id, r.name, days)
-                }}
-              >
-                <div className="hire-bar-main">
-                  <div className="hire-bar-name">
-                    {r.name}
-                    {r.sector_label ? (
-                      <span className="meta"> · {r.sector_label}</span>
-                    ) : null}
-                  </div>
-                  <div className="bar-track tall">
-                    <div
-                      className="bar-fill"
-                      style={{ width: `${(Number(value) / maxN) * 100}%` }}
-                    />
-                  </div>
-                  {!isCompanies && r.coverage_note ? (
-                    <div className="meta">{r.coverage_note}</div>
-                  ) : null}
-                </div>
-                <strong className="hire-bar-n">
-                  {mode === 'rate' && !isCompanies ? `${r.rate}/d` : r.n}
-                </strong>
-              </button>
-            )
-          })}
-        </div>
+        <GlassCompareChart
+          title={isCompanies ? 'Top companies hiring' : 'Jobs per role'}
+          subtitle={
+            rows.length > 12
+              ? `Top 12 of ${rows.length} — tap to open`
+              : 'Tap a pillar to open'
+          }
+          actionPrefix={isCompanies ? 'rank-co' : 'rank-role'}
+          maxItems={12}
+          emptyText="Nothing in this window yet"
+          formatValue={
+            !isCompanies && mode === 'rate'
+              ? (n) => `${n}/d`
+              : (n) => String(n)
+          }
+          items={glassItems}
+          onSelect={(item) => {
+            const id = Number(item.id)
+            if (Number.isNaN(id)) return
+            if (isCompanies) openCompanyJobs(id, item.label, days)
+            else openRoleHire(id, item.label, days)
+          }}
+        />
       )}
     </PanelShell>
   )

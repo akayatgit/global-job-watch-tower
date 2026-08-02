@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -49,8 +50,6 @@ export function RoleHirePanel() {
 
   const companies = data?.companies || []
   const cities = data?.cities || []
-  const maxN = data?.max || Math.max(...companies.map((c: any) => c.recent), 1)
-  const maxCity = data?.max_city || Math.max(...cities.map((c: any) => c.n), 1)
   const windows = data?.window_options || WINDOW_FALLBACK
 
   return (
@@ -79,82 +78,41 @@ export function RoleHirePanel() {
             ))}
           </div>
           {cities.length > 0 && (
-            <section className="insight-block insight-cities">
-              <header className="insight-block-head">
-                <span className="insight-mark" aria-hidden />
-                <div>
-                  <h4>Where this role is hiring</h4>
-                  <p>Tap a city to filter companies below</p>
-                </div>
-                <span className="insight-count">{cities.length}</span>
-              </header>
-              <div className="hire-bars">
-                {cities.slice(0, 8).map((c: any) => (
-                  <button
-                    type="button"
-                    className="hire-bar-row clickable"
-                    key={c.city}
-                    data-gesture-action={`role-city-${c.city}`}
-                    onClick={() => setCityFilter(c.city)}
-                  >
-                    <div className="hire-bar-main">
-                      <div className="hire-bar-name">{c.label}</div>
-                      <div className="bar-track tall">
-                        <div
-                          className="bar-fill"
-                          style={{ width: `${(c.n / maxCity) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                    <strong className="hire-bar-n">{c.n}</strong>
-                  </button>
-                ))}
-              </div>
-            </section>
+            <GlassCompareChart
+              title="Where this role is hiring"
+              subtitle="Tap a city to filter companies below"
+              actionPrefix="role-city"
+              maxItems={8}
+              items={cities.slice(0, 8).map((c: any) => ({
+                id: String(c.city),
+                label: c.label,
+                value: c.n,
+              }))}
+              onSelect={(item) => setCityFilter(item.id)}
+            />
           )}
-          <section className="insight-block insight-fast">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Companies hiring</h4>
-                <p>Sorted max → min — tap for jobs</p>
-              </div>
-              <span className="insight-count">{companies.length}</span>
-            </header>
-            {error ? (
-              <div className="empty fail">{error}</div>
-            ) : companies.length === 0 ? (
-              <div className="empty soft">No companies hiring this role in this window</div>
-            ) : (
-              <div className="hire-bars">
-                {companies.map((c: any) => (
-                  <button
-                    type="button"
-                    className="hire-bar-row clickable"
-                    key={c.company_id}
-                    data-gesture-action={`role-co-${c.company_id}`}
-                    onClick={() =>
-                      openCompanyJobs(c.company_id, c.name, days, {
-                        searchId: role.searchId,
-                        roleName: role.name,
-                      })
-                    }
-                  >
-                    <div className="hire-bar-main">
-                      <div className="hire-bar-name">{c.name}</div>
-                      <div className="bar-track tall">
-                        <div
-                          className="bar-fill"
-                          style={{ width: `${(c.recent / maxN) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                    <strong className="hire-bar-n">{c.recent}</strong>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
+          {error ? (
+            <div className="empty fail">{error}</div>
+          ) : (
+            <GlassCompareChart
+              title="Companies hiring"
+              subtitle="Sorted max → min — tap for jobs"
+              actionPrefix="role-co"
+              maxItems={10}
+              emptyText="No companies hiring this role in this window"
+              items={companies.slice(0, 10).map((c: any) => ({
+                id: String(c.company_id),
+                label: c.name,
+                value: c.recent,
+              }))}
+              onSelect={(item) =>
+                openCompanyJobs(Number(item.id), item.label, days, {
+                  searchId: role.searchId,
+                  roleName: role.name,
+                })
+              }
+            />
+          )}
         </>
       )}
     </PanelShell>

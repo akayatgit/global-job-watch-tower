@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -71,65 +72,37 @@ export function SignalsPanel() {
             <p className="signal-headline">{s.headline}</p>
           </div>
 
-          <section className="insight-block insight-grow">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Growing roles</h4>
-                <p>Open companies hiring for these rises</p>
-              </div>
-              <span className="insight-count">{growing.length}</span>
-            </header>
-            {growing.length === 0 ? (
-              <div className="empty soft">No growing roles in this window</div>
-            ) : (
-              growing.map((r: any) => (
-                <button
-                  type="button"
-                  className="list-row clickable insight-row"
-                  key={r.search_id}
-                  data-gesture-action={`sig-role-${r.search_id}`}
-                  onClick={() => openRoleHire(r.search_id, r.name, days)}
-                >
-                  <div>
-                    {r.name}
-                    <div className="meta">{r.recent} recent</div>
-                  </div>
-                  <span className="delta-pill up">+{r.delta}</span>
-                </button>
-              ))
-            )}
-          </section>
+          <GlassCompareChart
+            title="Growing roles"
+            subtitle="Open companies hiring for these rises"
+            actionPrefix="sig-role"
+            maxItems={8}
+            emptyText="No growing roles in this window"
+            items={growing.map((r: any) => ({
+              id: String(r.search_id),
+              label: r.name,
+              value: r.recent,
+              meta: r.delta > 0 ? `+${r.delta}` : String(r.delta),
+            }))}
+            onSelect={(item) => openRoleHire(Number(item.id), item.label, days)}
+          />
 
-          <section className="insight-block insight-fast">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Fastest companies</h4>
-                <p>Open jobs at the hottest hirers</p>
-              </div>
-              <span className="insight-count">{fastest.length}</span>
-            </header>
-            {fastest.length === 0 ? (
-              <div className="empty soft">No company pace yet in this window</div>
-            ) : (
-              fastest.map((c: any) => (
-                <button
-                  type="button"
-                  className="list-row clickable insight-row"
-                  key={c.company_id}
-                  data-gesture-action={`sig-co-${c.company_id}`}
-                  onClick={() => openCompanyJobs(c.company_id, c.name, days)}
-                >
-                  <div>
-                    {c.name}
-                    <div className="meta">{c.recent} recent</div>
-                  </div>
-                  <span className="delta-pill up">+{c.delta}</span>
-                </button>
-              ))
-            )}
-          </section>
+          <GlassCompareChart
+            title="Fastest companies"
+            subtitle="Open jobs at the hottest hirers"
+            actionPrefix="sig-co"
+            maxItems={8}
+            emptyText="No company pace yet in this window"
+            items={fastest.map((c: any) => ({
+              id: String(c.company_id),
+              label: c.name,
+              value: c.recent,
+              meta: c.delta > 0 ? `+${c.delta}` : String(c.delta),
+            }))}
+            onSelect={(item) =>
+              openCompanyJobs(Number(item.id), item.label, days)
+            }
+          />
         </>
       )}
     </PanelShell>

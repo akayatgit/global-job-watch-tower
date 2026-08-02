@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -39,11 +40,8 @@ export function TowerPanel() {
 
   const stats = data?.stats
   const top = data?.top_companies || []
-  const maxC = Math.max(...top.map((c: any) => c.n), 1)
   const roles = (data?.per_role || []).slice(0, 8)
-  const maxR = Math.max(...roles.map((r: any) => r.n), 1)
   const topCities = data?.top_cities || []
-  const maxCity = Math.max(...topCities.map((c: any) => c.recent), 1)
   const latest = data?.latest_jobs || []
   const moreRoles = (data?.per_role || []).length > 8
 
@@ -55,21 +53,44 @@ export function TowerPanel() {
         <div className="empty">Syncing tower insights…</div>
       ) : (
         <>
-          <div className="stat-grid">
-            <div className="stat-card"><div className="n">{stats.total_jobs}</div><div className="l">Jobs</div></div>
-            <div className="stat-card"><div className="n">{stats.jobs_today}</div><div className="l">Today</div></div>
-            <div className="stat-card"><div className="n">{stats.companies}</div><div className="l">Companies</div></div>
-            <div className="stat-card"><div className="n">{stats.runs_active}</div><div className="l">Active</div></div>
+          <div className="signal-hero">
+            <div className="stat-grid">
+              <div className="stat-card signal-stat">
+                <div className="n">{stats.total_jobs}</div>
+                <div className="l">Jobs</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{stats.jobs_today}</div>
+                <div className="l">Today</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{stats.companies}</div>
+                <div className="l">Companies</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{stats.runs_active}</div>
+                <div className="l">Active</div>
+              </div>
+            </div>
           </div>
 
           {topCities.length > 0 && (
-            <section className="insight-block insight-cities">
-              <header className="insight-block-head">
-                <span className="insight-mark" aria-hidden />
-                <div>
-                  <h4>Top cities</h4>
-                  <p>Last 7 days — tap to filter Jobs</p>
-                </div>
+            <GlassCompareChart
+              title="Top cities for hiring"
+              subtitle="Last 7 days — tap to filter Jobs"
+              actionPrefix="tower-city-bar"
+              maxItems={6}
+              items={topCities.slice(0, 6).map((c: any) => ({
+                id: String(c.city),
+                label: c.label,
+                value: c.recent,
+                meta: c.delta > 0 ? `+${c.delta}` : c.delta < 0 ? String(c.delta) : undefined,
+              }))}
+              onSelect={(item) => {
+                setCityFilter(item.id)
+                openPanel('jobs')
+              }}
+              action={
                 <button
                   type="button"
                   className="show-all"
@@ -78,40 +99,25 @@ export function TowerPanel() {
                 >
                   City signals
                 </button>
-              </header>
-              {topCities.slice(0, 6).map((c: any) => (
-                <button
-                  type="button"
-                  className="bar-row clickable"
-                  key={c.city}
-                  data-gesture-action={`tower-city-bar-${c.city}`}
-                  onClick={() => {
-                    setCityFilter(c.city)
-                    openPanel('jobs')
-                  }}
-                >
-                  <div>
-                    <div>{c.label}</div>
-                    <div className="bar-track">
-                      <div
-                        className="bar-fill"
-                        style={{ width: `${(c.recent / maxCity) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <strong>{c.recent}</strong>
-                </button>
-              ))}
-            </section>
+              }
+            />
           )}
 
-          <section className="insight-block insight-fast">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Top hiring</h4>
-                <p>Last 7 days — tap a company for jobs</p>
-              </div>
+          <GlassCompareChart
+            title="Top companies hiring"
+            subtitle="Last 7 days — tap a company for jobs"
+            actionPrefix="tower-co"
+            maxItems={8}
+            items={top.map((c: any) => ({
+              id: String(c.company_id || c.name),
+              label: c.name,
+              value: c.n,
+            }))}
+            onSelect={(item) => {
+              const id = Number(item.id)
+              if (!Number.isNaN(id)) openCompanyJobs(id, item.label, 7)
+            }}
+            action={
               <button
                 type="button"
                 className="show-all"
@@ -120,34 +126,25 @@ export function TowerPanel() {
               >
                 Show all
               </button>
-            </header>
-            {top.map((c: any) => (
-              <button
-                type="button"
-                className="bar-row clickable"
-                key={c.company_id || c.name}
-                data-gesture-action={`tower-co-${c.company_id || c.name}`}
-                onClick={() => {
-                  if (c.company_id) openCompanyJobs(c.company_id, c.name, 7)
-                }}
-              >
-                <div>
-                  <div>{c.name}</div>
-                  <div className="bar-track"><div className="bar-fill" style={{ width: `${(c.n / maxC) * 100}%` }} /></div>
-                </div>
-                <strong>{c.n}</strong>
-              </button>
-            ))}
-          </section>
+            }
+          />
 
-          <section className="insight-block insight-grow">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Jobs per role</h4>
-                <p>Fair 7-day window — tap for companies</p>
-              </div>
-              {(moreRoles || roles.length > 0) && (
+          <GlassCompareChart
+            title="Jobs per role"
+            subtitle="Fair 7-day window — tap for companies"
+            actionPrefix="tower-role"
+            maxItems={8}
+            items={roles.map((r: any) => ({
+              id: String(r.search_id || r.name),
+              label: r.name,
+              value: r.n,
+            }))}
+            onSelect={(item) => {
+              const id = Number(item.id)
+              if (!Number.isNaN(id)) openRoleHire(id, item.label, 7)
+            }}
+            action={
+              moreRoles || roles.length > 0 ? (
                 <button
                   type="button"
                   className="show-all"
@@ -156,26 +153,9 @@ export function TowerPanel() {
                 >
                   Show all
                 </button>
-              )}
-            </header>
-            {roles.map((r: any) => (
-              <button
-                type="button"
-                className="bar-row clickable"
-                key={r.search_id || r.name}
-                data-gesture-action={`tower-role-${r.search_id || r.name}`}
-                onClick={() => {
-                  if (r.search_id) openRoleHire(r.search_id, r.name, 7)
-                }}
-              >
-                <div>
-                  <div>{r.name}</div>
-                  <div className="bar-track"><div className="bar-fill" style={{ width: `${(r.n / maxR) * 100}%` }} /></div>
-                </div>
-                <strong>{r.n}</strong>
-              </button>
-            ))}
-          </section>
+              ) : null
+            }
+          />
 
           <section className="insight-block insight-fresh">
             <header className="insight-block-head">
@@ -185,47 +165,50 @@ export function TowerPanel() {
                 <p>Newest openings — tap to open</p>
               </div>
             </header>
-          {latest.map((j: any) => (
-            <div className="list-row" key={j.id}>
-              <div>
-                <button
-                  type="button"
-                  className="inline-link title-link"
-                  data-gesture-action={`tower-job-${j.id}`}
-                  onClick={() => {
-                    if (j.job_url) {
-                      window.open(j.job_url, '_blank', 'noopener,noreferrer')
-                      return
-                    }
-                    if (j.company_id) {
-                      openCompanyJobs(j.company_id, j.company || 'Company', 7)
-                    }
-                  }}
-                  title={j.job_url ? 'Open job posting' : 'Open company jobs'}
-                >
-                  {j.title}
-                </button>
-                <div className="meta">
-                  {j.company_id ? (
-                    <button
-                      type="button"
-                      className="inline-link"
-                      data-gesture-action={`tower-job-co-${j.company_id}`}
-                      onClick={() =>
+            {latest.map((j: any) => (
+              <div className="list-row" key={j.id}>
+                <div>
+                  <button
+                    type="button"
+                    className="inline-link title-link"
+                    data-gesture-action={`tower-job-${j.id}`}
+                    onClick={() => {
+                      if (j.job_url) {
+                        window.open(j.job_url, '_blank', 'noopener,noreferrer')
+                        return
+                      }
+                      if (j.company_id) {
                         openCompanyJobs(j.company_id, j.company || 'Company', 7)
                       }
-                    >
-                      {j.company || 'Company'}
-                    </button>
-                  ) : (
-                    j.company || '—'
-                  )}
-                  {' · '}{j.location || '—'}
+                    }}
+                    title={j.job_url ? 'Open job posting' : 'Open company jobs'}
+                  >
+                    {j.title}
+                  </button>
+                  <div className="meta">
+                    {j.company_id ? (
+                      <button
+                        type="button"
+                        className="inline-link"
+                        data-gesture-action={`tower-job-co-${j.company_id}`}
+                        onClick={() =>
+                          openCompanyJobs(j.company_id, j.company || 'Company', 7)
+                        }
+                      >
+                        {j.company || 'Company'}
+                      </button>
+                    ) : (
+                      j.company || '—'
+                    )}
+                    {' · '}
+                    {j.location || '—'}
+                  </div>
+                </div>
+                <div className="meta" title={j.scraped_at}>
+                  {relTime(j.scraped_at)}
                 </div>
               </div>
-              <div className="meta" title={j.scraped_at}>{relTime(j.scraped_at)}</div>
-            </div>
-          ))}
+            ))}
           </section>
         </>
       )}

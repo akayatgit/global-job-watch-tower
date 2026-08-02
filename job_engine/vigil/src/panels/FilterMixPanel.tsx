@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { api } from '../lib/api'
 import { PanelShell } from './PanelShell'
 
@@ -36,7 +37,6 @@ export function FilterMixPanel() {
   const ai = data?.ai ?? 0
   const kw = data?.keyword ?? 0
   const total = data?.total ?? 0
-  const maxBar = Math.max(data?.max_bar ?? 1, 1)
   const series = data?.series || []
   const seriesMax = Math.max(data?.series_max ?? 1, 1)
 
@@ -87,34 +87,16 @@ export function FilterMixPanel() {
             {data.end ? new Date(data.end).toLocaleString() : '—'}
           </div>
 
-          <div className="section-head" style={{ marginTop: 12 }}>
-            <span className="muted">Head-to-head</span>
-            <span className="meta">{total} runs</span>
-          </div>
-          <div className="bar-row">
-            <div>
-              <div>AI · Ollama</div>
-              <div className="bar-track">
-                <div
-                  className="bar-fill ai-fill"
-                  style={{ width: `${(ai / maxBar) * 100}%` }}
-                />
-              </div>
-            </div>
-            <strong>{ai}</strong>
-          </div>
-          <div className="bar-row">
-            <div>
-              <div>Keyword · Plan B</div>
-              <div className="bar-track">
-                <div
-                  className="bar-fill kw-fill"
-                  style={{ width: `${(kw / maxBar) * 100}%` }}
-                />
-              </div>
-            </div>
-            <strong>{kw}</strong>
-          </div>
+          <GlassCompareChart
+            title="Head to head"
+            subtitle={`${total} filter runs in this window`}
+            actionPrefix="filter-mix-h2h"
+            maxItems={2}
+            items={[
+              { id: 'ai', label: 'AI · Ollama', value: ai },
+              { id: 'kw', label: 'Keyword · Plan B', value: kw },
+            ]}
+          />
 
           <div className="section-head" style={{ marginTop: 12 }}>
             <span className="muted">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { PanelShell } from './PanelShell'
@@ -51,47 +52,44 @@ export function WatchlistPanel() {
       {!data ? (
         <div className="empty">Loading watchlist…</div>
       ) : (
-        <section className="insight-block insight-fast">
-          <header className="insight-block-head">
-            <span className="insight-mark" aria-hidden />
-            <div>
-              <h4>Watched companies</h4>
-              <p>Open jobs — pace in this window</p>
-            </div>
-            <span className="insight-count">{(data.watched || []).length}</span>
-          </header>
-          {(data.watched || []).length === 0 ? (
-            <div className="empty soft">No watched companies yet — pick from directory below</div>
-          ) : (
-            (data.watched || []).map((c: any) => (
-              <div className="list-row" key={c.company_id}>
+        <>
+          <GlassCompareChart
+            title="Watched companies"
+            subtitle="Open jobs — pace in this window"
+            actionPrefix="watch-open"
+            maxItems={8}
+            emptyText="No watched companies yet — pick from directory below"
+            items={(data.watched || []).slice(0, 8).map((c: any) => ({
+              id: String(c.company_id),
+              label: c.name,
+              value: c.recent,
+              meta: `prior ${c.prior}`,
+            }))}
+            onSelect={(item) =>
+              openCompanyJobs(Number(item.id), item.label, days)
+            }
+          />
+          {(data.watched || []).length > 0 && (
+            <div className="chip-row wrap" style={{ marginTop: 4 }}>
+              {(data.watched || []).slice(0, 8).map((c: any) => (
                 <button
-                  type="button"
-                  className="list-row-main clickable"
-                  data-gesture-action={`watch-open-${c.company_id}`}
-                  onClick={() => openCompanyJobs(c.company_id, c.name, days)}
-                >
-                  <div>{c.name}</div>
-                  <div className="meta">{c.recent} recent · prior {c.prior} · open jobs →</div>
-                </button>
-                <button
+                  key={`uw-${c.company_id}`}
                   type="button"
                   className="chip active"
                   data-gesture-action={`unwatch-${c.company_id}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  onClick={() =>
                     api.toggleWatch(c.company_id).then(() => {
                       setStatus(`UNWATCHED ${c.name}`)
                       reload()
                     })
-                  }}
+                  }
                 >
-                  Watching
+                  {c.name} · Watching
                 </button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
-        </section>
+        </>
       )}
       <section className="insight-block insight-cities">
         <header className="insight-block-head">

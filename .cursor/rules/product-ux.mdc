@@ -188,3 +188,9 @@ use — they should love opening the app, never fight it.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
+- **Glass compare charts (2026-08-02):** Every comparison metric (cities,
+  companies, roles, watchlist pace, filter head-to-head, show-all ranks)
+  uses the glass-pillar style: dark stage, crystal bars with orange base glow,
+  cyan edge on the leader, value + name above each pillar, title with orange
+  underline. Charts flex to panel width — never a fixed wide layout. Prefer
+  this over flat horizontal orange bars whenever ranking/comparing.

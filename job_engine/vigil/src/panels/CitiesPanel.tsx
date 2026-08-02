@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -50,12 +51,6 @@ export function CitiesPanel() {
 
   const windows = data?.window_options || WINDOW_FALLBACK
   const cities = data?.cities || []
-  const maxN = data?.max || Math.max(...cities.map((c: any) => c.recent), 1)
-
-  const openCityJobs = (cityId: string) => {
-    setCityFilter(cityId)
-    openPanel('jobs')
-  }
 
   return (
     <PanelShell id="cities">
@@ -92,51 +87,31 @@ export function CitiesPanel() {
             <p className="signal-headline">{data.headline}</p>
           </div>
 
-          <section className="insight-block insight-cities">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Hiring by city</h4>
-                <p>Tap a city to filter Jobs</p>
-              </div>
-              <span className="insight-count">{cities.length}</span>
-            </header>
-            <div className="hire-bars">
-              {cities.map((c: any) => (
-                <button
-                  type="button"
-                  className="hire-bar-row clickable"
-                  key={c.city}
-                  data-gesture-action={`cities-rank-${c.city}`}
-                  onClick={() => openCityJobs(c.city)}
-                >
-                  <div className="hire-bar-main">
-                    <div className="hire-bar-name">
-                      {c.label}
-                      <span className="meta">
-                        {' '}
-                        · {c.delta > 0 ? `+${c.delta}` : c.delta}
-                      </span>
-                    </div>
-                    <div className="bar-track tall">
-                      <div
-                        className="bar-fill"
-                        style={{ width: `${(c.recent / maxN) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <strong className="hire-bar-n">{c.recent}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
+          <GlassCompareChart
+            title="Hiring by city"
+            subtitle="Tap a city to filter Jobs"
+            actionPrefix="cities-rank"
+            maxItems={8}
+            items={cities.slice(0, 8).map((c: any) => ({
+              id: String(c.city),
+              label: c.label,
+              value: c.recent,
+              meta: c.delta > 0 ? `+${c.delta}` : c.delta < 0 ? String(c.delta) : undefined,
+            }))}
+            onSelect={(item) => {
+              setCityFilter(item.id)
+              openPanel('jobs')
+            }}
+          />
 
-          <section className="insight-block insight-compare">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Compare two cities</h4>
-                <p>Pick A and B — favourites first, Show more for the rest</p>
+          <section className="glass-compare-shell">
+            <header className="glass-chart-head">
+              <div className="glass-chart-titles">
+                <h4 className="glass-chart-title">Compare two cities</h4>
+                <div className="glass-chart-rule" aria-hidden />
+                <p className="glass-chart-sub">
+                  Pick A and B — favourites first, Show more for the rest
+                </p>
               </div>
             </header>
             <CityChips
@@ -157,58 +132,104 @@ export function CitiesPanel() {
               <div className="empty soft">{compare.error}</div>
             ) : compare?.a && compare?.b ? (
               <>
-                <div className="stat-grid" style={{ marginTop: 8 }}>
-                  {[compare.a, compare.b].map((side: any) => (
-                    <div className="stat-card" key={side.city} style={{ textAlign: 'left' }}>
-                      <div className="l">{side.label}</div>
-                      <div className="n">{side.recent}</div>
-                      <div className="meta">
-                        prior {side.prior} ·{' '}
-                        {side.delta > 0 ? `+${side.delta}` : side.delta}
-                        {side.delta_pct != null
-                          ? ` (${side.delta_pct > 0 ? '+' : ''}${Math.round(side.delta_pct)}%)`
-                          : ''}
-                      </div>
-                      <div className="muted" style={{ marginTop: 6 }}>Top roles</div>
-                      {(side.top_roles || []).map((r: any) => (
-                        <button
-                          key={r.search_id}
-                          type="button"
-                          className="inline-link"
-                          style={{ display: 'block', marginTop: 2 }}
-                          data-gesture-action={`cities-role-${side.city}-${r.search_id}`}
-                          onClick={() => {
-                            setCityFilter(side.city)
-                            openRoleHire(r.search_id, r.name, days)
-                          }}
-                        >
-                          {r.name} ({r.n})
-                        </button>
-                      ))}
-                      <div className="muted" style={{ marginTop: 6 }}>Top companies</div>
-                      {(side.top_companies || []).map((c: any) => (
-                        <button
-                          key={c.company_id}
-                          type="button"
-                          className="inline-link"
-                          style={{ display: 'block', marginTop: 2 }}
-                          data-gesture-action={`cities-co-${side.city}-${c.company_id}`}
-                          onClick={() => {
-                            setCityFilter(side.city)
-                            openCompanyJobs(c.company_id, c.name, days)
-                          }}
-                        >
-                          {c.name} ({c.n})
-                        </button>
-                      ))}
-                    </div>
-                  ))}
+                <GlassCompareChart
+                  title="Head to head"
+                  subtitle={
+                    compare.leader
+                      ? `${compare.leader} leads by ${compare.gap} openings`
+                      : 'Same pace in this window'
+                  }
+                  actionPrefix="cities-h2h"
+                  maxItems={2}
+                  items={[
+                    {
+                      id: compare.a.city,
+                      label: compare.a.label,
+                      value: compare.a.recent,
+                      meta:
+                        compare.a.delta > 0
+                          ? `+${compare.a.delta}`
+                          : String(compare.a.delta ?? 0),
+                    },
+                    {
+                      id: compare.b.city,
+                      label: compare.b.label,
+                      value: compare.b.recent,
+                      meta:
+                        compare.b.delta > 0
+                          ? `+${compare.b.delta}`
+                          : String(compare.b.delta ?? 0),
+                    },
+                  ]}
+                  onSelect={(item) => {
+                    setCityFilter(item.id)
+                    openPanel('jobs')
+                  }}
+                />
+                <div className="glass-compare-duo">
+                  <GlassCompareChart
+                    title={`Top roles · ${compare.a.label}`}
+                    subtitle="Tap to open companies"
+                    actionPrefix={`cities-role-${compare.a.city}`}
+                    maxItems={5}
+                    items={(compare.a.top_roles || []).map((r: any) => ({
+                      id: String(r.search_id),
+                      label: r.name,
+                      value: r.n,
+                    }))}
+                    onSelect={(item) => {
+                      setCityFilter(compare.a.city)
+                      openRoleHire(Number(item.id), item.label, days)
+                    }}
+                  />
+                  <GlassCompareChart
+                    title={`Top roles · ${compare.b.label}`}
+                    subtitle="Tap to open companies"
+                    actionPrefix={`cities-role-${compare.b.city}`}
+                    maxItems={5}
+                    items={(compare.b.top_roles || []).map((r: any) => ({
+                      id: String(r.search_id),
+                      label: r.name,
+                      value: r.n,
+                    }))}
+                    onSelect={(item) => {
+                      setCityFilter(compare.b.city)
+                      openRoleHire(Number(item.id), item.label, days)
+                    }}
+                  />
                 </div>
-                {compare.leader ? (
-                  <p className="signal-headline" style={{ marginTop: 8 }}>
-                    {compare.leader} leads by {compare.gap} openings
-                  </p>
-                ) : null}
+                <div className="glass-compare-duo">
+                  <GlassCompareChart
+                    title={`Top companies · ${compare.a.label}`}
+                    subtitle="Tap for jobs"
+                    actionPrefix={`cities-co-${compare.a.city}`}
+                    maxItems={5}
+                    items={(compare.a.top_companies || []).map((c: any) => ({
+                      id: String(c.company_id),
+                      label: c.name,
+                      value: c.n,
+                    }))}
+                    onSelect={(item) => {
+                      setCityFilter(compare.a.city)
+                      openCompanyJobs(Number(item.id), item.label, days)
+                    }}
+                  />
+                  <GlassCompareChart
+                    title={`Top companies · ${compare.b.label}`}
+                    subtitle="Tap for jobs"
+                    actionPrefix={`cities-co-${compare.b.city}`}
+                    maxItems={5}
+                    items={(compare.b.top_companies || []).map((c: any) => ({
+                      id: String(c.company_id),
+                      label: c.name,
+                      value: c.n,
+                    }))}
+                    onSelect={(item) => {
+                      setCityFilter(compare.b.city)
+                      openCompanyJobs(Number(item.id), item.label, days)
+                    }}
+                  />
+                </div>
               </>
             ) : (
               <div className="empty soft">Pick two different cities</div>
