@@ -572,20 +572,22 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   sceneMode: 'core',
   setSceneMode: (m) => {
     const labels = {
-      core: 'CORE · LABOR SINGULARITY — scroll to enter',
+      core: 'CORE · scroll to approach · Esc resets view',
       graph: 'GRAPH · OBSIDIAN WORLD MODEL',
       city: 'CITY · GLOBE — click a metro to enter',
     } as const
     set({
       sceneMode: m,
-      cityFocus: m === 'city' ? get().cityFocus : null,
+      cityFocus: m === 'city' ? null : get().cityFocus,
       statusLine: labels[m],
-      sceneZoom: m === 'core' ? get().sceneZoom : m === 'graph' ? 0.35 : 0.25,
+      // Always reset zoom when changing mode — never inherit a whiteout
+      sceneZoom: 0,
+      canvasPan: { x: 0, y: 0 },
     })
   },
-  sceneZoom: 0.15,
+  sceneZoom: 0,
   setSceneZoom: (z) =>
-    set({ sceneZoom: Math.max(0, Math.min(1, z)) }),
+    set({ sceneZoom: Math.max(0, Math.min(0.85, z)) }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
   canvasPan: { x: 0, y: 0 },

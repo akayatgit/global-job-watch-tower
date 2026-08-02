@@ -2,7 +2,10 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useVigilStore } from '../store/vigilStore'
 import { lerp } from '../lib/lerp'
 
-/** Zoom enters the orb (camera Z), not the browser page. */
+/**
+ * Camera always stays OUTSIDE the particle orb.
+ * Zoom = approach the surface, never fly into additive white soup.
+ */
 export function CameraRig() {
   const { camera } = useThree()
 
@@ -14,17 +17,25 @@ export function CameraRig() {
     if (st.gestureMode === 'none' && !st.trainingActive) {
       const c = st.hands.right?.centroid || st.hands.left?.centroid
       if (c) {
-        tx += (c.x - 0.5) * 0.35
-        ty += (0.5 - c.y) * 0.25
+        tx += (c.x - 0.5) * 0.25
+        ty += (0.5 - c.y) * 0.18
       }
     }
-    // Far overview → deep inside singularity / city district
-    const zFar = st.sceneMode === 'city' ? 8.2 : 9.2
-    const zNear = st.sceneMode === 'city' ? 3.4 : 2.35
+
+    let zFar = 8.8
+    let zNear = 4.6 // stay outside ~1.2 radius orb + margin
+    if (st.sceneMode === 'city') {
+      zFar = 8.2
+      zNear = st.cityFocus ? 4.0 : 5.5
+    } else if (st.sceneMode === 'graph') {
+      zFar = 9.0
+      zNear = 5.2
+    }
+
     const zTarget = zFar + (zNear - zFar) * st.sceneZoom
     camera.position.x = lerp(camera.position.x, tx, 0.12)
     camera.position.y = lerp(camera.position.y, ty, 0.12)
-    camera.position.z = lerp(camera.position.z, zTarget, 0.1)
+    camera.position.z = lerp(camera.position.z, zTarget, 0.14)
     camera.lookAt(0, 0, 0)
   })
 
