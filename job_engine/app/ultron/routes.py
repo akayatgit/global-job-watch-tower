@@ -30,6 +30,7 @@ from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
 from app.ultron.hub import hub
 from app.ultron.serialize import to_jsonable
+from app.vigil_boards import BOARD_HELP, render_board, resolve_board
 
 router = APIRouter(tags=['ultron'])
 
@@ -316,9 +317,29 @@ def ultron_ai_capacity(db: Session = Depends(get_db)):
     return compute_ai_capacity(db)
 
 
+@router.get('/api/ultron/boards')
+def ultron_boards_help():
+    """List VIGIL Telegram/Ask board commands (deterministic, no LLM)."""
+    return {'text': BOARD_HELP, 'boards': [
+        'towerinsights', 'health', 'hiringsignals', 'searches',
+        'watchlist', 'fresh', 'brief', 'help',
+    ]}
+
+
+@router.get('/api/ultron/boards/{name}')
+def ultron_board(name: str, days: int | None = None):
+    """Render a VIGIL board as plain text — same facts as the dashboard panels."""
+    if resolve_board(name) is None and name.lower() not in (
+        'tower', 'health', 'signals', 'searches', 'watchlist', 'fresh', 'brief', 'help',
+    ):
+        return JSONResponse({'ok': False, 'error': 'unknown board', 'text': BOARD_HELP}, status_code=404)
+    text = render_board(name, days=days)
+    return {'ok': True, 'board': resolve_board(name) or name, 'days': days, 'text': text}
+
+
 @router.post('/api/ultron/ask')
 def ultron_ask(payload: dict, db: Session = Depends(get_db)):
-    """VIGIL Ask → Hermes (local Ollama), capacity-gated."""
+    """VIGIL Ask → board shortcut or Hermes (local Ollama), capacity-gated."""
     prompt = str(payload.get('prompt') or payload.get('q') or '')
     force = bool(payload.get('force'))
     return ask_hermes(db, prompt, force=force)

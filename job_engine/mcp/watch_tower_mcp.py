@@ -124,5 +124,30 @@ def search_jobs(
     return _dump(_get('/api/jobs', params))
 
 
+@mcp.tool()
+def render_board(board: str = 'towerinsights', days: int | None = None) -> str:
+    """Return a VIGIL dashboard board as plain text (same numbers as the UI).
+
+    board: towerinsights|health|hiringsignals|searches|watchlist|fresh|brief|help
+    days: optional window for signals/watchlist (0=24h, 1=today, 2,4,7,14,30).
+    ALWAYS call this for slash boards. Paste the result VERBATIM — never rewrite numbers.
+    """
+    try:
+        import sys
+        from pathlib import Path
+
+        root = Path('/home/user/Documents/job_engine')
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from app.vigil_boards import render_board as _rb
+
+        return _rb(board, days=days)
+    except Exception:
+        data = _get(f'/api/ultron/boards/{board}', {'days': days} if days is not None else None)
+        if isinstance(data, dict) and data.get('text'):
+            return str(data['text'])
+        return _dump(data)
+
+
 if __name__ == '__main__':
     mcp.run(transport='stdio')

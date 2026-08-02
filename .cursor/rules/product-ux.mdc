@@ -146,3 +146,8 @@ use — they should love opening the app, never fight it.
 - **Ask Tower / Hermes (2026-08-02):** Ask panel chats via local Hermes + Watch
   Tower MCP. If the tower is collecting or warm, Ask queues and says so —
   never fight Ollama scrape. Daily brief also lands under `documents/briefs/`.
+- **Telegram VIGIL boards (2026-08-02):** Slash boards `/towerinsights`,
+  `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/brief`
+  must send live Postgres/API data in the same compact panel format as the
+  dashboard — never LLM essays or invented companies/salaries. Free-form Ask
+  only after MCP tools; if tools fail, say unavailable (no fill-in).
