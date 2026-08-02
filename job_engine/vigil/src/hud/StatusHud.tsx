@@ -87,7 +87,7 @@ export function StatusHud() {
               type="button"
               className={`browser-vis-btn ${v?.headless ? 'hidden-mode' : 'visible-mode'}`}
               data-gesture-action="toggle-browser"
-              title="Chrome for the next search — Hidden (cooler) or Visible window"
+              title="Default Hidden. Click to show Chrome for the next search only — flip back when done watching."
               onClick={async () => {
                 try {
                   const r = await api.toggleHeadless()

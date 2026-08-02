@@ -31,7 +31,8 @@ PAGE_DWELL_MAX_S = float(os.getenv('PAGE_DWELL_MAX_S', '105'))
 CHROME_SOURCE_PROFILE = Path(os.getenv('CHROME_SOURCE_PROFILE', str(Path.home() / '.config' / 'google-chrome')))
 CHROME_BOT_PROFILE = Path(os.getenv('CHROME_BOT_PROFILE', str(Path.home() / '.config' / 'google-chrome-linkedin')))
 
-HEADLESS = os.getenv('HEADLESS', 'false').lower() == 'true'
+# Default Hidden (cooler). Visible only when Ashok flips the top-bar toggle.
+HEADLESS = os.getenv('HEADLESS', 'true').lower() == 'true'
 
 # Title-relevance filter only — keep SMALL (title match, not deep reasoning).
 # Locked default: qwen3.5:4b (not 9b/27b — cooler + faster for this job).
