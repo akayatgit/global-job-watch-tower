@@ -50,38 +50,57 @@ export function WatchlistPanel() {
       </div>
       {!data ? (
         <div className="empty">Loading watchlist…</div>
-      ) : (data.watched || []).length === 0 ? (
-        <div className="empty">No watched companies yet — pick from directory below</div>
       ) : (
-        (data.watched || []).map((c: any) => (
-          <div className="list-row" key={c.company_id}>
-            <button
-              type="button"
-              className="list-row-main clickable"
-              data-gesture-action={`watch-open-${c.company_id}`}
-              onClick={() => openCompanyJobs(c.company_id, c.name, days)}
-            >
-              <div>{c.name}</div>
-              <div className="meta">{c.recent} recent · prior {c.prior} · open jobs →</div>
-            </button>
-            <button
-              type="button"
-              className="chip active"
-              data-gesture-action={`unwatch-${c.company_id}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                api.toggleWatch(c.company_id).then(() => {
-                  setStatus(`UNWATCHED ${c.name}`)
-                  reload()
-                })
-              }}
-            >
-              Watching
-            </button>
-          </div>
-        ))
+        <section className="insight-block insight-fast">
+          <header className="insight-block-head">
+            <span className="insight-mark" aria-hidden />
+            <div>
+              <h4>Watched companies</h4>
+              <p>Open jobs — pace in this window</p>
+            </div>
+            <span className="insight-count">{(data.watched || []).length}</span>
+          </header>
+          {(data.watched || []).length === 0 ? (
+            <div className="empty soft">No watched companies yet — pick from directory below</div>
+          ) : (
+            (data.watched || []).map((c: any) => (
+              <div className="list-row" key={c.company_id}>
+                <button
+                  type="button"
+                  className="list-row-main clickable"
+                  data-gesture-action={`watch-open-${c.company_id}`}
+                  onClick={() => openCompanyJobs(c.company_id, c.name, days)}
+                >
+                  <div>{c.name}</div>
+                  <div className="meta">{c.recent} recent · prior {c.prior} · open jobs →</div>
+                </button>
+                <button
+                  type="button"
+                  className="chip active"
+                  data-gesture-action={`unwatch-${c.company_id}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    api.toggleWatch(c.company_id).then(() => {
+                      setStatus(`UNWATCHED ${c.name}`)
+                      reload()
+                    })
+                  }}
+                >
+                  Watching
+                </button>
+              </div>
+            ))
+          )}
+        </section>
       )}
-      <div className="muted" style={{ marginTop: 12 }}>Add from directory</div>
+      <section className="insight-block insight-cities">
+        <header className="insight-block-head">
+          <span className="insight-mark" aria-hidden />
+          <div>
+            <h4>Add from directory</h4>
+            <p>Watch a company to track hiring pace</p>
+          </div>
+        </header>
       {(data?.directory || []).slice(0, 10).map((c: any) => {
         const id = c.company_id || c.id
         return (
@@ -112,6 +131,7 @@ export function WatchlistPanel() {
           </div>
         )
       })}
+      </section>
     </PanelShell>
   )
 }
