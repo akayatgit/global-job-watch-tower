@@ -347,19 +347,20 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
     if mode in ('keyword', 'keywords', 'off', 'cool'):
         return _keyword_filter(jobs, keywords, run_id, 'forced Plan B mode')
 
-    # ollama / auto / gpu: quality path
-    if not thermal.allow_ollama(run_id):
+    # ollama / auto / gpu: quality path — cool first; Plan B only after retries
+    thermal.wait_for_breath(run_id, why='pre-filter')
+    if not thermal.wait_for_ollama_ready(run_id):
         return _keyword_filter(jobs, keywords, run_id, 'critical heat / no GPU')
 
-    batch_size = max(4, config.OLLAMA_BATCH_SIZE)
+    batch_size = max(3, config.OLLAMA_BATCH_SIZE)
     # Small models stay accurate with tighter batches
     if '4b' in config.OLLAMA_MODEL.lower():
-        batch_size = min(batch_size, 6)
+        batch_size = min(batch_size, 5)
     snap = thermal.snapshot()
     if snap.level == 'warm':
-        batch_size = max(4, batch_size - 2)
+        batch_size = max(3, batch_size - 2)
     elif snap.level == 'hot':
-        batch_size = max(4, batch_size // 2)
+        batch_size = max(3, batch_size // 2)
 
     batches = [jobs[i:i + batch_size] for i in range(0, len(jobs), batch_size)]
     console_log(
@@ -376,15 +377,9 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
 
     for bi, batch in enumerate(batches, start=1):
         thermal.wait_for_breath(run_id, why=f'batch {bi}/{len(batches)}')
-        if not thermal.allow_ollama(run_id):
-            # Cool down once more before Plan B — prefer waiting over keyword
-            console_log(
-                'ai',
-                'Heat still critical — extra cool-down before Plan B…',
-                run_id=run_id, level='warn',
-            )
-            time.sleep(max(60.0, config.HEAT_BREAK_CRITICAL_S))
-            if not thermal.allow_ollama(run_id):
+        if not thermal.ollama_path_open():
+            # Prefer multi-round cool-down over keyword mid-run
+            if not thermal.wait_for_ollama_ready(run_id):
                 rest = []
                 for b in batches[bi - 1:]:
                     rest.extend(b)
@@ -394,7 +389,6 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
                 relevant.extend(kw_rel)
                 rejected.extend(kw_rej)
                 break
-            # cooled enough — continue Ollama
 
         titles = [job.title for job in batch]
         t0 = time.monotonic()
@@ -402,15 +396,26 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
             verdicts = _verdicts_for_batch(titles, keywords, run_id, bi, len(batches))
             used_ollama = True
         except RuntimeError:
-            rest = []
-            for b in batches[bi - 1:]:
-                rest.extend(b)
-            kw_rel, kw_rej = _keyword_filter(
-                rest, keywords, run_id, 'critical heat during Ollama retry',
-            )
-            relevant.extend(kw_rel)
-            rejected.extend(kw_rej)
-            break
+            if thermal.wait_for_ollama_ready(run_id):
+                try:
+                    verdicts = _verdicts_for_batch(
+                        titles, keywords, run_id, bi, len(batches),
+                    )
+                    used_ollama = True
+                except RuntimeError:
+                    verdicts = None
+            else:
+                verdicts = None
+            if verdicts is None:
+                rest = []
+                for b in batches[bi - 1:]:
+                    rest.extend(b)
+                kw_rel, kw_rej = _keyword_filter(
+                    rest, keywords, run_id, 'critical heat during Ollama retry',
+                )
+                relevant.extend(kw_rel)
+                rejected.extend(kw_rej)
+                break
 
         kept = [job for job, keep in zip(batch, verdicts) if keep]
         dropped = [job for job, keep in zip(batch, verdicts) if not keep]

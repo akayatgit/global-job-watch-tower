@@ -65,9 +65,14 @@ HEAT_HOT_MAX_C = float(os.getenv('HEAT_HOT_MAX_C', '85'))
 HEAT_WARM_LOAD = float(os.getenv('HEAT_WARM_LOAD', '4'))
 HEAT_HOT_LOAD = float(os.getenv('HEAT_HOT_LOAD', '7'))
 HEAT_CRITICAL_LOAD = float(os.getenv('HEAT_CRITICAL_LOAD', '10'))
-HEAT_BREAK_COOL_S = float(os.getenv('HEAT_BREAK_COOL_S', '8'))
-HEAT_BREAK_WARM_S = float(os.getenv('HEAT_BREAK_WARM_S', '25'))
-HEAT_BREAK_HOT_S = float(os.getenv('HEAT_BREAK_HOT_S', '60'))
-HEAT_BREAK_CRITICAL_S = float(os.getenv('HEAT_BREAK_CRITICAL_S', '120'))
+# Longer Warm/Hot rests keep Ollama (Plan A) and cut Plan B flapping on the P16.
+HEAT_BREAK_COOL_S = float(os.getenv('HEAT_BREAK_COOL_S', '12'))
+HEAT_BREAK_WARM_S = float(os.getenv('HEAT_BREAK_WARM_S', '55'))
+HEAT_BREAK_HOT_S = float(os.getenv('HEAT_BREAK_HOT_S', '120'))
+HEAT_BREAK_CRITICAL_S = float(os.getenv('HEAT_BREAK_CRITICAL_S', '180'))
+# Within this many °C of critical → rest like critical while Plan A still open.
+HEAT_PREEMPT_MARGIN_C = float(os.getenv('HEAT_PREEMPT_MARGIN_C', '4'))
+# Extra cool-down rounds before keyword Plan B (prefer wait over corrupt data).
+HEAT_COOLDOWN_RETRIES = int(os.getenv('HEAT_COOLDOWN_RETRIES', '3'))
 HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
-OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '10'))
+OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
