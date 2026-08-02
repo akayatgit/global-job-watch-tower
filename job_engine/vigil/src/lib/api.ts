@@ -114,6 +114,8 @@ export const api = {
     return getJson<any>(`/api/ultron/cities/compare?${p}`)
   },
   sectors: () => getJson<any>('/api/ultron/sectors'),
+  worldModel: (days = 7) =>
+    getJson<any>(`/api/ultron/world-model?days=${days}`),
   health: () => getJson<any>('/api/ultron/health'),
   filterCompare: (window = '24h') =>
     getJson<any>(`/api/ultron/filter-compare?window=${encodeURIComponent(window)}`),

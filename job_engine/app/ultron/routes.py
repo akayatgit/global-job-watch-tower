@@ -37,6 +37,7 @@ from app.tower_health import compute_vitals
 from app.ultron.hub import hub
 from app.ultron.serialize import to_jsonable
 from app.vigil_boards import BOARD_HELP, render_board, resolve_board
+from app.world_model import compute_world_model
 
 router = APIRouter(tags=['ultron'])
 
@@ -120,6 +121,17 @@ def ultron_status(db: Session = Depends(get_db)):
         'clients': hub.client_count,
         'vitals': _vitals_json(compute_vitals(db)),
     }
+
+
+@router.get('/api/ultron/world-model')
+def ultron_world_model(days: int = 7, db: Session = Depends(get_db)):
+    """Summarised labor-market graph for the Neural Core (live Postgres)."""
+    payload = compute_world_model(db, window_days=days)
+    payload['generated_at'] = _iso(datetime.now(timezone.utc))
+    payload['window_options'] = [
+        {'days': d, 'label': label} for d, label in WINDOW_OPTIONS
+    ]
+    return payload
 
 
 @router.get('/api/ultron/tower')

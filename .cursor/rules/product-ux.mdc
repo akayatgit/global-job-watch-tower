@@ -222,3 +222,8 @@ use — they should love opening the app, never fight it.
   Push is Ashok-only: ask twice; no frequent pushes; target one push end of
   day; if no push for >2 days (unpushed commits stacking), alert Ashok.
   Always disclose live-job disturbance before any push ask.
+- **Neural Core / world model (2026-08-02):** VIGIL core is the living labor-
+  market world model (Three.js graph from Postgres), not a decorative orb.
+  Nodes = summarised sectors/cities/companies/roles; edges = real relevance
+  / co-hiring. Click opens the matching insight panel. Grow + summarise as
+  data collects. Recovery tag: `milestone/pre-neural-core-v0`.

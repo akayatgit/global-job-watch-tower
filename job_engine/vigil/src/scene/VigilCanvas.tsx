@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { EnergyCore } from './EnergyCore'
+import { NeuralCore } from './NeuralCore'
 import { Starfield } from './Starfield'
 import { OrbitNodes } from './OrbitNodes'
 import { CameraRig } from './CameraRig'
@@ -11,14 +12,18 @@ function SceneBody() {
   return (
     <>
       <Starfield />
-      <EnergyCore />
+      {/* Inner glow = world-model heart; NeuralCore = living data graph */}
+      <group scale={0.72}>
+        <EnergyCore />
+      </group>
+      <NeuralCore />
       {/* Orbit dots only in VIGIL Mode — desktop uses bottom module chips */}
       {vigilMode && <OrbitNodes />}
       <CameraRig />
       <EffectComposer multisampling={0}>
         <Bloom
-          intensity={1.35}
-          luminanceThreshold={0.18}
+          intensity={1.2}
+          luminanceThreshold={0.2}
           luminanceSmoothing={0.7}
           mipmapBlur
         />
@@ -32,7 +37,7 @@ export function VigilCanvas() {
     <div className="vigil-canvas">
       <Canvas
         dpr={[1, 1.75]}
-        camera={{ position: [0, 0, 6.2], fov: 45 }}
+        camera={{ position: [0, 0, 7.4], fov: 45 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={['#050302']} />
