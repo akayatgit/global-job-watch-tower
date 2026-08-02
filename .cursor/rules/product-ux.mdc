@@ -245,7 +245,10 @@ use — they should love opening the app, never fight it.
   roof top. Always high camera angle. Scroll zoom medium (city + graph).
   Orbit/pan drag release must NOT count as a click (city, graph, globe).
   Empty click in campus never leaves immersive view — icon-only exit
-  (door/arrow) in the scene-mode strip returns to the globe.
+  (door/arrow) in the scene-mode strip returns to the globe. No job pins;
+  compact roof banners with tiny “N openings”. Rank icons (▲/▼) step
+  focus by next higher/lower openings; same count → nearest neighbour;
+  still tied → campus path angle.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

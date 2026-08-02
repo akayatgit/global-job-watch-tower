@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { IconBrowser, IconTrain, IconVigil } from './ModuleIcons'
+import { stepCampusFocus } from '../scene/campusNav'
 
 function chipTone(level?: string) {
   if (level === 'red' || level === 'blocked') return 'fail'
@@ -132,36 +133,80 @@ export function StatusHud() {
                 </svg>
               </button>
               {sceneMode === 'city' && cityFocus ? (
-                <button
-                  type="button"
-                  className="hud-icon-btn city-exit-btn"
-                  title="Leave campus — back to globe"
-                  aria-label="Leave campus"
-                  onClick={() => {
-                    setCityFocus(null)
-                    useVigilStore.getState().clearCameraFocus()
-                    useVigilStore.getState().resetView()
-                    useVigilStore.getState().setStatus('CITY · GLOBE')
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
-                    <path
-                      d="M9 6H5.5A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18H9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M10 12h10M16 7l5 5-5 5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="hud-icon-btn city-rank-btn"
+                    title="Focus next higher openings"
+                    aria-label="Next higher openings"
+                    onClick={() => stepCampusFocus('higher')}
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
+                      <path
+                        d="M12 6l6 8H6l6-8z"
+                        fill="currentColor"
+                      />
+                      <path
+                        d="M7 18h10"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="hud-icon-btn city-rank-btn"
+                    title="Focus next lower openings"
+                    aria-label="Next lower openings"
+                    onClick={() => stepCampusFocus('lower')}
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
+                      <path
+                        d="M7 6h10"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M12 18l6-8H6l6 8z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="hud-icon-btn city-exit-btn"
+                    title="Leave campus — back to globe"
+                    aria-label="Leave campus"
+                    onClick={() => {
+                      setCityFocus(null)
+                      useVigilStore.getState().clearCameraFocus()
+                      useVigilStore.getState().resetView()
+                      useVigilStore.getState().setStatus('CITY · GLOBE')
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                      <path
+                        d="M9 6H5.5A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18H9"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M10 12h10M16 7l5 5-5 5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </>
               ) : null}
               <button
                 type="button"

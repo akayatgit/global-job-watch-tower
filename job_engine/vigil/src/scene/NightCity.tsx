@@ -6,10 +6,11 @@ import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { wasDragClick } from './pointerGuard'
+import { clearCampusNav, setCampusNav } from './campusNav'
 
 /**
  * Cyberpunk glass campus — frosted glass, edge frames, multi-color glow,
- * dense white fabric, realistic mini cars, roof banners + pins.
+ * dense white fabric, realistic mini cars, compact roof banners.
  */
 
 type SkyCo = {
@@ -97,72 +98,41 @@ function wrapName(name: string, max = 11): string[] {
 function makeTopBanner(name: string, jobs: number, accent: string) {
   const lines = wrapName(name, 11)
   const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 48 + lines.length * 36
+  c.width = 288
+  c.height = 26 + lines.length * 20 + 14
   const ctx = c.getContext('2d')!
   const h = c.height
-  // Frosted glass card
-  ctx.fillStyle = 'rgba(12, 16, 28, 0.78)'
-  ctx.fillRect(6, 6, 500, h - 12)
+  const pad = 4
+  ctx.fillStyle = 'rgba(12, 16, 28, 0.82)'
+  ctx.fillRect(pad, pad, c.width - pad * 2, h - pad * 2)
   ctx.strokeStyle = accent
-  ctx.lineWidth = 3
+  ctx.lineWidth = 2
   ctx.shadowColor = accent
-  ctx.shadowBlur = 8
-  ctx.strokeRect(6, 6, 500, h - 12)
+  ctx.shadowBlur = 5
+  ctx.strokeRect(pad, pad, c.width - pad * 2, h - pad * 2)
   ctx.shadowBlur = 0
-  // Accent wash
-  const g = ctx.createLinearGradient(0, 0, 512, 0)
-  g.addColorStop(0, `${accent}33`)
-  g.addColorStop(0.5, `${accent}55`)
-  g.addColorStop(1, `${accent}22`)
+  const g = ctx.createLinearGradient(0, 0, c.width, 0)
+  g.addColorStop(0, `${accent}28`)
+  g.addColorStop(0.5, `${accent}40`)
+  g.addColorStop(1, `${accent}1a`)
   ctx.fillStyle = g
-  ctx.fillRect(10, 10, 492, h - 20)
+  ctx.fillRect(pad + 2, pad + 2, c.width - pad * 2 - 4, h - pad * 2 - 4)
   ctx.textAlign = 'center'
   ctx.fillStyle = '#ffffff'
-  ctx.font = '800 30px Orbitron, sans-serif'
+  ctx.font = '700 16px Orbitron, sans-serif'
   lines.forEach((ln, i) => {
-    ctx.fillText(ln.toUpperCase(), 256, 38 + i * 32)
+    ctx.fillText(ln.toUpperCase(), c.width / 2, 20 + i * 18)
   })
+  // Tiny openings count
   ctx.fillStyle = accent
-  ctx.font = '700 22px Rajdhani, sans-serif'
-  ctx.fillText(`${jobs} OPEN`, 256, h - 14)
+  ctx.font = '600 9px Rajdhani, sans-serif'
+  ctx.globalAlpha = 0.9
+  ctx.fillText(`${jobs} openings`, c.width / 2, h - 7)
+  ctx.globalAlpha = 1
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
   return { tex, aspect: c.width / c.height }
-}
-
-function makeJobPin(n: number, accent: string) {
-  const c = document.createElement('canvas')
-  c.width = 128
-  c.height = 128
-  const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, 128, 128)
-  const g = ctx.createRadialGradient(64, 48, 2, 64, 50, 36)
-  g.addColorStop(0, '#ffffff')
-  g.addColorStop(0.35, accent)
-  g.addColorStop(1, '#0a0a12')
-  ctx.beginPath()
-  ctx.arc(64, 48, 34, 0, Math.PI * 2)
-  ctx.fillStyle = g
-  ctx.shadowColor = accent
-  ctx.shadowBlur = 10
-  ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(44, 74)
-  ctx.lineTo(64, 114)
-  ctx.lineTo(84, 74)
-  ctx.closePath()
-  ctx.fill()
-  ctx.shadowBlur = 0
-  ctx.fillStyle = '#0a0a12'
-  ctx.font = '800 30px Orbitron, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(n > 99 ? '99+' : String(n), 64, 46)
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
 }
 
 function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
@@ -336,12 +306,10 @@ function GlassTower({
   const lit = focused || hot
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
-  const pin = useRef<THREE.Group>(null)
   const banner = useMemo(
     () => makeTopBanner(t.name, t.n, t.accent),
     [t.name, t.n, t.accent],
   )
-  const pinTex = useMemo(() => makeJobPin(t.n, t.accent), [t.n, t.accent])
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
     c.setHSL(t.hue, 0.72, 0.48)
@@ -355,11 +323,6 @@ function GlassTower({
       const base = lit ? 1.05 : dim ? 0.08 : 0.48
       shell.current.emissiveIntensity = base + breath * (lit ? 0.28 : 0.08)
       shell.current.opacity = lit ? 0.82 : dim ? 0.12 : 0.5
-    }
-    if (pin.current) {
-      pin.current.visible = lit || !dim
-      const s = 1 + Math.sin(state.clock.elapsedTime * 1.6 + t.seed) * 0.05
-      pin.current.scale.setScalar(lit ? s * 1.22 : s)
     }
   })
 
@@ -401,11 +364,9 @@ function GlassTower({
   }
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.18 + wrapName(t.name, 11).length * 0.06
-  const bannerW = (bannerH * banner.aspect) * (lit ? 1.12 : 1)
-  const pinY = t.h + 0.12 + bannerH + 0.18
+  const bannerH = 0.085 + wrapName(t.name, 11).length * 0.032
+  const bannerW = bannerH * banner.aspect * (lit ? 1.06 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
-  const pinOrder = lit ? 2100 : dim ? 3 : 30
 
   return (
     <group position={[t.x, 0, t.z]}>
@@ -505,15 +466,15 @@ function GlassTower({
         />
       )}
 
-      {/* Banner — roof top; lit = always drawn on top of scene */}
-      <Billboard follow position={[0, t.h + 0.14 + bannerH / 2, 0]}>
+      {/* Compact roof banner — lit drawn on top */}
+      <Billboard follow position={[0, t.h + 0.08 + bannerH / 2, 0]}>
         <mesh
           onClick={onClick}
           onPointerOver={enter}
           onPointerOut={leave}
           visible={lit || !dim}
           renderOrder={cardOrder}
-          scale={lit ? 1.08 : 1}
+          scale={lit ? 1.05 : 1}
         >
           <planeGeometry args={[bannerW, bannerH]} />
           <meshBasicMaterial
@@ -527,11 +488,11 @@ function GlassTower({
         </mesh>
         {lit && (
           <mesh position={[0, 0, -0.01]} renderOrder={cardOrder - 1}>
-            <planeGeometry args={[bannerW * 1.18, bannerH * 1.35]} />
+            <planeGeometry args={[bannerW * 1.14, bannerH * 1.28]} />
             <meshBasicMaterial
               color={t.accent}
               transparent
-              opacity={0.35}
+              opacity={0.28}
               depthTest={false}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
@@ -539,43 +500,6 @@ function GlassTower({
             />
           </mesh>
         )}
-      </Billboard>
-
-      {/* Pin ALWAYS at absolute top; lit floats above everything */}
-      <Billboard follow>
-        <group ref={pin} position={[0, pinY, 0]}>
-          <mesh
-            onClick={onClick}
-            onPointerOver={enter}
-            onPointerOut={leave}
-            renderOrder={pinOrder}
-            scale={lit ? 1.15 : 1}
-          >
-            <planeGeometry args={[0.3, 0.3]} />
-            <meshBasicMaterial
-              map={pinTex}
-              transparent
-              opacity={dim ? 0.1 : 1}
-              depthTest={!lit}
-              depthWrite={false}
-              toneMapped={false}
-            />
-          </mesh>
-          {lit && (
-            <mesh position={[0, 0, -0.01]} renderOrder={pinOrder - 1}>
-              <circleGeometry args={[0.22, 24]} />
-              <meshBasicMaterial
-                color={t.accent}
-                transparent
-                opacity={0.45}
-                depthTest={false}
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                toneMapped={false}
-              />
-            </mesh>
-          )}
-        </group>
       </Billboard>
     </group>
   )
@@ -859,6 +783,21 @@ export function NightCity({
     [companies, maxN],
   )
   const dummies = useMemo(() => layoutDummies(corps), [corps])
+
+  useEffect(() => {
+    setCampusNav(
+      corps.map((t) => ({
+        company_id: t.company_id,
+        name: t.name,
+        n: t.n,
+        x: t.x,
+        z: t.z,
+        h: t.h,
+      })),
+      cityLabel,
+    )
+    return () => clearCampusNav()
+  }, [corps, cityLabel])
 
   return (
     <group position={[0, CITY_Y, 0]}>
