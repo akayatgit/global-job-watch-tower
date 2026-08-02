@@ -5,6 +5,7 @@ import { Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
+import { wasDragClick } from './pointerGuard'
 
 /**
  * Cyberpunk glass campus — frosted glass, edge frames, multi-color glow,
@@ -318,16 +319,22 @@ function DummyBuilding({
 function GlassTower({
   t,
   cityLabel,
-  anyFocused,
+  sceneDimmed,
+  onHoverEnter,
+  onHoverLeave,
 }: {
   t: Corp
   cityLabel: string
-  anyFocused: boolean
+  /** True when any tower is focused or hovered — dim non-active ones */
+  sceneDimmed: boolean
+  onHoverEnter: (id: string) => void
+  onHoverLeave: (id: string) => void
 }) {
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
-  const dim = anyFocused && !focused
   const [hot, setHot] = useState(false)
+  const lit = focused || hot
+  const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const pin = useRef<THREE.Group>(null)
   const banner = useMemo(
@@ -345,19 +352,35 @@ function GlassTower({
   useFrame((state) => {
     const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
     if (shell.current) {
-      const base = focused ? 0.95 : hot ? 0.75 : dim ? 0.12 : 0.48
-      shell.current.emissiveIntensity = base + breath * (focused ? 0.25 : 0.1)
-      shell.current.opacity = focused ? 0.78 : hot ? 0.65 : dim ? 0.18 : 0.5
+      const base = lit ? 1.05 : dim ? 0.08 : 0.48
+      shell.current.emissiveIntensity = base + breath * (lit ? 0.28 : 0.08)
+      shell.current.opacity = lit ? 0.82 : dim ? 0.12 : 0.5
     }
     if (pin.current) {
-      pin.current.visible = !dim || focused
+      pin.current.visible = lit || !dim
       const s = 1 + Math.sin(state.clock.elapsedTime * 1.6 + t.seed) * 0.05
-      pin.current.scale.setScalar(focused || hot ? s * 1.08 : s)
+      pin.current.scale.setScalar(lit ? s * 1.22 : s)
     }
   })
 
+  const enter = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation()
+    setHot(true)
+    onHoverEnter(selectId)
+    useVigilStore.setState({
+      statusLine: focused
+        ? `FOCUSED · ${t.name} · click again to open`
+        : `PICK · ${t.name} · ${t.n}`,
+    })
+  }
+  const leave = () => {
+    setHot(false)
+    onHoverLeave(selectId)
+  }
+
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    if (wasDragClick()) return
     const st = useVigilStore.getState()
     // Focus on the ROOF / top of building
     const roofY = CITY_Y + t.h + 0.15
@@ -379,24 +402,18 @@ function GlassTower({
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
   const bannerH = 0.18 + wrapName(t.name, 11).length * 0.06
-  const bannerW = bannerH * banner.aspect
+  const bannerW = (bannerH * banner.aspect) * (lit ? 1.12 : 1)
   const pinY = t.h + 0.12 + bannerH + 0.18
+  const cardOrder = lit ? 2000 : dim ? 2 : 20
+  const pinOrder = lit ? 2100 : dim ? 3 : 30
 
   return (
     <group position={[t.x, 0, t.z]}>
       <mesh
         position={[0, t.h / 2, 0]}
         onClick={onClick}
-        onPointerOver={(e) => {
-          e.stopPropagation()
-          setHot(true)
-          useVigilStore.setState({
-            statusLine: focused
-              ? `FOCUSED · ${t.name} · click again to open`
-              : `PICK · ${t.name} · ${t.n}`,
-          })
-        }}
-        onPointerOut={() => setHot(false)}
+        onPointerOver={enter}
+        onPointerOut={leave}
       >
         <boxGeometry args={[t.w * 1.4, t.h, t.d * 1.4]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -408,9 +425,9 @@ function GlassTower({
         <meshStandardMaterial
           color={t.warmCore ? warmCol : '#1e293b'}
           emissive={t.warmCore ? warmCol : glassCol}
-          emissiveIntensity={dim ? 0.05 : t.warmCore ? 0.55 : 0.2}
+          emissiveIntensity={dim ? 0.03 : lit ? 0.75 : t.warmCore ? 0.55 : 0.2}
           transparent
-          opacity={dim ? 0.15 : 0.85}
+          opacity={dim ? 0.1 : 0.85}
         />
       </mesh>
 
@@ -425,10 +442,9 @@ function GlassTower({
                 color="#e2e8f0"
                 roughness={0.55}
                 transparent
-                opacity={dim ? 0.12 : 0.85}
+                opacity={dim ? 0.08 : 0.85}
               />
             </mesh>
-            {/* Tiny desk/partition dots */}
             {!dim && i % 2 === 0 && (
               <mesh position={[t.w * 0.15, y + 0.02, 0]}>
                 <boxGeometry args={[0.04, 0.02, t.d * 0.35]} />
@@ -465,7 +481,7 @@ function GlassTower({
           <meshBasicMaterial
             color={t.accent}
             transparent
-            opacity={dim ? 0.04 : 0.12}
+            opacity={dim ? 0.03 : lit ? 0.22 : 0.12}
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -475,47 +491,90 @@ function GlassTower({
         w={t.w}
         h={t.h}
         d={t.d}
-        color={focused || hot ? t.accent : '#e2e8f0'}
-        opacity={dim ? 0.12 : focused || hot ? 0.9 : 0.55}
+        color={lit ? t.accent : '#e2e8f0'}
+        opacity={dim ? 0.08 : lit ? 0.95 : 0.55}
       />
 
-      {(focused || hot) && (
+      {lit && (
         <pointLight
           position={[0, t.h * 0.7, 0]}
           color={t.accent}
-          intensity={focused ? 1.4 : 0.9}
-          distance={2.6}
+          intensity={focused ? 1.55 : 1.15}
+          distance={2.8}
           decay={2}
         />
       )}
 
-      {/* Banner — roof top, wraps @ 11 chars */}
+      {/* Banner — roof top; lit = always drawn on top of scene */}
       <Billboard follow position={[0, t.h + 0.14 + bannerH / 2, 0]}>
-        <mesh onClick={onClick} visible={!dim || focused}>
+        <mesh
+          onClick={onClick}
+          onPointerOver={enter}
+          onPointerOut={leave}
+          visible={lit || !dim}
+          renderOrder={cardOrder}
+          scale={lit ? 1.08 : 1}
+        >
           <planeGeometry args={[bannerW, bannerH]} />
           <meshBasicMaterial
             map={banner.tex}
             transparent
-            opacity={dim ? 0.15 : 1}
+            opacity={dim ? 0.12 : 1}
+            depthTest={!lit}
             depthWrite={false}
             toneMapped={false}
           />
         </mesh>
+        {lit && (
+          <mesh position={[0, 0, -0.01]} renderOrder={cardOrder - 1}>
+            <planeGeometry args={[bannerW * 1.18, bannerH * 1.35]} />
+            <meshBasicMaterial
+              color={t.accent}
+              transparent
+              opacity={0.35}
+              depthTest={false}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        )}
       </Billboard>
 
-      {/* Pin ALWAYS at absolute top */}
+      {/* Pin ALWAYS at absolute top; lit floats above everything */}
       <Billboard follow>
         <group ref={pin} position={[0, pinY, 0]}>
-          <mesh onClick={onClick}>
+          <mesh
+            onClick={onClick}
+            onPointerOver={enter}
+            onPointerOut={leave}
+            renderOrder={pinOrder}
+            scale={lit ? 1.15 : 1}
+          >
             <planeGeometry args={[0.3, 0.3]} />
             <meshBasicMaterial
               map={pinTex}
               transparent
-              opacity={dim ? 0.12 : 1}
+              opacity={dim ? 0.1 : 1}
+              depthTest={!lit}
               depthWrite={false}
               toneMapped={false}
             />
           </mesh>
+          {lit && (
+            <mesh position={[0, 0, -0.01]} renderOrder={pinOrder - 1}>
+              <circleGeometry args={[0.22, 24]} />
+              <meshBasicMaterial
+                color={t.accent}
+                transparent
+                opacity={0.45}
+                depthTest={false}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+              />
+            </mesh>
+          )}
         </group>
       </Billboard>
     </group>
@@ -767,8 +826,10 @@ export function NightCity({
 }) {
   const [companies, setCompanies] = useState<SkyCo[]>([])
   const [maxN, setMaxN] = useState(1)
+  const [hoverId, setHoverId] = useState<string | null>(null)
   const selectFocusId = useVigilStore((s) => s.selectFocusId)
   const anyFocused = Boolean(selectFocusId?.startsWith('company:'))
+  const sceneDimmed = anyFocused || Boolean(hoverId)
 
   useEffect(() => {
     let alive = true
@@ -788,6 +849,11 @@ export function NightCity({
     }
   }, [cityId, cityLabel])
 
+  // Clear hover when leaving the district or changing focus city
+  useEffect(() => {
+    setHoverId(null)
+  }, [cityId, selectFocusId])
+
   const corps = useMemo(
     () => layoutCorporates(companies, maxN),
     [companies, maxN],
@@ -796,26 +862,37 @@ export function NightCity({
 
   return (
     <group position={[0, CITY_Y, 0]}>
-      <ambientLight intensity={0.55} color="#e2e8f0" />
-      <hemisphereLight args={['#f8fafc', '#64748b', 0.45]} />
+      <ambientLight intensity={sceneDimmed ? 0.32 : 0.55} color="#e2e8f0" />
+      <hemisphereLight
+        args={['#f8fafc', '#64748b', sceneDimmed ? 0.22 : 0.45]}
+      />
       <directionalLight
         position={[5, 16, 3]}
-        intensity={1.05}
+        intensity={sceneDimmed ? 0.55 : 1.05}
         color="#fff7ed"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
-      <directionalLight position={[-6, 5, -4]} intensity={0.4} color="#c4b5fd" />
-      <pointLight position={[0, 3, 0]} intensity={0.35} color="#67e8f9" distance={10} />
+      <directionalLight
+        position={[-6, 5, -4]}
+        intensity={sceneDimmed ? 0.18 : 0.4}
+        color="#c4b5fd"
+      />
+      <pointLight
+        position={[0, 3, 0]}
+        intensity={sceneDimmed ? 0.15 : 0.35}
+        color="#67e8f9"
+        distance={10}
+      />
 
       <Ground />
-      <CampusPad dim={anyFocused} />
-      <Traffic dim={anyFocused} />
-      <StreetLamps dim={anyFocused} />
+      <CampusPad dim={sceneDimmed} />
+      <Traffic dim={sceneDimmed} />
+      <StreetLamps dim={sceneDimmed} />
 
       {dummies.map((b, i) => (
-        <DummyBuilding key={i} b={b} dim={anyFocused} />
+        <DummyBuilding key={i} b={b} dim={sceneDimmed} />
       ))}
 
       {corps.map((t) => (
@@ -823,7 +900,11 @@ export function NightCity({
           key={t.company_id}
           t={t}
           cityLabel={cityLabel}
-          anyFocused={anyFocused}
+          sceneDimmed={sceneDimmed}
+          onHoverEnter={setHoverId}
+          onHoverLeave={(id) =>
+            setHoverId((cur) => (cur === id ? null : cur))
+          }
         />
       ))}
     </group>

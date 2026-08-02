@@ -240,8 +240,10 @@ use — they should love opening the app, never fight it.
   glass (violet/cyan/amber/pink/green by sector), white fabric dummies with
   edge frames, navy roads, mini cars with lights, street lamps. Corporates
   packed on a tight pad. Banner on roof wraps at 11 chars; job pin always
-  above banner. Focus = camera to roof top; other towers/cards/city dim while
-  selected glows. Always high camera angle. Scroll zoom medium (city + graph).
+  above banner. Focus OR hover = that tower’s card+pin glow on top layer
+  (depthTest off); everything else dims/transparent/dull. Focus camera to
+  roof top. Always high camera angle. Scroll zoom medium (city + graph).
+  Orbit/pan drag release must NOT count as a click (city, graph, globe).
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

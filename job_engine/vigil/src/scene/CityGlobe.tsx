@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { NightCity } from './NightCity'
+import { wasDragClick } from './pointerGuard'
 
 const CITY_GEO: Record<string, { lat: number; lon: number; label: string }> = {
   bengaluru: { lat: 12.97, lon: 77.59, label: 'Bengaluru' },
@@ -240,6 +241,7 @@ function CityMarker({
   const onCityClick = (e: ThreeEvent<MouseEvent>) => {
     if (!interactive) return
     e.stopPropagation()
+    if (wasDragClick()) return
     const st = useVigilStore.getState()
     if (st.selectFocusId !== citySelect) {
       worldFocus(geoPos.clone().multiplyScalar(1.04), citySelect, 1.35)
@@ -257,6 +259,7 @@ function CityMarker({
   const onRemoteClick = (e: ThreeEvent<MouseEvent>) => {
     if (!interactive) return
     e.stopPropagation()
+    if (wasDragClick()) return
     const st = useVigilStore.getState()
     if (st.selectFocusId !== remoteSelect) {
       const behind = geoPos.clone().multiplyScalar(0.98)

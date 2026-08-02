@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { useVigilStore } from '../store/vigilStore'
+import { attachPointerGuard } from './pointerGuard'
 
 type ControlsHandle = {
   target: THREE.Vector3
@@ -94,7 +95,7 @@ export function SceneControls() {
     )
   }, [viewResetNonce, sceneMode, camera])
 
-  // Track pointer for zoom-to-cursor pivot
+  // Track pointer for zoom-to-cursor pivot + drag-vs-click guard
   useEffect(() => {
     const el = gl.domElement
     const onMove = (e: PointerEvent) => {
@@ -103,7 +104,11 @@ export function SceneControls() {
       pointer.current.y = (e.clientY - rect.top) / Math.max(1, rect.height)
     }
     el.addEventListener('pointermove', onMove, { passive: true })
-    return () => el.removeEventListener('pointermove', onMove)
+    const detachGuard = attachPointerGuard(el)
+    return () => {
+      el.removeEventListener('pointermove', onMove)
+      detachGuard()
+    }
   }, [gl])
 
   // Custom wheel: ease ramp + zoom toward cursor

@@ -11,6 +11,7 @@ import { Billboard, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
+import { wasDragClick } from './pointerGuard'
 
 type GraphNode = {
   id: string
@@ -357,6 +358,7 @@ function GraphCard({
     if (!interactive) return
     if (e.button !== 0) return
     e.stopPropagation()
+    if (wasDragClick()) return
     const st = useVigilStore.getState()
     if (st.selectFocusId !== node.id) {
       st.setGraphFocusId(node.id)
