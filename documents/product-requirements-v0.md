@@ -604,6 +604,7 @@ START OF EVERY SESSION
 | v0.9 | 2026-08-02 | Akay | VIGIL layer stack, flick/fist gestures, free practice hub, live=training illumination + gesture logs |
 | v0.10-milestone | 2026-08-02 | Akay | **Recover here:** pre–Neural Core baseline. Tag `milestone/pre-neural-core-v0`. Doc: `documents/milestone-pre-neural-core.md`. Next: world-model core (data graph), not decorative orb. |
 | v0.11 | 2026-08-02 | Akay | Neural Core v0: live Postgres world-model graph in Three.js (sectors/cities/companies/roles + edges); click opens insight panels |
+| v0.12 | 2026-08-02 | Akay | Scene modes: Core particle singularity (20k GPU) · Graph Obsidian clusters · City globe→district; wheel zooms into orb not page. Doc: `documents/vigil-scene-modes.md` |
 
 ### Phase 0 progress (living)
 

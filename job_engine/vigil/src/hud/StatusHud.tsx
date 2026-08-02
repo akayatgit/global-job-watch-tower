@@ -17,6 +17,8 @@ export function StatusHud() {
   const latencyMs = useVigilStore((s) => s.latencyMs)
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const setVigilMode = useVigilStore((s) => s.setVigilMode)
+  const sceneMode = useVigilStore((s) => s.sceneMode)
+  const setSceneMode = useVigilStore((s) => s.setSceneMode)
   const trainingActive = useVigilStore((s) => s.trainingActive)
   const startTraining = useVigilStore((s) => s.startTraining)
   const sessions = useVigilStore((s) => s.calibration.sessionsCompleted)
@@ -83,6 +85,49 @@ export function StatusHud() {
           </div>
 
           <div className="vigil-controls">
+            <div className="scene-mode-switch" role="group" aria-label="World view">
+              <button
+                type="button"
+                className={`hud-icon-btn ${sceneMode === 'core' ? 'on' : ''}`}
+                title="Core — particle singularity (scroll to enter)"
+                aria-label="Core singularity"
+                aria-pressed={sceneMode === 'core'}
+                onClick={() => setSceneMode('core')}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                  <circle cx="12" cy="12" r="3" fill="currentColor" />
+                  <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.55" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`hud-icon-btn ${sceneMode === 'graph' ? 'on' : ''}`}
+                title="Graph — Obsidian world-model nodes"
+                aria-label="Obsidian graph"
+                aria-pressed={sceneMode === 'graph'}
+                onClick={() => setSceneMode('graph')}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                  <circle cx="6" cy="8" r="2" fill="currentColor" />
+                  <circle cx="18" cy="7" r="2" fill="currentColor" />
+                  <circle cx="12" cy="17" r="2" fill="currentColor" />
+                  <path d="M7.5 9.2L10.5 15.2M16.5 8.5L13.2 15.2M8 8h8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`hud-icon-btn ${sceneMode === 'city' ? 'on' : ''}`}
+                title="City — globe, then enter a metro"
+                aria-label="City globe"
+                aria-pressed={sceneMode === 'city'}
+                onClick={() => setSceneMode('city')}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                  <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M4 12h16M12 4a14 14 0 0 1 0 16M12 4a14 14 0 0 0 0 16" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
+                </svg>
+              </button>
+            </div>
             <button
               type="button"
               className={`hud-icon-btn browser-vis-btn ${v?.headless ? 'hidden-mode' : 'visible-mode'}`}

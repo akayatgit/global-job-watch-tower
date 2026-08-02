@@ -374,6 +374,15 @@ type VigilStore = {
   setCoreScale: (n: number) => void
   coreBurst: number
   triggerBurst: () => void
+  /** core = particle singularity · graph = Obsidian data · city = globe/district */
+  sceneMode: 'core' | 'graph' | 'city'
+  setSceneMode: (m: 'core' | 'graph' | 'city') => void
+  /** 0 = far overview, 1 = deep inside the orb */
+  sceneZoom: number
+  setSceneZoom: (z: number) => void
+  /** City mode drill-down (city_key); null = globe overview */
+  cityFocus: string | null
+  setCityFocus: (id: string | null) => void
   canvasPan: { x: number; y: number }
   setCanvasPan: (p: { x: number; y: number }) => void
   hands: HandsState
@@ -560,6 +569,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   setCoreScale: (n) => set({ coreScale: Math.max(0.7, Math.min(2.4, n)) }),
   coreBurst: 0,
   triggerBurst: () => set({ coreBurst: performance.now() }),
+  sceneMode: 'core',
+  setSceneMode: (m) => {
+    const labels = {
+      core: 'CORE · LABOR SINGULARITY — scroll to enter',
+      graph: 'GRAPH · OBSIDIAN WORLD MODEL',
+      city: 'CITY · GLOBE — click a metro to enter',
+    } as const
+    set({
+      sceneMode: m,
+      cityFocus: m === 'city' ? get().cityFocus : null,
+      statusLine: labels[m],
+      sceneZoom: m === 'core' ? get().sceneZoom : m === 'graph' ? 0.35 : 0.25,
+    })
+  },
+  sceneZoom: 0.15,
+  setSceneZoom: (z) =>
+    set({ sceneZoom: Math.max(0, Math.min(1, z)) }),
+  cityFocus: null,
+  setCityFocus: (id) => set({ cityFocus: id }),
   canvasPan: { x: 0, y: 0 },
   setCanvasPan: (p) =>
     set({

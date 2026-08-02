@@ -84,6 +84,9 @@ button, input, select {
   z-index: 1;
   /* Keep any R3F/drei DOM overlays under HUD + floating panels */
   isolation: isolate;
+  /* Wheel / pinch must zoom the orb camera — never the HTML page */
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .vigil-hud {
@@ -121,6 +124,30 @@ button, input, select {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.scene-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  margin-right: 4px;
+  border: 1px solid rgba(255, 140, 40, 0.28);
+  border-radius: 10px;
+  background: rgba(8, 6, 4, 0.55);
+}
+
+.scene-mode-switch .hud-icon-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.hud-icon-btn.on {
+  border-color: rgba(255, 180, 80, 0.85);
+  color: #ffc070;
+  box-shadow:
+    inset 0 -8px 14px rgba(255, 90, 0, 0.5),
+    0 0 12px rgba(255, 85, 0, 0.35);
 }
 
 .hud-icon-btn {
