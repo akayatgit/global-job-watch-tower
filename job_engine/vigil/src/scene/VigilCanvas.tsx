@@ -31,10 +31,10 @@ function SceneBody() {
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
-                  ? 0.35
+                  ? 0.22
                   : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.28 : sceneMode === 'graph' ? 0.55 : 0.5}
+          luminanceThreshold={nightDistrict ? 0.28 : sceneMode === 'graph' ? 0.72 : 0.5}
           luminanceSmoothing={0.85}
           mipmapBlur
         />

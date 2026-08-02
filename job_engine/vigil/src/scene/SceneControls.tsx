@@ -50,7 +50,7 @@ export function SceneControls() {
     c.update()
     fly.current = null
     useVigilStore.getState().setStatus(
-      'DRAG orbit · SCROLL zoom · RIGHT-DRAG pan · click focus · click again open',
+      'DRAG orbit · SCROLL zoom · RIGHT-DRAG pan · RIGHT-CLICK teleport · click focus · click again open',
     )
   }, [viewResetNonce, sceneMode, camera])
 

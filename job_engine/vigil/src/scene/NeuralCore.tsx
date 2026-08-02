@@ -56,8 +56,9 @@ const TIER_FOCUS = 1
 const TIER_NEAR = 0.2
 const TIER_FAR = 0.1
 
-const R_MIN = 0.055
-const R_MAX = 0.16
+/** Global relative size — clear but not huge (√ scale vs max jobs) */
+const R_MIN = 0.038
+const R_MAX = 0.22
 
 function layoutNodes(nodes: GraphNode[]) {
   const byKind = new Map<string, GraphNode[]>()
@@ -90,18 +91,15 @@ function layoutNodes(nodes: GraphNode[]) {
   return pos
 }
 
-/** Max weight per kind — sphere size is relative within category */
-function maxWeightByKind(nodes: GraphNode[]) {
-  const m = new Map<string, number>()
-  for (const n of nodes) {
-    m.set(n.kind, Math.max(m.get(n.kind) || 1, n.weight || 1))
-  }
+function globalMaxWeight(nodes: GraphNode[]) {
+  let m = 1
+  for (const n of nodes) m = Math.max(m, n.weight || 1)
   return m
 }
 
-function radiusFor(node: GraphNode, maxByKind: Map<string, number>) {
-  const max = maxByKind.get(node.kind) || 1
-  const t = Math.sqrt(THREE.MathUtils.clamp(node.weight / max, 0.05, 1))
+/** √ relative to graph-wide max — 2545 vs 77 reads clearly (~3×), not same size */
+function radiusFor(node: GraphNode, globalMax: number) {
+  const t = Math.sqrt(THREE.MathUtils.clamp(node.weight / globalMax, 0.002, 1))
   return THREE.MathUtils.lerp(R_MIN, R_MAX, t)
 }
 
@@ -145,8 +143,8 @@ function openInsight(n: GraphNode) {
 }
 
 /**
- * Always-on label: small white name + neon purple number.
- * Emphasized (hot/focused) = larger / brighter — still no card plate.
+ * Always-on label: readable white name + neon purple number.
+ * Emphasized (hot/focused) = larger — still no card plate.
  */
 function makeLabelTex(
   name: string,
@@ -154,41 +152,38 @@ function makeLabelTex(
   emphasized: boolean,
 ) {
   const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 128
+  c.width = 768
+  c.height = 192
   const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, 512, 128)
+  ctx.clearRect(0, 0, 768, 192)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const label = name.length > 18 ? `${name.slice(0, 16)}…` : name
+  const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
 
-  // Soft dark halo for legibility only (not a box)
-  ctx.shadowColor = 'rgba(0,0,0,0.9)'
-  ctx.shadowBlur = emphasized ? 14 : 8
-  ctx.fillStyle = emphasized ? '#ffffff' : 'rgba(255,255,255,0.92)'
+  // Soft halo only — no rectangle fill
+  ctx.shadowColor = 'rgba(0,0,0,0.95)'
+  ctx.shadowBlur = emphasized ? 12 : 9
+  ctx.fillStyle = '#ffffff'
   ctx.font = emphasized
-    ? '800 40px Orbitron, sans-serif'
-    : '700 28px Orbitron, sans-serif'
-  ctx.fillText(label, 256, emphasized ? 42 : 44)
+    ? '800 64px Orbitron, sans-serif'
+    : '800 52px Orbitron, sans-serif'
+  ctx.fillText(label, 384, emphasized ? 64 : 68)
 
-  // Neon purple gradient number — readable on teal/orange/gold nodes
-  const g = ctx.createLinearGradient(200, 70, 312, 110)
-  g.addColorStop(0, '#e9d5ff')
-  g.addColorStop(0.45, '#d946ef')
-  g.addColorStop(1, '#a855f7')
-  ctx.shadowColor = emphasized
-    ? 'rgba(217, 70, 239, 0.95)'
-    : 'rgba(168, 85, 247, 0.65)'
-  ctx.shadowBlur = emphasized ? 18 : 10
+  const g = ctx.createLinearGradient(280, 110, 488, 170)
+  g.addColorStop(0, '#f5e0ff')
+  g.addColorStop(0.4, '#e879f9')
+  g.addColorStop(1, '#c026d3')
+  ctx.shadowColor = 'rgba(232, 121, 249, 0.85)'
+  ctx.shadowBlur = emphasized ? 16 : 12
   ctx.fillStyle = g
   ctx.font = emphasized
-    ? '800 36px Rajdhani, sans-serif'
-    : '800 26px Rajdhani, sans-serif'
-  ctx.fillText(String(weight), 256, emphasized ? 92 : 88)
+    ? '800 54px Rajdhani, sans-serif'
+    : '800 44px Rajdhani, sans-serif'
+  ctx.fillText(String(weight), 384, emphasized ? 140 : 138)
 
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 4
+  tex.anisotropy = 8
   return tex
 }
 
@@ -214,50 +209,59 @@ function GraphCard({
 }) {
   const [hot, setHot] = useState(false)
   const body = useRef<THREE.Mesh>(null)
-  const aura = useRef<THREE.Mesh>(null)
   const color = KIND_COLOR[node.kind] || '#ff5500'
   const emphasized = focused || hot
   const seed = useMemo(
     () => (node.id.length * 12.9898) % 6.28,
     [node.id],
   )
+  const rightDown = useRef<{ x: number; y: number } | null>(null)
 
   const labelTex = useMemo(
     () => makeLabelTex(node.label, node.weight, emphasized),
     [node.label, node.weight, emphasized],
   )
 
-  // Base visual radius; pick target tighter when something else is focused
+  // Pick target tighter when something else is focused (presenting)
   const pickR = focused
-    ? radius * 2.4
+    ? radius * 2.2
     : anyFocused
-      ? radius * 1.15
-      : radius * 2.0
+      ? radius * 1.1
+      : radius * 1.85
+
+  const worldPos = () => {
+    const world = position.clone()
+    world.applyAxisAngle(new THREE.Vector3(0, 1, 0), spinY.current)
+    return world
+  }
+
+  const teleportTo = () => {
+    const st = useVigilStore.getState()
+    const w = worldPos()
+    st.setSceneSpin(false)
+    st.teleportCamera({
+      x: w.x,
+      y: w.y,
+      z: w.z,
+      distance: 1.7,
+    })
+    st.setStatus(`TELEPORT · ${node.label}`)
+  }
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
-    // Easy breath — scale + emissive glow, no rings
-    const breath = 1 + Math.sin(t * 1.35 + seed) * (focused ? 0.08 : hot ? 0.1 : 0.045)
-    const glowBoost = hot ? 0.55 : focused ? 0.4 : 0.12
-    const glowPulse = glowBoost + Math.sin(t * 1.6 + seed) * (hot || focused ? 0.18 : 0.05)
+    // Subtle breath on the sphere itself — no outer glow circle
+    const breath = 1 + Math.sin(t * 1.2 + seed) * (focused ? 0.05 : hot ? 0.07 : 0.03)
+    const glowBoost = hot ? 0.42 : focused ? 0.32 : 0.1
+    const glowPulse = glowBoost + Math.sin(t * 1.4 + seed) * (hot || focused ? 0.1 : 0.03)
 
     if (body.current) {
       const mat = body.current.material as THREE.MeshStandardMaterial
       const base = hot ? 1 : focused ? 1 : tier
       mat.opacity = base
-      mat.emissiveIntensity = Math.max(0.05, glowPulse) * (base > 0.5 ? 1 : 0.5)
-      const present = focused ? 1.12 : hot ? 1.18 : 1
+      mat.emissiveIntensity = Math.max(0.04, glowPulse) * (base > 0.5 ? 1 : 0.45)
+      const present = focused ? 1.08 : hot ? 1.12 : 1
       body.current.scale.setScalar(breath * present)
-    }
-    if (aura.current) {
-      // Soft spherical bloom (not a ring)
-      const show = hot || focused
-      aura.current.visible = show
-      if (show) {
-        const a = 0.18 + Math.sin(t * 1.8 + seed) * 0.08
-        aura.current.scale.setScalar(breath * (hot ? 2.1 : 1.85))
-        ;(aura.current.material as THREE.MeshBasicMaterial).opacity = a
-      }
     }
   })
 
@@ -267,26 +271,29 @@ function GraphCard({
     setHot(true)
     useVigilStore.setState({
       statusLine: focused
-        ? `FOCUSED · ${node.label} · click again to open`
+        ? `FOCUSED · ${node.label} · click again to open · right-click teleport`
         : `PICK · ${node.label} · ${node.weight}`,
     })
   }
-  const onLeave = () => setHot(false)
+  const onLeave = () => {
+    setHot(false)
+    rightDown.current = null
+  }
 
   const onCardClick = (e: ThreeEvent<MouseEvent>) => {
     if (!interactive) return
+    if (e.button !== 0) return
     e.stopPropagation()
     const st = useVigilStore.getState()
     if (st.selectFocusId !== node.id) {
       st.setGraphFocusId(node.id)
       st.setSceneSpin(false)
-      const world = position.clone()
-      world.applyAxisAngle(new THREE.Vector3(0, 1, 0), spinY.current)
+      const w = worldPos()
       st.requestCameraFocus({
         id: node.id,
-        x: world.x,
-        y: world.y,
-        z: world.z,
+        x: w.x,
+        y: w.y,
+        z: w.z,
         distance: 1.55,
       })
       st.setStatus(`FOCUS · ${node.label} · others dimmed · click again to open`)
@@ -295,10 +302,31 @@ function GraphCard({
     openInsight(node)
   }
 
-  const labelOpacity = hot || focused ? 1 : Math.max(0.35, tier)
-  const labelH = emphasized ? 0.32 : 0.22
-  const labelW = emphasized ? 1.15 : 0.85
-  const labelY = radius * 1.15 + (emphasized ? 0.22 : 0.16)
+  const onRightDown = (e: ThreeEvent<PointerEvent>) => {
+    if (!interactive || e.button !== 2) return
+    e.stopPropagation()
+    rightDown.current = { x: e.clientX, y: e.clientY }
+  }
+
+  const onRightUp = (e: ThreeEvent<PointerEvent>) => {
+    if (!interactive || e.button !== 2) return
+    e.stopPropagation()
+    const d = rightDown.current
+    rightDown.current = null
+    if (!d) return
+    const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y)
+    if (moved < 8) teleportTo()
+  }
+
+  // Overview labels stay readable; focused view dims non-focus labels
+  const labelOpacity = !anyFocused
+    ? 0.95
+    : hot || focused
+      ? 1
+      : Math.max(0.22, tier * 0.85)
+  const labelH = emphasized ? 0.48 : 0.38
+  const labelW = emphasized ? 1.85 : 1.55
+  const labelY = radius * 1.2 + (emphasized ? 0.32 : 0.26)
 
   return (
     <group position={position}>
@@ -306,47 +334,36 @@ function GraphCard({
         onPointerOver={onEnter}
         onPointerOut={onLeave}
         onClick={onCardClick}
+        onPointerDown={onRightDown}
+        onPointerUp={onRightUp}
+        onContextMenu={(e) => {
+          e.stopPropagation()
+          ;(e.nativeEvent as MouseEvent).preventDefault()
+        }}
       >
         <sphereGeometry args={[pickR, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {(focused || hot) && (
-        <pointLight
-          color={color}
-          intensity={focused ? 1.35 : 1.05}
-          distance={2.2}
-          decay={2}
-        />
+      {/* Tiny local light only — no big bloom orb */}
+      {hot && (
+        <pointLight color={color} intensity={0.55} distance={1.2} decay={2} />
       )}
-
-      {/* Soft sphere aura — breath glow, not a ring */}
-      <mesh ref={aura} visible={false}>
-        <sphereGeometry args={[radius * 1.05, 20, 20]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={0.2}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
 
       <mesh ref={body}>
         <sphereGeometry args={[radius, 28, 28]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={0.35}
-          roughness={0.32}
-          metalness={0.4}
+          emissiveIntensity={0.28}
+          roughness={0.38}
+          metalness={0.35}
           transparent
           opacity={hot || focused ? 1 : tier}
           depthWrite={(hot || focused ? 1 : tier) > 0.5}
         />
       </mesh>
 
-      {/* Always-on small white + purple number label */}
       <Billboard follow>
         <mesh position={[0, labelY, 0]} renderOrder={10}>
           <planeGeometry args={[labelW, labelH]} />
@@ -404,7 +421,7 @@ export function NeuralCore() {
     [model],
   )
   const positions = useMemo(() => layoutNodes(dataNodes), [dataNodes])
-  const maxByKind = useMemo(() => maxWeightByKind(dataNodes), [dataNodes])
+  const globalMax = useMemo(() => globalMaxWeight(dataNodes), [dataNodes])
   const adj = useMemo(() => buildAdj(model?.edges || []), [model])
 
   const nearSet = useMemo(() => {
@@ -513,7 +530,7 @@ export function NeuralCore() {
             interactive={interactive}
             tier={tierOf(n.id)}
             focused={graphFocusId === n.id}
-            radius={radiusFor(n, maxByKind)}
+            radius={radiusFor(n, globalMax)}
             anyFocused={anyFocused}
             spinY={spinAngle}
           />

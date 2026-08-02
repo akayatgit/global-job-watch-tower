@@ -409,6 +409,13 @@ type VigilStore = {
     z: number
     distance?: number
   }) => void
+  /** Fly camera only — does not change focus / second-click selection */
+  teleportCamera: (f: {
+    x: number
+    y: number
+    z: number
+    distance?: number
+  }) => void
   clearCameraFocus: () => void
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
@@ -662,6 +669,18 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       cameraFocusNonce: get().cameraFocusNonce + 1,
       selectFocusId: f.id,
       statusLine: 'FOCUS · click again to open',
+    }),
+  teleportCamera: (f) =>
+    set({
+      cameraFocus: {
+        id: get().cameraFocus?.id || get().selectFocusId || 'teleport',
+        x: f.x,
+        y: f.y,
+        z: f.z,
+        distance: f.distance ?? 1.7,
+      },
+      cameraFocusNonce: get().cameraFocusNonce + 1,
+      statusLine: 'TELEPORT',
     }),
   clearCameraFocus: () =>
     set({
