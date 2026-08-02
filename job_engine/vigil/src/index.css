@@ -15,7 +15,7 @@
   --font-hud: 'Orbitron', sans-serif;
   --font-body: 'Rajdhani', sans-serif;
   --rail-w: 200px;
-  --rail-w-collapsed: 52px;
+  --rail-w-collapsed: 56px;
 }
 
 * { box-sizing: border-box; }
@@ -119,102 +119,86 @@ button, input, select {
 .vigil-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.train-btn {
-  border: 1px solid var(--vg-line);
-  background: var(--vg-glass);
-  color: var(--vg-amber);
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 10px 14px;
-  border-radius: 6px;
+.hud-icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 140, 40, 0.35);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(40, 55, 75, 0.35), rgba(255, 90, 10, 0.28)),
+    rgba(8, 10, 14, 0.9);
+  color: #fff;
   cursor: pointer;
+  box-shadow:
+    inset 0 -8px 14px rgba(255, 90, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s, filter 0.15s;
 }
 
-.train-btn:hover:not(:disabled) {
-  border-color: var(--vg-amber);
-  box-shadow: 0 0 16px rgba(255, 170, 0, 0.3);
+.hud-icon-btn:hover:not(:disabled) {
+  border-color: rgba(255, 180, 80, 0.75);
+  color: #ffc070;
+  filter: brightness(1.08);
 }
 
-.train-btn:disabled,
-.train-btn.active {
-  opacity: 0.55;
+.hud-icon-btn:disabled,
+.hud-icon-btn.active {
+  opacity: 0.5;
   cursor: default;
 }
 
-.vigil-mode-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--vg-line);
-  border-radius: 6px;
-  background: var(--vg-glass);
-  cursor: pointer;
-  user-select: none;
-  box-shadow: 0 0 24px rgba(255, 85, 0, 0.15);
-}
-
-.vigil-mode-switch.on {
-  border-color: var(--vg-amber);
-  box-shadow: 0 0 28px rgba(255, 170, 0, 0.35);
-}
-
-.vigil-mode-switch .switch-label {
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--vg-amber);
-  text-transform: uppercase;
-}
-
-.vigil-mode-switch input {
+.hud-icon-badge {
   position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.vigil-mode-switch .switch-track {
-  width: 44px;
-  height: 24px;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
   border-radius: 999px;
-  background: rgba(255, 85, 0, 0.2);
-  border: 1px solid var(--vg-line);
-  position: relative;
-  transition: background 0.2s;
-}
-
-.vigil-mode-switch.on .switch-track {
-  background: rgba(255, 170, 0, 0.35);
-  border-color: var(--vg-amber);
-}
-
-.vigil-mode-switch .switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--vg-muted);
-  transition: transform 0.2s, background 0.2s;
-}
-
-.vigil-mode-switch.on .switch-knob {
-  transform: translateX(20px);
   background: var(--vg-amber);
-  box-shadow: 0 0 10px rgba(255, 170, 0, 0.8);
+  color: #1a0c00;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
 }
 
-.vigil-mode-switch .switch-state {
-  font-family: var(--font-hud);
-  font-size: 12px;
-  color: var(--vg-ink);
-  min-width: 28px;
+.train-btn {
+  color: var(--vg-amber);
+}
+
+.browser-vis-btn.visible-mode {
+  border-color: rgba(34, 197, 94, 0.55);
+  color: #7dffb0;
+  box-shadow:
+    inset 0 -8px 14px rgba(34, 197, 94, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.browser-vis-btn.hidden-mode {
+  border-color: rgba(140, 150, 165, 0.4);
+  color: #9aa3b2;
+}
+
+.vigil-mode-btn.on {
+  border-color: rgba(255, 170, 0, 0.75);
+  color: var(--vg-amber);
+  box-shadow:
+    inset 0 -8px 14px rgba(255, 120, 0, 0.45),
+    0 0 12px rgba(255, 140, 0, 0.25);
+}
+
+.vigil-mode-btn.off {
+  color: #9aa3b2;
 }
 
 /* Left module rail — own chrome strip; widget canvas lives in .vigil-stage */
@@ -238,7 +222,13 @@ button, input, select {
 
 .module-rail.collapsed {
   width: var(--rail-w-collapsed);
-  padding: 12px 6px 16px;
+  padding: 12px 8px 16px;
+}
+.module-rail.collapsed .rail-head {
+  justify-content: center;
+}
+.module-rail.collapsed .rail-row {
+  justify-content: center;
 }
 
 .vigil-stage {
@@ -312,8 +302,8 @@ button, input, select {
   border: 1px solid var(--vg-line);
   background: rgba(12, 6, 2, 0.88);
   color: var(--vg-ink);
-  padding: 9px 10px;
-  border-radius: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
   font-family: var(--font-hud);
   font-size: 10px;
   letter-spacing: 0.1em;
@@ -322,16 +312,83 @@ button, input, select {
   text-align: left;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  gap: 8px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
-.module-rail.collapsed .rail-chip {
-  padding: 9px 4px;
+.rail-chip-icon {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  letter-spacing: 0.04em;
-  font-size: 9px;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.rail-chip-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Collapsed: glass pillar tiles (same language as compare charts) */
+.module-rail.collapsed .rail-chip.glass-tile {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 160, 80, 0.45);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(200, 220, 255, 0.22) 0%,
+      rgba(40, 55, 75, 0.35) 45%,
+      rgba(255, 90, 10, 0.55) 100%
+    );
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -10px 14px rgba(255, 90, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  position: relative;
+}
+
+.module-rail.collapsed .rail-chip.glass-tile:hover {
+  border-color: rgba(255, 190, 100, 0.85);
+  color: #ffe0b0;
+  filter: brightness(1.08);
+}
+
+.module-rail.collapsed .rail-row.active .rail-chip.glass-tile {
+  border-color: rgba(160, 220, 255, 0.75);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(180, 230, 255, 0.45) 0%,
+      rgba(50, 70, 95, 0.35) 48%,
+      rgba(255, 90, 10, 0.6) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(180, 230, 255, 0.18),
+    inset 0 -10px 14px rgba(255, 90, 0, 0.45),
+    0 0 10px rgba(100, 180, 255, 0.2);
+}
+
+.module-rail.collapsed .rail-row.pinned .rail-chip.glass-tile {
+  border-color: rgba(34, 197, 94, 0.65);
+}
+
+.rail-pin-spark {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.85);
 }
 
 .rail-chip:hover {
@@ -339,20 +396,21 @@ button, input, select {
   color: var(--vg-amber);
 }
 
-.rail-row.active .rail-chip {
+.rail-row.active .rail-chip:not(.glass-tile) {
   background: rgba(255, 170, 0, 0.18);
   border-color: var(--vg-amber);
   color: var(--vg-amber);
   box-shadow: 0 0 14px rgba(255, 85, 0, 0.22);
 }
 
-.rail-row.pinned .rail-chip {
+.rail-row.pinned .rail-chip:not(.glass-tile) {
   border-color: rgba(34, 197, 94, 0.5);
 }
 
 .rail-pin-dot {
   color: var(--vg-ok);
   font-weight: 700;
+  margin-left: auto;
 }
 
 .rail-pin-btn {
@@ -373,13 +431,6 @@ button, input, select {
 .rail-pin-btn.active {
   color: var(--vg-ok);
   border-color: rgba(34, 197, 94, 0.7);
-}
-
-.rail-hint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--vg-muted);
 }
 
 /* Legacy dock-chip class kept for any residual refs */
@@ -795,35 +846,6 @@ button, input, select {
   text-align: center;
 }
 
-.browser-vis-btn {
-  border: 1px solid var(--vg-line);
-  background: var(--vg-glass);
-  color: var(--vg-ink);
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 10px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.browser-vis-btn:hover {
-  border-color: var(--vg-amber);
-  color: var(--vg-amber);
-}
-
-.browser-vis-btn.visible-mode {
-  border-color: var(--vg-ok);
-  color: var(--vg-ok);
-  box-shadow: 0 0 14px rgba(34, 197, 94, 0.25);
-}
-
-.browser-vis-btn.hidden-mode {
-  border-color: var(--vg-muted);
-  color: var(--vg-muted);
-}
 
 /* Keep top controls clickable above the focused window layer */
 .vigil-root.layer-focus .vigil-hud .status-bar,
@@ -1363,17 +1385,6 @@ button, input, select {
   padding: 18px 8px;
   text-align: center;
   color: var(--vg-muted);
-}
-
-.orbit-hint {
-  position: absolute;
-  bottom: 16px;
-  left: 20px;
-  max-width: 360px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--vg-muted);
-  text-transform: uppercase;
 }
 
 .countdown-big {

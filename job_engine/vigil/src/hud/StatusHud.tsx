@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
+import { IconBrowser, IconTrain, IconVigil } from './ModuleIcons'
 
 function chipTone(level?: string) {
   if (level === 'red' || level === 'blocked') return 'fail'
@@ -85,9 +86,14 @@ export function StatusHud() {
           <div className="vigil-controls">
             <button
               type="button"
-              className={`browser-vis-btn ${v?.headless ? 'hidden-mode' : 'visible-mode'}`}
+              className={`hud-icon-btn browser-vis-btn ${v?.headless ? 'hidden-mode' : 'visible-mode'}`}
               data-gesture-action="toggle-browser"
-              title="Default Hidden. Click to show Chrome for the next search only — flip back when done watching."
+              aria-label={v?.headless ? 'Browser hidden' : 'Browser visible'}
+              title={
+                v?.headless
+                  ? 'Browser hidden — click to show Chrome for next search'
+                  : 'Browser visible — click to hide for next search'
+              }
               onClick={async () => {
                 try {
                   const r = await api.toggleHeadless()
@@ -102,33 +108,39 @@ export function StatusHud() {
                 }
               }}
             >
-              {v?.headless ? 'Browser Hidden' : 'Browser Visible'}
+              <IconBrowser hidden={Boolean(v?.headless)} />
             </button>
             <button
               type="button"
-              className={`train-btn ${trainingActive ? 'active' : ''}`}
+              className={`hud-icon-btn train-btn ${trainingActive ? 'active' : ''}`}
               data-gesture-action="start-training"
               disabled={trainingActive}
+              aria-label={sessions > 0 ? `Training · ${sessions} sessions` : 'Training'}
+              title={
+                sessions > 0
+                  ? `Guided hand training · ${sessions} sessions done`
+                  : 'Guided hand training + calibration'
+              }
               onClick={() => startTraining()}
-              title="Guided hand training + calibration"
             >
-              Train{sessions > 0 ? ` · ${sessions}` : ''}
+              <IconTrain />
+              {sessions > 0 ? <span className="hud-icon-badge">{sessions}</span> : null}
             </button>
-            <label
-              className={`vigil-mode-switch ${vigilMode ? 'on' : 'off'}`}
-              title={vigilMode ? 'Hand control on — click to use mouse & keyboard' : 'Mouse & keyboard — click to enable hand control'}
+            <button
+              type="button"
+              className={`hud-icon-btn vigil-mode-btn ${vigilMode ? 'on' : 'off'}`}
+              data-gesture-action="toggle-vigil-mode"
+              aria-pressed={vigilMode}
+              aria-label={vigilMode ? 'Vigil mode on' : 'Vigil mode off'}
+              title={
+                vigilMode
+                  ? 'Hand control on — click for mouse & keyboard'
+                  : 'Mouse & keyboard — click for hand control'
+              }
+              onClick={() => setVigilMode(!vigilMode)}
             >
-              <span className="switch-label">VIGIL Mode</span>
-              <input
-                type="checkbox"
-                checked={vigilMode}
-                onChange={(e) => setVigilMode(e.target.checked)}
-              />
-              <span className="switch-track" aria-hidden>
-                <span className="switch-knob" />
-              </span>
-              <span className="switch-state">{vigilMode ? 'ON' : 'OFF'}</span>
-            </label>
+              <IconVigil on={vigilMode} />
+            </button>
           </div>
         </div>
       </div>
@@ -158,12 +170,6 @@ export function StatusHud() {
               ? `${secs}`
               : '—'}
         </div>
-      </div>
-
-      <div className="orbit-hint">
-        {vigilMode
-          ? 'Pinch header=move · pinch body=scroll · 2-hand on window=zoom · 2-hand empty=core · pinch empty=pan · Train for practice'
-          : 'Desktop · click modules · drag headers · Train opens a separate practice room'}
       </div>
     </div>
   )

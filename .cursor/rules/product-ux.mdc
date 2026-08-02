@@ -159,6 +159,10 @@ use — they should love opening the app, never fight it.
 - **Admin pin sovereignty (2026-08-02):** Admin decides every pin/close. No
   widget (including Tower Insights) is hard-locked open or pinned. Unpin and
   Close must work; defaults may suggest Tower on the right for first visit only.
+- **Clean HUD chrome (2026-08-02):** Browser / Train / Vigil controls are
+  small icon-only (hover title for meaning). No desktop/rail helper blurbs on
+  the canvas. Collapsed module rail shows glass-style logos (same language as
+  compare pillars), not abbreviated text.
 - **Heat pacing (2026-08-02):** Prefer longer Warm/Hot Ollama rests + cool-down
   retries before Plan B keyword. Ideal path = stay on Ollama; orange Plan B
   strip should be rare, not flapping every spike.

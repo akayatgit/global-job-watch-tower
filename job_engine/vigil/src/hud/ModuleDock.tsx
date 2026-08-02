@@ -1,5 +1,6 @@
 import { ORBIT_NODES, useVigilStore, type PanelId } from '../store/vigilStore'
 import { sendUltron } from '../lib/ultronWs'
+import { ModuleIcon } from './ModuleIcons'
 
 /** Left module rail — separate from the floating widget canvas; hide/show anytime. */
 export function ModuleDock() {
@@ -39,14 +40,6 @@ export function ModuleDock() {
           const open = panels[node.id]?.open
           const pinned = panels[node.id]?.pinned
           const active = node.id === focused || open
-          const short =
-            node.id === 'filter_mix'
-              ? 'AI/K'
-              : node.id === 'signals'
-                ? 'Signals'
-                : node.id === 'cities'
-                  ? 'Cities'
-                  : node.label.split(' ')[0]
           return (
             <div
               key={node.id}
@@ -54,13 +47,24 @@ export function ModuleDock() {
             >
               <button
                 type="button"
-                className="rail-chip"
+                className={`rail-chip ${railOpen ? '' : 'glass-tile'}`.trim()}
                 data-gesture-action={`dock-${node.id}`}
                 title={pinned ? `${node.label} · pinned on canvas` : `Open ${node.label}`}
+                aria-label={node.label}
                 onClick={() => launch(node.id)}
               >
-                <span className="rail-chip-label">{railOpen ? node.label : short}</span>
-                {pinned ? <span className="rail-pin-dot" aria-hidden>·</span> : null}
+                <span className="rail-chip-icon" aria-hidden>
+                  <ModuleIcon id={node.id} />
+                </span>
+                {railOpen ? (
+                  <span className="rail-chip-label">{node.label}</span>
+                ) : null}
+                {railOpen && pinned ? (
+                  <span className="rail-pin-dot" aria-hidden>·</span>
+                ) : null}
+                {!railOpen && pinned ? (
+                  <span className="rail-pin-spark" aria-hidden />
+                ) : null}
               </button>
               {railOpen ? (
                 <button
@@ -77,12 +81,6 @@ export function ModuleDock() {
           )
         })}
       </nav>
-
-      {railOpen ? (
-        <p className="rail-hint">
-          Rail stays here. Pin opens widgets on the canvas to the right.
-        </p>
-      ) : null}
     </aside>
   )
 }
