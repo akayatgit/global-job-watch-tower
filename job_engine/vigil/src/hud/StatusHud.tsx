@@ -80,21 +80,30 @@ export function StatusHud() {
               <span className="k">AI</span>
               <span className="v">{v?.ollama_live ? 'ON' : 'OFF'}</span>
             </div>
-            <button
-              className="vital-chip"
-              data-gesture-action="toggle-browser"
-              title="Browser visibility"
-              onClick={() => api.toggleHeadless().then((r) => useVigilStore.getState().setStatus(
-                r.headless ? 'BROWSER HIDDEN — NEXT SEARCH' : 'BROWSER VISIBLE — NEXT SEARCH',
-              ))}
-              type="button"
-            >
-              <span className="k">Browser</span>
-              <span className="v">{v?.headless ? 'HID' : 'VIS'}</span>
-            </button>
           </div>
 
           <div className="vigil-controls">
+            <button
+              type="button"
+              className={`browser-vis-btn ${v?.headless ? 'hidden-mode' : 'visible-mode'}`}
+              data-gesture-action="toggle-browser"
+              title="Chrome for the next search — Hidden (cooler) or Visible window"
+              onClick={async () => {
+                try {
+                  const r = await api.toggleHeadless()
+                  setVitals({ ...(vitals || {}), headless: r.headless })
+                  useVigilStore.getState().setStatus(
+                    r.headless
+                      ? 'BROWSER HIDDEN — NEXT SEARCH'
+                      : 'BROWSER VISIBLE — NEXT SEARCH',
+                  )
+                } catch {
+                  useVigilStore.getState().setStatus('BROWSER TOGGLE FAILED')
+                }
+              }}
+            >
+              {v?.headless ? 'Browser Hidden' : 'Browser Visible'}
+            </button>
             <button
               type="button"
               className={`train-btn ${trainingActive ? 'active' : ''}`}

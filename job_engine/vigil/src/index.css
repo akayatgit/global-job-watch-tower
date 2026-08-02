@@ -641,7 +641,7 @@ button, input, select {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-  max-width: 58%;
+  max-width: min(720px, 100%);
 }
 
 .vital-chip {
@@ -651,6 +651,43 @@ button, input, select {
   background: var(--vg-glass);
   border-radius: 4px;
   text-align: center;
+}
+
+.browser-vis-btn {
+  border: 1px solid var(--vg-line);
+  background: var(--vg-glass);
+  color: var(--vg-ink);
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.browser-vis-btn:hover {
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+}
+
+.browser-vis-btn.visible-mode {
+  border-color: var(--vg-ok);
+  color: var(--vg-ok);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.25);
+}
+
+.browser-vis-btn.hidden-mode {
+  border-color: var(--vg-muted);
+  color: var(--vg-muted);
+}
+
+/* Keep top controls clickable above the focused window layer */
+.vigil-root.layer-focus .vigil-hud .status-bar,
+.vigil-root.layer-focus .vigil-hud .vigil-controls {
+  z-index: 70;
+  position: relative;
 }
 
 .vital-chip .k {
