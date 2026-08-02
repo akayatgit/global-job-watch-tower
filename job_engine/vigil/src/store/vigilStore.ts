@@ -416,6 +416,21 @@ type VigilStore = {
     z: number
     distance?: number
   }) => void
+  /**
+   * Ease camera along a polyline (e.g. graph edge → parent).
+   * On finish, optionally transfer focus to endFocusId.
+   */
+  cameraPath: {
+    waypoints: { x: number; y: number; z: number }[]
+    distance: number
+    endFocusId: string | null
+  } | null
+  cameraPathNonce: number
+  requestCameraPath: (p: {
+    waypoints: { x: number; y: number; z: number }[]
+    distance?: number
+    endFocusId?: string | null
+  }) => void
   clearCameraFocus: () => void
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
@@ -680,11 +695,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
         distance: f.distance ?? 1.7,
       },
       cameraFocusNonce: get().cameraFocusNonce + 1,
+      cameraPath: null,
       statusLine: 'TELEPORT',
+    }),
+  cameraPath: null,
+  cameraPathNonce: 0,
+  requestCameraPath: (p) =>
+    set({
+      cameraPath: {
+        waypoints: p.waypoints,
+        distance: p.distance ?? 1.7,
+        endFocusId: p.endFocusId ?? null,
+      },
+      cameraPathNonce: get().cameraPathNonce + 1,
+      statusLine: 'FOLLOWING EDGE…',
     }),
   clearCameraFocus: () =>
     set({
       cameraFocus: null,
+      cameraPath: null,
       selectFocusId: null,
       cameraFocusNonce: get().cameraFocusNonce + 1,
     }),

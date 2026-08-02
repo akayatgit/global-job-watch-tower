@@ -250,8 +250,10 @@ use — they should love opening the app, never fight it.
   node 100%, immediate neighbors 20%, everything else 10%. Always-on readable
   white name + neon-purple number (no cards/plates). Sphere size ∝ √(jobs /
   graph max) so big vs small is obvious but not huge; subtle sphere breath
-  (no glow rings / bloom orbs). Right-click node = camera teleport (pan still
-  via right-drag). Hover = “pick me” on nodes, city cards, towers. City:
+  (no glow rings / bloom orbs). Focused node stays lit after cursor leaves.
+  Edges are gradients of the two node colors. Right-click focused node =
+  ease camera along the edge to its parent (sector/city); right-click
+  unfocused = teleport. Right-drag still pans. Hover = “pick me”. City:
   far = India-map cards; near = lat/lon; Remote twin behind cities.
 - **Immersive cursor (2026-08-03):** Instant white cursor (zero position lag).
   Only the motion path fades behind. Subtle halo, no hex/circle rings. Native

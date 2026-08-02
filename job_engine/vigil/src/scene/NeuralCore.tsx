@@ -117,6 +117,32 @@ function buildAdj(edges: GraphEdge[]) {
   return adj
 }
 
+/** Prefer upward parents from directed world-model edges (child = target). */
+const PARENT_SCORE: Record<string, number> = {
+  role_in: 100, // sector → role
+  company_in: 90, // sector → company
+  hires_in: 80, // sector → city
+  company_at: 70, // city → company
+  hiring: 20, // role → company (weak; company is peer/child of hiring)
+}
+
+function findParentId(nodeId: string, edges: GraphEdge[]): string | null {
+  let best: { id: string; score: number } | null = null
+  for (const e of edges) {
+    if (e.source === 'core' || e.target === 'core') continue
+    // Parent is source when we are the child target
+    if (e.target === nodeId) {
+      const score = (PARENT_SCORE[e.relation || ''] || 15) * Math.max(1, e.weight)
+      if (!best || score > best.score) best = { id: e.source, score }
+    }
+  }
+  return best?.id ?? null
+}
+
+function colorOfKind(kind: string) {
+  return new THREE.Color(KIND_COLOR[kind] || '#ff5500')
+}
+
 function openInsight(n: GraphNode) {
   const st = useVigilStore.getState()
   st.triggerBurst()
@@ -196,6 +222,9 @@ function GraphCard({
   radius,
   anyFocused,
   spinY,
+  edges,
+  positions,
+  nodeById,
 }: {
   node: GraphNode
   position: THREE.Vector3
@@ -203,13 +232,16 @@ function GraphCard({
   tier: number
   focused: boolean
   radius: number
-  /** True when some node in the graph is focused — shrink others’ hitboxes */
   anyFocused: boolean
   spinY: MutableRefObject<number>
+  edges: GraphEdge[]
+  positions: Map<string, THREE.Vector3>
+  nodeById: Map<string, GraphNode>
 }) {
   const [hot, setHot] = useState(false)
   const body = useRef<THREE.Mesh>(null)
   const color = KIND_COLOR[node.kind] || '#ff5500'
+  // Focused stays emphasized even when cursor leaves
   const emphasized = focused || hot
   const seed = useMemo(
     () => (node.id.length * 12.9898) % 6.28,
@@ -222,22 +254,53 @@ function GraphCard({
     [node.label, node.weight, emphasized],
   )
 
-  // Pick target tighter when something else is focused (presenting)
   const pickR = focused
     ? radius * 2.2
     : anyFocused
       ? radius * 1.1
       : radius * 1.85
 
-  const worldPos = () => {
-    const world = position.clone()
+  const toWorld = (local: THREE.Vector3) => {
+    const world = local.clone()
     world.applyAxisAngle(new THREE.Vector3(0, 1, 0), spinY.current)
     return world
   }
 
+  const followParentPath = () => {
+    const st = useVigilStore.getState()
+    const parentId = findParentId(node.id, edges)
+    if (!parentId) {
+      st.setStatus(`NO PARENT · ${node.label}`)
+      return
+    }
+    const parentLocal = positions.get(parentId)
+    const parentNode = nodeById.get(parentId)
+    if (!parentLocal) {
+      st.setStatus(`NO PARENT · ${node.label}`)
+      return
+    }
+    const a = toWorld(position)
+    const b = toWorld(parentLocal)
+    const mid = a.clone().lerp(b, 0.5)
+    mid.y += 0.35 // arc slightly above the edge
+    st.setSceneSpin(false)
+    st.requestCameraPath({
+      waypoints: [
+        { x: a.x, y: a.y, z: a.z },
+        { x: mid.x, y: mid.y, z: mid.z },
+        { x: b.x, y: b.y, z: b.z },
+      ],
+      distance: 1.65,
+      endFocusId: parentId,
+    })
+    st.setStatus(
+      `FOLLOW · ${node.label} → ${parentNode?.label || 'parent'}`,
+    )
+  }
+
   const teleportTo = () => {
     const st = useVigilStore.getState()
-    const w = worldPos()
+    const w = toWorld(position)
     st.setSceneSpin(false)
     st.teleportCamera({
       x: w.x,
@@ -250,17 +313,20 @@ function GraphCard({
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
-    // Subtle breath on the sphere itself — no outer glow circle
-    const breath = 1 + Math.sin(t * 1.2 + seed) * (focused ? 0.05 : hot ? 0.07 : 0.03)
-    const glowBoost = hot ? 0.42 : focused ? 0.32 : 0.1
-    const glowPulse = glowBoost + Math.sin(t * 1.4 + seed) * (hot || focused ? 0.1 : 0.03)
+    // Focused keeps a lively breath even without hover
+    const breathAmp = focused ? 0.06 : hot ? 0.07 : 0.03
+    const breath = 1 + Math.sin(t * 1.2 + seed) * breathAmp
+    const glowBoost = focused ? 0.55 : hot ? 0.42 : 0.1
+    const glowPulse =
+      glowBoost + Math.sin(t * 1.4 + seed) * (focused || hot ? 0.12 : 0.03)
 
     if (body.current) {
       const mat = body.current.material as THREE.MeshStandardMaterial
-      const base = hot ? 1 : focused ? 1 : tier
+      const base = focused || hot ? 1 : tier
       mat.opacity = base
-      mat.emissiveIntensity = Math.max(0.04, glowPulse) * (base > 0.5 ? 1 : 0.45)
-      const present = focused ? 1.08 : hot ? 1.12 : 1
+      mat.emissiveIntensity =
+        Math.max(0.06, glowPulse) * (focused || hot ? 1.15 : 0.45)
+      const present = focused ? 1.1 : hot ? 1.12 : 1
       body.current.scale.setScalar(breath * present)
     }
   })
@@ -271,7 +337,7 @@ function GraphCard({
     setHot(true)
     useVigilStore.setState({
       statusLine: focused
-        ? `FOCUSED · ${node.label} · click again to open · right-click teleport`
+        ? `FOCUSED · ${node.label} · click again to open · right-click → parent`
         : `PICK · ${node.label} · ${node.weight}`,
     })
   }
@@ -288,7 +354,7 @@ function GraphCard({
     if (st.selectFocusId !== node.id) {
       st.setGraphFocusId(node.id)
       st.setSceneSpin(false)
-      const w = worldPos()
+      const w = toWorld(position)
       st.requestCameraFocus({
         id: node.id,
         x: w.x,
@@ -315,13 +381,18 @@ function GraphCard({
     rightDown.current = null
     if (!d) return
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y)
-    if (moved < 8) teleportTo()
+    if (moved >= 8) return
+    // In focus → ease along edge to parent; otherwise teleport here
+    if (focused || useVigilStore.getState().graphFocusId === node.id) {
+      followParentPath()
+    } else {
+      teleportTo()
+    }
   }
 
-  // Overview labels stay readable; focused view dims non-focus labels
   const labelOpacity = !anyFocused
     ? 0.95
-    : hot || focused
+    : focused || hot
       ? 1
       : Math.max(0.22, tier * 0.85)
   const labelH = emphasized ? 0.48 : 0.38
@@ -345,8 +416,11 @@ function GraphCard({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Tiny local light only — no big bloom orb */}
-      {hot && (
+      {/* Stay lit while focused — even when cursor leaves */}
+      {focused && (
+        <pointLight color={color} intensity={0.85} distance={1.6} decay={2} />
+      )}
+      {hot && !focused && (
         <pointLight color={color} intensity={0.55} distance={1.2} decay={2} />
       )}
 
@@ -355,12 +429,12 @@ function GraphCard({
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={0.28}
+          emissiveIntensity={focused ? 0.55 : 0.28}
           roughness={0.38}
           metalness={0.35}
           transparent
-          opacity={hot || focused ? 1 : tier}
-          depthWrite={(hot || focused ? 1 : tier) > 0.5}
+          opacity={focused || hot ? 1 : tier}
+          depthWrite={(focused || hot ? 1 : tier) > 0.5}
         />
       </mesh>
 
@@ -422,7 +496,13 @@ export function NeuralCore() {
   )
   const positions = useMemo(() => layoutNodes(dataNodes), [dataNodes])
   const globalMax = useMemo(() => globalMaxWeight(dataNodes), [dataNodes])
-  const adj = useMemo(() => buildAdj(model?.edges || []), [model])
+  const nodeById = useMemo(() => {
+    const m = new Map<string, GraphNode>()
+    for (const n of dataNodes) m.set(n.id, n)
+    return m
+  }, [dataNodes])
+  const allEdges = useMemo(() => model?.edges || [], [model])
+  const adj = useMemo(() => buildAdj(allEdges), [allEdges])
 
   const nearSet = useMemo(() => {
     if (!graphFocusId) return null
@@ -440,12 +520,16 @@ export function NeuralCore() {
     if (!model) return [] as {
       key: string
       points: [number, number, number][]
+      colors: THREE.Color[]
       opacity: number
+      highlight: boolean
     }[]
     const out: {
       key: string
       points: [number, number, number][]
+      colors: THREE.Color[]
       opacity: number
+      highlight: boolean
     }[] = []
     const sorted = [...model.edges]
       .filter((e) => e.source !== 'core' && e.target !== 'core')
@@ -455,31 +539,49 @@ export function NeuralCore() {
       const a = positions.get(e.source)
       const b = positions.get(e.target)
       if (!a || !b) continue
+      const na = nodeById.get(e.source)
+      const nb = nodeById.get(e.target)
+      if (!na || !nb) continue
       const ta = tierOf(e.source)
       const tb = tierOf(e.target)
+      const touchesFocus =
+        Boolean(graphFocusId) &&
+        (e.source === graphFocusId || e.target === graphFocusId)
       if (graphFocusId) {
         const touches =
-          e.source === graphFocusId ||
-          e.target === graphFocusId ||
+          touchesFocus ||
           nearSet?.has(e.source) ||
           nearSet?.has(e.target)
         if (!touches) continue
       }
-      const opacity = graphFocusId ? Math.min(ta, tb) * 0.85 : 0.28
+      const opacity = graphFocusId
+        ? touchesFocus
+          ? 0.95
+          : Math.min(ta, tb) * 0.75
+        : 0.42
       if (opacity < 0.05) continue
+      const c0 = colorOfKind(na.kind)
+      const c1 = colorOfKind(nb.kind)
+      const cMid = c0.clone().lerp(c1, 0.5)
+      // Midpoint lifts slightly so the gradient reads along the arc
+      const mid = a.clone().lerp(b, 0.5)
+      mid.y += 0.08
       out.push({
         key: `${e.source}->${e.target}`,
         points: [
           [a.x, a.y, a.z],
+          [mid.x, mid.y, mid.z],
           [b.x, b.y, b.z],
         ],
+        colors: [c0, cMid, c1],
         opacity,
+        highlight: touchesFocus,
       })
       if (out.length >= (graphFocusId ? 40 : 70)) break
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, positions, graphFocusId, nearSet])
+  }, [model, positions, graphFocusId, nearSet, nodeById])
 
   useFrame((_, dt) => {
     if (!group.current) return
@@ -511,10 +613,10 @@ export function NeuralCore() {
         <Line
           key={e.key}
           points={e.points}
-          color="#ff5500"
+          vertexColors={e.colors}
           transparent
           opacity={e.opacity}
-          lineWidth={graphFocusId ? 1.6 : 1.2}
+          lineWidth={e.highlight ? 2.2 : graphFocusId ? 1.5 : 1.25}
           depthWrite={false}
         />
       ))}
@@ -533,6 +635,9 @@ export function NeuralCore() {
             radius={radiusFor(n, globalMax)}
             anyFocused={anyFocused}
             spinY={spinAngle}
+            edges={allEdges}
+            positions={positions}
+            nodeById={nodeById}
           />
         )
       })}
