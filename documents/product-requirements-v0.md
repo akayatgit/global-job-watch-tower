@@ -602,6 +602,7 @@ START OF EVERY SESSION
 | v0.7 | 2026-08-01 | Akay | Thermal save: keyword+headless; host_health; Docker watch-tower:v0; logind lesson |
 | v0.8 | 2026-08-01 | Akay | **VIGIL** ops shell (Ultron backend): single-canvas R3F + MediaPipe hands; all modules as floating panels; `/ws/ultron` |
 | v0.9 | 2026-08-02 | Akay | VIGIL layer stack, flick/fist gestures, free practice hub, live=training illumination + gesture logs |
+| v0.10-milestone | 2026-08-02 | Akay | **Recover here:** pre–Neural Core baseline. Tag `milestone/pre-neural-core-v0`. Doc: `documents/milestone-pre-neural-core.md`. Next: world-model core (data graph), not decorative orb. |
 
 ### Phase 0 progress (living)
 
@@ -615,6 +616,8 @@ START OF EVERY SESSION
 | Once-daily cadence + ~100 fresher/major role catalogue | Done (v0.4) |
 | Company Watchlist (EC-01) | Done (v0.5) |
 | VIGIL air ops shell (hand-first, Ultron bus) | Done (v0.8) |
+| **Milestone freeze** before world-model Neural Core | Done (v0.10-milestone) — recover via tag |
+| Neural Core v0 — living labor-market graph in Three.js | In progress (post-milestone) |
 
 ### Cadence policy (v0.4) — how often to run
 
