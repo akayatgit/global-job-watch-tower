@@ -567,7 +567,7 @@ export function TrainingScreen() {
             data-gesture-action="train-close"
             onClick={() => {
               pushDwell(dwellStart.current ? performance.now() - dwellStart.current : calibration.dwellMs)
-              useVigilStore.getState().closePanel('tower')
+              useVigilStore.getState().closePanel('tower', { force: true })
               setSampleOpen(false)
               setStep('press')
               setFeedback('Hold CONFIRM to save')

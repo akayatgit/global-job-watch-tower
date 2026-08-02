@@ -16,16 +16,18 @@ export function ModuleDock() {
     <div className="module-dock interactive">
       {ORBIT_NODES.map((node) => {
         const open = panels[node.id]?.open
+        const pinned = panels[node.id]?.pinned
         const active = node.id === focused || open
         return (
           <button
             key={node.id}
             type="button"
-            className={`dock-chip ${active ? 'active' : ''}`}
+            className={`dock-chip ${active ? 'active' : ''} ${pinned ? 'pinned' : ''}`}
             data-gesture-action={`dock-${node.id}`}
+            title={pinned ? `${node.label} · pinned on canvas` : `Open ${node.label}`}
             onClick={() => launch(node.id)}
           >
-            {node.label}
+            {node.label}{pinned ? ' ·' : ''}
           </button>
         )
       })}

@@ -1,5 +1,5 @@
 import { useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { useVigilStore, type PanelId } from '../store/vigilStore'
+import { PINNABLE_PANELS, useVigilStore, type PanelId } from '../store/vigilStore'
 
 export function PanelShell({
   id,
@@ -17,15 +17,19 @@ export function PanelShell({
   const closePanel = useVigilStore((s) => s.closePanel)
   const focusPanel = useVigilStore((s) => s.focusPanel)
   const movePanel = useVigilStore((s) => s.movePanel)
+  const togglePin = useVigilStore((s) => s.togglePin)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
 
   if (!panel.open) return null
 
-  const layerDimmed = Boolean(focusedPanel && !focused)
+  const pinnable = PINNABLE_PANELS.includes(id)
+  // Pinned dashboard widgets stay sharp + usable while you work another window
+  const layerDimmed = Boolean(focusedPanel && !focused && !panel.pinned)
   const handHot =
     hoverTarget === `panel:${id}` ||
     hoverTarget === `body:${id}` ||
-    Boolean(hoverTarget?.includes(`close-${id}`))
+    Boolean(hoverTarget?.includes(`close-${id}`)) ||
+    Boolean(hoverTarget?.includes(`pin-${id}`))
 
   const onHeaderDown = (e: ReactMouseEvent) => {
     focusPanel(id)
@@ -54,7 +58,7 @@ export function PanelShell({
 
   return (
     <div
-      className={`float-panel ${focused ? 'focused' : ''} ${grabbed ? 'grabbed' : ''} ${layerDimmed ? 'layer-dimmed' : ''} ${handHot ? 'hand-hot' : ''}`}
+      className={`float-panel ${focused ? 'focused' : ''} ${grabbed ? 'grabbed' : ''} ${layerDimmed ? 'layer-dimmed' : ''} ${handHot ? 'hand-hot' : ''} ${panel.pinned ? 'pinned' : ''}`}
       data-panel-id={id}
       style={{
         left: `${panel.x}%`,
@@ -71,12 +75,37 @@ export function PanelShell({
         onMouseDown={onHeaderDown}
         style={{ cursor: vigilMode ? 'default' : 'grab' }}
       >
-        <h2>{panel.title}</h2>
+        <h2>
+          {panel.title}
+          {panel.pinned ? <span className="pin-badge">Pinned</span> : null}
+        </h2>
         <div className="ops">
+          {pinnable && (
+            <button
+              type="button"
+              className={panel.pinned ? 'pin-btn active' : 'pin-btn'}
+              data-gesture-action={`pin-${id}`}
+              title={
+                id === 'tower'
+                  ? 'Tower Insights stays pinned on the right'
+                  : panel.pinned
+                    ? 'Unpin from dashboard'
+                    : 'Pin to dashboard'
+              }
+              onClick={() => togglePin(id)}
+            >
+              {id === 'tower' ? 'Pinned' : panel.pinned ? 'Unpin' : 'Pin'}
+            </button>
+          )}
           <button
             type="button"
             data-gesture-action={`close-${id}`}
             onClick={() => closePanel(id)}
+            title={
+              id === 'tower' && panel.pinned
+                ? 'Tower stays pinned — snaps back to the right'
+                : 'Close'
+            }
           >
             Close
           </button>

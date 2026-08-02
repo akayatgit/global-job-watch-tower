@@ -26,9 +26,10 @@ export default function App() {
 
   useEffect(() => {
     if (trainingActive) return
+    const st = useVigilStore.getState()
+    st.restoreDashboard()
     const panel = panelFromQuery()
-    if (panel) useVigilStore.getState().openPanel(panel)
-    else useVigilStore.getState().openPanel('tower')
+    if (panel && panel !== 'tower') st.openPanel(panel)
   }, [trainingActive])
 
   useEffect(() => {
