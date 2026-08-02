@@ -320,13 +320,25 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
   )
   const pinTex = useMemo(() => makePinTexture(t.n), [t.n])
   const pin = useRef<THREE.Group>(null)
+  const glow = useRef<THREE.Mesh>(null)
   const selectId = `company:${t.company_id}`
+  const focused = useVigilStore((s) => s.selectFocusId === selectId)
 
   useFrame((state) => {
-    if (!pin.current) return
-    const breath = 1 + Math.sin(state.clock.elapsedTime * 2.4 + t.seed) * 0.08
-    pin.current.scale.setScalar(breath)
-    pin.current.position.y = t.h / 2 + 0.28 + Math.sin(state.clock.elapsedTime * 2.1 + t.seed) * 0.05
+    if (pin.current) {
+      const breath = 1 + Math.sin(state.clock.elapsedTime * 2.4 + t.seed) * 0.08
+      pin.current.scale.setScalar(breath)
+      pin.current.position.y =
+        t.h / 2 + 0.28 + Math.sin(state.clock.elapsedTime * 2.1 + t.seed) * 0.05
+    }
+    if (glow.current) {
+      glow.current.visible = focused
+      if (focused) {
+        const pulse = 0.25 + Math.sin(state.clock.elapsedTime * 3.0) * 0.18
+        glow.current.scale.setScalar(1.2 + Math.sin(state.clock.elapsedTime * 2.2) * 0.1)
+        ;(glow.current.material as THREE.MeshBasicMaterial).opacity = pulse
+      }
+    }
   })
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
@@ -373,6 +385,24 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
       </mesh>
 
       <TowerBody t={t} />
+      {focused && (
+        <pointLight
+          position={[0, t.h * 0.2, 0]}
+          color="#ffaa00"
+          intensity={1.6}
+          distance={3.5}
+        />
+      )}
+      <mesh ref={glow} position={[0, 0, 0]} visible={false}>
+        <sphereGeometry args={[Math.max(t.w, t.d) * 1.1, 24, 24]} />
+        <meshBasicMaterial
+          color="#ff8800"
+          transparent
+          opacity={0.25}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
 
       {/* Neon name boards — all four façades */}
       {faces.map(([fx, , fz, rot], i) => (

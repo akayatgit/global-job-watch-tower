@@ -41,6 +41,7 @@
 | WM-C4 | Facade name boards (building angle, not floating tags) | Done |
 | WM-C5 | Click tower → jobs; street monument city title | Done |
 | WM-C6 | Polish: white lights, roads, NPC cars, unique towers, neon 4-face boards, breath pins, first-click camera focus | Done |
+| WM-C7 | City LOD cards→geo + Remote twins; focus glow; graph distance fade | Done |
 
 ---
 

@@ -244,9 +244,13 @@ use — they should love opening the app, never fight it.
   breathing white job-count pin on each roof. Click tower body/board (fat
   mesh), not text.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
-  Night City — first click flies the camera to a drone-isometric close-up of
-  the target; second click on the same target opens the widget / enters city.
-  Esc / view reset clears focus.
+  Night City — first click flies the camera to a drone-isometric close-up and
+  emits a focus glow; second click on the same target opens the widget /
+  enters city. Esc / view reset clears focus. Graph fades other nodes by
+  distance from the focused node (soft falloff). City overview: far = large
+  cards on a flat India map; near = small cards at lat/lon on the globe.
+  Each city card has a Remote twin slightly behind — hover pops it out;
+  second click opens Remote jobs.
 - **Immersive cursor (2026-08-03):** Small white lerp-dot with subtle halo +
   soft trail only — no hex/circle rings. Clear motion lag. Native cursor
   hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.

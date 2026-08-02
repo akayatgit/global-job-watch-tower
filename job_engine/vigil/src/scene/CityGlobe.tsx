@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
+import { Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -19,7 +19,13 @@ const CITY_GEO: Record<string, { lat: number; lon: number; label: string }> = {
   noida: { lat: 28.54, lon: 77.39, label: 'Noida' },
   ahmedabad: { lat: 23.02, lon: 72.57, label: 'Ahmedabad' },
   kolkata: { lat: 22.57, lon: 88.36, label: 'Kolkata' },
-  remote: { lat: 5.0, lon: 80.0, label: 'Remote' },
+}
+
+/** Flat “overview” map (India-relative) — used when camera is far */
+function overviewPos(lat: number, lon: number) {
+  const x = ((lon - 78) / 18) * 2.6
+  const y = ((lat - 18) / 16) * 2.2
+  return new THREE.Vector3(x, y, 2.55)
 }
 
 function latLonToVec(lat: number, lon: number, r: number) {
@@ -32,16 +38,317 @@ function latLonToVec(lat: number, lon: number, r: number) {
   )
 }
 
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+function makeCityCardTex(
+  label: string,
+  n: number,
+  kind: 'city' | 'remote',
+  focused: boolean,
+) {
+  const c = document.createElement('canvas')
+  c.width = 320
+  c.height = 96
+  const ctx = c.getContext('2d')!
+  const accent = kind === 'remote' ? '#38bdf8' : focused ? '#ffaa00' : '#56d4ff'
+  ctx.fillStyle = focused ? '#1a1008' : '#060810'
+  ctx.fillRect(0, 0, 320, 96)
+  ctx.strokeStyle = accent
+  ctx.shadowColor = accent
+  ctx.shadowBlur = focused ? 22 : 12
+  ctx.lineWidth = focused ? 5 : 3
+  ctx.strokeRect(6, 6, 308, 84)
+  ctx.shadowBlur = 0
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 28px Orbitron, sans-serif'
+  const name = label.length > 14 ? `${label.slice(0, 12)}…` : label
+  ctx.fillText(name, 18, 42)
+  ctx.fillStyle = kind === 'remote' ? '#7dd3fc' : '#ffaa00'
+  ctx.font = 'bold 26px Rajdhani, sans-serif'
+  ctx.fillText(String(n), 18, 74)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+
 type CityNode = { id: string; label: string; n: number }
+
+function FocusGlow({ active }: { active: boolean }) {
+  const ring = useRef<THREE.Mesh>(null)
+  useFrame((state) => {
+    if (!ring.current) return
+    ring.current.visible = active
+    if (!active) return
+    const pulse = 0.55 + Math.sin(state.clock.elapsedTime * 3.2) * 0.35
+    const s = 1.15 + Math.sin(state.clock.elapsedTime * 2.4) * 0.12
+    ring.current.scale.setScalar(s)
+    const mat = ring.current.material as THREE.MeshBasicMaterial
+    mat.opacity = pulse
+  })
+  return (
+    <mesh ref={ring} visible={false}>
+      <ringGeometry args={[0.22, 0.32, 48]} />
+      <meshBasicMaterial
+        color="#ffaa00"
+        transparent
+        opacity={0.7}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  )
+}
+
+function CityMarker({
+  city,
+  remoteN,
+  globeR,
+  globeRef,
+  interactive,
+}: {
+  city: CityNode
+  remoteN: number
+  globeR: number
+  globeRef: RefObject<THREE.Group | null>
+  interactive: boolean
+}) {
+  const geo = CITY_GEO[city.id]
+  const group = useRef<THREE.Group>(null)
+  const remoteGroup = useRef<THREE.Group>(null)
+  const { camera } = useThree()
+  const selectFocusId = useVigilStore((s) => s.selectFocusId)
+  const citySelect = `city:${city.id}`
+  const remoteSelect = `remote-twin:${city.id}`
+  const cityFocused = selectFocusId === citySelect
+  const remoteFocused = selectFocusId === remoteSelect
+  const [remoteHot, setRemoteHot] = useState(false)
+
+  const cityTex = useMemo(
+    () => makeCityCardTex(geo.label, city.n, 'city', cityFocused),
+    [geo.label, city.n, cityFocused],
+  )
+  const remoteTex = useMemo(
+    () => makeCityCardTex('Remote', remoteN, 'remote', remoteFocused || remoteHot),
+    [remoteN, remoteFocused, remoteHot],
+  )
+
+  const geoPos = useMemo(
+    () => latLonToVec(geo.lat, geo.lon, globeR * 1.06),
+    [geo.lat, geo.lon, globeR],
+  )
+  const overPos = useMemo(
+    () => overviewPos(geo.lat, geo.lon),
+    [geo.lat, geo.lon],
+  )
+
+  const tmp = useRef({
+    pos: new THREE.Vector3(),
+    world: new THREE.Vector3(),
+    scale: 1,
+  }).current
+
+  useFrame(() => {
+    if (!group.current) return
+    const camDist = camera.position.length()
+    // Far → overview map (large cards). Near → geo on globe (small cards).
+    const nearness = smoothstep(9.5, 3.4, camDist)
+    tmp.pos.lerpVectors(overPos, geoPos, nearness)
+    // If this city is focused, snap harder to geo + pull slightly out
+    if (cityFocused || remoteFocused) {
+      tmp.pos.lerp(geoPos, 0.85)
+      const out = geoPos.clone().normalize().multiplyScalar(0.12)
+      tmp.pos.add(out)
+    }
+    group.current.position.copy(tmp.pos)
+    tmp.scale = THREE.MathUtils.lerp(1.15, 0.38, nearness)
+    if (cityFocused) tmp.scale *= 1.15
+    group.current.scale.setScalar(tmp.scale)
+
+    // Remote twin sits slightly behind city card; pops forward on hover
+    if (remoteGroup.current) {
+      const back = remoteHot || remoteFocused ? 0.02 : -0.1
+      const lift = remoteHot || remoteFocused ? 0.08 : -0.02
+      remoteGroup.current.position.set(0.06, lift, back)
+      const rs = remoteHot || remoteFocused ? 0.92 : 0.72
+      remoteGroup.current.scale.setScalar(rs)
+    }
+  })
+
+  const worldFocus = (local: THREE.Vector3, id: string, distance: number) => {
+    const st = useVigilStore.getState()
+    const w = local.clone()
+    if (globeRef.current) globeRef.current.localToWorld(w)
+    else if (group.current) group.current.parent?.localToWorld(w)
+    st.setSceneSpin(false)
+    st.requestCameraFocus({
+      id,
+      x: w.x,
+      y: w.y,
+      z: w.z,
+      distance,
+    })
+  }
+
+  const onCityClick = (e: ThreeEvent<MouseEvent>) => {
+    if (!interactive) return
+    e.stopPropagation()
+    const st = useVigilStore.getState()
+    if (st.selectFocusId !== citySelect) {
+      worldFocus(geoPos.clone().multiplyScalar(1.02), citySelect, 2.2)
+      st.setStatus(`FOCUS · ${geo.label} · click again to enter`)
+      return
+    }
+    st.setCityFocus(city.id)
+    st.setCityFilter(city.id)
+    st.clearCameraFocus()
+    st.resetView()
+    st.setStatus(`ENTERING ${geo.label}`)
+    st.triggerBurst()
+  }
+
+  const onRemoteClick = (e: ThreeEvent<MouseEvent>) => {
+    if (!interactive) return
+    e.stopPropagation()
+    const st = useVigilStore.getState()
+    if (st.selectFocusId !== remoteSelect) {
+      const behind = geoPos.clone().multiplyScalar(0.98)
+      worldFocus(behind, remoteSelect, 2.0)
+      st.setStatus(`FOCUS · Remote @ ${geo.label} · click again to open`)
+      return
+    }
+    st.setCityFilter('remote')
+    st.clearInsightFocus()
+    st.openPanel('jobs')
+    st.setStatus(`JOBS · Remote`)
+    st.triggerBurst()
+  }
+
+  return (
+    <group ref={group}>
+      <FocusGlow active={cityFocused || remoteFocused} />
+      {cityFocused && (
+        <pointLight color="#ffaa00" intensity={1.4} distance={2.2} />
+      )}
+
+      {/* City card (front) */}
+      <Billboard follow>
+        <mesh
+          onClick={onCityClick}
+          onPointerOver={(e) => {
+            if (!interactive) return
+            e.stopPropagation()
+            useVigilStore.setState({
+              statusLine: cityFocused
+                ? `FOCUSED · ${geo.label} · click again to enter`
+                : `${geo.label} · ${city.n} — click to focus`,
+            })
+          }}
+        >
+          <planeGeometry args={[0.95, 0.3]} />
+          <meshBasicMaterial
+            map={cityTex}
+            transparent
+            toneMapped={false}
+            depthWrite={false}
+          />
+        </mesh>
+        {/* Soft glow plate behind focused city */}
+        {cityFocused && (
+          <mesh position={[0, 0, -0.01]}>
+            <planeGeometry args={[1.15, 0.42]} />
+            <meshBasicMaterial
+              color="#ff8800"
+              transparent
+              opacity={0.35}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        )}
+
+        {/* Remote twin — slightly behind; pops out on hover */}
+        <group ref={remoteGroup}>
+          <mesh
+            onClick={onRemoteClick}
+            onPointerOver={(e) => {
+              if (!interactive) return
+              e.stopPropagation()
+              setRemoteHot(true)
+              useVigilStore.setState({
+                statusLine: remoteFocused
+                  ? `FOCUSED · Remote · click again to open jobs`
+                  : `Remote · ${remoteN} — touch to pop out`,
+              })
+            }}
+            onPointerOut={() => setRemoteHot(false)}
+          >
+            <planeGeometry args={[0.78, 0.24]} />
+            <meshBasicMaterial
+              map={remoteTex}
+              transparent
+              opacity={remoteHot || remoteFocused ? 0.98 : 0.78}
+              toneMapped={false}
+              depthWrite={false}
+            />
+          </mesh>
+          {(remoteHot || remoteFocused) && (
+            <mesh position={[0, 0, -0.01]}>
+              <planeGeometry args={[0.9, 0.32]} />
+              <meshBasicMaterial
+                color="#38bdf8"
+                transparent
+                opacity={0.3}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+              />
+            </mesh>
+          )}
+        </group>
+      </Billboard>
+
+    </group>
+  )
+}
+
+function GeoPin({
+  city,
+  globeR,
+  focused,
+}: {
+  city: CityNode
+  globeR: number
+  focused: boolean
+}) {
+  const geo = CITY_GEO[city.id]
+  const p = useMemo(
+    () => latLonToVec(geo.lat, geo.lon, globeR * 1.02),
+    [geo.lat, geo.lon, globeR],
+  )
+  return (
+    <mesh position={p}>
+      <sphereGeometry args={[0.035 + Math.min(city.n, 400) / 400 * 0.05, 12, 12]} />
+      <meshBasicMaterial
+        color={focused ? '#ffaa00' : '#ff5500'}
+        transparent
+        opacity={0.95}
+      />
+    </mesh>
+  )
+}
 
 export function CityGlobe() {
   const sceneMode = useVigilStore((s) => s.sceneMode)
   const cityFocus = useVigilStore((s) => s.cityFocus)
-  const setCityFocus = useVigilStore((s) => s.setCityFocus)
-  const setCityFilter = useVigilStore((s) => s.setCityFilter)
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const selectFocusId = useVigilStore((s) => s.selectFocusId)
   const [cities, setCities] = useState<CityNode[]>([])
+  const [remoteN, setRemoteN] = useState(0)
   const globe = useRef<THREE.Group>(null)
   const spinY = useRef(0)
   const lastT = useRef(0)
@@ -58,15 +365,14 @@ export function CityGlobe() {
           label?: string
           recent?: number
         }[]
-        setCities(
-          rows
-            .map((r) => ({
-              id: r.city || '',
-              label: r.label || r.city || '',
-              n: r.recent ?? 0,
-            }))
-            .filter((c) => c.id && CITY_GEO[c.id]),
-        )
+        const mapped = rows.map((r) => ({
+          id: r.city || '',
+          label: r.label || r.city || '',
+          n: r.recent ?? 0,
+        }))
+        const rem = mapped.find((c) => c.id === 'remote')
+        setRemoteN(rem?.n ?? 0)
+        setCities(mapped.filter((c) => c.id && CITY_GEO[c.id]))
       })
       .catch(() => {})
     return () => {
@@ -77,7 +383,11 @@ export function CityGlobe() {
   useFrame((state) => {
     if (globe.current && !cityFocus) {
       const t = state.clock.elapsedTime
-      if (sceneSpin) spinY.current += Math.max(0, t - lastT.current) * 0.1
+      const focused = useVigilStore.getState().selectFocusId
+      // Freeze spin while a city/remote is focused
+      if (sceneSpin && !focused) {
+        spinY.current += Math.max(0, t - lastT.current) * 0.1
+      }
       lastT.current = t
       globe.current.rotation.y = spinY.current
     }
@@ -85,7 +395,6 @@ export function CityGlobe() {
 
   if (sceneMode !== 'city') return null
 
-  const maxN = Math.max(...cities.map((c) => c.n), 1)
   const focusRow = cities.find((c) => c.id === cityFocus)
   const focusLabel =
     focusRow?.label || CITY_GEO[cityFocus || '']?.label || cityFocus || ''
@@ -103,76 +412,33 @@ export function CityGlobe() {
         <sphereGeometry args={[R, 48, 48]} />
         <meshBasicMaterial color="#120804" transparent opacity={0.92} />
       </mesh>
-      {cities.map((c) => {
-        const geo = CITY_GEO[c.id]
-        if (!geo) return null
-        const p = latLonToVec(geo.lat, geo.lon, R * 1.05)
-        const heat = c.n / maxN
-        const size = 0.05 + heat * 0.1
-        return (
-          <group key={c.id} position={p}>
-            {/* Fat pick sphere — click the marker card, not the label */}
-            <mesh
-              onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-                if (!interactive) return
-                e.stopPropagation()
-                document.body.style.cursor = 'pointer'
-                useVigilStore.setState({
-                  statusLine: `${geo.label} · ${c.n} jobs — click to enter`,
-                })
-              }}
-              onPointerOut={() => {
-                document.body.style.cursor = 'default'
-              }}
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                if (!interactive) return
-                e.stopPropagation()
-                const st = useVigilStore.getState()
-                const selectId = `city:${c.id}`
-                // First click = drone focus on marker; second = enter night city
-                if (st.selectFocusId !== selectId) {
-                  st.setSceneSpin(false)
-                  st.requestCameraFocus({
-                    id: selectId,
-                    x: p.x,
-                    y: p.y,
-                    z: p.z,
-                    distance: 2.4,
-                  })
-                  st.setStatus(`FOCUS · ${geo.label} · click again to enter`)
-                  return
-                }
-                setCityFocus(c.id)
-                setCityFilter(c.id)
-                st.clearCameraFocus()
-                st.resetView()
-                st.setStatus(`ENTERING ${geo.label}`)
-                st.triggerBurst()
-              }}
-            >
-              <sphereGeometry args={[Math.max(size * 2.4, 0.16), 16, 16]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
-            <mesh>
-              <sphereGeometry args={[size, 16, 16]} />
-              <meshBasicMaterial
-                color={heat > 0.66 ? '#ffaa00' : heat > 0.33 ? '#ff5500' : '#cc4400'}
-              />
-            </mesh>
-            <Html
-              center
-              distanceFactor={9}
-              style={{ pointerEvents: 'none' }}
-              zIndexRange={[30, 0]}
-            >
-              <div className="vigil-tag vigil-tag-city" aria-hidden>
-                <span className="vigil-tag-name">{geo.label}</span>
-                <span className="vigil-tag-meta">{c.n}</span>
-              </div>
-            </Html>
-          </group>
-        )
-      })}
+      {/* Soft India glow under the map */}
+      <mesh position={[0, 0.15, 1.55]}>
+        <circleGeometry args={[1.8, 48]} />
+        <meshBasicMaterial
+          color="#ff5500"
+          transparent
+          opacity={0.06}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {cities.map((c) => (
+        <group key={c.id}>
+          <GeoPin
+            city={c}
+            globeR={R}
+            focused={selectFocusId === `city:${c.id}`}
+          />
+          <CityMarker
+            city={c}
+            remoteN={remoteN}
+            globeR={R}
+            globeRef={globe}
+            interactive={interactive}
+          />
+        </group>
+      ))}
     </group>
   )
 }
