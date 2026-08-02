@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { VigilCanvas } from './scene/VigilCanvas'
 import { StatusHud } from './hud/StatusHud'
+import { VigilCursor } from './hud/VigilCursor'
 import { FingerOverlay } from './hud/FingerOverlay'
 import { WebcamPip } from './hud/WebcamPip'
 import { ModuleDock } from './hud/ModuleDock'
@@ -81,6 +82,8 @@ export default function App() {
       >
         <WebcamPip ref={videoRef} />
       </div>
+      {/* Immersive glowing cursor — above UI, never captures clicks */}
+      <VigilCursor />
     </div>
   )
 }

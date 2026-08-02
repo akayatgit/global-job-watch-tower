@@ -240,3 +240,6 @@ use — they should love opening the app, never fight it.
   night skyline — towers clustered by sector, height = hiring volume, facade
   name boards (same angle as building, not floating tags), flickering office
   lights. Click the tower body/board (fat mesh), not text.
+- **Immersive cursor (2026-08-03):** Custom glowing white lerp-dot cursor
+  (trail, velocity stretch, hover hex rings, click shockwave). Native cursor
+  hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.

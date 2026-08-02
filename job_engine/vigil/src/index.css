@@ -30,6 +30,22 @@ html, body, #root {
   font-family: var(--font-body);
 }
 
+/* Immersive VIGIL cursor — hide OS pointer everywhere in-app */
+html.vigil-custom-cursor,
+html.vigil-custom-cursor * {
+  cursor: none !important;
+}
+
+.vigil-cursor-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10050;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
 button, input, select {
   font-family: inherit;
 }
