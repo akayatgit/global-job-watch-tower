@@ -144,26 +144,69 @@ function makeRoofLabel(name: string, jobs: number, days: number) {
   return { tex, aspect: c.width / c.height }
 }
 
-/** Small role chip — always smaller than company name / openings number */
+/**
+ * Compact role card — yellow text ≈70% of openings number (64 → ~45px),
+ * tight dark glass chip for clustering around the roof label.
+ */
 function makeRoleLabel(title: string, n: number) {
-  const short = wrapName(title, 10).slice(0, 2)
+  const short = wrapName(title, 12).slice(0, 2)
   const suffix = n > 1 ? ` ×${n}` : ''
   const c = document.createElement('canvas')
-  c.width = 256
-  c.height = 28 + short.length * 16
+  c.width = 320
+  c.height = 36 + short.length * 40
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, c.width, c.height)
+  // Compact card chrome
+  const pad = 4
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.82)'
+  ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)'
+  ctx.lineWidth = 2
+  roundRect(ctx, pad, pad, c.width - pad * 2, c.height - pad * 2, 8)
+  ctx.fill()
+  ctx.stroke()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
-  ctx.font = '700 13px Rajdhani, sans-serif'
+  // ~70% of openings number (64px) → 45px yellow
+  ctx.font = '800 45px Orbitron, sans-serif'
   short.forEach((ln, i) => {
     const t = i === short.length - 1 ? `${ln}${suffix}` : ln
-    strokeFill(ctx, t, c.width / 2, 16 + i * 15, '#e2e8f0', 3.5)
+    strokeFill(ctx, t, c.width / 2, 28 + i * 38, '#facc15', 6)
   })
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
   return { tex, aspect: c.width / c.height }
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const rr = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + rr, y)
+  ctx.arcTo(x + w, y, x + w, y + h, rr)
+  ctx.arcTo(x + w, y + h, x, y + h, rr)
+  ctx.arcTo(x, y + h, x, y, rr)
+  ctx.arcTo(x, y, x + w, y, rr)
+  ctx.closePath()
+}
+
+/** Tight slots around the roof name/number (local billboard plane). */
+function roleSlot(i: number, bw: number, bh: number): [number, number] {
+  const slots: [number, number][] = [
+    [-bw * 0.58, bh * 0.05],
+    [bw * 0.58, bh * 0.05],
+    [-bw * 0.42, -bh * 0.52],
+    [bw * 0.42, -bh * 0.52],
+    [0, -bh * 0.78],
+  ]
+  return slots[i] ?? [0, -bh * (0.9 + i * 0.12)]
 }
 
 function focusDistance(h: number) {
@@ -412,8 +455,9 @@ function GlassTower({
   const bannerH = 0.22 + wrapName(t.name, 11).length * 0.05
   const bannerW = bannerH * banner.aspect * (lit ? 1.04 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
-  const roleR = Math.max(t.w, t.d) * 0.95 + 0.12
-  const roleY = t.h * 0.62
+  // Role cards ~70% of openings number height in the roof cluster
+  const roleH = bannerH * 0.38
+  const roleGap = 0.01
 
   return (
     <group position={[t.x, 0, t.z]}>
@@ -513,64 +557,54 @@ function GlassTower({
         />
       )}
 
-      {/* Name + big count + openings caption — no card */}
-      <Billboard follow position={[0, t.h + 0.1 + bannerH / 2, 0]}>
-        <mesh
-          onClick={onClick}
-          onPointerOver={enter}
-          onPointerOut={leave}
-          visible={lit || !dim}
-          renderOrder={cardOrder}
-          scale={lit ? 1.08 : 1}
-        >
-          <planeGeometry args={[bannerW, bannerH]} />
-          <meshBasicMaterial
-            map={banner.tex}
-            transparent
-            opacity={dim ? 0.18 : 1}
-            depthTest={!lit}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-      </Billboard>
-
-      {/* Role clusters around the tower — smaller than name/count */}
-      {roleTex.map((rt, i) => {
-        const n = Math.max(roleTex.length, 1)
-        const ang = (i / n) * Math.PI * 2 + t.seed * 0.2
-        const rh = 0.055 + (rt.aspect > 1 ? 0 : 0.02)
-        const rw = rh * rt.aspect
-        return (
-          <Billboard
-            key={i}
-            follow
-            position={[
-              Math.cos(ang) * roleR,
-              roleY + Math.sin(i * 1.7) * 0.04,
-              Math.sin(ang) * roleR,
-            ]}
+      {/* Roof cluster: name/count + compact yellow role cards tight around it */}
+      <Billboard follow position={[0, t.h + 0.12 + bannerH / 2, 0]}>
+        <group scale={lit ? 1.06 : 1}>
+          <mesh
+            onClick={onClick}
+            onPointerOver={enter}
+            onPointerOut={leave}
+            visible={lit || !dim}
+            renderOrder={cardOrder}
           >
-            <mesh
-              onClick={onClick}
-              onPointerOver={enter}
-              onPointerOut={leave}
-              visible={lit || !dim}
-              renderOrder={cardOrder - 5}
-            >
-              <planeGeometry args={[rw, rh]} />
-              <meshBasicMaterial
-                map={rt.tex}
-                transparent
-                opacity={dim ? 0.12 : lit ? 0.95 : 0.7}
-                depthTest={!lit}
-                depthWrite={false}
-                toneMapped={false}
-              />
-            </mesh>
-          </Billboard>
-        )
-      })}
+            <planeGeometry args={[bannerW, bannerH]} />
+            <meshBasicMaterial
+              map={banner.tex}
+              transparent
+              opacity={dim ? 0.18 : 1}
+              depthTest={!lit}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          {roleTex.map((rt, i) => {
+            const rh = roleH
+            const rw = Math.min(rh * rt.aspect, bannerW * 0.72)
+            const [ox, oy] = roleSlot(i, bannerW + roleGap, bannerH + roleGap)
+            return (
+              <mesh
+                key={i}
+                position={[ox, oy, 0.02]}
+                onClick={onClick}
+                onPointerOver={enter}
+                onPointerOut={leave}
+                visible={lit || !dim}
+                renderOrder={cardOrder + 1}
+              >
+                <planeGeometry args={[rw, rh]} />
+                <meshBasicMaterial
+                  map={rt.tex}
+                  transparent
+                  opacity={dim ? 0.14 : 1}
+                  depthTest={!lit}
+                  depthWrite={false}
+                  toneMapped={false}
+                />
+              </mesh>
+            )
+          })}
+        </group>
+      </Billboard>
     </group>
   )
 }
