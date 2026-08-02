@@ -71,7 +71,7 @@ export function TowerPanel() {
           ))}
 
           <div className="section-head">
-            <span className="muted">Jobs per role — click for companies</span>
+            <span className="muted">Jobs per role (7d fair window) — click for companies</span>
             {(moreRoles || roles.length > 0) && (
               <button
                 type="button"

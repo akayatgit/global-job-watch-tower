@@ -22,7 +22,7 @@ export type PanelId =
 
 export type RankListFocus =
   | { kind: 'companies'; days: number }
-  | { kind: 'roles' }
+  | { kind: 'roles'; days?: number }
   | null
 
 export type OrbitNode = {
@@ -35,7 +35,15 @@ export type OrbitNode = {
 /** Drill-down focus for jobs / role hire panels */
 export type InsightFocus =
   | { kind: 'role'; searchId: number; name: string; days?: number }
-  | { kind: 'company'; companyId: number; name: string; days?: number }
+  | {
+      kind: 'company'
+      companyId: number
+      name: string
+      days?: number
+      /** When set, Jobs stay scoped to this role (from Companies Hiring). */
+      searchId?: number
+      roleName?: string
+    }
   | null
 
 export type HandSample = {
@@ -250,7 +258,12 @@ type VigilStore = {
   insightFocus: InsightFocus
   rankFocus: RankListFocus
   openRoleHire: (searchId: number, name: string, days?: number) => void
-  openCompanyJobs: (companyId: number, name: string, days?: number) => void
+  openCompanyJobs: (
+    companyId: number,
+    name: string,
+    days?: number,
+    opts?: { searchId?: number; roleName?: string },
+  ) => void
   openRoleJobs: (searchId: number, name: string) => void
   openRankList: (kind: 'companies' | 'roles', days?: number) => void
   clearInsightFocus: () => void
@@ -594,9 +607,10 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: `COMPANIES HIRING · ${name}`,
     })
   },
-  openCompanyJobs: (companyId, name, days = 7) => {
+  openCompanyJobs: (companyId, name, days = 7, opts) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    const roleBit = opts?.roleName ? ` · ${opts.roleName}` : ''
     panels.jobs = {
       ...panels.jobs,
       open: true,
@@ -604,13 +618,22 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       x: PANEL_CENTER.x,
       y: PANEL_CENTER.y,
       scale: 1,
-      title: `JOBS · ${name.toUpperCase()}`,
+      title: `JOBS · ${name.toUpperCase()}${roleBit ? roleBit.toUpperCase() : ''}`,
     }
     set({
       panels,
       focusedPanel: 'jobs',
-      insightFocus: { kind: 'company', companyId, name, days },
-      statusLine: `JOBS AT ${name}`,
+      insightFocus: {
+        kind: 'company',
+        companyId,
+        name,
+        days,
+        searchId: opts?.searchId,
+        roleName: opts?.roleName,
+      },
+      statusLine: opts?.roleName
+        ? `JOBS · ${opts.roleName} @ ${name}`
+        : `JOBS AT ${name}`,
     })
   },
   openRoleJobs: (searchId, name) => {
@@ -651,7 +674,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       rankFocus:
         kind === 'companies'
           ? { kind: 'companies', days }
-          : { kind: 'roles' },
+          : { kind: 'roles', days },
       statusLine: title,
     })
   },

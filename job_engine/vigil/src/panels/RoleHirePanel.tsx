@@ -89,7 +89,12 @@ export function RoleHirePanel() {
                   className="hire-bar-row clickable"
                   key={c.company_id}
                   data-gesture-action={`role-co-${c.company_id}`}
-                  onClick={() => openCompanyJobs(c.company_id, c.name, days)}
+                  onClick={() =>
+                    openCompanyJobs(c.company_id, c.name, days, {
+                      searchId: role.searchId,
+                      roleName: role.name,
+                    })
+                  }
                 >
                   <div className="hire-bar-main">
                     <div className="hire-bar-name">{c.name}</div>

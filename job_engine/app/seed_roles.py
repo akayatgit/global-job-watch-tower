@@ -3,9 +3,14 @@
 Priority: be first to collect daily 24h market insights across the major
 entry-level / early-career talent map (AI, software, data, cloud, cyber,
 product, business, and classic fresher funnels).
+
+Critical sectors (2026-08-02): Tech·AI, Tech·Digital, Manufacturing,
+Healthcare, Green economy, Logistics, Tourism — light coverage outside Tech.
 """
 
 from __future__ import annotations
+
+from app.sectors import infer_sector
 
 # (display_name, linkedin_keywords)
 # Keywords tuned for LinkedIn search — short, role-shaped phrases.
@@ -142,6 +147,45 @@ FRESHER_MAJOR_ROLES: list[tuple[str, str]] = [
     ('Campus Hire Software', 'campus hire software'),
 ]
 
+# Light everyday coverage for non-tech critical sectors (keep thin on purpose).
+# (display_name, linkedin_keywords, sector_id)
+SECTOR_EXPANSION_ROLES: list[tuple[str, str, str]] = [
+    # Tech · AI (small add — catalogue already AI-heavy)
+    ('AI Solutions Engineer', 'ai solutions engineer', 'tech_ai'),
+    # Tech · Digital
+    ('Digital Transformation Analyst', 'digital transformation analyst', 'tech_digital'),
+    # Manufacturing · Advanced (few)
+    ('Manufacturing Engineer', 'manufacturing engineer', 'manufacturing_advanced'),
+    ('Production Engineer', 'production engineer', 'manufacturing_advanced'),
+    # Healthcare (few)
+    ('Clinical Research Associate', 'clinical research associate', 'healthcare'),
+    ('Healthcare Analyst', 'healthcare analyst', 'healthcare'),
+    # Green economy (few)
+    ('Sustainability Analyst', 'sustainability analyst', 'green_economy'),
+    ('Renewable Energy Engineer', 'renewable energy engineer', 'green_economy'),
+    # Logistics (few)
+    ('Supply Chain Analyst', 'supply chain analyst', 'logistics'),
+    ('Logistics Coordinator', 'logistics coordinator', 'logistics'),
+    # Tourism (few)
+    ('Hotel Operations Executive', 'hotel operations', 'tourism'),
+    ('Travel Consultant', 'travel consultant', 'tourism'),
+]
+
+
+def all_seed_roles() -> list[tuple[str, str, str]]:
+    """Flatten catalogue into (name, keywords, sector_id)."""
+    out: list[tuple[str, str, str]] = []
+    for name, keywords in FRESHER_MAJOR_ROLES:
+        out.append((name, keywords, infer_sector(name, keywords)))
+    seen = {kw.lower() for _, kw, _ in out}
+    for name, keywords, sector in SECTOR_EXPANSION_ROLES:
+        if keywords.strip().lower() in seen:
+            continue
+        out.append((name, keywords, sector))
+        seen.add(keywords.strip().lower())
+    return out
+
+
 # Default India geo used across the tower pilot
 INDIA_GEO_ID = '102713980'
 INDIA_LABEL = 'India'
@@ -149,3 +193,4 @@ INDIA_LABEL = 'India'
 # Past-24h searches: few pages usually cover the day; keep dwell human-scale.
 DEFAULT_MAX_PAGES = 5
 PRIORITY_MAX_PAGES = 10  # existing pilot / high-value roles
+SECTOR_LIGHT_MAX_PAGES = 3  # manufacturing / healthcare / green / logistics / tourism

@@ -10,11 +10,21 @@ export function JobsPanel() {
   const insightFocus = useVigilStore((s) => s.insightFocus)
   const clearInsightFocus = useVigilStore((s) => s.clearInsightFocus)
 
+  // Role-scoped company drills must not keep a leftover Tech chip
+  useEffect(() => {
+    if (insightFocus?.kind === 'company' && insightFocus.searchId) {
+      setFilter('all')
+    }
+  }, [insightFocus])
+
   useEffect(() => {
     let alive = true
     const load = () => {
       const q: Parameters<typeof api.jobs>[0] = { limit: 120 }
-      if (insightFocus?.kind === 'company') q.company_id = insightFocus.companyId
+      if (insightFocus?.kind === 'company') {
+        q.company_id = insightFocus.companyId
+        if (insightFocus.searchId) q.search_config_id = insightFocus.searchId
+      }
       if (insightFocus?.kind === 'role') q.search_config_id = insightFocus.searchId
       api
         .jobs(q)
@@ -37,20 +47,27 @@ export function JobsPanel() {
     }
   }, [insightFocus])
 
+  const roleScoped =
+    insightFocus?.kind === 'company' && Boolean(insightFocus.searchId)
+
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
       const blob = `${j.title || ''} ${j.location || ''} ${j.company || ''}`.toLowerCase()
       if (filter === 'remote') return blob.includes('remote')
-      if (filter === 'tech') {
+      // Skip Tech chip when already scoped to a non-tech role drill
+      if (filter === 'tech' && !roleScoped) {
         return /engineer|developer|software|data|ai|ml|cloud|devops|sre/.test(blob)
       }
+      if (filter === 'tech' && roleScoped) return true
       return true
     })
-  }, [jobs, filter])
+  }, [jobs, filter, roleScoped])
 
   const focusLabel =
     insightFocus?.kind === 'company'
-      ? `At ${insightFocus.name}`
+      ? insightFocus.roleName
+        ? `${insightFocus.roleName} @ ${insightFocus.name}`
+        : `At ${insightFocus.name}`
       : insightFocus?.kind === 'role'
         ? `Role: ${insightFocus.name}`
         : null
@@ -87,6 +104,7 @@ export function JobsPanel() {
       </div>
       <div className="muted" style={{ marginBottom: 8 }}>
         {filtered.length} shown · {jobs.length} loaded
+        {roleScoped ? ' · role + company' : ''}
       </div>
       {error ? (
         <div className="empty fail">Jobs failed to load — {error}</div>

@@ -162,3 +162,12 @@ use — they should love opening the app, never fight it.
 - **AI vs Keyword widget (2026-08-02):** Left-rail module compares Ollama AI
   filters vs Plan B keyword over chips: 1h · 5h · 12h · 24h · 1 day · 2d · 5d ·
   1 week · last week · this month · last month. Live refresh; pin-able.
+- **Role → company → jobs (2026-08-02):** From Companies Hiring, opening a
+  company keeps the role filter (e.g. Risks & Controls @ KPMG) — never dump
+  that company’s unrelated tech jobs.
+- **Fair role analytics (2026-08-02):** Jobs-per-role uses a shared time window
+  (default 7d), not all-time totals. Show-all roles also has Count / Per day so
+  early-started searches don’t dominate forever. Coverage age shown on rows.
+- **Critical sectors (2026-08-02):** Tech·AI, Tech·Digital, Manufacturing,
+  Healthcare, Green economy, Logistics, Tourism — light everyday searches
+  outside Tech; stamp on each search/job.

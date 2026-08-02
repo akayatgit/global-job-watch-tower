@@ -27,6 +27,8 @@ from app.signals import (
 from app.ai_capacity import compute_ai_capacity
 from app.filter_compare import ALLOWED_FILTER_WINDOWS, compute_filter_compare
 from app.hermes_ask import ask_hermes
+from app.role_analytics import roles_in_window
+from app.sectors import CRITICAL_SECTORS
 from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
 from app.ultron.hub import hub
@@ -127,14 +129,9 @@ def ultron_tower(db: Session = Depends(get_db)):
         .where(JobMaster.posted_date >= week_ago)
         .group_by(Company.id, Company.name).order_by(desc('n')).limit(8)
     ).all()
-    per_role = db.execute(
-        select(
-            SearchConfig.id, SearchConfig.name, func.count(JobMaster.id).label('n'),
-        )
-        .join(JobMaster, JobMaster.search_config_id == SearchConfig.id)
-        .group_by(SearchConfig.id, SearchConfig.name)
-        .order_by(desc('n')).limit(40)
-    ).all()
+    # Fair: same 7d window as top companies — early-started roles no longer dominate
+    fair_roles = roles_in_window(db, days=7, limit=40, mode='count')
+    per_role = fair_roles['roles']
     daily = dict(db.execute(
         select(JobMaster.posted_date, func.count(JobMaster.id))
         .where(JobMaster.posted_date >= today - timedelta(days=13))
@@ -170,9 +167,10 @@ def ultron_tower(db: Session = Depends(get_db)):
         'top_companies': [
             {'company_id': cid, 'name': n, 'n': c} for cid, n, c in top_companies
         ],
-        'per_role': [
-            {'search_id': sid, 'name': n, 'n': c} for sid, n, c in per_role
-        ],
+        'per_role': per_role,
+        'per_role_window_days': 7,
+        'fair_hint': fair_roles.get('fair_hint'),
+        'sectors': CRITICAL_SECTORS,
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'daily_series': daily_series,
         'latest_jobs': [{
@@ -219,26 +217,20 @@ def ultron_top_companies(days: int = 7, limit: int = 80, db: Session = Depends(g
 
 
 @router.get('/api/ultron/roles-rank')
-def ultron_roles_rank(limit: int = 200, db: Session = Depends(get_db)):
-    """Full jobs-per-role ranking for Show all — max → min."""
-    limit = max(1, min(limit, 300))
-    rows = db.execute(
-        select(
-            SearchConfig.id, SearchConfig.name, func.count(JobMaster.id).label('n'),
-        )
-        .outerjoin(JobMaster, JobMaster.search_config_id == SearchConfig.id)
-        .group_by(SearchConfig.id, SearchConfig.name)
-        .order_by(desc('n'))
-        .limit(limit)
-    ).all()
-    max_n = max([n for _, _, n in rows] + [1])
-    return {
-        'max': max_n,
-        'total': len(rows),
-        'roles': [
-            {'search_id': sid, 'name': name, 'n': n} for sid, name, n in rows
-        ],
-    }
+def ultron_roles_rank(
+    days: int = 7,
+    mode: str = 'count',
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    """Jobs-per-role ranking — windowed (fair) count or per-day rate."""
+    return roles_in_window(db, days=days, limit=limit, mode=mode)
+
+
+@router.get('/api/ultron/sectors')
+def ultron_sectors():
+    """Critical sector catalogue for UI filters and labels."""
+    return {'sectors': CRITICAL_SECTORS}
 
 
 @router.get('/api/ultron/signals')

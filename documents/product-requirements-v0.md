@@ -681,6 +681,20 @@ START OF EVERY SESSION
 
 **Capacity goal:** Find the sustainable Ollama-search/day number for this P16 (early band ~60–90 with human dwell + heat breaks). Scale infra after that number is proven.
 
+### Critical sectors + fair analytics (2026-08-02)
+
+| Sector id | Industry | Notes |
+|---|---|---|
+| `tech_ai` | Tech Industry · Artificial Intelligence (AI) | Heavy catalogue (existing) |
+| `tech_digital` | Tech Industry · Digital technologies | Heavy catalogue (existing) |
+| `manufacturing_advanced` | Manufacturing · Advanced manufacturing | Light everyday searches |
+| `healthcare` | Healthcare | Light |
+| `green_economy` | Green economy | Light |
+| `logistics` | Logistics | Light |
+| `tourism` | Tourism | Light |
+
+**Fair compare rule:** Jobs-per-role analytics use a **shared time window** (default 7d) and optional **jobs/day** rate — never all-time totals — so early-started roles (e.g. Risks & Controls) do not permanently dominate rankings as new sector searches come online.
+
 ---
 
 *End of PRD v0 — Global Job WATCH TOWER · Quanta HR Labs*

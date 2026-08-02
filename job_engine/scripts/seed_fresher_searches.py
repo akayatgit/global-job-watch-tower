@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Seed / refresh Watch Tower searches: once-daily staggered fresher catalogue.
+"""Seed / refresh Watch Tower searches: once-daily staggered catalogue + sectors.
 
-Idempotent: updates schedule/pages for existing keyword matches; inserts missing.
+Idempotent: updates schedule/pages/sector for existing keyword matches; inserts missing.
 """
 
 from __future__ import annotations
@@ -17,12 +17,14 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import SearchConfig
 from app.schedule import cron_to_human, staggered_daily_cron
+from app.sectors import infer_sector
 from app.seed_roles import (
     DEFAULT_MAX_PAGES,
-    FRESHER_MAJOR_ROLES,
     INDIA_GEO_ID,
     INDIA_LABEL,
     PRIORITY_MAX_PAGES,
+    SECTOR_LIGHT_MAX_PAGES,
+    all_seed_roles,
 )
 
 PRIORITY_KEYWORDS = {
@@ -31,9 +33,17 @@ PRIORITY_KEYWORDS = {
     'risk & control',
 }
 
+LIGHT_SECTORS = {
+    'manufacturing_advanced',
+    'healthcare',
+    'green_economy',
+    'logistics',
+    'tourism',
+}
+
 
 def main() -> None:
-    roles = FRESHER_MAJOR_ROLES
+    roles = all_seed_roles()
     created = updated = unchanged = 0
 
     with SessionLocal() as db:
@@ -41,16 +51,20 @@ def main() -> None:
             c.keywords.strip().lower(): c
             for c in db.execute(select(SearchConfig)).scalars()
         }
-        # Also index by normalized name for the two pilot rows that used "risk & control"
         by_name = {
             c.name.strip().lower(): c
             for c in db.execute(select(SearchConfig)).scalars()
         }
 
-        for index, (name, keywords) in enumerate(roles):
+        for index, (name, keywords, sector) in enumerate(roles):
             cron = staggered_daily_cron(index, start_hour=5, interval_minutes=14)
             kw_key = keywords.strip().lower()
-            pages = PRIORITY_MAX_PAGES if kw_key in PRIORITY_KEYWORDS else DEFAULT_MAX_PAGES
+            if kw_key in PRIORITY_KEYWORDS:
+                pages = PRIORITY_MAX_PAGES
+            elif sector in LIGHT_SECTORS:
+                pages = SECTOR_LIGHT_MAX_PAGES
+            else:
+                pages = DEFAULT_MAX_PAGES
 
             cfg = existing.get(kw_key)
             if cfg is None and name.strip().lower() in by_name:
@@ -65,11 +79,11 @@ def main() -> None:
                     schedule_cron=cron,
                     max_pages=pages,
                     enabled=True,
-                    sector='software',
+                    sector=sector,
                 )
                 db.add(cfg)
                 created += 1
-                print(f'+ CREATE  {name:40s}  {cron_to_human(cron)}  pages={pages}')
+                print(f'+ CREATE  [{sector:22s}] {name:40s}  {cron_to_human(cron)}  pages={pages}')
             else:
                 changed = False
                 if cfg.name != name:
@@ -93,22 +107,42 @@ def main() -> None:
                 if not cfg.enabled:
                     cfg.enabled = True
                     changed = True
+                want_sector = sector or infer_sector(cfg.name, cfg.keywords)
+                if (cfg.sector or '') != want_sector:
+                    cfg.sector = want_sector
+                    changed = True
                 if changed:
                     updated += 1
-                    print(f'~ UPDATE  {name:40s}  {cron_to_human(cron)}  pages={pages}')
+                    print(f'~ UPDATE  [{cfg.sector:22s}] {name:40s}  {cron_to_human(cron)}  pages={pages}')
                 else:
                     unchanged += 1
+
+        # Retag any leftover configs not in catalogue
+        for cfg in db.execute(select(SearchConfig)).scalars():
+            want = infer_sector(cfg.name, cfg.keywords)
+            if (cfg.sector or 'software') in ('software', '') or cfg.sector not in {
+                'tech_ai', 'tech_digital', 'manufacturing_advanced', 'healthcare',
+                'green_economy', 'logistics', 'tourism',
+            }:
+                if cfg.sector != want:
+                    cfg.sector = want
+                    updated += 1
+                    print(f'~ SECTOR  [{want:22s}] {cfg.name}')
 
         db.commit()
 
         total = db.execute(select(SearchConfig)).scalars().all()
         enabled = sum(1 for c in total if c.enabled)
+        by_sec: dict[str, int] = {}
+        for c in total:
+            by_sec[c.sector or '?'] = by_sec.get(c.sector or '?', 0) + 1
         print()
         print(f'Done. created={created} updated={updated} unchanged={unchanged}')
         print(f'Tower searches: {len(total)} total, {enabled} enabled')
+        for sid, n in sorted(by_sec.items(), key=lambda x: (-x[1], x[0])):
+            print(f'  sector {sid}: {n}')
         print('Cadence: once daily, staggered from ~05:00 local every 14 minutes')
-        print('Filter: LinkedIn past 24 hours (f_TPR=r86400) — one successful daily pass covers the day')
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

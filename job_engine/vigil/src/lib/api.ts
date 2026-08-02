@@ -42,8 +42,11 @@ export const api = {
     getJson<any>(`/api/ultron/roles/${searchId}/companies?days=${days}`),
   topCompanies: (days = 7, limit = 80) =>
     getJson<any>(`/api/ultron/top-companies?days=${days}&limit=${limit}`),
-  rolesRank: (limit = 200) =>
-    getJson<any>(`/api/ultron/roles-rank?limit=${limit}`),
+  rolesRank: (limit = 200, days = 7, mode: 'count' | 'rate' = 'count') =>
+    getJson<any>(
+      `/api/ultron/roles-rank?limit=${limit}&days=${days}&mode=${mode}`,
+    ),
+  sectors: () => getJson<any>('/api/ultron/sectors'),
   health: () => getJson<any>('/api/ultron/health'),
   filterCompare: (window = '24h') =>
     getJson<any>(`/api/ultron/filter-compare?window=${encodeURIComponent(window)}`),

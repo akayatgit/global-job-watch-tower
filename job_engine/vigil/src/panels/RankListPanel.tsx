@@ -18,11 +18,13 @@ export function RankListPanel() {
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const [days, setDays] = useState(7)
+  const [mode, setMode] = useState<'count' | 'rate'>('count')
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (rankFocus?.kind === 'companies') setDays(rankFocus.days)
+    if (rankFocus?.kind === 'roles' && rankFocus.days != null) setDays(rankFocus.days)
   }, [rankFocus])
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function RankListPanel() {
     const load =
       rankFocus.kind === 'companies'
         ? api.topCompanies(days, 100)
-        : api.rolesRank(200)
+        : api.rolesRank(200, days, mode)
     load
       .then((d) => {
         if (!alive) return
@@ -49,7 +51,7 @@ export function RankListPanel() {
     return () => {
       alive = false
     }
-  }, [rankFocus, days])
+  }, [rankFocus, days, mode])
 
   if (!rankFocus) {
     return (
@@ -61,7 +63,11 @@ export function RankListPanel() {
 
   const isCompanies = rankFocus.kind === 'companies'
   const rows = isCompanies ? data?.companies || [] : data?.roles || []
-  const maxN = data?.max || Math.max(...rows.map((r: any) => r.n), 1)
+  const maxN = isCompanies
+    ? data?.max || Math.max(...rows.map((r: any) => r.n), 1)
+    : mode === 'rate'
+      ? data?.max_rate || Math.max(...rows.map((r: any) => r.rate), 0.01)
+      : data?.max || Math.max(...rows.map((r: any) => r.n), 1)
   const windows = data?.window_options || FALLBACK_WINDOWS
 
   return (
@@ -71,54 +77,90 @@ export function RankListPanel() {
         <h3>{isCompanies ? 'All top hiring' : 'All roles'}</h3>
         <div className="muted">
           {rows.length} shown · sorted max → min
+          {!isCompanies ? ' · fair window (not all-time)' : ''}
         </div>
       </div>
-      {isCompanies && (
+      <div className="chip-row wrap">
+        {windows.map((w: { days: number; label: string }) => (
+          <button
+            key={w.days}
+            type="button"
+            className={`chip ${days === w.days ? 'active' : ''}`}
+            data-gesture-action={`rank-days-${w.days}`}
+            onClick={() => setDays(w.days)}
+          >
+            {chipLabel(w.days, w.label)}
+          </button>
+        ))}
+      </div>
+      {!isCompanies && (
         <div className="chip-row wrap">
-          {windows.map((w: { days: number; label: string }) => (
-            <button
-              key={w.days}
-              type="button"
-              className={`chip ${days === w.days ? 'active' : ''}`}
-              data-gesture-action={`rank-days-${w.days}`}
-              onClick={() => setDays(w.days)}
-            >
-              {chipLabel(w.days, w.label)}
-            </button>
-          ))}
+          <button
+            type="button"
+            className={`chip ${mode === 'count' ? 'active' : ''}`}
+            data-gesture-action="rank-mode-count"
+            onClick={() => setMode('count')}
+          >
+            Count
+          </button>
+          <button
+            type="button"
+            className={`chip ${mode === 'rate' ? 'active' : ''}`}
+            data-gesture-action="rank-mode-rate"
+            onClick={() => setMode('rate')}
+            title="Jobs per day in this window — fairer when roles started on different days"
+          >
+            Per day
+          </button>
         </div>
       )}
+      {!isCompanies && data?.fair_hint ? (
+        <p className="muted" style={{ marginTop: 6 }}>{data.fair_hint}</p>
+      ) : null}
       {error ? (
         <div className="empty fail">{error}</div>
       ) : rows.length === 0 ? (
         <div className="empty">Nothing in this window yet</div>
       ) : (
         <div className="hire-bars">
-          {rows.map((r: any) => (
-            <button
-              type="button"
-              className="hire-bar-row clickable"
-              key={isCompanies ? r.company_id : r.search_id}
-              data-gesture-action={
-                isCompanies ? `rank-co-${r.company_id}` : `rank-role-${r.search_id}`
-              }
-              onClick={() => {
-                if (isCompanies) openCompanyJobs(r.company_id, r.name, days)
-                else openRoleHire(r.search_id, r.name, 7)
-              }}
-            >
-              <div className="hire-bar-main">
-                <div className="hire-bar-name">{r.name}</div>
-                <div className="bar-track tall">
-                  <div
-                    className="bar-fill"
-                    style={{ width: `${(r.n / maxN) * 100}%` }}
-                  />
+          {rows.map((r: any) => {
+            const value = isCompanies ? r.n : mode === 'rate' ? r.rate : r.n
+            return (
+              <button
+                type="button"
+                className="hire-bar-row clickable"
+                key={isCompanies ? r.company_id : r.search_id}
+                data-gesture-action={
+                  isCompanies ? `rank-co-${r.company_id}` : `rank-role-${r.search_id}`
+                }
+                onClick={() => {
+                  if (isCompanies) openCompanyJobs(r.company_id, r.name, days)
+                  else openRoleHire(r.search_id, r.name, days)
+                }}
+              >
+                <div className="hire-bar-main">
+                  <div className="hire-bar-name">
+                    {r.name}
+                    {r.sector_label ? (
+                      <span className="meta"> · {r.sector_label}</span>
+                    ) : null}
+                  </div>
+                  <div className="bar-track tall">
+                    <div
+                      className="bar-fill"
+                      style={{ width: `${(Number(value) / maxN) * 100}%` }}
+                    />
+                  </div>
+                  {!isCompanies && r.coverage_note ? (
+                    <div className="meta">{r.coverage_note}</div>
+                  ) : null}
                 </div>
-              </div>
-              <strong className="hire-bar-n">{r.n}</strong>
-            </button>
-          ))}
+                <strong className="hire-bar-n">
+                  {mode === 'rate' && !isCompanies ? `${r.rate}/d` : r.n}
+                </strong>
+              </button>
+            )
+          })}
         </div>
       )}
     </PanelShell>
