@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig, TowerEvent
 from app.schedule import FREQ_OPTIONS, WEEKDAYS, build_cron, cron_to_human
 from app.signals import (
+    ALLOWED_WINDOWS,
     WINDOW_OPTIONS,
     company_directory,
     compute_hiring_signals,
@@ -238,7 +239,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @router.get('/signals')
 def signals_page(request: Request, days: int = 7, db: Session = Depends(get_db)):
-    if days not in (7, 14, 30):
+    if days not in ALLOWED_WINDOWS:
         days = 7
     signals = compute_hiring_signals(db, window_days=days)
     return _page(request, 'signals.html', {
@@ -257,7 +258,7 @@ def watchlist_page(
     add: str = '',
     db: Session = Depends(get_db),
 ):
-    if days not in (7, 14, 30):
+    if days not in ALLOWED_WINDOWS:
         days = 7
     watched = watchlist_rows(db, window_days=days, q=q)
     directory = company_directory(db, q=add or q, limit=50)

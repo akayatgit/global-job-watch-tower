@@ -15,13 +15,20 @@ export type PanelId =
   | 'jobs'
   | 'live'
   | 'health'
+  | 'role_hire'
 
 export type OrbitNode = {
-  id: PanelId | 'remote'
+  id: PanelId
   label: string
   angle: number
   radius: number
 }
+
+/** Drill-down focus for jobs / role hire panels */
+export type InsightFocus =
+  | { kind: 'role'; searchId: number; name: string; days?: number }
+  | { kind: 'company'; companyId: number; name: string; days?: number }
+  | null
 
 export type HandSample = {
   index: { x: number; y: number } | null
@@ -59,17 +66,17 @@ const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
   { id: 'jobs', title: 'JOBS', x: 55, y: 30 },
   { id: 'live', title: 'LIVE FEED', x: 8, y: 30 },
   { id: 'health', title: 'TOWER HEALTH', x: 38, y: 10 },
+  { id: 'role_hire', title: 'COMPANIES HIRING', x: 18, y: 10 },
 ]
 
 export const ORBIT_NODES: OrbitNode[] = [
-  { id: 'jobs', label: 'Tech Jobs', angle: -0.4, radius: 2.6 },
+  { id: 'jobs', label: 'Jobs', angle: -0.4, radius: 2.6 },
   { id: 'signals', label: 'Hiring Signals', angle: 0.35, radius: 2.7 },
   { id: 'searches', label: 'Searches', angle: 1.1, radius: 2.55 },
   { id: 'activity', label: 'Activity', angle: 1.85, radius: 2.65 },
   { id: 'live', label: 'Live', angle: 2.55, radius: 2.5 },
   { id: 'health', label: 'Health', angle: 3.4, radius: 2.7 },
   { id: 'watchlist', label: 'Watchlist', angle: 4.2, radius: 2.6 },
-  { id: 'remote', label: 'Remote Trends', angle: 5.0, radius: 2.55 },
 ]
 
 function readStoredVigilMode(): boolean {
@@ -155,6 +162,11 @@ type VigilStore = {
   movePanel: (id: PanelId, x: number, y: number) => void
   scalePanel: (id: PanelId, scale: number) => void
   focusPanel: (id: PanelId) => void
+  insightFocus: InsightFocus
+  openRoleHire: (searchId: number, name: string, days?: number) => void
+  openCompanyJobs: (companyId: number, name: string, days?: number) => void
+  openRoleJobs: (searchId: number, name: string) => void
+  clearInsightFocus: () => void
   vitals: any | null
   setVitals: (v: any) => void
   latencyMs: number
@@ -289,10 +301,19 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   setGestureMode: (m) => set({ gestureMode: m }),
   focusedPanel: null,
   panels: initialPanels(),
+  insightFocus: null,
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
-    panels[id] = { ...panels[id], open: true, z: maxZ + 1 }
+    const next = {
+      ...panels[id],
+      open: true,
+      z: maxZ + 1,
+      ...(id === 'role_hire'
+        ? { x: 12, y: 8, scale: Math.max(panels[id].scale, 1.15) }
+        : {}),
+    }
+    panels[id] = next
     set({
       panels,
       focusedPanel: id,
@@ -309,6 +330,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     set({
       panels,
       focusedPanel: next,
+      ...(id === 'role_hire' ? { insightFocus: null as InsightFocus } : {}),
       statusLine: next
         ? `CLOSED ${panels[id].title} → ${panels[next].title}`
         : `CLOSED ${panels[id].title}`,
@@ -333,6 +355,63 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     panels[id] = { ...panels[id], z: maxZ + 1, open: true }
     set({ panels, focusedPanel: id })
   },
+  openRoleHire: (searchId, name, days = 7) => {
+    const panels = { ...get().panels }
+    const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    panels.role_hire = {
+      ...panels.role_hire,
+      open: true,
+      z: maxZ + 1,
+      x: 12,
+      y: 8,
+      scale: Math.max(panels.role_hire.scale, 1.2),
+      title: `HIRING · ${name.toUpperCase()}`,
+    }
+    set({
+      panels,
+      focusedPanel: 'role_hire',
+      insightFocus: { kind: 'role', searchId, name, days },
+      statusLine: `COMPANIES HIRING · ${name}`,
+    })
+  },
+  openCompanyJobs: (companyId, name, days = 7) => {
+    const panels = { ...get().panels }
+    const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    panels.jobs = {
+      ...panels.jobs,
+      open: true,
+      z: maxZ + 1,
+      title: `JOBS · ${name.toUpperCase()}`,
+    }
+    set({
+      panels,
+      focusedPanel: 'jobs',
+      insightFocus: { kind: 'company', companyId, name, days },
+      statusLine: `JOBS AT ${name}`,
+    })
+  },
+  openRoleJobs: (searchId, name) => {
+    const panels = { ...get().panels }
+    const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    panels.jobs = {
+      ...panels.jobs,
+      open: true,
+      z: maxZ + 1,
+      title: `JOBS · ${name.toUpperCase()}`,
+    }
+    set({
+      panels,
+      focusedPanel: 'jobs',
+      insightFocus: { kind: 'role', searchId, name },
+      statusLine: `JOBS FOR ${name}`,
+    })
+  },
+  clearInsightFocus: () => {
+    const panels = { ...get().panels }
+    panels.jobs = { ...panels.jobs, title: 'JOBS' }
+    panels.role_hire = { ...panels.role_hire, title: 'COMPANIES HIRING' }
+    set({ insightFocus: null, panels })
+  },
   vitals: null,
   setVitals: (v) => set({ vitals: v }),
   latencyMs: 0,
@@ -347,7 +426,7 @@ export function panelFromQuery(): PanelId | null {
   const params = new URLSearchParams(window.location.search)
   const p = params.get('panel')
   const valid: PanelId[] = [
-    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health',
+    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'role_hire',
   ]
   return p && (valid as string[]).includes(p) ? (p as PanelId) : null
 }

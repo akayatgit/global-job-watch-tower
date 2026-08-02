@@ -5,12 +5,12 @@ export function screenPoint(nx: number, ny: number) {
   return { x: nx * window.innerWidth, y: ny * window.innerHeight }
 }
 
-export function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | 'remote' | null {
+export function hitOrbit(nx: number, ny: number, hitPx: number): PanelId | null {
   const cx = window.innerWidth / 2
   const cy = window.innerHeight / 2
   const px = nx * window.innerWidth
   const py = ny * window.innerHeight
-  let best: { id: PanelId | 'remote'; d: number } | null = null
+  let best: { id: PanelId; d: number } | null = null
   for (const node of ORBIT_NODES) {
     const r = Math.min(window.innerWidth, window.innerHeight) * 0.28
     const x = cx + Math.cos(node.angle) * r

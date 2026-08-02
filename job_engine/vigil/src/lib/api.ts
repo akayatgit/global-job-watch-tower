@@ -14,16 +14,39 @@ async function postJson<T>(url: string, body: unknown = {}): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export type JobsQuery = {
+  limit?: number
+  search_config_id?: number
+  company_id?: number
+  company?: string
+  title?: string
+}
+
+function jobsUrl(q: JobsQuery = {}) {
+  const p = new URLSearchParams()
+  p.set('limit', String(q.limit ?? 80))
+  if (q.search_config_id) p.set('search_config_id', String(q.search_config_id))
+  if (q.company_id) p.set('company_id', String(q.company_id))
+  if (q.company) p.set('company', q.company)
+  if (q.title) p.set('title', q.title)
+  return `/api/jobs?${p}`
+}
+
 export const api = {
   status: () => getJson<any>('/api/ultron/status'),
   tower: () => getJson<any>('/api/ultron/tower'),
   signals: (days = 7) => getJson<any>(`/api/ultron/signals?days=${days}`),
   watchlist: (days = 7, q = '') =>
     getJson<any>(`/api/ultron/watchlist?days=${days}&q=${encodeURIComponent(q)}`),
+  roleCompanies: (searchId: number, days = 7) =>
+    getJson<any>(`/api/ultron/roles/${searchId}/companies?days=${days}`),
   health: () => getJson<any>('/api/ultron/health'),
   configs: () => getJson<any[]>('/api/configs'),
   runs: (limit = 50) => getJson<any[]>(`/api/runs?limit=${limit}`),
-  jobs: (limit = 80) => getJson<any[]>(`/api/jobs?limit=${limit}`),
+  jobs: (limitOrQuery: number | JobsQuery = 80) => {
+    if (typeof limitOrQuery === 'number') return getJson<any[]>(jobsUrl({ limit: limitOrQuery }))
+    return getJson<any[]>(jobsUrl(limitOrQuery))
+  },
   console: (afterId = 0) => getJson<any[]>(`/api/console?after_id=${afterId}&limit=120`),
   stats: () => getJson<any>('/api/stats'),
   toggleHeadless: () => postJson<any>('/api/ultron/toggle-headless'),
@@ -33,6 +56,18 @@ export const api = {
   toggleConfig: (id: number) => postJson<any>(`/api/configs/${id}/toggle`),
   runConfig: (id: number) => postJson<any>(`/api/ultron/configs/${id}/run`),
   cancelRun: (id: number) => postJson<any>(`/api/runs/${id}/cancel`),
+}
+
+export function chipLabel(days: number, label?: string): string {
+  if (label) {
+    if (days === 0) return '24h'
+    if (days === 1) return 'Today'
+    if (label.startsWith('Last ')) return label.replace('Last ', '').replace(' days', 'd')
+    return label
+  }
+  if (days === 0) return '24h'
+  if (days === 1) return 'Today'
+  return `${days}d`
 }
 
 export function relTime(iso?: string | null): string {

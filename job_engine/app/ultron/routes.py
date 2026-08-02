@@ -15,7 +15,9 @@ from app.db import get_db
 from app.models import Company, JobMaster, ScrapeRun, SearchConfig, TowerEvent
 from app.runtime_settings import get_headless, set_headless, dismiss_linkedin_block
 from app.signals import (
+    ALLOWED_WINDOWS,
     WINDOW_OPTIONS,
+    companies_for_role,
     company_directory,
     compute_hiring_signals,
     set_watched,
@@ -115,15 +117,18 @@ def ultron_tower(db: Session = Depends(get_db)):
     today = datetime.now(timezone.utc).date()
     week_ago = today - timedelta(days=7)
     top_companies = db.execute(
-        select(Company.name, func.count(JobMaster.id).label('n'))
+        select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
         .join(JobMaster, JobMaster.company_id == Company.id)
         .where(JobMaster.posted_date >= week_ago)
-        .group_by(Company.name).order_by(desc('n')).limit(8)
+        .group_by(Company.id, Company.name).order_by(desc('n')).limit(8)
     ).all()
     per_role = db.execute(
-        select(SearchConfig.name, func.count(JobMaster.id).label('n'))
+        select(
+            SearchConfig.id, SearchConfig.name, func.count(JobMaster.id).label('n'),
+        )
         .join(JobMaster, JobMaster.search_config_id == SearchConfig.id)
-        .group_by(SearchConfig.name).order_by(desc('n')).limit(40)
+        .group_by(SearchConfig.id, SearchConfig.name)
+        .order_by(desc('n')).limit(40)
     ).all()
     daily = dict(db.execute(
         select(JobMaster.posted_date, func.count(JobMaster.id))
@@ -157,8 +162,13 @@ def ultron_tower(db: Session = Depends(get_db)):
                 )
             ).scalar(),
         },
-        'top_companies': [{'name': n, 'n': c} for n, c in top_companies],
-        'per_role': [{'name': n, 'n': c} for n, c in per_role],
+        'top_companies': [
+            {'company_id': cid, 'name': n, 'n': c} for cid, n, c in top_companies
+        ],
+        'per_role': [
+            {'search_id': sid, 'name': n, 'n': c} for sid, n, c in per_role
+        ],
+        'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'daily_series': daily_series,
         'latest_jobs': [{
             'id': j.id,
@@ -175,7 +185,7 @@ def ultron_tower(db: Session = Depends(get_db)):
 
 @router.get('/api/ultron/signals')
 def ultron_signals(days: int = 7, db: Session = Depends(get_db)):
-    if days not in (7, 14, 30):
+    if days not in ALLOWED_WINDOWS:
         days = 7
     return {
         'days': days,
@@ -186,13 +196,34 @@ def ultron_signals(days: int = 7, db: Session = Depends(get_db)):
 
 @router.get('/api/ultron/watchlist')
 def ultron_watchlist(days: int = 7, q: str = '', db: Session = Depends(get_db)):
-    if days not in (7, 14, 30):
+    if days not in ALLOWED_WINDOWS:
         days = 7
     return {
         'days': days,
+        'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'q': q,
         'watched': to_jsonable(watchlist_rows(db, window_days=days, q=q)),
         'directory': to_jsonable(company_directory(db, q=q, limit=50)),
+    }
+
+
+@router.get('/api/ultron/roles/{search_id}/companies')
+def ultron_role_companies(search_id: int, days: int = 7, db: Session = Depends(get_db)):
+    if days not in ALLOWED_WINDOWS:
+        days = 7
+    cfg = db.get(SearchConfig, search_id)
+    if cfg is None:
+        return JSONResponse({'ok': False, 'error': 'role not found'}, status_code=404)
+    role_name, companies = companies_for_role(db, search_id, window_days=days)
+    max_n = max([c.recent for c in companies] + [1])
+    return {
+        'ok': True,
+        'search_id': search_id,
+        'role': role_name,
+        'days': days,
+        'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
+        'max': max_n,
+        'companies': to_jsonable(companies),
     }
 
 

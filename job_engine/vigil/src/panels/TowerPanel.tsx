@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api, relTime } from '../lib/api'
+import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
 
 export function TowerPanel() {
   const [data, setData] = useState<any>(null)
+  const openRoleHire = useVigilStore((s) => s.openRoleHire)
+  const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   useEffect(() => {
     let alive = true
@@ -37,23 +40,39 @@ export function TowerPanel() {
           </div>
           <div className="muted" style={{ marginBottom: 6 }}>Top hiring (7d)</div>
           {top.map((c: any) => (
-            <div className="bar-row" key={c.name}>
+            <button
+              type="button"
+              className="bar-row clickable"
+              key={c.company_id || c.name}
+              data-gesture-action={`tower-co-${c.company_id || c.name}`}
+              onClick={() => {
+                if (c.company_id) openCompanyJobs(c.company_id, c.name, 7)
+              }}
+            >
               <div>
                 <div>{c.name}</div>
                 <div className="bar-track"><div className="bar-fill" style={{ width: `${(c.n / maxC) * 100}%` }} /></div>
               </div>
               <strong>{c.n}</strong>
-            </div>
+            </button>
           ))}
-          <div className="muted" style={{ margin: '10px 0 6px' }}>Jobs per role</div>
+          <div className="muted" style={{ margin: '10px 0 6px' }}>Jobs per role — click for companies</div>
           {roles.map((r: any) => (
-            <div className="bar-row" key={r.name}>
+            <button
+              type="button"
+              className="bar-row clickable"
+              key={r.search_id || r.name}
+              data-gesture-action={`tower-role-${r.search_id || r.name}`}
+              onClick={() => {
+                if (r.search_id) openRoleHire(r.search_id, r.name, 7)
+              }}
+            >
               <div>
                 <div>{r.name}</div>
                 <div className="bar-track"><div className="bar-fill" style={{ width: `${(r.n / maxR) * 100}%` }} /></div>
               </div>
               <strong>{r.n}</strong>
-            </div>
+            </button>
           ))}
           <div className="muted" style={{ margin: '10px 0 6px' }}>Freshest catches</div>
           {latest.map((j: any) => (

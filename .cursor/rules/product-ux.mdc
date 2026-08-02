@@ -126,3 +126,8 @@ use — they should love opening the app, never fight it.
 - **VIGIL extra gestures (2026-08-02):** Flick-release (pinch→snap wide fast) =
   max zoom current window; five-finger fist = close window under hand.
   Spec: `documents/vigil-hand-gesture-interface.md`.
+- **Insight drill-down (2026-08-02):** One Jobs orbit (Remote is a chip inside
+  Jobs, not a second window). Hiring Signals + Watchlist time chips include
+  24h · Today · 2d · 4d · 7d · 14d · 30d. Clicking a role opens a larger
+  Companies Hiring window (bars max→min); clicking a company opens filtered
+  Jobs. Every insight row should lead deeper.

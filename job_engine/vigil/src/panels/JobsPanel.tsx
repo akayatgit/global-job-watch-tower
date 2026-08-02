@@ -1,21 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, relTime } from '../lib/api'
+import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
 
 export function JobsPanel() {
   const [jobs, setJobs] = useState<any[]>([])
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'remote' | 'tech'>('all')
+  const insightFocus = useVigilStore((s) => s.insightFocus)
+  const clearInsightFocus = useVigilStore((s) => s.clearInsightFocus)
 
   useEffect(() => {
     let alive = true
-    const load = () => api.jobs(100).then((d) => alive && setJobs(d)).catch(() => {})
+    const load = () => {
+      const q: Parameters<typeof api.jobs>[0] = { limit: 120 }
+      if (insightFocus?.kind === 'company') q.company_id = insightFocus.companyId
+      if (insightFocus?.kind === 'role') q.search_config_id = insightFocus.searchId
+      api
+        .jobs(q)
+        .then((d) => {
+          if (!alive) return
+          setJobs(Array.isArray(d) ? d : [])
+          setError(null)
+        })
+        .catch((e: Error) => {
+          if (!alive) return
+          setJobs([])
+          setError(e.message || 'Could not load jobs')
+        })
+    }
     load()
     const id = window.setInterval(load, 10000)
     return () => {
       alive = false
       clearInterval(id)
     }
-  }, [])
+  }, [insightFocus])
 
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
@@ -28,13 +48,20 @@ export function JobsPanel() {
     })
   }, [jobs, filter])
 
+  const focusLabel =
+    insightFocus?.kind === 'company'
+      ? `At ${insightFocus.name}`
+      : insightFocus?.kind === 'role'
+        ? `Role: ${insightFocus.name}`
+        : null
+
   return (
     <PanelShell id="jobs">
       <div className="chip-row">
         {([
-          ['all', 'All roles'],
-          ['tech', 'Tech Jobs'],
-          ['remote', 'Remote Trends'],
+          ['all', 'All'],
+          ['tech', 'Tech'],
+          ['remote', 'Remote'],
         ] as const).map(([k, label]) => (
           <button
             key={k}
@@ -46,21 +73,41 @@ export function JobsPanel() {
             {label}
           </button>
         ))}
+        {focusLabel && (
+          <button
+            type="button"
+            className="chip active"
+            data-gesture-action="jobs-clear-focus"
+            onClick={() => clearInsightFocus()}
+            title="Clear filter"
+          >
+            {focusLabel} ×
+          </button>
+        )}
       </div>
       <div className="muted" style={{ marginBottom: 8 }}>
         {filtered.length} shown · {jobs.length} loaded
       </div>
-      {filtered.length === 0 ? (
+      {error ? (
+        <div className="empty fail">Jobs failed to load — {error}</div>
+      ) : filtered.length === 0 ? (
         <div className="empty">No jobs match — widen the chip filter</div>
       ) : (
-        filtered.slice(0, 40).map((j) => (
-          <div className="list-row" key={j.id}>
+        filtered.slice(0, 60).map((j) => (
+          <a
+            className="list-row clickable"
+            key={j.id}
+            href={j.job_url || '#'}
+            target="_blank"
+            rel="noreferrer"
+            data-gesture-action={`job-open-${j.id}`}
+          >
             <div>
               <div>{j.title}</div>
               <div className="meta">{j.company || '—'} · {j.location || '—'}</div>
             </div>
             <div className="meta" title={j.scraped_at}>{relTime(j.scraped_at)}</div>
-          </div>
+          </a>
         ))
       )}
     </PanelShell>

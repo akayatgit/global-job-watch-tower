@@ -120,6 +120,8 @@ def list_jobs(
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
+    search_config_id: int | None = None,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     query = (
@@ -137,13 +139,26 @@ def list_jobs(
         query = query.where(JobMaster.title.ilike(f'%{title}%'))
     if posted_date:
         query = query.where(JobMaster.posted_date == posted_date)
+    if search_config_id:
+        query = query.where(JobMaster.search_config_id == search_config_id)
+    if company_id:
+        query = query.where(JobMaster.company_id == company_id)
 
     rows = db.execute(query).all()
     out = []
     for job, company_name in rows:
-        item = JobOut.model_validate(job)
-        item.company = company_name
-        out.append(item)
+        # Don't model_validate(job) — relationship `company` is a Company object
+        out.append(JobOut(
+            id=job.id,
+            linkedin_job_id=job.linkedin_job_id,
+            title=job.title,
+            company=company_name,
+            location=job.location,
+            sector=job.sector,
+            job_url=job.job_url,
+            posted_date=job.posted_date,
+            scraped_at=job.scraped_at,
+        ))
     return out
 
 

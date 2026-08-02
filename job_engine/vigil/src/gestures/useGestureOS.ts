@@ -339,9 +339,7 @@ export function useGestureOS() {
               st.setGestureMode('none')
               logTrain('gesture_dwell_fire', { fireId, training, layer: layerId })
               if (fireId.startsWith('orbit:')) {
-                const id = fireId.slice(6) as PanelId | 'remote'
-                if (id === 'remote') st.openPanel('jobs')
-                else st.openPanel(id)
+                st.openPanel(fireId.slice(6) as PanelId)
                 st.triggerBurst()
               } else if (fireId.startsWith('panel:')) {
                 st.focusPanel(fireId.slice(6) as PanelId)

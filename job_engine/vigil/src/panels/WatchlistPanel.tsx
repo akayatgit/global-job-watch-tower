@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, chipLabel } from '../lib/api'
 import { PanelShell } from './PanelShell'
 import { useVigilStore } from '../store/vigilStore'
+
+const FALLBACK_WINDOWS = [
+  { days: 0, label: 'Last 24 hours' },
+  { days: 1, label: 'Today' },
+  { days: 2, label: 'Last 2 days' },
+  { days: 4, label: 'Last 4 days' },
+  { days: 7, label: 'Last 7 days' },
+  { days: 14, label: 'Last 14 days' },
+  { days: 30, label: 'Last 30 days' },
+]
 
 export function WatchlistPanel() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
   const setStatus = useVigilStore((s) => s.setStatus)
+  const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   const reload = () => api.watchlist(days).then(setData).catch(() => {})
 
@@ -14,18 +25,20 @@ export function WatchlistPanel() {
     reload()
   }, [days])
 
+  const windows = data?.window_options || FALLBACK_WINDOWS
+
   return (
     <PanelShell id="watchlist">
-      <div className="chip-row">
-        {[7, 14, 30].map((d) => (
+      <div className="chip-row wrap">
+        {windows.map((w: { days: number; label: string }) => (
           <button
-            key={d}
+            key={w.days}
             type="button"
-            className={`chip ${days === d ? 'active' : ''}`}
-            data-gesture-action={`watch-${d}`}
-            onClick={() => setDays(d)}
+            className={`chip ${days === w.days ? 'active' : ''}`}
+            data-gesture-action={`watch-${w.days}`}
+            onClick={() => setDays(w.days)}
           >
-            Last {d}d
+            {chipLabel(w.days, w.label)}
           </button>
         ))}
       </div>
@@ -36,20 +49,26 @@ export function WatchlistPanel() {
       ) : (
         (data.watched || []).map((c: any) => (
           <div className="list-row" key={c.company_id}>
-            <div>
+            <button
+              type="button"
+              className="list-row-main clickable"
+              data-gesture-action={`watch-open-${c.company_id}`}
+              onClick={() => openCompanyJobs(c.company_id, c.name, days)}
+            >
               <div>{c.name}</div>
-              <div className="meta">{c.recent} recent · prior {c.prior}</div>
-            </div>
+              <div className="meta">{c.recent} recent · prior {c.prior} · open jobs →</div>
+            </button>
             <button
               type="button"
               className="chip active"
               data-gesture-action={`unwatch-${c.company_id}`}
-              onClick={() =>
+              onClick={(e) => {
+                e.stopPropagation()
                 api.toggleWatch(c.company_id).then(() => {
                   setStatus(`UNWATCHED ${c.name}`)
                   reload()
                 })
-              }
+              }}
             >
               Watching
             </button>
@@ -57,24 +76,36 @@ export function WatchlistPanel() {
         ))
       )}
       <div className="muted" style={{ marginTop: 12 }}>Add from directory</div>
-      {(data?.directory || []).slice(0, 10).map((c: any) => (
-        <div className="list-row" key={`d-${c.company_id || c.id}`}>
-          <div>{c.name}</div>
-          <button
-            type="button"
-            className="chip"
-            data-gesture-action={`watch-${c.company_id || c.id}`}
-            onClick={() =>
-              api.toggleWatch(c.company_id || c.id).then(() => {
-                setStatus(`WATCHING ${c.name}`)
-                reload()
-              })
-            }
-          >
-            {c.watched ? 'Unwatch' : 'Watch'}
-          </button>
-        </div>
-      ))}
+      {(data?.directory || []).slice(0, 10).map((c: any) => {
+        const id = c.company_id || c.id
+        return (
+          <div className="list-row" key={`d-${id}`}>
+            <button
+              type="button"
+              className="list-row-main clickable"
+              data-gesture-action={`dir-open-${id}`}
+              onClick={() => openCompanyJobs(id, c.name, days)}
+            >
+              <div>{c.name}</div>
+              <div className="meta">open jobs →</div>
+            </button>
+            <button
+              type="button"
+              className="chip"
+              data-gesture-action={`watch-${id}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                api.toggleWatch(id).then(() => {
+                  setStatus(`${c.watched ? 'UNWATCHED' : 'WATCHING'} ${c.name}`)
+                  reload()
+                })
+              }}
+            >
+              {c.watched ? 'Unwatch' : 'Watch'}
+            </button>
+          </div>
+        )
+      })}
     </PanelShell>
   )
 }

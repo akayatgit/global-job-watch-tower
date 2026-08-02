@@ -816,6 +816,12 @@ button, input, select {
   overflow: hidden;
 }
 
+.float-panel[data-panel-id='role_hire'] {
+  width: min(560px, 56vw);
+  max-height: min(78vh, 720px);
+  background: rgba(8, 6, 4, 0.94);
+}
+
 .float-panel.focused {
   border-color: var(--vg-amber);
   box-shadow: 0 0 48px rgba(255, 170, 0, 0.35);
@@ -905,7 +911,28 @@ button, input, select {
   gap: 8px;
   align-items: center;
   margin: 4px 0;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: default;
   font-size: 13px;
+}
+
+.bar-row.clickable,
+.list-row.clickable,
+.hire-bar-row.clickable,
+.list-row-main.clickable {
+  cursor: pointer;
+}
+
+.bar-row.clickable:hover,
+.list-row.clickable:hover,
+.list-row-main.clickable:hover {
+  color: var(--vg-amber);
 }
 
 .bar-track {
@@ -913,6 +940,12 @@ button, input, select {
   background: rgba(255, 85, 0, 0.12);
   border-radius: 3px;
   overflow: hidden;
+}
+
+.bar-track.tall {
+  height: 8px;
+  margin-top: 4px;
+  background: rgba(120, 40, 10, 0.45);
 }
 
 .bar-fill {
@@ -925,6 +958,10 @@ button, input, select {
   flex-wrap: wrap;
   gap: 6px;
   margin: 8px 0;
+}
+
+.chip-row.wrap {
+  max-width: 100%;
 }
 
 .chip {
@@ -953,9 +990,78 @@ button, input, select {
   padding: 6px 0;
   border-bottom: 1px solid rgba(255, 85, 0, 0.12);
   font-size: 13px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  color: inherit;
+  font-family: inherit;
+  text-decoration: none;
+  align-items: center;
+}
+
+.list-row-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
 }
 
 .list-row .meta { color: var(--vg-muted); font-size: 12px; }
+
+.role-hire-hero {
+  margin-bottom: 8px;
+}
+
+.role-hire-hero h3 {
+  margin: 2px 0 4px;
+  font-family: var(--font-hud);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  color: var(--vg-amber);
+}
+
+.hire-bars {
+  margin-top: 8px;
+}
+
+.hire-bar-row {
+  display: grid;
+  grid-template-columns: 1fr 52px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 85, 0, 0.14);
+  color: var(--vg-ink);
+  font: inherit;
+  text-align: left;
+}
+
+.hire-bar-name {
+  font-size: 14px;
+  color: #e8e0d4;
+}
+
+.hire-bar-n {
+  text-align: right;
+  font-size: 16px;
+  color: #f2ebe0;
+  font-variant-numeric: tabular-nums;
+}
+
+.hire-bar-main {
+  min-width: 0;
+}
 
 .muted { color: var(--vg-muted); }
 .ok { color: var(--vg-ok); }

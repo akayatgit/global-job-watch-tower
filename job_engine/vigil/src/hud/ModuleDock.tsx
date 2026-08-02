@@ -7,13 +7,7 @@ export function ModuleDock() {
   const focused = useVigilStore((s) => s.focusedPanel)
   const panels = useVigilStore((s) => s.panels)
 
-  const launch = (id: PanelId | 'remote') => {
-    if (id === 'remote') {
-      openPanel('jobs')
-      useVigilStore.getState().setStatus('REMOTE TRENDS → JOBS')
-      sendUltron({ type: 'ultron.command', command: 'open_panel', panel: 'jobs' })
-      return
-    }
+  const launch = (id: PanelId) => {
     openPanel(id)
     sendUltron({ type: 'ultron.command', command: 'open_panel', panel: id })
   }
@@ -21,7 +15,7 @@ export function ModuleDock() {
   return (
     <div className="module-dock interactive">
       {ORBIT_NODES.map((node) => {
-        const open = node.id !== 'remote' && panels[node.id as PanelId]?.open
+        const open = panels[node.id]?.open
         const active = node.id === focused || open
         return (
           <button

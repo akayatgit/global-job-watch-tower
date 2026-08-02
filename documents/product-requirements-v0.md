@@ -279,7 +279,8 @@ Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the Think
 | Interaction | MediaPipe hands — dwell, pinch-move, pinch-scroll, two-hand zoom, **flick max-zoom**, **fist close**; finger glow + hand-hot windows |
 | Layer stack | Focused window only interactive; blur core / background / other panels (stops accidental dwell) |
 | Training | Practice hub: skip, guided tour, or pick any drill; calibration applies to live; gesture logs for Akay |
-| Modules | Floating panels: Tower, Hiring signals, Watchlist, Searches, Activity, Jobs, Live feed, Tower health |
+| Modules | Floating panels: Tower, Hiring signals, Watchlist, Searches, Activity, Jobs (Remote chip inside), Live feed, Tower health, Companies Hiring (role drill-down) |
+| Insight windows | Signals/Watchlist: 24h · Today · 2d · 4d · 7d · 14d · 30d. Role click → companies max→min bars; company click → filtered Jobs |
 | Sync | WebSocket `/ws/ultron` + REST `/api/ultron/*` and existing `/api/*` |
 | Deep links | `/?panel=jobs` (old paths redirect here) |
 | Spec | `documents/vigil-hand-gesture-interface.md` |
