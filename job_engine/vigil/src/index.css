@@ -415,15 +415,16 @@ button, input, select {
 }
 
 .rail-pin-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(34, 197, 94, 0.35);
   background: transparent;
   color: var(--vg-muted);
-  font-family: var(--font-hud);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 6px 6px;
-  border-radius: 3px;
+  padding: 0;
+  border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -432,6 +433,7 @@ button, input, select {
 .rail-pin-btn.active {
   color: var(--vg-ok);
   border-color: rgba(34, 197, 94, 0.7);
+  background: rgba(34, 197, 94, 0.1);
 }
 
 /* Legacy dock-chip class kept for any residual refs */
@@ -1061,37 +1063,52 @@ button, input, select {
 }
 
 .pin-badge {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--vg-ok);
   border: 1px solid rgba(34, 197, 94, 0.45);
   background: rgba(34, 197, 94, 0.12);
-  padding: 1px 6px;
-  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
 .panel-head .ops {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.panel-head button {
+.panel-head .icon-ops-btn {
+  width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--vg-line);
   background: transparent;
   color: var(--vg-ink);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
+  padding: 0;
+  border-radius: 4px;
   cursor: pointer;
+}
+
+.panel-head .icon-ops-btn:hover {
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
 }
 
 .panel-head button.pin-btn.active,
 .panel-head button.pin-btn:hover {
   border-color: rgba(34, 197, 94, 0.55);
   color: var(--vg-ok);
+}
+
+.panel-head .close-btn:hover {
+  border-color: rgba(204, 17, 0, 0.55);
+  color: #ff6b5a;
 }
 
 .float-panel.pinned {

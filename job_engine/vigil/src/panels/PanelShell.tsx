@@ -1,4 +1,5 @@
 import { useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { IconClose, IconPin } from '../hud/ModuleIcons'
 import { PINNABLE_PANELS, useVigilStore, type PanelId } from '../store/vigilStore'
 
 export function PanelShell({
@@ -131,27 +132,34 @@ export function PanelShell({
       >
         <h2>
           {panel.title}
-          {panel.pinned ? <span className="pin-badge">Pinned</span> : null}
+          {panel.pinned ? (
+            <span className="pin-badge" title="Pinned on dashboard" aria-label="Pinned">
+              <IconPin filled size={11} />
+            </span>
+          ) : null}
         </h2>
         <div className="ops">
           {pinnable && (
             <button
               type="button"
-              className={panel.pinned ? 'pin-btn active' : 'pin-btn'}
+              className={`icon-ops-btn pin-btn ${panel.pinned ? 'active' : ''}`}
               data-gesture-action={`pin-${id}`}
+              aria-label={panel.pinned ? 'Unpin from dashboard' : 'Pin to dashboard'}
               title={panel.pinned ? 'Unpin from dashboard' : 'Pin to dashboard'}
               onClick={() => togglePin(id)}
             >
-              {panel.pinned ? 'Unpin' : 'Pin'}
+              <IconPin filled={panel.pinned} />
             </button>
           )}
           <button
             type="button"
+            className="icon-ops-btn close-btn"
             data-gesture-action={`close-${id}`}
-            onClick={() => closePanel(id)}
+            aria-label="Close"
             title="Close"
+            onClick={() => closePanel(id)}
           >
-            Close
+            <IconClose />
           </button>
         </div>
       </div>

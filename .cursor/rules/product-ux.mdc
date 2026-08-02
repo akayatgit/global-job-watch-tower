@@ -163,6 +163,10 @@ use — they should love opening the app, never fight it.
   small icon-only (hover title for meaning). No desktop/rail helper blurbs on
   the canvas. Collapsed module rail shows glass-style logos (same language as
   compare pillars), not abbreviated text.
+- **Icon chrome over labels (2026-08-02):** Pin / Unpin / Close (and pinned
+  badge) are icons only — never “Pin/Unpin/Close/Pinned” text on widgets or
+  the module rail. Prefer icons wherever chrome would add words to an already
+  text-heavy dashboard; hover title carries the meaning.
 - **Resizable widgets (2026-08-02):** Drag the bottom-right corner to resize.
   Size + place persist (`vigil.geometry` / pins) and reopen the same.
   Content reflows with widget size (container queries). Panels must stay fully

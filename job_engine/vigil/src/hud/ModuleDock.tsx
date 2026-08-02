@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { railCountdownLabel } from '../lib/formatCountdown'
 import { ORBIT_NODES, useVigilStore, type PanelId } from '../store/vigilStore'
 import { sendUltron } from '../lib/ultronWs'
-import { ModuleIcon } from './ModuleIcons'
+import { IconPin, ModuleIcon } from './ModuleIcons'
 
 /** Left module rail — separate from the floating widget canvas; hide/show anytime. */
 export function ModuleDock() {
@@ -99,10 +99,11 @@ export function ModuleDock() {
                   type="button"
                   className={`rail-pin-btn ${pinned ? 'active' : ''}`}
                   data-gesture-action={`rail-pin-${node.id}`}
+                  aria-label={pinned ? `Unpin ${node.label}` : `Pin ${node.label}`}
                   title={pinned ? `Unpin ${node.label}` : `Pin ${node.label} on canvas`}
                   onClick={() => togglePin(node.id)}
                 >
-                  {pinned ? 'Unpin' : 'Pin'}
+                  <IconPin filled={pinned} size={13} />
                 </button>
               ) : null}
             </div>

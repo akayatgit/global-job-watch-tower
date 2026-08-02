@@ -182,3 +182,47 @@ export function IconVigil({ on }: { on: boolean }) {
     </svg>
   )
 }
+
+/** Pushpin — filled when pinned/active. */
+export function IconPin({
+  filled = false,
+  size = 14,
+}: {
+  filled?: boolean
+  size?: number
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 17v5" />
+      <path d="M9 3h6l1 7-3 2v3l-2 2-2-2v-3l-3-2 1-7z" />
+    </svg>
+  )
+}
+
+export function IconClose({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+}
