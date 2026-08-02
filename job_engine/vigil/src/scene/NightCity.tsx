@@ -99,84 +99,20 @@ function wrapName(name: string, max = 11): string[] {
   return lines.slice(0, 3)
 }
 
-function strokeFill(
+/** Soft neon fill — no hard stroke outlines */
+function neonFill(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
   y: number,
   fill: string,
-  strokeW: number,
+  glow: string,
 ) {
-  ctx.lineWidth = strokeW
-  ctx.strokeStyle = 'rgba(0,0,0,0.9)'
-  ctx.strokeText(text, x, y)
+  ctx.shadowColor = glow
+  ctx.shadowBlur = 10
   ctx.fillStyle = fill
   ctx.fillText(text, x, y)
-}
-
-/** Floating roof text — name + big count + openings caption. No card. */
-function makeRoofLabel(name: string, jobs: number, days: number) {
-  const lines = wrapName(name, 11)
-  const caption = openingsCaption(days)
-  const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 36 + lines.length * 34 + 100
-  const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, c.width, c.height)
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.lineJoin = 'round'
-  ctx.miterLimit = 2
-  const cx = c.width / 2
-  ctx.font = '800 28px Orbitron, sans-serif'
-  lines.forEach((ln, i) => {
-    strokeFill(ctx, ln.toUpperCase(), cx, 28 + i * 32, '#ffffff', 7)
-  })
-  const numY = 36 + lines.length * 34 + 28
-  const num = jobs > 999 ? '999+' : String(jobs)
-  ctx.font = '900 64px Orbitron, sans-serif'
-  strokeFill(ctx, num, cx, numY, '#ffffff', 10)
-  ctx.font = '700 16px Rajdhani, sans-serif'
-  strokeFill(ctx, caption, cx, numY + 36, '#f8fafc', 4)
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
-  return { tex, aspect: c.width / c.height }
-}
-
-/**
- * Compact role card — yellow text ≈70% of openings number (64 → ~45px),
- * tight dark glass chip for clustering around the roof label.
- */
-function makeRoleLabel(title: string, n: number) {
-  const short = wrapName(title, 12).slice(0, 2)
-  const suffix = n > 1 ? ` ×${n}` : ''
-  const c = document.createElement('canvas')
-  c.width = 320
-  c.height = 36 + short.length * 40
-  const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, c.width, c.height)
-  // Compact card chrome
-  const pad = 4
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.82)'
-  ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)'
-  ctx.lineWidth = 2
-  roundRect(ctx, pad, pad, c.width - pad * 2, c.height - pad * 2, 8)
-  ctx.fill()
-  ctx.stroke()
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.lineJoin = 'round'
-  // ~70% of openings number (64px) → 45px yellow
-  ctx.font = '800 45px Orbitron, sans-serif'
-  short.forEach((ln, i) => {
-    const t = i === short.length - 1 ? `${ln}${suffix}` : ln
-    strokeFill(ctx, t, c.width / 2, 28 + i * 38, '#facc15', 6)
-  })
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
-  return { tex, aspect: c.width / c.height }
+  ctx.shadowBlur = 0
 }
 
 function roundRect(
@@ -197,16 +133,157 @@ function roundRect(
   ctx.closePath()
 }
 
-/** Tight slots around the roof name/number (local billboard plane). */
-function roleSlot(i: number, bw: number, bh: number): [number, number] {
-  const slots: [number, number][] = [
-    [-bw * 0.58, bh * 0.05],
-    [bw * 0.58, bh * 0.05],
-    [-bw * 0.42, -bh * 0.52],
-    [bw * 0.42, -bh * 0.52],
-    [0, -bh * 0.78],
-  ]
-  return slots[i] ?? [0, -bh * (0.9 + i * 0.12)]
+/** Measure-aware wrap; keeps ×N on the last line. */
+function wrapRoleLines(
+  ctx: CanvasRenderingContext2D,
+  title: string,
+  n: number,
+  maxW: number,
+): string[] {
+  const words = title.trim().split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let cur = ''
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w
+    if (ctx.measureText(next).width <= maxW) cur = next
+    else {
+      if (cur) lines.push(cur)
+      // Hard-break very long tokens
+      if (ctx.measureText(w).width > maxW) {
+        let chunk = ''
+        for (const ch of w) {
+          const t = chunk + ch
+          if (ctx.measureText(t).width > maxW && chunk) {
+            lines.push(chunk)
+            chunk = ch
+          } else chunk = t
+        }
+        cur = chunk
+      } else cur = w
+    }
+  }
+  if (cur) lines.push(cur)
+  const out = lines.slice(0, 3)
+  if (n > 1 && out.length) {
+    const last = `${out[out.length - 1]} ×${n}`
+    if (ctx.measureText(last).width <= maxW) out[out.length - 1] = last
+    else if (out.length < 3) out.push(`×${n}`)
+    else out[out.length - 1] = last // allow slight overflow on ×N
+  }
+  return out
+}
+
+/** Floating roof text — name + count + caption. Soft neon, no stroke. */
+function makeRoofLabel(name: string, jobs: number, days: number) {
+  const lines = wrapName(name, 11)
+  const caption = openingsCaption(days)
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 36 + lines.length * 34 + 100
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, c.width, c.height)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const cx = c.width / 2
+  ctx.font = '800 26px Orbitron, sans-serif'
+  lines.forEach((ln, i) => {
+    neonFill(ctx, ln.toUpperCase(), cx, 28 + i * 30, '#ffffff', '#38bdf8')
+  })
+  const numY = 36 + lines.length * 32 + 26
+  const num = jobs > 999 ? '999+' : String(jobs)
+  ctx.font = '900 56px Orbitron, sans-serif'
+  neonFill(ctx, num, cx, numY, '#ffffff', '#f97316')
+  ctx.font = '700 15px Rajdhani, sans-serif'
+  neonFill(ctx, caption, cx, numY + 34, '#e0f2fe', '#22d3ee')
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  return { tex, aspect: c.width / c.height }
+}
+
+/**
+ * Cyberpunk role card — yellow neon text, padded & centered wrap,
+ * sized under the openings number (no stroke outlines).
+ */
+function makeRoleLabel(title: string, n: number) {
+  const PAD_X = 20
+  const PAD_Y = 14
+  const LINE = 28
+  const FONT = '700 28px Rajdhani, sans-serif' // ~50% of openings 56
+  const innerW = 220
+  const measure = document.createElement('canvas').getContext('2d')!
+  measure.font = FONT
+  const lines = wrapRoleLines(measure, title, n, innerW)
+  const contentH = Math.max(LINE, lines.length * LINE)
+  const c = document.createElement('canvas')
+  c.width = innerW + PAD_X * 2
+  c.height = contentH + PAD_Y * 2
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, c.width, c.height)
+  // Cyber glass plate
+  const inset = 2
+  roundRect(ctx, inset, inset, c.width - inset * 2, c.height - inset * 2, 7)
+  const g = ctx.createLinearGradient(0, 0, c.width, c.height)
+  g.addColorStop(0, 'rgba(12, 8, 28, 0.92)')
+  g.addColorStop(1, 'rgba(6, 16, 32, 0.9)')
+  ctx.fillStyle = g
+  ctx.fill()
+  // Neon rim
+  ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)'
+  ctx.lineWidth = 1.5
+  ctx.shadowColor = '#facc15'
+  ctx.shadowBlur = 6
+  ctx.stroke()
+  ctx.shadowBlur = 0
+  // Inner cyan hairline
+  roundRect(
+    ctx,
+    inset + 2,
+    inset + 2,
+    c.width - inset * 2 - 4,
+    c.height - inset * 2 - 4,
+    5,
+  )
+  ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = FONT
+  const cx = c.width / 2
+  const startY = PAD_Y + LINE / 2
+  lines.forEach((ln, i) => {
+    neonFill(ctx, ln, cx, startY + i * LINE, '#fde047', '#f59e0b')
+  })
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  return { tex, aspect: c.width / c.height }
+}
+
+/**
+ * 2-column grid UNDER the name/count — stays inside the roof cluster
+ * (no wide left/right that crops off the browser).
+ */
+function roleGridSlot(
+  i: number,
+  total: number,
+  cardW: number,
+  cardH: number,
+  bannerH: number,
+): [number, number] {
+  const cols = 2
+  const gapX = 0.018
+  const gapY = 0.014
+  const col = i % cols
+  const row = Math.floor(i / cols)
+  const lastAlone = total % 2 === 1 && i === total - 1
+  const ox = lastAlone
+    ? 0
+    : (col - 0.5) * (cardW + gapX)
+  const oy = -(bannerH * 0.52) - row * (cardH + gapY) - cardH * 0.5
+  return [ox, oy]
 }
 
 function focusDistance(h: number) {
@@ -452,12 +529,12 @@ function GlassTower({
   }
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.22 + wrapName(t.name, 11).length * 0.05
-  const bannerW = bannerH * banner.aspect * (lit ? 1.04 : 1)
+  const bannerH = 0.2 + wrapName(t.name, 11).length * 0.048
+  const bannerW = bannerH * banner.aspect * (lit ? 1.03 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
-  // Role cards ~70% of openings number height in the roof cluster
-  const roleH = bannerH * 0.38
-  const roleGap = 0.01
+  // Compact role cards under the label — width capped so they stay on screen
+  const roleH = bannerH * 0.26
+  const roleWMax = bannerW * 0.46
 
   return (
     <group position={[t.x, 0, t.z]}>
@@ -557,9 +634,19 @@ function GlassTower({
         />
       )}
 
-      {/* Roof cluster: name/count + compact yellow role cards tight around it */}
-      <Billboard follow position={[0, t.h + 0.12 + bannerH / 2, 0]}>
-        <group scale={lit ? 1.06 : 1}>
+      {/* Roof cluster: name/count + 2-col cyberpunk role cards underneath */}
+      <Billboard
+        follow
+        position={[
+          0,
+          t.h +
+            0.14 +
+            bannerH / 2 +
+            Math.ceil(roleTex.length / 2) * roleH * 0.28,
+          0,
+        ]}
+      >
+        <group scale={lit ? 1.04 : 1}>
           <mesh
             onClick={onClick}
             onPointerOver={enter}
@@ -579,8 +666,14 @@ function GlassTower({
           </mesh>
           {roleTex.map((rt, i) => {
             const rh = roleH
-            const rw = Math.min(rh * rt.aspect, bannerW * 0.72)
-            const [ox, oy] = roleSlot(i, bannerW + roleGap, bannerH + roleGap)
+            const rw = Math.min(rh * rt.aspect, roleWMax)
+            const [ox, oy] = roleGridSlot(
+              i,
+              roleTex.length,
+              roleWMax,
+              rh,
+              bannerH,
+            )
             return (
               <mesh
                 key={i}

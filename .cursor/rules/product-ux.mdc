@@ -250,10 +250,10 @@ use — they should love opening the app, never fight it.
   icons (▲/▼) visit every tower (openings ASC; same count via nearest
   path). Camera glides shortest roof-to-roof with a slight hyperbola —
   constant angle, no zoom-out/in pulse. Roof shows name + big count +
-  “Openings Today / in Nd…” caption; yellow role cards (~70% of the
-  openings number) packed tight around name/count (same title → ×2/×3).
-  Globe hiring-window chips (24h · Today · 2d · 4d · 7d · 14d · 30d)
-  before enter — persists.
+  “Openings Today / in Nd…” caption; cyberpunk yellow role cards
+  (padded, centered wrap, no stroke) in a 2-col grid under the label —
+  never cropped wide off-screen (same title → ×2/×3). Globe hiring-window
+  chips (24h · Today · 2d · 4d · 7d · 14d · 30d) before enter — persists.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /
