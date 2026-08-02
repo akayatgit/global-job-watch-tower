@@ -75,6 +75,7 @@ export function EnergyCore() {
   const coreScale = useVigilStore((s) => s.coreScale)
   const coreBurst = useVigilStore((s) => s.coreBurst)
   const sceneMode = useVigilStore((s) => s.sceneMode)
+  const graphFocusId = useVigilStore((s) => s.graphFocusId)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
   const spinY = useRef(0)
   const lastT = useRef(0)
@@ -102,8 +103,15 @@ export function EnergyCore() {
     const burstAge = (performance.now() - coreBurst) / 1000
     mat.current.uniforms.uBurst.value =
       burstAge >= 0 && burstAge < 0.7 ? (0.7 - burstAge) / 0.7 : 0
+    // Dim the sun hard when a graph node is focused — readability first
     const modeScale =
-      sceneMode === 'core' ? 1 : sceneMode === 'graph' ? 0.28 : 0.18
+      sceneMode === 'core'
+        ? 1
+        : sceneMode === 'graph'
+          ? graphFocusId
+            ? 0.08
+            : 0.22
+          : 0.18
     mat.current.uniforms.uScale.value = coreScale * modeScale
     mat.current.uniforms.uCamDist.value = camera.position.length()
     if (points.current) {

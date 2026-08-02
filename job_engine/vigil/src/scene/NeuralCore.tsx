@@ -7,7 +7,7 @@ import {
 } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Billboard, Html, Line } from '@react-three/drei'
+import { Billboard, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -51,19 +51,10 @@ const CLUSTER: Record<string, THREE.Vector3> = {
   company: new THREE.Vector3(0.15, -2.1, 0.35),
 }
 
-const EDGE_LABEL: Record<string, string> = {
-  contains: 'in',
-  places: 'at',
-  employs: 'hires',
-  role_in: 'role',
-  hires_in: 'hires in',
-  company_in: 'in sector',
-  company_at: 'in city',
-  hiring: 'hiring',
-}
-
-/** Soft distance fade radius around focused node */
-const FADE_RADIUS = 3.6
+/** Focused = 1 · immediate neighbors = 0.2 · everything else = 0.1 */
+const TIER_FOCUS = 1
+const TIER_NEAR = 0.2
+const TIER_FAR = 0.1
 
 function layoutNodes(nodes: GraphNode[]) {
   const byKind = new Map<string, GraphNode[]>()
@@ -80,8 +71,8 @@ function layoutNodes(nodes: GraphNode[]) {
     const n = sorted.length
     sorted.forEach((node, i) => {
       const a = (i / Math.max(n, 1)) * Math.PI * 2 + kind.length * 0.2
-      const spread = 0.7 + Math.min(n, 12) * 0.05
-      const r = spread * (0.5 + (i % 5) * 0.12)
+      const spread = 0.85 + Math.min(n, 12) * 0.06
+      const r = spread * (0.55 + (i % 5) * 0.14)
       pos.set(
         node.id,
         new THREE.Vector3(
@@ -93,6 +84,20 @@ function layoutNodes(nodes: GraphNode[]) {
     })
   }
   return pos
+}
+
+function buildAdj(edges: GraphEdge[]) {
+  const adj = new Map<string, Set<string>>()
+  const add = (a: string, b: string) => {
+    if (!adj.has(a)) adj.set(a, new Set())
+    adj.get(a)!.add(b)
+  }
+  for (const e of edges) {
+    if (e.source === 'core' || e.target === 'core') continue
+    add(e.source, e.target)
+    add(e.target, e.source)
+  }
+  return adj
 }
 
 function openInsight(n: GraphNode) {
@@ -120,61 +125,107 @@ function openInsight(n: GraphNode) {
   }
 }
 
+/** Clean label sprite — no plate, no stroke box */
+function makeLabelTex(name: string, weight: number, color: string, hot: boolean) {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, 512, 128)
+  // Soft readable glow only — no background rectangle
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const label = name.length > 20 ? `${name.slice(0, 18)}…` : name
+  ctx.font = '800 44px Orbitron, sans-serif'
+  ctx.shadowColor = hot ? color : 'rgba(0,0,0,0.85)'
+  ctx.shadowBlur = hot ? 22 : 10
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(label, 256, 48)
+  ctx.shadowBlur = hot ? 16 : 8
+  ctx.shadowColor = color
+  ctx.fillStyle = color
+  ctx.font = '800 32px Rajdhani, sans-serif'
+  ctx.fillText(String(weight), 256, 92)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+
 function GraphCard({
   node,
   position,
   interactive,
-  showLabel,
-  fade,
+  tier,
   focused,
   spinY,
 }: {
   node: GraphNode
   position: THREE.Vector3
   interactive: boolean
-  showLabel: boolean
-  /** 0..1 visual weight from distance-to-focus */
-  fade: number
+  /** 1 | 0.2 | 0.1 */
+  tier: number
   focused: boolean
   spinY: MutableRefObject<number>
 }) {
   const [hot, setHot] = useState(false)
-  const glow = useRef<THREE.Mesh>(null)
+  const hoverGlow = useRef<THREE.Mesh>(null)
+  const focusGlow = useRef<THREE.Mesh>(null)
+  const body = useRef<THREE.Mesh>(null)
   const color = KIND_COLOR[node.kind] || '#ff5500'
-  const cardW = 0.72
-  const cardH = 0.28
+  const showLabel = focused || hot
+
+  const labelTex = useMemo(
+    () => (showLabel ? makeLabelTex(node.label, node.weight, color, hot || focused) : null),
+    [showLabel, node.label, node.weight, color, hot, focused],
+  )
 
   useFrame((state) => {
-    if (!glow.current) return
-    glow.current.visible = focused
-    if (!focused) return
-    const pulse = 0.35 + Math.sin(state.clock.elapsedTime * 3.4) * 0.25
-    const s = 1.6 + Math.sin(state.clock.elapsedTime * 2.6) * 0.2
-    glow.current.scale.setScalar(s)
-    const mat = glow.current.material as THREE.MeshBasicMaterial
-    mat.opacity = pulse
+    const t = state.clock.elapsedTime
+    if (hoverGlow.current) {
+      hoverGlow.current.visible = hot && !focused
+      if (hot && !focused) {
+        const pulse = 0.45 + Math.sin(t * 5.5) * 0.25
+        hoverGlow.current.scale.setScalar(1.4 + Math.sin(t * 4.2) * 0.2)
+        ;(hoverGlow.current.material as THREE.MeshBasicMaterial).opacity = pulse
+      }
+    }
+    if (focusGlow.current) {
+      focusGlow.current.visible = focused
+      if (focused) {
+        const pulse = 0.4 + Math.sin(t * 2.8) * 0.2
+        focusGlow.current.scale.setScalar(1.8 + Math.sin(t * 2.2) * 0.15)
+        ;(focusGlow.current.material as THREE.MeshBasicMaterial).opacity = pulse
+      }
+    }
+    if (body.current) {
+      const mat = body.current.material as THREE.MeshStandardMaterial
+      const base = hot ? 1 : focused ? 1 : tier
+      mat.opacity = base
+      mat.emissiveIntensity = hot ? 1.4 : focused ? 1.1 : tier > 0.5 ? 0.35 : 0.08
+      body.current.scale.setScalar(focused ? 1.35 : hot ? 1.25 : 1)
+    }
   })
 
   const onEnter = (e: ThreeEvent<PointerEvent>) => {
-    if (!interactive || fade < 0.12) return
+    if (!interactive) return
     e.stopPropagation()
     setHot(true)
     useVigilStore.setState({
       statusLine: focused
-        ? `FOCUSED · click again to open · ${node.label}`
-        : `${node.kind.toUpperCase()} · ${node.label} · ${node.weight}`,
+        ? `FOCUSED · ${node.label} · click again to open`
+        : `PICK · ${node.label} · ${node.weight}`,
     })
   }
   const onLeave = () => setHot(false)
 
   const onCardClick = (e: ThreeEvent<MouseEvent>) => {
-    if (!interactive || fade < 0.12) return
+    if (!interactive) return
     e.stopPropagation()
     const st = useVigilStore.getState()
     if (st.selectFocusId !== node.id) {
       st.setGraphFocusId(node.id)
       st.setSceneSpin(false)
-      // World position accounts for graph group spin
       const world = position.clone()
       world.applyAxisAngle(new THREE.Vector3(0, 1, 0), spinY.current)
       st.requestCameraFocus({
@@ -182,30 +233,32 @@ function GraphCard({
         x: world.x,
         y: world.y,
         z: world.z,
-        distance: 1.7,
+        distance: 1.55,
       })
-      st.setStatus(`FOCUS · ${node.label} · click again to open`)
+      st.setStatus(`FOCUS · ${node.label} · others dimmed · click again to open`)
       return
     }
     openInsight(node)
   }
 
-  const opacity = focused || hot ? 1 : Math.max(0.08, fade * 0.95)
+  // Dimmed nodes still catch hover for "pick me", but stay visually quiet until hot
+  const restOpacity = hot ? 1 : focused ? TIER_FOCUS : tier
 
   return (
     <group position={position}>
+      {/* Fat pick target */}
       <mesh
         onPointerOver={onEnter}
         onPointerOut={onLeave}
         onClick={onCardClick}
       >
-        <sphereGeometry args={[0.28, 16, 16]} />
+        <sphereGeometry args={[0.32, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Focus glow ring */}
-      <mesh ref={glow} visible={false}>
-        <ringGeometry args={[0.14, 0.22, 40]} />
+      {/* Pick-me hover aura */}
+      <mesh ref={hoverGlow} visible={false}>
+        <ringGeometry args={[0.16, 0.28, 48]} />
         <meshBasicMaterial
           color={color}
           transparent
@@ -215,70 +268,54 @@ function GraphCard({
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {focused && (
-        <pointLight color={color} intensity={1.2} distance={2.0} />
+      {/* Focus aura */}
+      <mesh ref={focusGlow} visible={false}>
+        <ringGeometry args={[0.18, 0.34, 48]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.45}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {(focused || hot) && (
+        <pointLight
+          color={color}
+          intensity={focused ? 1.6 : 1.1}
+          distance={2.4}
+          decay={2}
+        />
       )}
 
-      <mesh>
-        <sphereGeometry args={[focused ? 0.13 : 0.08, 20, 20]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} />
+      {/* Lit body — respects scene light / silhouette */}
+      <mesh ref={body}>
+        <sphereGeometry args={[0.09, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.35}
+          roughness={0.35}
+          metalness={0.45}
+          transparent
+          opacity={restOpacity}
+          depthWrite={restOpacity > 0.5}
+        />
       </mesh>
 
-      {showLabel && fade > 0.22 && (
+      {/* Label only for focused or hovered — no plate, no stroke box */}
+      {showLabel && labelTex && (
         <Billboard follow>
-          <mesh
-            position={[0, 0.22, 0]}
-            onPointerOver={onEnter}
-            onPointerOut={onLeave}
-            onClick={onCardClick}
-          >
-            <planeGeometry args={[cardW, cardH]} />
+          <mesh position={[0, 0.28, 0]} renderOrder={10}>
+            <planeGeometry args={[1.1, 0.28]} />
             <meshBasicMaterial
-              color={focused || hot ? '#2a1408' : '#140a04'}
+              map={labelTex}
               transparent
-              opacity={opacity * 0.95}
               depthWrite={false}
+              toneMapped={false}
             />
           </mesh>
-          <mesh position={[0, 0.22, -0.001]}>
-            <planeGeometry args={[cardW + 0.03, cardH + 0.03]} />
-            <meshBasicMaterial
-              color={color}
-              transparent
-              opacity={
-                focused || hot ? 0.9 : Math.max(0.08, fade * 0.55)
-              }
-              depthWrite={false}
-            />
-          </mesh>
-          {/* Focus bloom plate */}
-          {focused && (
-            <mesh position={[0, 0.22, -0.02]}>
-              <planeGeometry args={[cardW + 0.2, cardH + 0.16]} />
-              <meshBasicMaterial
-                color={color}
-                transparent
-                opacity={0.28}
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-              />
-            </mesh>
-          )}
-          <Html
-            position={[0, 0.22, 0.01]}
-            center
-            distanceFactor={6.5}
-            style={{ pointerEvents: 'none', opacity }}
-            zIndexRange={[40, 0]}
-          >
-            <div
-              className={`vigil-tag vigil-tag-card vigil-tag-${node.kind}${hot || focused ? ' hot' : ''}`}
-              aria-hidden
-            >
-              <span className="vigil-tag-name">{node.label}</span>
-              <span className="vigil-tag-meta">{node.weight}</span>
-            </div>
-          </Html>
         </Billboard>
       )}
     </group>
@@ -326,79 +363,67 @@ export function NeuralCore() {
     [model],
   )
   const positions = useMemo(() => layoutNodes(dataNodes), [dataNodes])
+  const adj = useMemo(() => buildAdj(model?.edges || []), [model])
 
-  const focusPos = graphFocusId ? positions.get(graphFocusId) : null
+  const nearSet = useMemo(() => {
+    if (!graphFocusId) return null
+    return adj.get(graphFocusId) || new Set<string>()
+  }, [graphFocusId, adj])
 
-  const fadeOf = (id: string, p: THREE.Vector3) => {
-    if (!focusPos) return 1
-    if (id === graphFocusId) return 1
-    const d = p.distanceTo(focusPos)
-    // Soft falloff by distance — nearby stay bright, far fade down
-    return THREE.MathUtils.clamp(1 - d / FADE_RADIUS, 0.06, 1)
+  const tierOf = (id: string) => {
+    if (!graphFocusId) return TIER_FOCUS
+    if (id === graphFocusId) return TIER_FOCUS
+    if (nearSet?.has(id)) return TIER_NEAR
+    return TIER_FAR
   }
 
   const edgeLines = useMemo(() => {
     if (!model) return [] as {
       key: string
       points: [number, number, number][]
-      mid: THREE.Vector3
-      label: string
-      weight: number
       opacity: number
     }[]
     const out: {
       key: string
       points: [number, number, number][]
-      mid: THREE.Vector3
-      label: string
-      weight: number
       opacity: number
     }[] = []
     const sorted = [...model.edges]
       .filter((e) => e.source !== 'core' && e.target !== 'core')
       .sort((a, b) => b.weight - a.weight)
+
     for (const e of sorted) {
       const a = positions.get(e.source)
       const b = positions.get(e.target)
       if (!a || !b) continue
-      const fa = fadeOf(e.source, a)
-      const fb = fadeOf(e.target, b)
-      const opacity = Math.min(fa, fb) * 0.4
-      if (opacity < 0.04) continue
-      const mid = a.clone().lerp(b, 0.5)
-      mid.y += 0.1
+      const ta = tierOf(e.source)
+      const tb = tierOf(e.target)
+      // Only keep edges touching the focus neighborhood when focused
+      if (graphFocusId) {
+        const touches =
+          e.source === graphFocusId ||
+          e.target === graphFocusId ||
+          nearSet?.has(e.source) ||
+          nearSet?.has(e.target)
+        if (!touches) continue
+      }
+      const opacity = graphFocusId
+        ? Math.min(ta, tb) * 0.85
+        : 0.28
+      if (opacity < 0.05) continue
       out.push({
         key: `${e.source}->${e.target}`,
         points: [
           [a.x, a.y, a.z],
-          [mid.x, mid.y, mid.z],
           [b.x, b.y, b.z],
         ],
-        mid,
-        label: EDGE_LABEL[e.relation || ''] || e.relation || 'link',
-        weight: e.weight,
         opacity,
       })
-      if (out.length >= 90) break
+      if (out.length >= (graphFocusId ? 40 : 70)) break
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, positions, graphFocusId, focusPos])
-
-  const labelNodeIds = useMemo(() => {
-    if (!graphFocusId || !focusPos) {
-      const top = [...dataNodes].sort((a, b) => b.weight - a.weight).slice(0, 22)
-      return new Set(top.map((n) => n.id))
-    }
-    // Show labels for focus + reasonably near nodes
-    const near = dataNodes.filter((n) => {
-      const p = positions.get(n.id)
-      if (!p) return false
-      return fadeOf(n.id, p) > 0.35
-    })
-    return new Set(near.map((n) => n.id))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataNodes, graphFocusId, focusPos, positions])
+  }, [model, positions, graphFocusId, nearSet])
 
   useFrame((_, dt) => {
     if (!group.current) return
@@ -412,43 +437,41 @@ export function NeuralCore() {
 
   return (
     <group ref={group}>
+      {/* Key light + fill so spheres cast silhouette / receive shading */}
+      <directionalLight
+        position={[4, 6, 3]}
+        intensity={graphFocusId ? 1.1 : 0.65}
+        color="#ffe0c0"
+      />
+      <directionalLight
+        position={[-5, 2, -4]}
+        intensity={graphFocusId ? 0.25 : 0.35}
+        color="#6090ff"
+      />
+      <ambientLight intensity={graphFocusId ? 0.12 : 0.22} />
+
       {edgeLines.map((e) => (
-        <group key={e.key}>
-          <Line
-            points={e.points}
-            color="#ff5500"
-            transparent
-            opacity={e.opacity}
-            lineWidth={1.35}
-            depthWrite={false}
-          />
-          {e.weight >= 10 && e.opacity > 0.18 && (
-            <Html
-              position={e.mid}
-              center
-              distanceFactor={10}
-              style={{ pointerEvents: 'none', opacity: e.opacity / 0.4 }}
-              zIndexRange={[10, 0]}
-            >
-              <div className="vigil-tag vigil-tag-edge" aria-hidden>
-                {e.label} · {e.weight}
-              </div>
-            </Html>
-          )}
-        </group>
+        <Line
+          key={e.key}
+          points={e.points}
+          color="#ff5500"
+          transparent
+          opacity={e.opacity}
+          lineWidth={graphFocusId ? 1.6 : 1.2}
+          depthWrite={false}
+        />
       ))}
+
       {dataNodes.map((n) => {
         const p = positions.get(n.id)
         if (!p) return null
-        const fade = fadeOf(n.id, p)
         return (
           <GraphCard
             key={n.id}
             node={n}
             position={p}
             interactive={interactive}
-            showLabel={labelNodeIds.has(n.id)}
-            fade={fade}
+            tier={tierOf(n.id)}
             focused={graphFocusId === n.id}
             spinY={spinAngle}
           />

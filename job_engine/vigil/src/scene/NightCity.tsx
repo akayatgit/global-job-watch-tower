@@ -366,6 +366,8 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
   const pinTex = useMemo(() => makePinTexture(t.n, t.heat), [t.n, t.heat])
   const pin = useRef<THREE.Group>(null)
   const glow = useRef<THREE.Mesh>(null)
+  const pick = useRef<THREE.Mesh>(null)
+  const [hot, setHot] = useState(false)
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
 
@@ -383,6 +385,14 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
         const pulse = 0.22 + Math.sin(state.clock.elapsedTime * 2.0) * 0.1
         glow.current.scale.setScalar(1.15 + Math.sin(state.clock.elapsedTime * 1.6) * 0.06)
         ;(glow.current.material as THREE.MeshBasicMaterial).opacity = pulse
+      }
+    }
+    if (pick.current) {
+      pick.current.visible = hot && !focused
+      if (hot && !focused) {
+        const pulse = 0.28 + Math.sin(state.clock.elapsedTime * 5) * 0.18
+        pick.current.scale.setScalar(1.08 + Math.sin(state.clock.elapsedTime * 4) * 0.05)
+        ;(pick.current.material as THREE.MeshBasicMaterial).opacity = pulse
       }
     }
   })
@@ -419,23 +429,29 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
 
   return (
     <group position={[t.x, t.h / 2, t.z]} rotation={[0, t.yaw, 0]}>
-      <mesh onClick={handleClick} onPointerOver={(e) => {
-        e.stopPropagation()
-        document.body.style.cursor = 'none'
-        useVigilStore.setState({
-          statusLine: `${t.name} · ${t.n} · ${t.sector_label}`,
-        })
-      }}>
+      <mesh
+        onClick={handleClick}
+        onPointerOver={(e) => {
+          e.stopPropagation()
+          setHot(true)
+          useVigilStore.setState({
+            statusLine: focused
+              ? `FOCUSED · ${t.name} · click again to open`
+              : `PICK · ${t.name} · ${t.n}`,
+          })
+        }}
+        onPointerOut={() => setHot(false)}
+      >
         <boxGeometry args={[t.w * 1.4, t.h, t.d * 1.4]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
       <TowerBody t={t} />
-      {focused && (
+      {(focused || hot) && (
         <pointLight
           position={[0, t.h * 0.2, 0]}
           color="#ffaa00"
-          intensity={1.6}
+          intensity={focused ? 1.6 : 1.1}
           distance={3.5}
         />
       )}
@@ -445,6 +461,16 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
           color="#ff8800"
           transparent
           opacity={0.25}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <mesh ref={pick} position={[0, 0, 0]} visible={false}>
+        <sphereGeometry args={[Math.max(t.w, t.d) * 1.05, 20, 20]} />
+        <meshBasicMaterial
+          color="#38bdf8"
+          transparent
+          opacity={0.3}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />

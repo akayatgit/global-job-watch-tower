@@ -246,11 +246,12 @@ use — they should love opening the app, never fight it.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /
-  enters city. Esc / view reset clears focus. Graph fades other nodes by
-  distance from the focused node (soft falloff). City overview: far = large
-  cards on a flat India map; near = small cards at lat/lon on the globe.
-  Each city card has a Remote twin slightly behind — hover pops it out;
-  second click opens Remote jobs.
+  enters city. Esc / view reset clears focus. Graph focus tiers: focused
+  node 100%, immediate neighbors 20%, everything else 10% — only the focused
+  (or hovered) node shows a label. No label plates / dark strokes / text boxes.
+  Hover = “pick me” glow on nodes, city cards, and towers. City overview: far
+  = large India-map cards; near = small lat/lon cards; far-side culled. Remote
+  twin behind each city — hover pops out; second click opens Remote jobs.
 - **Immersive cursor (2026-08-03):** Instant white cursor (zero position lag).
   Only the motion path fades behind. Subtle halo, no hex/circle rings. Native
   cursor hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.

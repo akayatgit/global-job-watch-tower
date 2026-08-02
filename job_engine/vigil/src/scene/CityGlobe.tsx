@@ -139,6 +139,8 @@ function CityMarker({
   const cityFocused = selectFocusId === citySelect
   const remoteFocused = selectFocusId === remoteSelect
   const [remoteHot, setRemoteHot] = useState(false)
+  const [cityHot, setCityHot] = useState(false)
+  const pickGlow = useRef<THREE.Mesh>(null)
 
   const cityTex = useMemo(
     () => makeCityCardTex(geo.label, city.n, 'city', cityFocused),
@@ -208,6 +210,16 @@ function CityMarker({
       const rs = remoteHot || remoteFocused ? 0.9 : 0.68
       remoteGroup.current.scale.setScalar(rs)
     }
+
+    if (pickGlow.current) {
+      const on = cityHot && !cityFocused
+      pickGlow.current.visible = on
+      if (on) {
+        const pulse = 0.4 + Math.sin(performance.now() * 0.006) * 0.25
+        pickGlow.current.scale.setScalar(1.15 + Math.sin(performance.now() * 0.005) * 0.08)
+        ;(pickGlow.current.material as THREE.MeshBasicMaterial).opacity = pulse
+      }
+    }
   })
 
   const worldFocus = (local: THREE.Vector3, id: string, distance: number) => {
@@ -268,17 +280,29 @@ function CityMarker({
 
       {/* City card (front) */}
       <Billboard follow>
+        <mesh ref={pickGlow} position={[0, 0, -0.02]} visible={false}>
+          <planeGeometry args={[1.2, 0.48]} />
+          <meshBasicMaterial
+            color="#ffaa00"
+            transparent
+            opacity={0.4}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
         <mesh
           onClick={onCityClick}
           onPointerOver={(e) => {
             if (!interactive) return
             e.stopPropagation()
+            setCityHot(true)
             useVigilStore.setState({
               statusLine: cityFocused
                 ? `FOCUSED · ${geo.label} · click again to enter`
-                : `${geo.label} · ${city.n} — click to focus`,
+                : `PICK · ${geo.label} · ${city.n}`,
             })
           }}
+          onPointerOut={() => setCityHot(false)}
         >
           <planeGeometry args={[0.95, 0.3]} />
           <meshBasicMaterial
@@ -289,13 +313,13 @@ function CityMarker({
           />
         </mesh>
         {/* Soft glow plate behind focused city */}
-        {cityFocused && (
+        {(cityFocused || cityHot) && (
           <mesh position={[0, 0, -0.01]}>
             <planeGeometry args={[1.15, 0.42]} />
             <meshBasicMaterial
               color="#ff8800"
               transparent
-              opacity={0.35}
+              opacity={cityFocused ? 0.35 : 0.28}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
             />

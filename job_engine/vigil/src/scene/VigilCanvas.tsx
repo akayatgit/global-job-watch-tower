@@ -25,8 +25,16 @@ function SceneBody() {
       {nightDistrict && <fog attach="fog" args={['#06020a', 7, 24]} />}
       <EffectComposer multisampling={0}>
         <Bloom
-          intensity={nightDistrict ? 1.15 : sceneMode === 'core' ? 0.45 : 0.65}
-          luminanceThreshold={nightDistrict ? 0.28 : 0.5}
+          intensity={
+            nightDistrict
+              ? 1.15
+              : sceneMode === 'core'
+                ? 0.45
+                : sceneMode === 'graph'
+                  ? 0.35
+                  : 0.55
+          }
+          luminanceThreshold={nightDistrict ? 0.28 : sceneMode === 'graph' ? 0.55 : 0.5}
           luminanceSmoothing={0.85}
           mipmapBlur
         />
@@ -91,6 +99,7 @@ export function VigilCanvas() {
           const st = useVigilStore.getState()
           if (st.sceneMode === 'graph' && st.graphFocusId) {
             st.setGraphFocusId(null)
+            st.clearCameraFocus()
             st.setStatus('GRAPH · global view')
             return
           }
