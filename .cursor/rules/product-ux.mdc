@@ -237,9 +237,16 @@ use — they should love opening the app, never fight it.
 - **Scene spin freeze (2026-08-03):** User can stop auto-rotation in Core /
   Graph / City (HUD control + Space) while working.
 - **Night city districts (2026-08-03):** Entering a metro shows a cinematic
-  night skyline — towers clustered by sector, height = hiring volume, facade
-  name boards (same angle as building, not floating tags), flickering office
-  lights. Click the tower body/board (fat mesh), not text.
-- **Immersive cursor (2026-08-03):** Custom glowing white lerp-dot cursor
-  (trail, velocity stretch, hover hex rings, click shockwave). Native cursor
+  night skyline — towers clustered by sector (organic scatter, not fake grid),
+  height = hiring volume, unique silhouettes (slab / taper / spire / step /
+  twin). White office window lights only (no rainbow lamps). Road asphalt with
+  lane dashes; many subtle NPC cars. Neon name boards on all four façades;
+  breathing white job-count pin on each roof. Click tower body/board (fat
+  mesh), not text.
+- **First click focus / second open (2026-08-03):** In Graph, City globe, and
+  Night City — first click flies the camera to a drone-isometric close-up of
+  the target; second click on the same target opens the widget / enters city.
+  Esc / view reset clears focus.
+- **Immersive cursor (2026-08-03):** Small white lerp-dot with subtle halo +
+  soft trail only — no hex/circle rings. Clear motion lag. Native cursor
   hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.

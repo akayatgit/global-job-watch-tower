@@ -127,12 +127,27 @@ export function CityGlobe() {
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 if (!interactive) return
                 e.stopPropagation()
+                const st = useVigilStore.getState()
+                const selectId = `city:${c.id}`
+                // First click = drone focus on marker; second = enter night city
+                if (st.selectFocusId !== selectId) {
+                  st.setSceneSpin(false)
+                  st.requestCameraFocus({
+                    id: selectId,
+                    x: p.x,
+                    y: p.y,
+                    z: p.z,
+                    distance: 2.4,
+                  })
+                  st.setStatus(`FOCUS · ${geo.label} · click again to enter`)
+                  return
+                }
                 setCityFocus(c.id)
                 setCityFilter(c.id)
-                useVigilStore.getState().setSceneSpin(false)
-                useVigilStore.getState().resetView()
-                useVigilStore.getState().setStatus(`ENTERING ${geo.label}`)
-                useVigilStore.getState().triggerBurst()
+                st.clearCameraFocus()
+                st.resetView()
+                st.setStatus(`ENTERING ${geo.label}`)
+                st.triggerBurst()
               }}
             >
               <sphereGeometry args={[Math.max(size * 2.4, 0.16), 16, 16]} />

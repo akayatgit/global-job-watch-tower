@@ -390,9 +390,32 @@ type VigilStore = {
   /** Graph local-focus node id; null = full graph */
   graphFocusId: string | null
   setGraphFocusId: (id: string | null) => void
+  /**
+   * First-click camera focus (drone isometric). Second click on same id opens UI.
+   * `id` matches graph node / company tower / city marker.
+   */
+  cameraFocus: {
+    id: string
+    x: number
+    y: number
+    z: number
+    distance: number
+  } | null
+  cameraFocusNonce: number
+  requestCameraFocus: (f: {
+    id: string
+    x: number
+    y: number
+    z: number
+    distance?: number
+  }) => void
+  clearCameraFocus: () => void
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
   setCityFocus: (id: string | null) => void
+  /** Last selected interactive id (for second-click open) */
+  selectFocusId: string | null
+  setSelectFocusId: (id: string | null) => void
   canvasPan: { x: number; y: number }
   setCanvasPan: (p: { x: number; y: number }) => void
   hands: HandsState
@@ -605,6 +628,9 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       sceneZoom: 0,
       canvasPan: { x: 0, y: 0 },
       graphFocusId: null,
+      cameraFocus: null,
+      selectFocusId: null,
+      cameraFocusNonce: get().cameraFocusNonce + 1,
       statusLine: 'VIEW RESET · drag orbit · scroll/pinch enter',
     }),
   sceneSpin: true,
@@ -622,8 +648,31 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   graphFocusId: null,
   setGraphFocusId: (id) => set({ graphFocusId: id }),
+  cameraFocus: null,
+  cameraFocusNonce: 0,
+  requestCameraFocus: (f) =>
+    set({
+      cameraFocus: {
+        id: f.id,
+        x: f.x,
+        y: f.y,
+        z: f.z,
+        distance: f.distance ?? 3.2,
+      },
+      cameraFocusNonce: get().cameraFocusNonce + 1,
+      selectFocusId: f.id,
+      statusLine: 'FOCUS · click again to open',
+    }),
+  clearCameraFocus: () =>
+    set({
+      cameraFocus: null,
+      selectFocusId: null,
+      cameraFocusNonce: get().cameraFocusNonce + 1,
+    }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
+  selectFocusId: null,
+  setSelectFocusId: (id) => set({ selectFocusId: id }),
   canvasPan: { x: 0, y: 0 },
   setCanvasPan: (p) =>
     set({

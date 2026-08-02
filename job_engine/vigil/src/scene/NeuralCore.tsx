@@ -178,11 +178,18 @@ function GraphCard({
     if (!interactive || dimmed) return
     e.stopPropagation()
     const st = useVigilStore.getState()
-    // First click = local focus; second click on same card = open panel
-    if (st.graphFocusId !== node.id) {
+    // First click = camera fly + local neighborhood; second = open panel
+    if (st.selectFocusId !== node.id) {
       st.setGraphFocusId(node.id)
       st.setSceneSpin(false)
-      st.setStatus(`LOCAL · ${node.label} (depth 2) · click card again to open`)
+      st.requestCameraFocus({
+        id: node.id,
+        x: position.x,
+        y: position.y,
+        z: position.z,
+        distance: 2.8,
+      })
+      st.setStatus(`FOCUS · ${node.label} · click again to open`)
       return
     }
     openInsight(node)

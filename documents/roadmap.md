@@ -29,7 +29,7 @@
 
 ---
 
-## 🔥 Current sprint — Richer City districts (night city of employers)
+## ✅ Closed sprint — Richer City districts (night city of employers)
 
 **Goal:** Fly into a cinematic night city — tallest towers = most hiring; cluster by sector; facade name boards.
 
@@ -40,12 +40,13 @@
 | WM-C3 | Night windows + flicker + bloom fog | Done |
 | WM-C4 | Facade name boards (building angle, not floating tags) | Done |
 | WM-C5 | Click tower → jobs; street monument city title | Done |
+| WM-C6 | Polish: white lights, roads, NPC cars, unique towers, neon 4-face boards, breath pins, first-click camera focus | Done |
 
 ---
 
-## ⏭ Next milestone — (pick after City sprint)
+## 🔥 Current sprint — (pick with Ashok)
 
-TBD with Ashok — candidates: Competitor Intelligence (`EC-06`), Skills Radar, Domestic/Global.
+Candidates: Competitor Intelligence (`EC-06`), Skills Radar, Domestic/Global, deeper City life (districts / landmarks).
 
 ---
 
