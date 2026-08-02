@@ -52,6 +52,19 @@ function readStoredCity(): string {
   }
 }
 
+const CITY_WINDOW_ALLOWED = new Set([0, 1, 2, 4, 7, 14, 30])
+
+function readStoredCityWindow(): number {
+  try {
+    const raw = localStorage.getItem('vigil.cityWindow')
+    if (raw == null) return 7
+    const n = Number(raw)
+    return CITY_WINDOW_ALLOWED.has(n) ? n : 7
+  } catch {
+    return 7
+  }
+}
+
 const DEFAULT_SECTOR_FAVS = ['tech_ai', 'tech_digital']
 const DEFAULT_CITY_FAVS = ['bengaluru', 'chennai', 'kerala']
 
@@ -435,6 +448,9 @@ type VigilStore = {
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
   setCityFocus: (id: string | null) => void
+  /** Time window for globe + campus skyline (0=24h … 30=month). Persisted. */
+  cityWindowDays: number
+  setCityWindowDays: (days: number) => void
   /** Last selected interactive id (for second-click open) */
   selectFocusId: string | null
   setSelectFocusId: (id: string | null) => void
@@ -720,6 +736,24 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
+  cityWindowDays: readStoredCityWindow(),
+  setCityWindowDays: (days) => {
+    const next = CITY_WINDOW_ALLOWED.has(days) ? days : 7
+    try {
+      localStorage.setItem('vigil.cityWindow', String(next))
+    } catch {
+      /* ignore */
+    }
+    set({
+      cityWindowDays: next,
+      statusLine:
+        next === 0
+          ? 'CITY WINDOW · last 24 hours — pick a metro'
+          : next === 1
+            ? 'CITY WINDOW · today — pick a metro'
+            : `CITY WINDOW · last ${next} days — pick a metro`,
+    })
+  },
   selectFocusId: null,
   setSelectFocusId: (id) => set({ selectFocusId: id }),
   canvasPan: { x: 0, y: 0 },

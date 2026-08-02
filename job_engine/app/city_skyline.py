@@ -8,9 +8,26 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.cities import CITY_BY_ID, normalize_city_filter
-from app.models import Company, JobMaster
+from app.models import Company, JobMaster, SearchConfig
 from app.sectors import SECTOR_BY_ID
-from app.signals import ALLOWED_WINDOWS, _window_bounds
+from app.signals import ALLOWED_WINDOWS, WINDOW_OPTIONS, _window_bounds
+
+ROLES_PER_COMPANY = 5
+
+
+def _window_caption(window_days: int) -> str:
+    """Human hook under the openings number (UI copy)."""
+    if window_days == 0:
+        return 'Openings in 24h'
+    if window_days == 1:
+        return 'Openings Today'
+    if window_days == 7:
+        return 'Openings this week'
+    if window_days == 14:
+        return 'Openings in 2 weeks'
+    if window_days == 30:
+        return 'Openings this month'
+    return f'Openings in {window_days} days'
 
 
 def compute_city_skyline(
@@ -20,18 +37,30 @@ def compute_city_skyline(
     limit: int = 28,
 ) -> dict:
     city = normalize_city_filter(city) or ''
+    empty = {
+        'city': '',
+        'label': '',
+        'days': window_days if window_days in ALLOWED_WINDOWS else 7,
+        'window_label': dict(WINDOW_OPTIONS).get(window_days, f'{window_days}d'),
+        'window_caption': _window_caption(
+            window_days if window_days in ALLOWED_WINDOWS else 7
+        ),
+        'window_options': [
+            {'days': d, 'label': label} for d, label in WINDOW_OPTIONS
+        ],
+        'companies': [],
+        'sectors': [],
+        'stats': {'jobs': 0, 'companies': 0, 'max_n': 1},
+    }
     if not city:
-        return {
-            'city': '',
-            'label': '',
-            'companies': [],
-            'sectors': [],
-            'stats': {'jobs': 0, 'companies': 0},
-        }
+        return empty
     if window_days not in ALLOWED_WINDOWS:
         window_days = 7
     (_d, recent_start, recent_end, _ps, _pe, by_scraped) = _window_bounds(window_days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
+    caption = _window_caption(window_days)
+    window_label = dict(WINDOW_OPTIONS).get(window_days, f'{window_days}d')
+    window_options = [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS]
 
     # Totals per company in this city
     co_rows = db.execute(
@@ -50,16 +79,17 @@ def compute_city_skyline(
     if not co_rows:
         label = CITY_BY_ID.get(city, {}).get('label') or city.title()
         return {
+            **empty,
             'city': city,
             'label': label,
             'days': window_days,
-            'companies': [],
-            'sectors': [],
-            'stats': {'jobs': 0, 'companies': 0},
+            'window_label': window_label,
+            'window_caption': caption,
+            'window_options': window_options,
         }
 
     ids = [cid for cid, _, _ in co_rows]
-    # Dominant sector per company (most jobs in that sector in this city/window)
+    # Dominant sector per company
     sec_rows = db.execute(
         select(
             JobMaster.company_id, JobMaster.sector,
@@ -78,6 +108,65 @@ def compute_city_skyline(
         if cid not in dominant and sector:
             dominant[cid] = sector
 
+    # Role clusters — prefer Watch Tower search (role) names; else job title
+    role_rows = db.execute(
+        select(
+            JobMaster.company_id,
+            SearchConfig.name,
+            func.count(JobMaster.id).label('n'),
+        )
+        .join(SearchConfig, SearchConfig.id == JobMaster.search_config_id)
+        .where(
+            time_col >= recent_start, time_col < recent_end,
+            JobMaster.city_key == city,
+            JobMaster.company_id.in_(ids),
+            JobMaster.search_config_id.is_not(None),
+        )
+        .group_by(JobMaster.company_id, SearchConfig.name)
+        .order_by(JobMaster.company_id, desc('n'))
+    ).all()
+    roles_by_co: dict[int, list[dict]] = defaultdict(list)
+    for cid, rname, n in role_rows:
+        bag = roles_by_co[cid]
+        if len(bag) >= ROLES_PER_COMPANY:
+            continue
+        bag.append({'title': (rname or 'Role').strip(), 'n': int(n)})
+
+    # Fill gaps with raw titles when a company has few/no search roles
+    need_ids = [cid for cid in ids if len(roles_by_co[cid]) < ROLES_PER_COMPANY]
+    if need_ids:
+        title_rows = db.execute(
+            select(
+                JobMaster.company_id,
+                JobMaster.title,
+                func.count(JobMaster.id).label('n'),
+            )
+            .where(
+                time_col >= recent_start, time_col < recent_end,
+                JobMaster.city_key == city,
+                JobMaster.company_id.in_(need_ids),
+            )
+            .group_by(JobMaster.company_id, JobMaster.title)
+            .order_by(JobMaster.company_id, desc('n'))
+        ).all()
+        seen_titles: dict[int, set[str]] = defaultdict(set)
+        for cid, _r in roles_by_co.items():
+            for item in _r:
+                seen_titles[cid].add(item['title'].lower())
+        for cid, title, n in title_rows:
+            bag = roles_by_co[cid]
+            if len(bag) >= ROLES_PER_COMPANY:
+                continue
+            t = (title or 'Role').strip()
+            key = t.lower()
+            if key in seen_titles[cid]:
+                continue
+            # Skip if this title already covered by a search role substring
+            if any(key in s or s in key for s in seen_titles[cid]):
+                continue
+            seen_titles[cid].add(key)
+            bag.append({'title': t, 'n': int(n)})
+
     companies = []
     by_sector: dict[str, int] = defaultdict(int)
     total_jobs = 0
@@ -90,6 +179,7 @@ def compute_city_skyline(
             'n': int(n),
             'sector_id': sid,
             'sector_label': meta.get('label') or sid.replace('_', ' ').title(),
+            'roles': roles_by_co.get(cid, []),
         })
         by_sector[sid] += int(n)
         total_jobs += int(n)
@@ -107,6 +197,9 @@ def compute_city_skyline(
         'city': city,
         'label': label,
         'days': window_days,
+        'window_label': window_label,
+        'window_caption': caption,
+        'window_options': window_options,
         'companies': companies,
         'sectors': sectors,
         'stats': {

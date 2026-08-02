@@ -176,6 +176,16 @@ export function chipLabel(days: number, label?: string): string {
   return `${days}d`
 }
 
+/** Hook line under campus openings number */
+export function openingsCaption(days: number): string {
+  if (days === 0) return 'Openings in 24h'
+  if (days === 1) return 'Openings Today'
+  if (days === 7) return 'Openings this week'
+  if (days === 14) return 'Openings in 2 weeks'
+  if (days === 30) return 'Openings this month'
+  return `Openings in ${days} days`
+}
+
 export function relTime(iso?: string | null): string {
   if (!iso) return '—'
   const t = new Date(iso).getTime()

@@ -3,15 +3,17 @@ import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import { Billboard } from '@react-three/drei'
 import * as THREE from 'three'
-import { api } from '../lib/api'
+import { api, openingsCaption } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { wasDragClick } from './pointerGuard'
 import { clearCampusNav, setCampusNav } from './campusNav'
 
 /**
  * Cyberpunk glass campus — frosted glass, edge frames, multi-color glow,
- * dense white fabric, realistic mini cars, compact roof banners.
+ * dense white fabric, realistic mini cars, roof name/count + role clusters.
  */
+
+type RoleHit = { title: string; n: number }
 
 type SkyCo = {
   company_id: number
@@ -19,6 +21,7 @@ type SkyCo = {
   n: number
   sector_id: string
   sector_label: string
+  roles?: RoleHit[]
 }
 
 type Corp = {
@@ -27,6 +30,7 @@ type Corp = {
   n: number
   sector_id: string
   sector_label: string
+  roles: RoleHit[]
   x: number
   z: number
   w: number
@@ -95,41 +99,70 @@ function wrapName(name: string, max = 11): string[] {
   return lines.slice(0, 3)
 }
 
-/** Floating roof text only — no card chrome. Name + big white count. */
-function makeRoofLabel(name: string, jobs: number) {
+function strokeFill(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fill: string,
+  strokeW: number,
+) {
+  ctx.lineWidth = strokeW
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)'
+  ctx.strokeText(text, x, y)
+  ctx.fillStyle = fill
+  ctx.fillText(text, x, y)
+}
+
+/** Floating roof text — name + big count + openings caption. No card. */
+function makeRoofLabel(name: string, jobs: number, days: number) {
   const lines = wrapName(name, 11)
+  const caption = openingsCaption(days)
   const c = document.createElement('canvas')
   c.width = 512
-  c.height = 36 + lines.length * 34 + 78
+  c.height = 36 + lines.length * 34 + 100
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, c.width, c.height)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const cx = c.width / 2
-  // Name — white with dark rim for read on any glass
-  ctx.font = '800 28px Orbitron, sans-serif'
   ctx.lineJoin = 'round'
   ctx.miterLimit = 2
+  const cx = c.width / 2
+  ctx.font = '800 28px Orbitron, sans-serif'
   lines.forEach((ln, i) => {
-    const y = 28 + i * 32
-    ctx.lineWidth = 7
-    ctx.strokeStyle = 'rgba(0,0,0,0.88)'
-    ctx.strokeText(ln.toUpperCase(), cx, y)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillText(ln.toUpperCase(), cx, y)
+    strokeFill(ctx, ln.toUpperCase(), cx, 28 + i * 32, '#ffffff', 7)
   })
-  // Big openings count — number only, white, loud
-  const numY = 36 + lines.length * 34 + 30
+  const numY = 36 + lines.length * 34 + 28
   const num = jobs > 999 ? '999+' : String(jobs)
-  ctx.font = '900 68px Orbitron, sans-serif'
-  ctx.lineWidth = 10
-  ctx.strokeStyle = 'rgba(0,0,0,0.9)'
-  ctx.strokeText(num, cx, numY)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillText(num, cx, numY)
+  ctx.font = '900 64px Orbitron, sans-serif'
+  strokeFill(ctx, num, cx, numY, '#ffffff', 10)
+  ctx.font = '700 16px Rajdhani, sans-serif'
+  strokeFill(ctx, caption, cx, numY + 36, '#f8fafc', 4)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
+  return { tex, aspect: c.width / c.height }
+}
+
+/** Small role chip — always smaller than company name / openings number */
+function makeRoleLabel(title: string, n: number) {
+  const short = wrapName(title, 10).slice(0, 2)
+  const suffix = n > 1 ? ` ×${n}` : ''
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 28 + short.length * 16
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, c.width, c.height)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineJoin = 'round'
+  ctx.font = '700 13px Rajdhani, sans-serif'
+  short.forEach((ln, i) => {
+    const t = i === short.length - 1 ? `${ln}${suffix}` : ln
+    strokeFill(ctx, t, c.width / 2, 16 + i * 15, '#e2e8f0', 3.5)
+  })
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
   return { tex, aspect: c.width / c.height }
 }
 
@@ -156,6 +189,7 @@ function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
       n: c.n,
       sector_id: c.sector_id,
       sector_label: c.sector_label,
+      roles: (c.roles || []).slice(0, 5),
       x: CAMPUS.cx + (col - (cols - 1) / 2) * gap + (hash01(seed) - 0.5) * 0.04,
       z: CAMPUS.cz + (row - (nRows - 1) / 2) * gap + (hash01(seed + 1) - 0.5) * 0.04,
       w: 0.3 + heat * 0.14 + hash01(seed + 2) * 0.05,
@@ -292,12 +326,14 @@ function DummyBuilding({
 function GlassTower({
   t,
   cityLabel,
+  windowDays,
   sceneDimmed,
   onHoverEnter,
   onHoverLeave,
 }: {
   t: Corp
   cityLabel: string
+  windowDays: number
   /** True when any tower is focused or hovered — dim non-active ones */
   sceneDimmed: boolean
   onHoverEnter: (id: string) => void
@@ -310,8 +346,12 @@ function GlassTower({
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const banner = useMemo(
-    () => makeRoofLabel(t.name, t.n),
-    [t.name, t.n],
+    () => makeRoofLabel(t.name, t.n, windowDays),
+    [t.name, t.n, windowDays],
+  )
+  const roleTex = useMemo(
+    () => t.roles.map((r) => makeRoleLabel(r.title, r.n)),
+    [t.roles],
   )
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
@@ -351,7 +391,7 @@ function GlassTower({
     // Focus on the ROOF / top of building
     const roofY = CITY_Y + t.h + 0.15
     if (st.selectFocusId === selectId) {
-      st.openCompanyJobs(t.company_id, t.name, 7)
+      st.openCompanyJobs(t.company_id, t.name, windowDays || 7)
       st.setStatus(`OPEN · ${t.name}`)
       return
     }
@@ -363,13 +403,17 @@ function GlassTower({
       z: t.z,
       distance: focusDistance(t.h),
     })
-    st.setStatus(`FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`)
+    st.setStatus(
+      `FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`,
+    )
   }
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.2 + wrapName(t.name, 11).length * 0.055
+  const bannerH = 0.22 + wrapName(t.name, 11).length * 0.05
   const bannerW = bannerH * banner.aspect * (lit ? 1.04 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
+  const roleR = Math.max(t.w, t.d) * 0.95 + 0.12
+  const roleY = t.h * 0.62
 
   return (
     <group position={[t.x, 0, t.z]}>
@@ -469,7 +513,7 @@ function GlassTower({
         />
       )}
 
-      {/* Name + big count only — no card */}
+      {/* Name + big count + openings caption — no card */}
       <Billboard follow position={[0, t.h + 0.1 + bannerH / 2, 0]}>
         <mesh
           onClick={onClick}
@@ -490,6 +534,43 @@ function GlassTower({
           />
         </mesh>
       </Billboard>
+
+      {/* Role clusters around the tower — smaller than name/count */}
+      {roleTex.map((rt, i) => {
+        const n = Math.max(roleTex.length, 1)
+        const ang = (i / n) * Math.PI * 2 + t.seed * 0.2
+        const rh = 0.055 + (rt.aspect > 1 ? 0 : 0.02)
+        const rw = rh * rt.aspect
+        return (
+          <Billboard
+            key={i}
+            follow
+            position={[
+              Math.cos(ang) * roleR,
+              roleY + Math.sin(i * 1.7) * 0.04,
+              Math.sin(ang) * roleR,
+            ]}
+          >
+            <mesh
+              onClick={onClick}
+              onPointerOver={enter}
+              onPointerOut={leave}
+              visible={lit || !dim}
+              renderOrder={cardOrder - 5}
+            >
+              <planeGeometry args={[rw, rh]} />
+              <meshBasicMaterial
+                map={rt.tex}
+                transparent
+                opacity={dim ? 0.12 : lit ? 0.95 : 0.7}
+                depthTest={!lit}
+                depthWrite={false}
+                toneMapped={false}
+              />
+            </mesh>
+          </Billboard>
+        )
+      })}
     </group>
   )
 }
@@ -741,26 +822,28 @@ export function NightCity({
   const [maxN, setMaxN] = useState(1)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const selectFocusId = useVigilStore((s) => s.selectFocusId)
+  const cityWindowDays = useVigilStore((s) => s.cityWindowDays)
   const anyFocused = Boolean(selectFocusId?.startsWith('company:'))
   const sceneDimmed = anyFocused || Boolean(hoverId)
 
   useEffect(() => {
     let alive = true
     api
-      .citySkyline(cityId, 7, 28)
+      .citySkyline(cityId, cityWindowDays, 28)
       .then((d) => {
         if (!alive) return
         setCompanies(d?.companies || [])
         setMaxN(d?.stats?.max_n || 1)
+        const cap = d?.window_caption || openingsCaption(cityWindowDays)
         useVigilStore.getState().setStatus(
-          `CAMPUS · ${d?.label || cityLabel} · glass towers = employers`,
+          `CAMPUS · ${d?.label || cityLabel} · ${cap}`,
         )
       })
       .catch(() => setCompanies([]))
     return () => {
       alive = false
     }
-  }, [cityId, cityLabel])
+  }, [cityId, cityLabel, cityWindowDays])
 
   // Clear hover when leaving the district or changing focus city
   useEffect(() => {
@@ -828,6 +911,7 @@ export function NightCity({
           key={t.company_id}
           t={t}
           cityLabel={cityLabel}
+          windowDays={cityWindowDays}
           sceneDimmed={sceneDimmed}
           onHoverEnter={setHoverId}
           onHoverLeave={(id) =>

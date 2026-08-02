@@ -402,6 +402,7 @@ function GeoPin({
 export function CityGlobe() {
   const sceneMode = useVigilStore((s) => s.sceneMode)
   const cityFocus = useVigilStore((s) => s.cityFocus)
+  const cityWindowDays = useVigilStore((s) => s.cityWindowDays)
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
   const selectFocusId = useVigilStore((s) => s.selectFocusId)
@@ -415,7 +416,7 @@ export function CityGlobe() {
     if (sceneMode !== 'city') return
     let alive = true
     api
-      .citySignals(7)
+      .citySignals(cityWindowDays)
       .then((d) => {
         if (!alive) return
         const rows = (d?.cities || []) as {
@@ -436,7 +437,7 @@ export function CityGlobe() {
     return () => {
       alive = false
     }
-  }, [sceneMode])
+  }, [sceneMode, cityWindowDays])
 
   useFrame((state) => {
     if (globe.current && !cityFocus) {

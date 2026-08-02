@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, WINDOW_FALLBACK, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { IconBrowser, IconTrain, IconVigil } from './ModuleIcons'
 import { stepCampusFocus } from '../scene/campusNav'
@@ -22,6 +22,8 @@ export function StatusHud() {
   const setSceneMode = useVigilStore((s) => s.setSceneMode)
   const cityFocus = useVigilStore((s) => s.cityFocus)
   const setCityFocus = useVigilStore((s) => s.setCityFocus)
+  const cityWindowDays = useVigilStore((s) => s.cityWindowDays)
+  const setCityWindowDays = useVigilStore((s) => s.setCityWindowDays)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
   const toggleSceneSpin = useVigilStore((s) => s.toggleSceneSpin)
   const trainingActive = useVigilStore((s) => s.trainingActive)
@@ -294,6 +296,32 @@ export function StatusHud() {
           </div>
         </div>
       </div>
+
+      {sceneMode === 'city' ? (
+        <div
+          className={`city-window-bar interactive ${cityFocus ? 'in-campus' : 'on-globe'}`}
+          role="group"
+          aria-label="Hiring window for city view"
+        >
+          {!cityFocus ? (
+            <span className="city-window-hint" title="Applies when you enter a metro">
+              Hiring window
+            </span>
+          ) : null}
+          {WINDOW_FALLBACK.map((w) => (
+            <button
+              key={w.days}
+              type="button"
+              className={`chip city-window-chip ${cityWindowDays === w.days ? 'active' : ''}`}
+              title={w.label}
+              aria-pressed={cityWindowDays === w.days}
+              onClick={() => setCityWindowDays(w.days)}
+            >
+              {chipLabel(w.days, w.label)}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {v?.alert_level === 'blocked' || v?.block ? (
         <div className="alert-strip interactive">

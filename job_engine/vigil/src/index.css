@@ -320,6 +320,44 @@ button, input, select {
   border-color: rgba(253, 230, 138, 0.85);
 }
 
+.city-window-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  pointer-events: auto;
+}
+
+.city-window-bar.on-globe {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 12, 20, 0.72),
+    rgba(8, 12, 20, 0.35)
+  );
+  border-bottom: 1px solid rgba(125, 211, 252, 0.22);
+}
+
+.city-window-bar.in-campus {
+  padding-top: 2px;
+  opacity: 0.92;
+}
+
+.city-window-hint {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  margin-right: 4px;
+}
+
+.city-window-chip {
+  min-width: 0;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
 .train-btn {
   color: var(--vg-amber);
 }
