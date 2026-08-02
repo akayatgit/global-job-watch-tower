@@ -105,10 +105,12 @@ export function VigilCanvas() {
             st.setStatus('GRAPH · global view')
             return
           }
+          // City campus: empty click may clear tower focus — never leave immersive
           if (st.sceneMode === 'city' && st.cityFocus) {
-            st.setCityFocus(null)
-            st.resetView()
-            st.setStatus('CITY · GLOBE')
+            if (st.selectFocusId?.startsWith('company:')) {
+              st.clearCameraFocus()
+              st.setStatus('CAMPUS · use exit to return to globe')
+            }
           }
         }}
       >

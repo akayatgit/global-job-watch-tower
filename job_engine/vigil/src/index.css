@@ -294,6 +294,19 @@ button, input, select {
   text-align: center;
 }
 
+.city-exit-btn {
+  color: #7dd3fc;
+  border-color: rgba(125, 211, 252, 0.45);
+  box-shadow:
+    inset 0 -8px 14px rgba(56, 189, 248, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.city-exit-btn:hover:not(:disabled) {
+  color: #e0f2fe;
+  border-color: rgba(186, 230, 253, 0.85);
+}
+
 .train-btn {
   color: var(--vg-amber);
 }

@@ -19,6 +19,8 @@ export function StatusHud() {
   const setVigilMode = useVigilStore((s) => s.setVigilMode)
   const sceneMode = useVigilStore((s) => s.sceneMode)
   const setSceneMode = useVigilStore((s) => s.setSceneMode)
+  const cityFocus = useVigilStore((s) => s.cityFocus)
+  const setCityFocus = useVigilStore((s) => s.setCityFocus)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
   const toggleSceneSpin = useVigilStore((s) => s.toggleSceneSpin)
   const trainingActive = useVigilStore((s) => s.trainingActive)
@@ -129,6 +131,38 @@ export function StatusHud() {
                   <path d="M4 12h16M12 4a14 14 0 0 1 0 16M12 4a14 14 0 0 0 0 16" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
                 </svg>
               </button>
+              {sceneMode === 'city' && cityFocus ? (
+                <button
+                  type="button"
+                  className="hud-icon-btn city-exit-btn"
+                  title="Leave campus — back to globe"
+                  aria-label="Leave campus"
+                  onClick={() => {
+                    setCityFocus(null)
+                    useVigilStore.getState().clearCameraFocus()
+                    useVigilStore.getState().resetView()
+                    useVigilStore.getState().setStatus('CITY · GLOBE')
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                    <path
+                      d="M9 6H5.5A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18H9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M10 12h10M16 7l5 5-5 5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={`hud-icon-btn ${sceneSpin ? 'on' : ''}`}
