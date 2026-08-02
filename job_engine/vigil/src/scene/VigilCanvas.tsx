@@ -22,20 +22,21 @@ function SceneBody() {
       {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
-      {nightDistrict && <fog attach="fog" args={['#06020a', 7, 24]} />}
+      {nightDistrict && <color attach="background" args={['#e8eef5']} />}
+      {nightDistrict && <fog attach="fog" args={['#e8eef5', 14, 36]} />}
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
             nightDistrict
-              ? 1.15
+              ? 0.55
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
                   ? 0.22
                   : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.28 : sceneMode === 'graph' ? 0.72 : 0.5}
-          luminanceSmoothing={0.85}
+          luminanceThreshold={nightDistrict ? 0.55 : sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceSmoothing={0.9}
           mipmapBlur
         />
       </EffectComposer>
@@ -94,6 +95,7 @@ export function VigilCanvas() {
       <Canvas
         dpr={[1, 1.5]}
         camera={{ position: [0, 0.6, 7.2], fov: 45 }}
+        shadows
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         onPointerMissed={() => {
           const st = useVigilStore.getState()

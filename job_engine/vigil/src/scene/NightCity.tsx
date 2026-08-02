@@ -6,6 +6,11 @@ import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 
+/**
+ * Isometric “smart city” district — reference style:
+ * matte white dummy fabric · translucent cyan glass corporates · top banners · tight campus.
+ */
+
 type SkyCo = {
   company_id: number
   name: string
@@ -14,9 +19,7 @@ type SkyCo = {
   sector_label: string
 }
 
-type TowerStyle = 'slab' | 'taper' | 'spire' | 'step' | 'twin'
-
-type Tower = {
+type Corp = {
   company_id: number
   name: string
   n: number
@@ -29,378 +32,210 @@ type Tower = {
   h: number
   heat: number
   seed: number
-  style: TowerStyle
-  yaw: number
-  winCols: number
-  winRows: number
 }
 
-const CITY_Y = -1.2
-/** Manhattan road lines (world X / Z). Buildings sit in the blocks between. */
-const ROAD_LINES = [-6, -3, 0, 3, 6]
-const CITY_EDGE = 7.5
-const LANE_W = 0.075
-const SIGNAL_CYCLE = 9
-const STOP_DIST = 0.42
-const CAR_GAP = 0.28
+type Dummy = { x: number; z: number; w: number; d: number; h: number; seed: number }
 
-const SECTOR_BLOCK: Record<string, { x: number; z: number }> = {
-  tech_ai: { x: -4.5, z: -4.5 },
-  tech_digital: { x: 4.5, z: -4.5 },
-  manufacturing_advanced: { x: -4.5, z: 4.5 },
-  healthcare: { x: 1.5, z: 4.5 },
-  green_economy: { x: 4.5, z: 1.5 },
-  logistics: { x: -1.5, z: 1.5 },
-  tourism: { x: 1.5, z: -1.5 },
-  software: { x: -1.5, z: -1.5 },
-}
-
-const STYLES: TowerStyle[] = ['slab', 'taper', 'spire', 'step', 'twin']
-
-const CAR_COLORS = [
-  '#c45a2c',
-  '#3a6ea5',
-  '#2f8f6b',
-  '#8b5a2b',
-  '#5c6b7a',
-  '#a33b3b',
-  '#6b5b95',
-  '#b8860b',
-]
-
-const towerVert = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`
-
-/** Glass-pillar language: cool cyan → warm orange, almost no flicker */
-const towerFrag = /* glsl */ `
-uniform float uTime;
-uniform float uHeat;
-uniform float uSeed;
-uniform float uCols;
-uniform float uRows;
-uniform vec3 uShell;
-varying vec2 vUv;
-
-float hash(vec2 p) {
-  return fract(sin(dot(p + uSeed, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-void main() {
-  vec3 col = uShell;
-
-  float cols = max(uCols, 6.0);
-  float rows = max(uRows, 14.0);
-  vec2 gv = vec2(vUv.x * cols, vUv.y * rows);
-  vec2 id = floor(gv);
-  vec2 f = fract(gv);
-
-  float frame = step(0.2, f.x) * step(f.x, 0.8) * step(0.26, f.y) * step(f.y, 0.8);
-  float n = hash(id);
-  float on = step(0.28 - uHeat * 0.1, n);
-  // Soft breath only — no hard flicker
-  float breath = 0.9 + 0.1 * sin(uTime * 0.28 + n * 6.2831);
-  float lit = frame * on * breath;
-
-  // Glass chart: cool blue → orange by hiring heat
-  vec3 cool = vec3(0.55, 0.78, 0.98);
-  vec3 warm = vec3(1.0, 0.42, 0.08);
-  vec3 win = mix(cool, warm, clamp(uHeat * 0.85 + n * 0.12, 0.0, 1.0));
-  col = mix(col, win, lit * 0.78);
-
-  // Soft base glow like pillar floor light
-  float base = smoothstep(0.0, 0.22, vUv.y) * (1.0 - smoothstep(0.0, 0.35, vUv.y));
-  col += vec3(1.0, 0.4, 0.08) * base * 0.12 * (0.4 + uHeat);
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`
-
-/** Keep towers off the road bed */
-function snapOffRoad(x: number, z: number, halfW: number, halfD: number) {
-  let nx = x
-  let nz = z
-  for (const r of ROAD_LINES) {
-    if (Math.abs(nx - r) < 0.55 + halfW) {
-      nx = r + (nx >= r ? 1 : -1) * (0.7 + halfW)
-    }
-    if (Math.abs(nz - r) < 0.55 + halfD) {
-      nz = r + (nz >= r ? 1 : -1) * (0.7 + halfD)
-    }
-  }
-  return {
-    x: THREE.MathUtils.clamp(nx, -CITY_EDGE + 0.8, CITY_EDGE - 0.8),
-    z: THREE.MathUtils.clamp(nz, -CITY_EDGE + 0.8, CITY_EDGE - 0.8),
-  }
-}
+const CITY_Y = -1.15
+const CAMPUS = { cx: 0, cz: 0, half: 1.65 } // tight corporate plaza
+const CITY_HALF = 7.2
+const ROAD = [-4.5, -1.5, 1.5, 4.5]
 
 function hash01(n: number) {
   const x = Math.sin(n * 127.1) * 43758.5453
   return x - Math.floor(x)
 }
 
-function makeNeonBoard(name: string, jobs: number, heat: number) {
+function makeTopBanner(name: string, jobs: number) {
   const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 140
+  c.width = 640
+  c.height = 128
   const ctx = c.getContext('2d')!
-  ctx.fillStyle = '#05080e'
-  ctx.fillRect(0, 0, 512, 140)
-  // Glass pillar wash: cyan → orange
-  const g = ctx.createLinearGradient(0, 0, 0, 140)
-  g.addColorStop(0, 'rgba(180, 230, 255, 0.35)')
-  g.addColorStop(0.45, 'rgba(40, 50, 70, 0.25)')
-  g.addColorStop(1, `rgba(255, ${Math.round(70 + heat * 40)}, 0, 0.55)`)
+  // Glass card
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'
+  ctx.beginPath()
+  ctx.moveTo(22, 12)
+  ctx.arcTo(632, 12, 632, 116, 14)
+  ctx.arcTo(632, 116, 8, 116, 14)
+  ctx.arcTo(8, 116, 8, 12, 14)
+  ctx.arcTo(8, 12, 632, 12, 14)
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)'
+  ctx.lineWidth = 3
+  ctx.stroke()
+  // Soft cyan accent bar
+  const g = ctx.createLinearGradient(20, 0, 620, 0)
+  g.addColorStop(0, 'rgba(56,189,248,0.15)')
+  g.addColorStop(0.5, 'rgba(34,211,238,0.35)')
+  g.addColorStop(1, 'rgba(56,189,248,0.15)')
   ctx.fillStyle = g
-  ctx.fillRect(14, 14, 484, 112)
-  const rim = heat > 0.55 ? '#7dd3fc' : '#ff8c40'
-  ctx.strokeStyle = rim
-  ctx.shadowColor = rim
-  ctx.shadowBlur = 16
-  ctx.lineWidth = 4
-  ctx.strokeRect(12, 12, 488, 116)
-  ctx.shadowBlur = 0
-  ctx.fillStyle = '#ffffff'
-  ctx.font = '800 34px Orbitron, sans-serif'
-  ctx.shadowColor = 'rgba(255,255,255,0.45)'
-  ctx.shadowBlur = 6
+  ctx.fillRect(20, 20, 600, 88)
+  ctx.fillStyle = '#0f172a'
+  ctx.font = '800 42px Orbitron, sans-serif'
+  ctx.textAlign = 'center'
   const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
-  ctx.fillText(label.toUpperCase(), 36, 68)
-  ctx.shadowColor = 'rgba(255, 140, 40, 0.75)'
-  ctx.shadowBlur = 8
-  ctx.fillStyle = '#ffe0b0'
-  ctx.font = '800 22px Rajdhani, sans-serif'
-  ctx.fillText(`${jobs} OPEN ROLES`, 36, 102)
+  ctx.fillText(label.toUpperCase(), 320, 62)
+  ctx.fillStyle = '#0284c7'
+  ctx.font = '700 28px Rajdhani, sans-serif'
+  ctx.fillText(`${jobs} OPEN`, 320, 98)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
   return tex
 }
 
-/** Soft glass-pillar pin — amber/cyan, easy on the eyes */
-function makePinTexture(n: number, heat: number) {
+function makeJobPin(n: number) {
   const c = document.createElement('canvas')
   c.width = 128
   c.height = 128
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, 128, 128)
-  const top = `rgba(${Math.round(160 + heat * 40)}, ${Math.round(200 - heat * 40)}, 255, 0.95)`
-  const bot = `rgba(255, ${Math.round(100 - heat * 30)}, 20, 0.95)`
-  const grad = ctx.createRadialGradient(64, 48, 4, 64, 52, 38)
-  grad.addColorStop(0, 'rgba(255, 230, 200, 0.95)')
-  grad.addColorStop(0.45, top)
-  grad.addColorStop(1, bot)
+  const g = ctx.createRadialGradient(64, 52, 4, 64, 52, 36)
+  g.addColorStop(0, '#e0f2fe')
+  g.addColorStop(0.55, '#38bdf8')
+  g.addColorStop(1, '#0284c7')
   ctx.beginPath()
-  ctx.arc(64, 52, 34, 0, Math.PI * 2)
-  ctx.fillStyle = grad
-  ctx.shadowColor = 'rgba(255, 120, 40, 0.55)'
-  ctx.shadowBlur = 12
+  ctx.arc(64, 50, 34, 0, Math.PI * 2)
+  ctx.fillStyle = g
+  ctx.shadowColor = 'rgba(56,189,248,0.45)'
+  ctx.shadowBlur = 8
   ctx.fill()
   ctx.beginPath()
-  ctx.moveTo(42, 78)
-  ctx.lineTo(64, 116)
-  ctx.lineTo(86, 78)
+  ctx.moveTo(44, 76)
+  ctx.lineTo(64, 114)
+  ctx.lineTo(84, 76)
   ctx.closePath()
-  ctx.fillStyle = bot
   ctx.fill()
   ctx.shadowBlur = 0
-  ctx.fillStyle = '#1a1008'
-  ctx.font = '800 34px Orbitron, sans-serif'
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '800 32px Orbitron, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const text = n > 99 ? '99+' : String(n)
-  ctx.fillText(text, 64, 50)
+  ctx.fillText(n > 99 ? '99+' : String(n), 64, 48)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   return tex
 }
 
-function layoutTowers(companies: SkyCo[], maxN: number): Tower[] {
-  const bySec = new Map<string, SkyCo[]>()
-  for (const c of companies) {
-    const sid = c.sector_id || 'tech_digital'
-    if (!bySec.has(sid)) bySec.set(sid, [])
-    bySec.get(sid)!.push(c)
-  }
-  const towers: Tower[] = []
-  for (const [sid, list] of bySec) {
-    const block = SECTOR_BLOCK[sid] || { x: 0, z: 0 }
-    const sorted = [...list].sort((a, b) => b.n - a.n)
-    sorted.forEach((c, i) => {
-      const seed = c.company_id * 13.37
-      const heat = c.n / Math.max(maxN, 1)
-      const h = 0.7 + heat * 4.2 + hash01(seed) * 0.35
-      const style = STYLES[Math.floor(hash01(seed + 1) * STYLES.length)]
-      // Organic scatter inside district — not a perfect grid
-      const ring = Math.floor(i / 3)
-      const a = hash01(seed + 2) * Math.PI * 2 + i * 0.9
-      const rad = 0.55 + ring * 0.95 + hash01(seed + 3) * 0.35
-      const x = block.x + Math.cos(a) * rad + (hash01(seed + 4) - 0.5) * 0.4
-      const z = block.z + Math.sin(a) * rad * 0.85 + (hash01(seed + 5) - 0.5) * 0.4
-      const w = 0.32 + heat * 0.28 + hash01(seed + 6) * 0.18
-      const d = 0.28 + heat * 0.22 + hash01(seed + 7) * 0.16
-      const snapped = snapOffRoad(x, z, w * 0.55, d * 0.55)
-      towers.push({
-        company_id: c.company_id,
-        name: c.name,
-        n: c.n,
-        sector_id: sid,
-        sector_label: c.sector_label,
-        x: snapped.x,
-        z: snapped.z,
-        w,
-        d,
-        h,
-        heat,
-        seed,
-        style,
-        yaw: (hash01(seed + 8) - 0.5) * 0.5,
-        winCols: 10 + Math.floor(hash01(seed + 9) * 8),
-        winRows: 22 + Math.floor(heat * 28) + Math.floor(hash01(seed + 10) * 8),
-      })
+/** Pack corporates tightly on a small campus grid */
+function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
+  const sorted = [...companies].sort((a, b) => b.n - a.n).slice(0, 18)
+  const cols = Math.ceil(Math.sqrt(sorted.length))
+  const gap = 0.55
+  const out: Corp[] = []
+  sorted.forEach((c, i) => {
+    const row = Math.floor(i / cols)
+    const col = i % cols
+    const nRows = Math.ceil(sorted.length / cols)
+    const ox = (col - (cols - 1) / 2) * gap
+    const oz = (row - (nRows - 1) / 2) * gap
+    const seed = c.company_id * 13.37
+    const heat = c.n / Math.max(maxN, 1)
+    const h = 0.85 + heat * 2.6 + hash01(seed) * 0.25
+    const w = 0.28 + heat * 0.12 + hash01(seed + 1) * 0.06
+    const d = 0.26 + heat * 0.1 + hash01(seed + 2) * 0.05
+    out.push({
+      company_id: c.company_id,
+      name: c.name,
+      n: c.n,
+      sector_id: c.sector_id,
+      sector_label: c.sector_label,
+      x: CAMPUS.cx + ox + (hash01(seed + 3) - 0.5) * 0.06,
+      z: CAMPUS.cz + oz + (hash01(seed + 4) - 0.5) * 0.06,
+      w,
+      d,
+      h,
+      heat,
+      seed,
     })
-  }
-  return towers
-}
-
-function FacadeMaterial({ t }: { t: Tower }) {
-  const mat = useRef<THREE.ShaderMaterial>(null)
-  const shellHue = 200 + hash01(t.seed) * 50
-  const shell = useMemo(
-    () => new THREE.Color().setHSL(shellHue / 360, 0.1, 0.065 + t.heat * 0.04),
-    [shellHue, t.heat],
-  )
-  const uniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uHeat: { value: t.heat },
-      uSeed: { value: t.seed % 100 },
-      uCols: { value: t.winCols },
-      uRows: { value: t.winRows },
-      uShell: { value: shell },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t.company_id, t.heat, t.winCols, t.winRows, shell],
-  )
-  useFrame((state) => {
-    if (mat.current) mat.current.uniforms.uTime.value = state.clock.elapsedTime
   })
-  return (
-    <shaderMaterial
-      ref={mat}
-      uniforms={uniforms}
-      vertexShader={towerVert}
-      fragmentShader={towerFrag}
-    />
-  )
+  return out
 }
 
-function TowerBody({ t }: { t: Tower }) {
-  if (t.style === 'taper') {
-    return (
-      <mesh>
-        <cylinderGeometry args={[t.w * 0.35, t.w * 0.55, t.h, 6]} />
-        <FacadeMaterial t={t} />
-      </mesh>
-    )
+/** Dense white filler fabric — avoid campus + roads */
+function layoutDummies(corps: Corp[]): Dummy[] {
+  const list: Dummy[] = []
+  let i = 0
+  for (let gx = -CITY_HALF; gx <= CITY_HALF; gx += 0.42) {
+    for (let gz = -CITY_HALF; gz <= CITY_HALF; gz += 0.42) {
+      i++
+      // Skip roads
+      if (ROAD.some((r) => Math.abs(gx - r) < 0.38 || Math.abs(gz - r) < 0.38)) continue
+      // Skip corporate campus
+      if (
+        Math.abs(gx - CAMPUS.cx) < CAMPUS.half + 0.35 &&
+        Math.abs(gz - CAMPUS.cz) < CAMPUS.half + 0.35
+      )
+        continue
+      // Sparse holes for plazas
+      if (hash01(i * 3.1) < 0.12) continue
+      // Don't overlap a corporate footprint
+      const nearCorp = corps.some(
+        (c) => Math.hypot(c.x - gx, c.z - gz) < 0.45,
+      )
+      if (nearCorp) continue
+      const seed = i * 7.7
+      list.push({
+        x: gx + (hash01(seed) - 0.5) * 0.08,
+        z: gz + (hash01(seed + 1) - 0.5) * 0.08,
+        w: 0.22 + hash01(seed + 2) * 0.18,
+        d: 0.2 + hash01(seed + 3) * 0.16,
+        h: 0.25 + hash01(seed + 4) * 1.1,
+        seed,
+      })
+    }
   }
-  if (t.style === 'spire') {
-    return (
-      <group>
-        <mesh position={[0, -t.h * 0.08, 0]}>
-          <boxGeometry args={[t.w, t.h * 0.84, t.d]} />
-          <FacadeMaterial t={t} />
-        </mesh>
-        <mesh position={[0, t.h * 0.42, 0]}>
-          <coneGeometry args={[t.w * 0.28, t.h * 0.22, 4]} />
-          <meshBasicMaterial color="#1a1a22" />
-        </mesh>
-      </group>
-    )
-  }
-  if (t.style === 'step') {
-    return (
-      <group>
-        <mesh position={[0, -t.h * 0.15, 0]}>
-          <boxGeometry args={[t.w * 1.15, t.h * 0.55, t.d * 1.1]} />
-          <FacadeMaterial t={t} />
-        </mesh>
-        <mesh position={[0, t.h * 0.22, 0]}>
-          <boxGeometry args={[t.w * 0.75, t.h * 0.45, t.d * 0.75]} />
-          <FacadeMaterial t={t} />
-        </mesh>
-      </group>
-    )
-  }
-  if (t.style === 'twin') {
-    return (
-      <group>
-        <mesh position={[-t.w * 0.32, 0, 0]}>
-          <boxGeometry args={[t.w * 0.55, t.h, t.d]} />
-          <FacadeMaterial t={t} />
-        </mesh>
-        <mesh position={[t.w * 0.32, t.h * 0.06, 0]}>
-          <boxGeometry args={[t.w * 0.55, t.h * 0.88, t.d * 0.9]} />
-          <FacadeMaterial t={t} />
-        </mesh>
-      </group>
-    )
-  }
+  return list
+}
+
+function DummyBuilding({ b }: { b: Dummy }) {
   return (
-    <mesh>
-      <boxGeometry args={[t.w, t.h, t.d]} />
-      <FacadeMaterial t={t} />
+    <mesh position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
+      <boxGeometry args={[b.w, b.h, b.d]} />
+      <meshStandardMaterial
+        color="#f4f6f8"
+        roughness={0.82}
+        metalness={0.05}
+      />
     </mesh>
   )
 }
 
-function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
-  const boardTex = useMemo(
-    () => makeNeonBoard(t.name, t.n, t.heat),
-    [t.name, t.n, t.heat],
-  )
-  const pinTex = useMemo(() => makePinTexture(t.n, t.heat), [t.n, t.heat])
-  const pin = useRef<THREE.Group>(null)
-  const glow = useRef<THREE.Mesh>(null)
-  const pick = useRef<THREE.Mesh>(null)
-  const [hot, setHot] = useState(false)
+function GlassTower({
+  t,
+  cityLabel,
+}: {
+  t: Corp
+  cityLabel: string
+}) {
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
+  const [hot, setHot] = useState(false)
+  const glow = useRef<THREE.MeshStandardMaterial>(null)
+  const pin = useRef<THREE.Group>(null)
+  const bannerTex = useMemo(
+    () => makeTopBanner(t.name, t.n),
+    [t.name, t.n],
+  )
+  const pinTex = useMemo(() => makeJobPin(t.n), [t.n])
 
   useFrame((state) => {
-    if (pin.current) {
-      // Gentle breath — not aggressive flicker
-      const breath = 1 + Math.sin(state.clock.elapsedTime * 1.1 + t.seed) * 0.045
-      pin.current.scale.setScalar(breath)
-      pin.current.position.y =
-        t.h / 2 + 0.28 + Math.sin(state.clock.elapsedTime * 0.9 + t.seed) * 0.03
-    }
+    const breath = 0.35 + Math.sin(state.clock.elapsedTime * 1.3 + t.seed) * 0.08
     if (glow.current) {
-      glow.current.visible = focused
-      if (focused) {
-        const pulse = 0.22 + Math.sin(state.clock.elapsedTime * 2.0) * 0.1
-        glow.current.scale.setScalar(1.15 + Math.sin(state.clock.elapsedTime * 1.6) * 0.06)
-        ;(glow.current.material as THREE.MeshBasicMaterial).opacity = pulse
-      }
+      glow.current.emissiveIntensity = focused || hot ? 0.85 + breath : 0.45 + breath * 0.5
+      glow.current.opacity = focused || hot ? 0.72 : 0.55
     }
-    if (pick.current) {
-      pick.current.visible = hot && !focused
-      if (hot && !focused) {
-        const pulse = 0.28 + Math.sin(state.clock.elapsedTime * 5) * 0.18
-        pick.current.scale.setScalar(1.08 + Math.sin(state.clock.elapsedTime * 4) * 0.05)
-        ;(pick.current.material as THREE.MeshBasicMaterial).opacity = pulse
-      }
+    if (pin.current) {
+      const s = 1 + Math.sin(state.clock.elapsedTime * 1.5 + t.seed) * 0.04
+      pin.current.scale.setScalar(s)
     }
   })
 
-  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+  const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     const st = useVigilStore.getState()
-    const worldY = CITY_Y + t.h * 0.42
+    const worldY = CITY_Y + t.h * 0.45
     if (st.selectFocusId === selectId) {
       st.openCompanyJobs(t.company_id, t.name, 7)
       st.setStatus(`OPEN · ${t.name}`)
@@ -412,25 +247,24 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
       x: t.x,
       y: worldY,
       z: t.z,
-      distance: 1.55 + t.h * 0.28,
+      distance: 1.85 + t.h * 0.2,
     })
     st.setStatus(`FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`)
   }
 
-  const boardW = Math.min(Math.max(t.w, t.d) * 1.25, 1.05)
-  const boardH = 0.18 + t.heat * 0.05
-  const faces: [number, number, number, number][] = [
-    [0, 0, t.d / 2 + 0.03, 0],
-    [0, 0, -t.d / 2 - 0.03, Math.PI],
-    [t.w / 2 + 0.03, 0, 0, Math.PI / 2],
-    [-t.w / 2 - 0.03, 0, 0, -Math.PI / 2],
-  ]
-  const boardY = -t.h / 2 + Math.min(t.h * 0.55, t.h - 0.25)
+  // Soft cyan–blue by heat (more hiring = greener cyan)
+  const glass = useMemo(() => {
+    const c = new THREE.Color()
+    c.setHSL(0.52 - t.heat * 0.06, 0.75, 0.48 + t.heat * 0.08)
+    return c
+  }, [t.heat])
 
   return (
-    <group position={[t.x, t.h / 2, t.z]} rotation={[0, t.yaw, 0]}>
+    <group position={[t.x, 0, t.z]}>
+      {/* Hit volume */}
       <mesh
-        onClick={handleClick}
+        position={[0, t.h / 2, 0]}
+        onClick={onClick}
         onPointerOver={(e) => {
           e.stopPropagation()
           setHot(true)
@@ -442,71 +276,67 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
         }}
         onPointerOut={() => setHot(false)}
       >
-        <boxGeometry args={[t.w * 1.4, t.h, t.d * 1.4]} />
+        <boxGeometry args={[t.w * 1.35, t.h, t.d * 1.35]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <TowerBody t={t} />
+      {/* White floor plates inside glass */}
+      {Array.from({ length: Math.max(3, Math.floor(t.h / 0.28)) }).map((_, i) => {
+        const y = 0.12 + i * 0.28
+        if (y > t.h - 0.1) return null
+        return (
+          <mesh key={i} position={[0, y, 0]} receiveShadow>
+            <boxGeometry args={[t.w * 0.92, 0.03, t.d * 0.92]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.7} metalness={0.05} />
+          </mesh>
+        )
+      })}
+
+      {/* Translucent glass shell */}
+      <mesh position={[0, t.h / 2, 0]} castShadow>
+        <boxGeometry args={[t.w, t.h, t.d]} />
+        <meshStandardMaterial
+          ref={glow}
+          color={glass}
+          emissive={glass}
+          emissiveIntensity={0.5}
+          transparent
+          opacity={0.55}
+          roughness={0.15}
+          metalness={0.2}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Soft rim light */}
       {(focused || hot) && (
         <pointLight
-          position={[0, t.h * 0.2, 0]}
-          color="#ffaa00"
-          intensity={focused ? 1.6 : 1.1}
-          distance={3.5}
+          position={[0, t.h * 0.6, 0]}
+          color="#38bdf8"
+          intensity={1.1}
+          distance={2.4}
+          decay={2}
         />
       )}
-      <mesh ref={glow} position={[0, 0, 0]} visible={false}>
-        <sphereGeometry args={[Math.max(t.w, t.d) * 1.1, 24, 24]} />
-        <meshBasicMaterial
-          color="#ff8800"
-          transparent
-          opacity={0.25}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <mesh ref={pick} position={[0, 0, 0]} visible={false}>
-        <sphereGeometry args={[Math.max(t.w, t.d) * 1.05, 20, 20]} />
-        <meshBasicMaterial
-          color="#38bdf8"
-          transparent
-          opacity={0.3}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
 
-      {/* Neon name boards — all four façades */}
-      {faces.map(([fx, , fz, rot], i) => (
-        <group key={i} position={[fx, boardY, fz]} rotation={[0, rot, 0]}>
-          <mesh onClick={handleClick}>
-            <boxGeometry args={[boardW, boardH, 0.05]} />
-            <meshBasicMaterial
-              map={boardTex}
-              toneMapped={false}
-              transparent
-              opacity={0.98}
-            />
-          </mesh>
-          {/* Neon edge glow */}
-          <mesh position={[0, 0, 0.03]}>
-            <planeGeometry args={[boardW * 1.05, boardH * 1.15]} />
-            <meshBasicMaterial
-              color={t.heat > 0.55 ? '#7dd3fc' : '#ff8c40'}
-              transparent
-              opacity={0.22}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-        </group>
-      ))}
+      {/* Banner ALWAYS on top */}
+      <Billboard follow position={[0, t.h + 0.22, 0]}>
+        <mesh onClick={onClick}>
+          <planeGeometry args={[0.95, 0.2]} />
+          <meshBasicMaterial
+            map={bannerTex}
+            transparent
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      </Billboard>
 
-      {/* Breathing notification pin with job count — always faces camera */}
+      {/* Job pin above banner */}
       <Billboard follow>
-        <group ref={pin} position={[0, t.h / 2 + 0.28, 0]}>
-          <mesh onClick={handleClick}>
-            <planeGeometry args={[0.42, 0.42]} />
+        <group ref={pin} position={[0, t.h + 0.48, 0]}>
+          <mesh onClick={onClick}>
+            <planeGeometry args={[0.28, 0.28]} />
             <meshBasicMaterial
               map={pinTex}
               transparent
@@ -514,243 +344,25 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
               toneMapped={false}
             />
           </mesh>
-          <pointLight intensity={0.2} distance={1.1} color="#ff8c40" />
         </group>
       </Billboard>
     </group>
   )
 }
 
-type CarSim = {
-  axis: 'h' | 'v'
-  fixed: number
-  lane: number
-  dir: 1 | -1
-  pos: number
-  speed: number
-  maxSpeed: number
-  color: string
-}
-
-/** Is this axis green at the nearest intersection? */
-function axisGreen(axis: 'h' | 'v', ix: number, iz: number, t: number) {
-  const phase = (t + (ix * 2.3 + iz * 1.7)) % SIGNAL_CYCLE
-  // NS (v) green, all-red gap, EW (h) green, all-red gap
-  if (axis === 'v') return phase < 3.4
-  return phase >= 4.5 && phase < 7.9
-}
-
-function nextIntersection(pos: number, dir: number) {
-  let best: number | null = null
-  let bestDist = Infinity
-  for (const r of ROAD_LINES) {
-    const d = (r - pos) * dir
-    if (d > 0.02 && d < bestDist) {
-      bestDist = d
-      best = r
-    }
-  }
-  return best
-}
-
-function Traffic() {
-  const sims = useMemo(() => {
-    const list: CarSim[] = []
-    let i = 0
-    // East–west traffic on each Z road
-    for (const roadZ of ROAD_LINES) {
-      for (const dir of [1, -1] as const) {
-        for (const laneSign of [-1, 1] as const) {
-          for (let k = 0; k < 2; k++) {
-            list.push({
-              axis: 'h',
-              fixed: roadZ + laneSign * LANE_W,
-              lane: laneSign,
-              dir,
-              pos: -CITY_EDGE + 0.4 + hash01(i * 13.1 + k) * (CITY_EDGE * 1.7),
-              speed: 0,
-              maxSpeed: 0.85 + hash01(i * 4.2 + k) * 0.65,
-              color: CAR_COLORS[i % CAR_COLORS.length],
-            })
-            i++
-          }
-        }
-      }
-    }
-    // North–south traffic on each X road
-    for (const roadX of ROAD_LINES) {
-      for (const dir of [1, -1] as const) {
-        for (const laneSign of [-1, 1] as const) {
-          for (let k = 0; k < 2; k++) {
-            list.push({
-              axis: 'v',
-              fixed: roadX + laneSign * LANE_W,
-              lane: laneSign,
-              dir,
-              pos: -CITY_EDGE + 0.4 + hash01(i * 9.7 + k) * (CITY_EDGE * 1.7),
-              speed: 0,
-              maxSpeed: 0.85 + hash01(i * 5.1 + k) * 0.65,
-              color: CAR_COLORS[i % CAR_COLORS.length],
-            })
-            i++
-          }
-        }
-      }
-    }
-    return list.slice(0, 48)
-  }, [])
-
-  const groups = useRef<(THREE.Group | null)[]>([])
-  const lightMats = useRef<(THREE.MeshBasicMaterial | null)[]>([])
-
-  useFrame((state, dt) => {
-    const t = state.clock.elapsedTime
-    const step = Math.min(dt, 0.05)
-
-    for (let i = 0; i < sims.length; i++) {
-      const c = sims[i]
-      let want = c.maxSpeed
-
-      // Signal stop line at next cross-street
-      const nxt = nextIntersection(c.pos, c.dir)
-      if (nxt != null) {
-        const dist = (nxt - c.pos) * c.dir
-        if (dist < STOP_DIST) {
-          const nearX =
-            c.axis === 'h'
-              ? nxt
-              : ROAD_LINES.reduce((a, b) =>
-                  Math.abs(b - c.fixed) < Math.abs(a - c.fixed) ? b : a,
-                )
-          const nearZ =
-            c.axis === 'v'
-              ? nxt
-              : ROAD_LINES.reduce((a, b) =>
-                  Math.abs(b - c.fixed) < Math.abs(a - c.fixed) ? b : a,
-                )
-          if (!axisGreen(c.axis, nearX, nearZ, t)) {
-            want = dist < 0.12 ? 0 : Math.min(want, dist * 1.4)
-          }
-        }
-      }
-
-      // Car ahead on same lane — keep gap (no accidents)
-      let aheadDist = Infinity
-      for (let j = 0; j < sims.length; j++) {
-        if (i === j) continue
-        const o = sims[j]
-        if (o.axis !== c.axis || o.dir !== c.dir) continue
-        if (Math.abs(o.fixed - c.fixed) > 0.04) continue
-        const d = (o.pos - c.pos) * c.dir
-        if (d > 0.01 && d < aheadDist) aheadDist = d
-      }
-      if (aheadDist < CAR_GAP) {
-        want = 0
-      } else if (aheadDist < CAR_GAP * 2.2) {
-        want = Math.min(want, c.maxSpeed * ((aheadDist - CAR_GAP) / CAR_GAP))
-      }
-
-      // Smooth accel / brake
-      c.speed += (want - c.speed) * Math.min(1, step * 4)
-      if (c.speed < 0.01) c.speed = 0
-      c.pos += c.dir * c.speed * step
-      if (c.pos > CITY_EDGE) c.pos = -CITY_EDGE
-      if (c.pos < -CITY_EDGE) c.pos = CITY_EDGE
-
-      const g = groups.current[i]
-      if (!g) continue
-      if (c.axis === 'h') {
-        g.position.set(c.pos, 0.035, c.fixed)
-        g.rotation.y = c.dir > 0 ? 0 : Math.PI
-      } else {
-        g.position.set(c.fixed, 0.035, c.pos)
-        g.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
-      }
-      const lm = lightMats.current[i]
-      if (lm) lm.opacity = 0.45 + Math.min(0.45, c.speed * 0.35)
-    }
-  })
-
+function CampusPad() {
   return (
-    <group>
-      {/* Traffic signal heads at intersections */}
-      {ROAD_LINES.map((x) =>
-        ROAD_LINES.map((z) => (
-          <Signal key={`${x},${z}`} x={x} z={z} />
-        )),
-      )}
-      {sims.map((c, i) => (
-        <group
-          key={i}
-          ref={(el) => {
-            groups.current[i] = el
-          }}
-        >
-          {/* Tiny body */}
-          <mesh>
-            <boxGeometry args={[0.085, 0.028, 0.042]} />
-            <meshBasicMaterial color={c.color} transparent opacity={0.82} />
-          </mesh>
-          {/* Cabin */}
-          <mesh position={[0.01, 0.02, 0]}>
-            <boxGeometry args={[0.04, 0.02, 0.034]} />
-            <meshBasicMaterial color="#1a2030" transparent opacity={0.7} />
-          </mesh>
-          {/* Front lights */}
-          <mesh position={[0.048, 0.008, 0.012]}>
-            <boxGeometry args={[0.012, 0.01, 0.01]} />
-            <meshBasicMaterial
-              ref={(m) => {
-                lightMats.current[i] = m
-              }}
-              color="#ffe6a0"
-              transparent
-              opacity={0.7}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-          <mesh position={[0.048, 0.008, -0.012]}>
-            <boxGeometry args={[0.012, 0.01, 0.01]} />
-            <meshBasicMaterial
-              color="#ffe6a0"
-              transparent
-              opacity={0.65}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-        </group>
-      ))}
+    <group position={[CAMPUS.cx, 0.01, CAMPUS.cz]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[CAMPUS.half * 2.3, CAMPUS.half * 2.3]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.55} metalness={0.08} />
+      </mesh>
+      {/* Cyan neon pad edge */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+        <planeGeometry args={[CAMPUS.half * 2.42, CAMPUS.half * 2.42]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.35} />
+      </mesh>
     </group>
-  )
-}
-
-function Signal({ x, z }: { x: number; z: number }) {
-  const lamp = useRef<THREE.MeshBasicMaterial>(null)
-  useFrame((state) => {
-    if (!lamp.current) return
-    const phase = (state.clock.elapsedTime + (x * 2.3 + z * 1.7)) % SIGNAL_CYCLE
-    // Show EW state on the lamp (orange/red/green cycle feel)
-    if (phase < 3.4) {
-      lamp.current.color.set('#22c55e') // NS green → EW red implied; show green pulse
-      lamp.current.opacity = 0.55
-    } else if (phase < 4.5) {
-      lamp.current.color.set('#f59e0b')
-      lamp.current.opacity = 0.7
-    } else if (phase < 7.9) {
-      lamp.current.color.set('#ef4444')
-      lamp.current.opacity = 0.5
-    } else {
-      lamp.current.color.set('#f59e0b')
-      lamp.current.opacity = 0.65
-    }
-  })
-  return (
-    <mesh position={[x + 0.22, 0.28, z + 0.22]}>
-      <boxGeometry args={[0.04, 0.12, 0.04]} />
-      <meshBasicMaterial ref={lamp} color="#22c55e" transparent opacity={0.5} />
-    </mesh>
   )
 }
 
@@ -760,29 +372,33 @@ function Ground() {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    // Blocks
-    ctx.fillStyle = '#0a0c12'
+    ctx.fillStyle = '#eef2f6'
     ctx.fillRect(0, 0, 1024, 1024)
-    for (let i = 0; i < 6000; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.025})`
-      ctx.fillRect(Math.random() * 1024, Math.random() * 1024, 1, 1)
+    // Soft block grid
+    ctx.strokeStyle = 'rgba(148,163,184,0.18)'
+    ctx.lineWidth = 1
+    for (let i = 0; i < 1024; i += 32) {
+      ctx.beginPath()
+      ctx.moveTo(i, 0)
+      ctx.lineTo(i, 1024)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(0, i)
+      ctx.lineTo(1024, i)
+      ctx.stroke()
     }
-    // Map world -7.5..7.5 → 0..1024
-    const toPx = (w: number) => ((w + CITY_EDGE) / (CITY_EDGE * 2)) * 1024
-    const roadHalf = ((0.55) / (CITY_EDGE * 2)) * 1024
-    for (const r of ROAD_LINES) {
+    const toPx = (w: number) => ((w + CITY_HALF) / (CITY_HALF * 2)) * 1024
+    const half = (0.42 / (CITY_HALF * 2)) * 1024
+    for (const r of ROAD) {
       const p = toPx(r)
-      // Vertical road
-      ctx.fillStyle = '#141820'
-      ctx.fillRect(p - roadHalf, 0, roadHalf * 2, 1024)
-      // Horizontal road
-      ctx.fillRect(0, p - roadHalf, 1024, roadHalf * 2)
+      ctx.fillStyle = '#1e293b'
+      ctx.fillRect(p - half, 0, half * 2, 1024)
+      ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    // Lane dashes
-    ctx.strokeStyle = 'rgba(255, 200, 120, 0.35)'
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'
     ctx.lineWidth = 2
-    ctx.setLineDash([12, 16])
-    for (const r of ROAD_LINES) {
+    ctx.setLineDash([14, 16])
+    for (const r of ROAD) {
       const p = toPx(r)
       ctx.beginPath()
       ctx.moveTo(p, 0)
@@ -793,90 +409,119 @@ function Ground() {
       ctx.lineTo(1024, p)
       ctx.stroke()
     }
-    // Intersection boxes
-    ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(255, 140, 40, 0.08)'
-    for (const x of ROAD_LINES) {
-      for (const z of ROAD_LINES) {
-        const px = toPx(x)
-        const pz = toPx(z)
-        ctx.fillRect(px - roadHalf, pz - roadHalf, roadHalf * 2, roadHalf * 2)
-      }
-    }
     const tex = new THREE.CanvasTexture(c)
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
   }, [])
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-      <planeGeometry args={[CITY_EDGE * 2, CITY_EDGE * 2]} />
-      <meshBasicMaterial map={roadTex} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[CITY_HALF * 2.2, CITY_HALF * 2.2]} />
+      <meshStandardMaterial map={roadTex} roughness={0.9} metalness={0.02} />
     </mesh>
   )
 }
 
-function SectorPlaque({ label, x, z }: { label: string; x: number; z: number }) {
-  const tex = useMemo(() => {
-    const c = document.createElement('canvas')
-    c.width = 256
-    c.height = 64
-    const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#050508'
-    ctx.fillRect(0, 0, 256, 64)
-    ctx.strokeStyle = '#ffffff'
-    ctx.shadowColor = '#ffffff'
-    ctx.shadowBlur = 10
-    ctx.strokeRect(4, 4, 248, 56)
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 20px Orbitron, sans-serif'
-    ctx.fillText(label, 16, 40)
-    const t = new THREE.CanvasTexture(c)
-    t.colorSpace = THREE.SRGBColorSpace
-    return t
-  }, [label])
+/** Tiny accent cars on roads only */
+function MiniTraffic() {
+  const cars = useMemo(() => {
+    const list: {
+      axis: 'h' | 'v'
+      fixed: number
+      dir: 1 | -1
+      pos: number
+      speed: number
+      color: string
+    }[] = []
+    let i = 0
+    for (const r of ROAD) {
+      for (const dir of [1, -1] as const) {
+        for (let k = 0; k < 2; k++) {
+          list.push({
+            axis: i % 2 === 0 ? 'h' : 'v',
+            fixed: r + (dir > 0 ? 0.1 : -0.1),
+            dir,
+            pos: -CITY_HALF + hash01(i * 5 + k) * CITY_HALF * 1.8,
+            speed: 0.7 + hash01(i + k) * 0.5,
+            color: hash01(i * 2 + k) > 0.7 ? '#fb923c' : '#38bdf8',
+          })
+          i++
+        }
+      }
+    }
+    return list.slice(0, 24)
+  }, [])
+  const refs = useRef<(THREE.Group | null)[]>([])
+
+  useFrame((_, dt) => {
+    cars.forEach((c, i) => {
+      c.pos += c.dir * c.speed * dt
+      if (c.pos > CITY_HALF) c.pos = -CITY_HALF
+      if (c.pos < -CITY_HALF) c.pos = CITY_HALF
+      const g = refs.current[i]
+      if (!g) return
+      if (c.axis === 'h') {
+        g.position.set(c.pos, 0.04, c.fixed)
+        g.rotation.y = c.dir > 0 ? 0 : Math.PI
+      } else {
+        g.position.set(c.fixed, 0.04, c.pos)
+        g.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
+      }
+    })
+  })
+
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.02, z]}>
-      <planeGeometry args={[1.5, 0.38]} />
-      <meshBasicMaterial map={tex} transparent toneMapped={false} />
-    </mesh>
+    <group>
+      {cars.map((c, i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el
+          }}
+        >
+          <mesh>
+            <boxGeometry args={[0.07, 0.025, 0.035]} />
+            <meshStandardMaterial
+              color={c.color}
+              emissive={c.color}
+              emissiveIntensity={0.35}
+              roughness={0.4}
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
   )
 }
 
-function CityTitleBoard({ label, jobs }: { label: string; jobs: number }) {
+function CityTitle({ label, jobs }: { label: string; jobs: number }) {
   const tex = useMemo(() => {
     const c = document.createElement('canvas')
     c.width = 512
-    c.height = 128
+    c.height = 96
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#050508'
-    ctx.fillRect(0, 0, 512, 128)
-    ctx.strokeStyle = '#ffffff'
-    ctx.shadowColor = 'rgba(255,255,255,0.8)'
-    ctx.shadowBlur = 16
-    ctx.lineWidth = 3
-    ctx.strokeRect(10, 10, 492, 108)
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 40px Orbitron, sans-serif'
-    ctx.fillText(label.toUpperCase(), 28, 68)
-    ctx.font = '20px Rajdhani, sans-serif'
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'
-    ctx.fillText(`${jobs} openings · night district`, 28, 98)
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.fillRect(8, 12, 496, 72)
+    ctx.strokeStyle = 'rgba(56,189,248,0.5)'
+    ctx.lineWidth = 2
+    ctx.strokeRect(8, 12, 496, 72)
+    ctx.fillStyle = '#0f172a'
+    ctx.font = '800 36px Orbitron, sans-serif'
+    ctx.fillText(label.toUpperCase(), 24, 48)
+    ctx.fillStyle = '#0284c7'
+    ctx.font = '700 22px Rajdhani, sans-serif'
+    ctx.fillText(`${jobs} openings · campus view`, 24, 74)
     const t = new THREE.CanvasTexture(c)
     t.colorSpace = THREE.SRGBColorSpace
     return t
   }, [label, jobs])
   return (
-    <group position={[0, 0.4, 5.4]}>
+    <Billboard follow position={[0, 0.55, CAMPUS.half + 1.1]}>
       <mesh>
-        <boxGeometry args={[2.5, 0.58, 0.12]} />
-        <meshBasicMaterial color="#0a0a10" />
+        <planeGeometry args={[2.2, 0.42]} />
+        <meshBasicMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0, 0.07]}>
-        <planeGeometry args={[2.35, 0.5]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
-    </group>
+    </Billboard>
   )
 }
 
@@ -889,7 +534,6 @@ export function NightCity({
 }) {
   const [companies, setCompanies] = useState<SkyCo[]>([])
   const [maxN, setMaxN] = useState(1)
-  const [sectors, setSectors] = useState<{ id: string; label: string }[]>([])
 
   useEffect(() => {
     let alive = true
@@ -899,9 +543,8 @@ export function NightCity({
         if (!alive) return
         setCompanies(d?.companies || [])
         setMaxN(d?.stats?.max_n || 1)
-        setSectors(d?.sectors || [])
         useVigilStore.getState().setStatus(
-          `NIGHT CITY · ${d?.label || cityLabel} · click tower to focus`,
+          `CAMPUS · ${d?.label || cityLabel} · glass towers = employers`,
         )
       })
       .catch(() => setCompanies([]))
@@ -910,35 +553,40 @@ export function NightCity({
     }
   }, [cityId, cityLabel])
 
-  const towers = useMemo(
-    () => layoutTowers(companies, maxN),
+  const corps = useMemo(
+    () => layoutCorporates(companies, maxN),
     [companies, maxN],
   )
+  const dummies = useMemo(() => layoutDummies(corps), [corps])
+  const totalJobs = companies.reduce((a, c) => a + c.n, 0)
 
   return (
     <group position={[0, CITY_Y, 0]}>
-      <ambientLight intensity={0.08} color="#101018" />
-      <hemisphereLight args={['#151520', '#050508', 0.25]} />
-      <directionalLight position={[-5, 9, -3]} intensity={0.12} color="#c8d0e0" />
-      <pointLight position={[0, 5, 2]} intensity={0.25} color="#ffffff" distance={20} />
+      <ambientLight intensity={0.72} color="#f8fafc" />
+      <hemisphereLight args={['#ffffff', '#cbd5e1', 0.55]} />
+      <directionalLight
+        position={[6, 14, 4]}
+        intensity={1.15}
+        color="#fffaf0"
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      <directionalLight position={[-4, 6, -5]} intensity={0.35} color="#bae6fd" />
 
       <Ground />
-      <Traffic />
+      <CampusPad />
+      <MiniTraffic />
 
-      {sectors.map((s) => {
-        const b = SECTOR_BLOCK[s.id]
-        if (!b) return null
-        return <SectorPlaque key={s.id} label={s.label} x={b.x} z={b.z} />
-      })}
-
-      {towers.map((t) => (
-        <WorkTower key={t.company_id} t={t} cityLabel={cityLabel} />
+      {dummies.map((b, i) => (
+        <DummyBuilding key={i} b={b} />
       ))}
 
-      <CityTitleBoard
-        label={cityLabel}
-        jobs={companies.reduce((a, c) => a + c.n, 0)}
-      />
+      {corps.map((t) => (
+        <GlassTower key={t.company_id} t={t} cityLabel={cityLabel} />
+      ))}
+
+      <CityTitle label={cityLabel} jobs={totalJobs} />
     </group>
   )
 }

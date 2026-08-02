@@ -236,13 +236,12 @@ use — they should love opening the app, never fight it.
   tiny text the only clickable surface.
 - **Scene spin freeze (2026-08-03):** User can stop auto-rotation in Core /
   Graph / City (HUD control + Space) while working.
-- **Night city districts (2026-08-03):** Entering a metro shows a cinematic
-  night skyline — towers clustered by sector (organic scatter, not fake grid),
-  height = hiring volume, unique silhouettes (slab / taper / spire / step /
-  twin). White office window lights only (no rainbow lamps). Road asphalt with
-  lane dashes; many subtle NPC cars. Neon name boards on all four façades;
-  breathing white job-count pin on each roof. Click tower body/board (fat
-  mesh), not text.
+- **City campus (2026-08-03):** Entering a metro shows an isometric smart-city
+  campus (reference: white matte fabric + translucent cyan glass corporates).
+  Dense small dummy white buildings; employers packed tight on a glowing
+  campus pad; height ∝ hiring. Company banner always on the roof top
+  (billboard). Soft high-key light, light fog, navy roads, tiny accent cars.
+  Click glass tower / banner (fat mesh), not text.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

@@ -79,7 +79,8 @@ export function SceneControls() {
     const c = ref.current
     if (!c) return
     if (sceneMode === 'city') {
-      camera.position.set(6.5, 5.8, 6.5)
+      // Isometric campus look — high angle over the corporate plaza
+      camera.position.set(4.8, 5.4, 4.8)
     } else {
       camera.position.set(0, 0.6, sceneMode === 'graph' ? 7.5 : 7.2)
     }
