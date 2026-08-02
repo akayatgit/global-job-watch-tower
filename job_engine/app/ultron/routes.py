@@ -17,6 +17,7 @@ from app.runtime_settings import get_headless, set_headless, dismiss_linkedin_bl
 from app.signals import (
     ALLOWED_WINDOWS,
     WINDOW_OPTIONS,
+    _window_bounds,
     companies_for_role,
     company_directory,
     compute_hiring_signals,
@@ -140,7 +141,7 @@ def ultron_tower(db: Session = Depends(get_db)):
         for i in range(14)
     ]
     latest = db.execute(
-        select(JobMaster, Company.name)
+        select(JobMaster, Company.id, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
         .order_by(desc(JobMaster.scraped_at)).limit(8)
     ).all()
@@ -173,13 +174,66 @@ def ultron_tower(db: Session = Depends(get_db)):
         'latest_jobs': [{
             'id': j.id,
             'title': j.title,
+            'company_id': cid,
             'company': cname,
             'location': j.location,
+            'job_url': j.job_url,
             'scraped_at': _iso(j.scraped_at),
             'posted_date': str(j.posted_date) if j.posted_date else None,
-        } for j, cname in latest],
+        } for j, cid, cname in latest],
         'signals_teaser': to_jsonable(signals),
         'watched': to_jsonable(watched),
+    }
+
+
+@router.get('/api/ultron/top-companies')
+def ultron_top_companies(days: int = 7, limit: int = 80, db: Session = Depends(get_db)):
+    """Full company hiring ranking for Show all — max → min."""
+    if days not in ALLOWED_WINDOWS:
+        days = 7
+    limit = max(1, min(limit, 200))
+    _days, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
+    time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
+    rows = db.execute(
+        select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
+        .join(JobMaster, JobMaster.company_id == Company.id)
+        .where(time_col >= recent_start, time_col < recent_end)
+        .group_by(Company.id, Company.name)
+        .order_by(desc('n'))
+        .limit(limit)
+    ).all()
+    max_n = max([n for _, _, n in rows] + [1])
+    return {
+        'days': days,
+        'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
+        'max': max_n,
+        'total': len(rows),
+        'companies': [
+            {'company_id': cid, 'name': name, 'n': n} for cid, name, n in rows
+        ],
+    }
+
+
+@router.get('/api/ultron/roles-rank')
+def ultron_roles_rank(limit: int = 200, db: Session = Depends(get_db)):
+    """Full jobs-per-role ranking for Show all — max → min."""
+    limit = max(1, min(limit, 300))
+    rows = db.execute(
+        select(
+            SearchConfig.id, SearchConfig.name, func.count(JobMaster.id).label('n'),
+        )
+        .outerjoin(JobMaster, JobMaster.search_config_id == SearchConfig.id)
+        .group_by(SearchConfig.id, SearchConfig.name)
+        .order_by(desc('n'))
+        .limit(limit)
+    ).all()
+    max_n = max([n for _, _, n in rows] + [1])
+    return {
+        'max': max_n,
+        'total': len(rows),
+        'roles': [
+            {'search_id': sid, 'name': name, 'n': n} for sid, name, n in rows
+        ],
     }
 
 

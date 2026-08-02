@@ -962,6 +962,59 @@ button, input, select {
   max-width: 100%;
 }
 
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.section-head .muted {
+  margin: 0;
+}
+
+.show-all {
+  border: 1px solid var(--vg-line);
+  background: rgba(255, 170, 0, 0.1);
+  color: var(--vg-amber);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: var(--font-hud);
+  flex-shrink: 0;
+}
+
+.show-all:hover {
+  border-color: var(--vg-amber);
+  background: rgba(255, 170, 0, 0.2);
+}
+
+.inline-link {
+  border: 0;
+  background: transparent;
+  color: var(--vg-amber);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.inline-link.title-link {
+  color: inherit;
+  font-weight: 500;
+  text-align: left;
+  display: block;
+}
+
+.inline-link.title-link:hover,
+.inline-link:hover {
+  color: var(--vg-amber);
+  text-decoration: underline;
+}
+
 .chip {
   border: 1px solid var(--vg-line);
   background: rgba(255, 85, 0, 0.08);

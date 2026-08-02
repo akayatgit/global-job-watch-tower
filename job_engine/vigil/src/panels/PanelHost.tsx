@@ -7,6 +7,7 @@ import { JobsPanel } from './JobsPanel'
 import { LivePanel } from './LivePanel'
 import { HealthPanel } from './HealthPanel'
 import { RoleHirePanel } from './RoleHirePanel'
+import { RankListPanel } from './RankListPanel'
 
 export function PanelHost() {
   return (
@@ -20,6 +21,7 @@ export function PanelHost() {
       <LivePanel />
       <HealthPanel />
       <RoleHirePanel />
+      <RankListPanel />
     </div>
   )
 }

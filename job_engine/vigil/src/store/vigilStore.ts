@@ -16,6 +16,12 @@ export type PanelId =
   | 'live'
   | 'health'
   | 'role_hire'
+  | 'rank_list'
+
+export type RankListFocus =
+  | { kind: 'companies'; days: number }
+  | { kind: 'roles' }
+  | null
 
 export type OrbitNode = {
   id: PanelId
@@ -70,6 +76,7 @@ const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
   { id: 'live', title: 'LIVE FEED', ...PANEL_CENTER },
   { id: 'health', title: 'TOWER HEALTH', ...PANEL_CENTER },
   { id: 'role_hire', title: 'COMPANIES HIRING', ...PANEL_CENTER },
+  { id: 'rank_list', title: 'FULL LIST', ...PANEL_CENTER },
 ]
 
 export const ORBIT_NODES: OrbitNode[] = [
@@ -166,9 +173,11 @@ type VigilStore = {
   scalePanel: (id: PanelId, scale: number) => void
   focusPanel: (id: PanelId) => void
   insightFocus: InsightFocus
+  rankFocus: RankListFocus
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (companyId: number, name: string, days?: number) => void
   openRoleJobs: (searchId: number, name: string) => void
+  openRankList: (kind: 'companies' | 'roles', days?: number) => void
   clearInsightFocus: () => void
   vitals: any | null
   setVitals: (v: any) => void
@@ -305,6 +314,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   focusedPanel: null,
   panels: initialPanels(),
   insightFocus: null,
+  rankFocus: null,
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
@@ -333,6 +343,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       panels,
       focusedPanel: next,
       ...(id === 'role_hire' ? { insightFocus: null as InsightFocus } : {}),
+      ...(id === 'rank_list' ? { rankFocus: null as RankListFocus } : {}),
       statusLine: next
         ? `CLOSED ${panels[id].title} → ${panels[next].title}`
         : `CLOSED ${panels[id].title}`,
@@ -419,6 +430,29 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: `JOBS FOR ${name}`,
     })
   },
+  openRankList: (kind, days = 7) => {
+    const panels = { ...get().panels }
+    const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    const title = kind === 'companies' ? 'ALL TOP HIRING' : 'ALL ROLES'
+    panels.rank_list = {
+      ...panels.rank_list,
+      open: true,
+      z: maxZ + 1,
+      x: PANEL_CENTER.x,
+      y: PANEL_CENTER.y,
+      scale: 1,
+      title,
+    }
+    set({
+      panels,
+      focusedPanel: 'rank_list',
+      rankFocus:
+        kind === 'companies'
+          ? { kind: 'companies', days }
+          : { kind: 'roles' },
+      statusLine: title,
+    })
+  },
   clearInsightFocus: () => {
     const panels = { ...get().panels }
     panels.jobs = { ...panels.jobs, title: 'JOBS' }
@@ -439,7 +473,7 @@ export function panelFromQuery(): PanelId | null {
   const params = new URLSearchParams(window.location.search)
   const p = params.get('panel')
   const valid: PanelId[] = [
-    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'role_hire',
+    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'role_hire', 'rank_list',
   ]
   return p && (valid as string[]).includes(p) ? (p as PanelId) : null
 }

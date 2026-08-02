@@ -40,6 +40,10 @@ export const api = {
     getJson<any>(`/api/ultron/watchlist?days=${days}&q=${encodeURIComponent(q)}`),
   roleCompanies: (searchId: number, days = 7) =>
     getJson<any>(`/api/ultron/roles/${searchId}/companies?days=${days}`),
+  topCompanies: (days = 7, limit = 80) =>
+    getJson<any>(`/api/ultron/top-companies?days=${days}&limit=${limit}`),
+  rolesRank: (limit = 200) =>
+    getJson<any>(`/api/ultron/roles-rank?limit=${limit}`),
   health: () => getJson<any>('/api/ultron/health'),
   configs: () => getJson<any[]>('/api/configs'),
   runs: (limit = 50) => getJson<any[]>(`/api/runs?limit=${limit}`),
