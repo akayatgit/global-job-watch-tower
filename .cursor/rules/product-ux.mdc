@@ -159,3 +159,6 @@ use — they should love opening the app, never fight it.
 - **Heat pacing (2026-08-02):** Prefer longer Warm/Hot Ollama rests + cool-down
   retries before Plan B keyword. Ideal path = stay on Ollama; orange Plan B
   strip should be rare, not flapping every spike.
+- **AI vs Keyword widget (2026-08-02):** Left-rail module compares Ollama AI
+  filters vs Plan B keyword over chips: 1h · 5h · 12h · 24h · 1 day · 2d · 5d ·
+  1 week · last week · this month · last month. Live refresh; pin-able.

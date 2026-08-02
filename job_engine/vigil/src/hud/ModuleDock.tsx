@@ -39,7 +39,12 @@ export function ModuleDock() {
           const open = panels[node.id]?.open
           const pinned = panels[node.id]?.pinned
           const active = node.id === focused || open
-          const short = node.label.split(' ')[0]
+          const short =
+            node.id === 'filter_mix'
+              ? 'AI/K'
+              : node.id === 'signals'
+                ? 'Signals'
+                : node.label.split(' ')[0]
           return (
             <div
               key={node.id}

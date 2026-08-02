@@ -45,6 +45,8 @@ export const api = {
   rolesRank: (limit = 200) =>
     getJson<any>(`/api/ultron/roles-rank?limit=${limit}`),
   health: () => getJson<any>('/api/ultron/health'),
+  filterCompare: (window = '24h') =>
+    getJson<any>(`/api/ultron/filter-compare?window=${encodeURIComponent(window)}`),
   configs: () => getJson<any[]>('/api/configs'),
   runs: (limit = 50) => getJson<any[]>(`/api/runs?limit=${limit}`),
   jobs: (limitOrQuery: number | JobsQuery = 80) => {

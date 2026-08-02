@@ -25,6 +25,7 @@ from app.signals import (
     watchlist_rows,
 )
 from app.ai_capacity import compute_ai_capacity
+from app.filter_compare import ALLOWED_FILTER_WINDOWS, compute_filter_compare
 from app.hermes_ask import ask_hermes
 from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
@@ -249,6 +250,15 @@ def ultron_signals(days: int = 7, db: Session = Depends(get_db)):
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'signals': to_jsonable(compute_hiring_signals(db, window_days=days)),
     }
+
+
+@router.get('/api/ultron/filter-compare')
+def ultron_filter_compare(window: str = '24h', db: Session = Depends(get_db)):
+    """AI (Ollama) vs Keyword (Plan B) filter counts for a time window."""
+    key = (window or '24h').strip().lower()
+    if key not in ALLOWED_FILTER_WINDOWS:
+        key = '24h'
+    return to_jsonable(compute_filter_compare(db, key))
 
 
 @router.get('/api/ultron/watchlist')

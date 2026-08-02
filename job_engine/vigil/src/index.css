@@ -1398,3 +1398,52 @@ button, input, select {
   color: var(--vg-amber);
   text-shadow: 0 0 20px rgba(255, 85, 0, 0.5);
 }
+
+/* AI vs Keyword compare */
+.stat-card.ai-tone .n { color: var(--vg-amber); }
+.stat-card.kw-tone .n { color: var(--vg-crimson); }
+.bar-fill.ai-fill {
+  background: linear-gradient(90deg, var(--vg-orange), var(--vg-amber));
+}
+.bar-fill.kw-fill {
+  background: linear-gradient(90deg, #7f1d1d, var(--vg-crimson));
+}
+.mix-series {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  overflow-x: auto;
+  min-height: 120px;
+  padding: 8px 0 4px;
+}
+.mix-bucket {
+  flex: 0 0 auto;
+  width: 44px;
+  text-align: center;
+}
+.mix-cols {
+  height: 72px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+}
+.mix-col {
+  width: 10px;
+  min-height: 4px;
+  border-radius: 2px 2px 0 0;
+}
+.mix-lbl {
+  font-size: 9px;
+  color: var(--vg-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mix-nums {
+  font-family: var(--font-hud);
+  font-size: 9px;
+  color: var(--vg-ink);
+  letter-spacing: 0.04em;
+}
