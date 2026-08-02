@@ -26,19 +26,15 @@ logger = logging.getLogger(__name__)
 
 FLUSH_EVERY_S = 2.5
 
-PROMPT = """You are filtering job search results.
-The user searched for the exact role: "{keywords}".
+PROMPT = """Fast title match. Search role: "{keywords}".
 
-A job title is RELEVANT only if it is the same role (seniority prefixes,
-suffixes like "Senior"/"Lead <role>"/roman numerals, or close wording of the
-SAME role are fine). Different roles are NOT relevant, e.g. for
-"ai product owner": "Product Owner" is relevant, but "Product Manager",
-"Project Manager", "Tech Lead", "Scrum Master", "Business Analyst" are NOT.
+Keep true ONLY if the title is the same role (Senior/Lead/II ok).
+Different jobs = false. No explanations. No thinking aloud.
 
-Job titles (in order):
+Titles:
 {titles}
 
-Reply with ONLY this JSON, with exactly {n} booleans in the same order:
+JSON only, exactly {n} booleans:
 {{"relevant": [true, false, ...]}}"""
 
 
@@ -98,7 +94,11 @@ def _stream_verdicts(titles: list[str], keywords: str, run_id: int | None) -> li
         messages=[{'role': 'user', 'content': _prompt_for(titles, keywords)}],
         stream=True,
         think=True,
-        options={'temperature': 0, 'num_ctx': 2048},
+        options={
+            'temperature': 0,
+            'num_ctx': 1024,
+            'num_predict': 256,
+        },
     )
     thinking_buf = ''
     content = ''
@@ -122,7 +122,11 @@ def _plain_verdicts(titles: list[str], keywords: str) -> list[bool]:
         messages=[{'role': 'user', 'content': _prompt_for(titles, keywords)}],
         format='json',
         think=False,
-        options={'temperature': 0, 'num_ctx': 2048},
+        options={
+            'temperature': 0,
+            'num_ctx': 1024,
+            'num_predict': 128,
+        },
     )
     return _parse_verdicts(response['message']['content'], len(titles))
 
