@@ -236,12 +236,12 @@ use — they should love opening the app, never fight it.
   tiny text the only clickable surface.
 - **Scene spin freeze (2026-08-03):** User can stop auto-rotation in Core /
   Graph / City (HUD control + Space) while working.
-- **City campus (2026-08-03):** Entering a metro shows an isometric smart-city
-  campus (reference: white matte fabric + translucent cyan glass corporates).
-  Dense small dummy white buildings; employers packed tight on a glowing
-  campus pad; height ∝ hiring. Company banner always on the roof top
-  (billboard). Soft high-key light, light fog, navy roads, tiny accent cars.
-  Click glass tower / banner (fat mesh), not text.
+- **City campus (2026-08-03):** Cyberpunk glass campus — frosted multi-color
+  glass (violet/cyan/amber/pink/green by sector), white fabric dummies with
+  edge frames, navy roads, mini cars with lights, street lamps. Corporates
+  packed on a tight pad. Banner on roof wraps at 11 chars; job pin always
+  above banner. Focus = camera to roof top; other towers/cards/city dim while
+  selected glows. Always high camera angle. Scroll zoom medium (city + graph).
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

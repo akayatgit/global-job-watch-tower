@@ -79,8 +79,8 @@ export function SceneControls() {
     const c = ref.current
     if (!c) return
     if (sceneMode === 'city') {
-      // Isometric campus look — high angle over the corporate plaza
-      camera.position.set(4.8, 5.4, 4.8)
+      // Always high-angle isometric over the campus
+      camera.position.set(3.6, 7.2, 3.6)
     } else {
       camera.position.set(0, 0.6, sceneMode === 'graph' ? 7.5 : 7.2)
     }
@@ -115,12 +115,10 @@ export function SceneControls() {
       const now = performance.now()
       const gap = now - lastWheelAt.current
       lastWheelAt.current = now
-      // Continuous scroll ramps up speed
-      const ramp = gap < 50 ? 2.1 : gap < 100 ? 1.55 : gap < 180 ? 1.2 : 1
-      // Larger base step — more travel per notch
-      scrollAccum.current += e.deltaY * 0.0038 * ramp
-      // Cap so it doesn’t runaway
-      scrollAccum.current = THREE.MathUtils.clamp(scrollAccum.current, -1.8, 1.8)
+      // Medium ease ramp — readable on graph + city
+      const ramp = gap < 50 ? 1.45 : gap < 110 ? 1.2 : 1
+      scrollAccum.current += e.deltaY * 0.0017 * ramp
+      scrollAccum.current = THREE.MathUtils.clamp(scrollAccum.current, -0.85, 0.85)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -150,11 +148,19 @@ export function SceneControls() {
     if (!c || !f) return
     if (fly.current?.mode === 'path' && fly.current.active) return
     const dist = f.distance
-    const toPos = new THREE.Vector3(
-      f.x + dist * 0.78,
-      f.y + dist * 0.72,
-      f.z + dist * 0.78,
-    )
+    const cityHigh = useVigilStore.getState().sceneMode === 'city'
+    // City: steeper drone angle looking down at roof tops
+    const toPos = cityHigh
+      ? new THREE.Vector3(
+          f.x + dist * 0.55,
+          f.y + dist * 1.05,
+          f.z + dist * 0.55,
+        )
+      : new THREE.Vector3(
+          f.x + dist * 0.78,
+          f.y + dist * 0.72,
+          f.z + dist * 0.78,
+        )
     const toTarget = new THREE.Vector3(f.x, f.y, f.z)
     fly.current = {
       mode: 'point',
@@ -229,8 +235,8 @@ export function SceneControls() {
     // —— Cursor-pivot zoom with ease decay ——
     if (enabled && Math.abs(scrollAccum.current) > 0.0002) {
       // Ease: apply a chunk each frame, decay the rest (smooth ramp feel)
-      const step = scrollAccum.current * Math.min(1, dt * 10)
-      scrollAccum.current *= Math.exp(-dt * 7.5)
+      const step = scrollAccum.current * Math.min(1, dt * 7)
+      scrollAccum.current *= Math.exp(-dt * 6.2)
 
       ndc.current.set(
         pointer.current.x * 2 - 1,
@@ -252,7 +258,7 @@ export function SceneControls() {
       // Dolly along view axis
       tmpOffset.current.copy(camera.position).sub(c.target)
       const dist = tmpOffset.current.length()
-      const factor = Math.exp(step * 1.15)
+      const factor = Math.exp(step * 0.85)
       const nextDist = THREE.MathUtils.clamp(
         dist * factor,
         c.minDistance,
@@ -322,7 +328,10 @@ export function SceneControls() {
       minDistance={0.25}
       maxDistance={28}
       minPolarAngle={0.15}
-      maxPolarAngle={Math.PI * 0.48}
+      // City stays high-angle; other modes allow a bit more tilt
+      maxPolarAngle={
+        sceneMode === 'city' ? Math.PI * 0.38 : Math.PI * 0.48
+      }
       mouseButtons={{
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,

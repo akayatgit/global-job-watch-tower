@@ -7,8 +7,8 @@ import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 
 /**
- * Isometric “smart city” district — reference style:
- * matte white dummy fabric · translucent cyan glass corporates · top banners · tight campus.
+ * Cyberpunk glass campus — frosted glass, edge frames, multi-color glow,
+ * dense white fabric, realistic mini cars, roof banners + pins.
  */
 
 type SkyCo = {
@@ -32,210 +32,335 @@ type Corp = {
   h: number
   heat: number
   seed: number
+  hue: number
+  accent: string
+  warmCore: boolean
 }
 
-type Dummy = { x: number; z: number; w: number; d: number; h: number; seed: number }
+type Dummy = {
+  x: number
+  z: number
+  w: number
+  d: number
+  h: number
+  seed: number
+  tint: string
+}
 
 const CITY_Y = -1.15
-const CAMPUS = { cx: 0, cz: 0, half: 1.65 } // tight corporate plaza
-const CITY_HALF = 7.2
-const ROAD = [-4.5, -1.5, 1.5, 4.5]
+const CAMPUS = { cx: 0, cz: 0, half: 1.55 }
+const CITY_HALF = 7.0
+const ROAD = [-4.2, -1.4, 1.4, 4.2]
+
+/** Sector → cyberpunk accent hues (not all blue) */
+const SECTOR_HUE: Record<string, number> = {
+  tech_ai: 0.78, // violet
+  tech_digital: 0.55, // cyan
+  software: 0.58,
+  manufacturing_advanced: 0.08, // amber
+  healthcare: 0.42, // teal-green
+  green_economy: 0.32, // green
+  logistics: 0.12, // orange
+  tourism: 0.92, // magenta
+}
+
+const ACCENTS = ['#38bdf8', '#a78bfa', '#fb923c', '#f472b6', '#34d399', '#fbbf24', '#22d3ee']
 
 function hash01(n: number) {
   const x = Math.sin(n * 127.1) * 43758.5453
   return x - Math.floor(x)
 }
 
-function makeTopBanner(name: string, jobs: number) {
+function wrapName(name: string, max = 11): string[] {
+  const words = name.trim().split(/\s+/)
+  const lines: string[] = []
+  let cur = ''
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w
+    if (next.length <= max) cur = next
+    else {
+      if (cur) lines.push(cur)
+      // hard-break long tokens
+      if (w.length > max) {
+        for (let i = 0; i < w.length; i += max) {
+          lines.push(w.slice(i, i + max))
+        }
+        cur = ''
+      } else cur = w
+    }
+  }
+  if (cur) lines.push(cur)
+  return lines.slice(0, 3)
+}
+
+function makeTopBanner(name: string, jobs: number, accent: string) {
+  const lines = wrapName(name, 11)
   const c = document.createElement('canvas')
-  c.width = 640
-  c.height = 128
+  c.width = 512
+  c.height = 48 + lines.length * 36
   const ctx = c.getContext('2d')!
-  // Glass card
-  ctx.fillStyle = 'rgba(255,255,255,0.92)'
-  ctx.beginPath()
-  ctx.moveTo(22, 12)
-  ctx.arcTo(632, 12, 632, 116, 14)
-  ctx.arcTo(632, 116, 8, 116, 14)
-  ctx.arcTo(8, 116, 8, 12, 14)
-  ctx.arcTo(8, 12, 632, 12, 14)
-  ctx.closePath()
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)'
+  const h = c.height
+  // Frosted glass card
+  ctx.fillStyle = 'rgba(12, 16, 28, 0.78)'
+  ctx.fillRect(6, 6, 500, h - 12)
+  ctx.strokeStyle = accent
   ctx.lineWidth = 3
-  ctx.stroke()
-  // Soft cyan accent bar
-  const g = ctx.createLinearGradient(20, 0, 620, 0)
-  g.addColorStop(0, 'rgba(56,189,248,0.15)')
-  g.addColorStop(0.5, 'rgba(34,211,238,0.35)')
-  g.addColorStop(1, 'rgba(56,189,248,0.15)')
+  ctx.shadowColor = accent
+  ctx.shadowBlur = 8
+  ctx.strokeRect(6, 6, 500, h - 12)
+  ctx.shadowBlur = 0
+  // Accent wash
+  const g = ctx.createLinearGradient(0, 0, 512, 0)
+  g.addColorStop(0, `${accent}33`)
+  g.addColorStop(0.5, `${accent}55`)
+  g.addColorStop(1, `${accent}22`)
   ctx.fillStyle = g
-  ctx.fillRect(20, 20, 600, 88)
-  ctx.fillStyle = '#0f172a'
-  ctx.font = '800 42px Orbitron, sans-serif'
+  ctx.fillRect(10, 10, 492, h - 20)
   ctx.textAlign = 'center'
-  const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
-  ctx.fillText(label.toUpperCase(), 320, 62)
-  ctx.fillStyle = '#0284c7'
-  ctx.font = '700 28px Rajdhani, sans-serif'
-  ctx.fillText(`${jobs} OPEN`, 320, 98)
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '800 30px Orbitron, sans-serif'
+  lines.forEach((ln, i) => {
+    ctx.fillText(ln.toUpperCase(), 256, 38 + i * 32)
+  })
+  ctx.fillStyle = accent
+  ctx.font = '700 22px Rajdhani, sans-serif'
+  ctx.fillText(`${jobs} OPEN`, 256, h - 14)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
-  return tex
+  return { tex, aspect: c.width / c.height }
 }
 
-function makeJobPin(n: number) {
+function makeJobPin(n: number, accent: string) {
   const c = document.createElement('canvas')
   c.width = 128
   c.height = 128
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, 128, 128)
-  const g = ctx.createRadialGradient(64, 52, 4, 64, 52, 36)
-  g.addColorStop(0, '#e0f2fe')
-  g.addColorStop(0.55, '#38bdf8')
-  g.addColorStop(1, '#0284c7')
+  const g = ctx.createRadialGradient(64, 48, 2, 64, 50, 36)
+  g.addColorStop(0, '#ffffff')
+  g.addColorStop(0.35, accent)
+  g.addColorStop(1, '#0a0a12')
   ctx.beginPath()
-  ctx.arc(64, 50, 34, 0, Math.PI * 2)
+  ctx.arc(64, 48, 34, 0, Math.PI * 2)
   ctx.fillStyle = g
-  ctx.shadowColor = 'rgba(56,189,248,0.45)'
-  ctx.shadowBlur = 8
+  ctx.shadowColor = accent
+  ctx.shadowBlur = 10
   ctx.fill()
   ctx.beginPath()
-  ctx.moveTo(44, 76)
+  ctx.moveTo(44, 74)
   ctx.lineTo(64, 114)
-  ctx.lineTo(84, 76)
+  ctx.lineTo(84, 74)
   ctx.closePath()
   ctx.fill()
   ctx.shadowBlur = 0
-  ctx.fillStyle = '#ffffff'
-  ctx.font = '800 32px Orbitron, sans-serif'
+  ctx.fillStyle = '#0a0a12'
+  ctx.font = '800 30px Orbitron, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(n > 99 ? '99+' : String(n), 64, 48)
+  ctx.fillText(n > 99 ? '99+' : String(n), 64, 46)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   return tex
 }
 
-/** Pack corporates tightly on a small campus grid */
 function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
-  const sorted = [...companies].sort((a, b) => b.n - a.n).slice(0, 18)
+  const sorted = [...companies].sort((a, b) => b.n - a.n).slice(0, 16)
   const cols = Math.ceil(Math.sqrt(sorted.length))
-  const gap = 0.55
-  const out: Corp[] = []
-  sorted.forEach((c, i) => {
+  const gap = 0.52
+  return sorted.map((c, i) => {
     const row = Math.floor(i / cols)
     const col = i % cols
     const nRows = Math.ceil(sorted.length / cols)
-    const ox = (col - (cols - 1) / 2) * gap
-    const oz = (row - (nRows - 1) / 2) * gap
     const seed = c.company_id * 13.37
     const heat = c.n / Math.max(maxN, 1)
-    const h = 0.85 + heat * 2.6 + hash01(seed) * 0.25
-    const w = 0.28 + heat * 0.12 + hash01(seed + 1) * 0.06
-    const d = 0.26 + heat * 0.1 + hash01(seed + 2) * 0.05
-    out.push({
+    const baseHue = SECTOR_HUE[c.sector_id] ?? 0.55
+    const hue = (baseHue + (hash01(seed) - 0.5) * 0.08 + 1) % 1
+    return {
       company_id: c.company_id,
       name: c.name,
       n: c.n,
       sector_id: c.sector_id,
       sector_label: c.sector_label,
-      x: CAMPUS.cx + ox + (hash01(seed + 3) - 0.5) * 0.06,
-      z: CAMPUS.cz + oz + (hash01(seed + 4) - 0.5) * 0.06,
-      w,
-      d,
-      h,
+      x: CAMPUS.cx + (col - (cols - 1) / 2) * gap + (hash01(seed) - 0.5) * 0.04,
+      z: CAMPUS.cz + (row - (nRows - 1) / 2) * gap + (hash01(seed + 1) - 0.5) * 0.04,
+      w: 0.3 + heat * 0.14 + hash01(seed + 2) * 0.05,
+      d: 0.28 + heat * 0.12 + hash01(seed + 3) * 0.05,
+      h: 0.95 + heat * 2.8 + hash01(seed + 4) * 0.3,
       heat,
       seed,
-    })
+      hue,
+      accent: ACCENTS[Math.floor(hash01(seed + 5) * ACCENTS.length)],
+      warmCore: hash01(seed + 6) > 0.72,
+    }
   })
-  return out
 }
 
-/** Dense white filler fabric — avoid campus + roads */
 function layoutDummies(corps: Corp[]): Dummy[] {
   const list: Dummy[] = []
   let i = 0
-  for (let gx = -CITY_HALF; gx <= CITY_HALF; gx += 0.42) {
-    for (let gz = -CITY_HALF; gz <= CITY_HALF; gz += 0.42) {
+  for (let gx = -CITY_HALF; gx <= CITY_HALF; gx += 0.4) {
+    for (let gz = -CITY_HALF; gz <= CITY_HALF; gz += 0.4) {
       i++
-      // Skip roads
-      if (ROAD.some((r) => Math.abs(gx - r) < 0.38 || Math.abs(gz - r) < 0.38)) continue
-      // Skip corporate campus
+      if (ROAD.some((r) => Math.abs(gx - r) < 0.36 || Math.abs(gz - r) < 0.36)) continue
       if (
-        Math.abs(gx - CAMPUS.cx) < CAMPUS.half + 0.35 &&
-        Math.abs(gz - CAMPUS.cz) < CAMPUS.half + 0.35
+        Math.abs(gx - CAMPUS.cx) < CAMPUS.half + 0.3 &&
+        Math.abs(gz - CAMPUS.cz) < CAMPUS.half + 0.3
       )
         continue
-      // Sparse holes for plazas
-      if (hash01(i * 3.1) < 0.12) continue
-      // Don't overlap a corporate footprint
-      const nearCorp = corps.some(
-        (c) => Math.hypot(c.x - gx, c.z - gz) < 0.45,
-      )
-      if (nearCorp) continue
+      if (hash01(i * 3.1) < 0.1) continue
+      if (corps.some((c) => Math.hypot(c.x - gx, c.z - gz) < 0.42)) continue
       const seed = i * 7.7
+      const tint =
+        hash01(seed) > 0.85
+          ? '#e2e8f0'
+          : hash01(seed + 1) > 0.9
+            ? '#cbd5e1'
+            : '#f1f5f9'
       list.push({
-        x: gx + (hash01(seed) - 0.5) * 0.08,
-        z: gz + (hash01(seed + 1) - 0.5) * 0.08,
-        w: 0.22 + hash01(seed + 2) * 0.18,
-        d: 0.2 + hash01(seed + 3) * 0.16,
-        h: 0.25 + hash01(seed + 4) * 1.1,
+        x: gx + (hash01(seed) - 0.5) * 0.06,
+        z: gz + (hash01(seed + 1) - 0.5) * 0.06,
+        w: 0.2 + hash01(seed + 2) * 0.2,
+        d: 0.18 + hash01(seed + 3) * 0.18,
+        h: 0.22 + hash01(seed + 4) * 1.35,
         seed,
+        tint,
       })
     }
   }
   return list
 }
 
-function DummyBuilding({ b }: { b: Dummy }) {
+function EdgeFrame({
+  w,
+  h,
+  d,
+  color,
+  opacity,
+}: {
+  w: number
+  h: number
+  d: number
+  color: string
+  opacity: number
+}) {
+  const t = 0.012
+  const mats = (
+    <meshBasicMaterial color={color} transparent opacity={opacity} />
+  )
   return (
-    <mesh position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
-      <boxGeometry args={[b.w, b.h, b.d]} />
-      <meshStandardMaterial
-        color="#f4f6f8"
-        roughness={0.82}
-        metalness={0.05}
+    <group>
+      {/* Vertical corners */}
+      {[
+        [w / 2, 0, d / 2],
+        [-w / 2, 0, d / 2],
+        [w / 2, 0, -d / 2],
+        [-w / 2, 0, -d / 2],
+      ].map(([x, , z], i) => (
+        <mesh key={`v${i}`} position={[x as number, h / 2, z as number]}>
+          <boxGeometry args={[t, h, t]} />
+          {mats}
+        </mesh>
+      ))}
+      {/* Top rim */}
+      <mesh position={[0, h, 0]}>
+        <boxGeometry args={[w + t, t, d + t]} />
+        {mats}
+      </mesh>
+      {/* Mid belt */}
+      <mesh position={[0, h * 0.55, 0]}>
+        <boxGeometry args={[w + t * 0.5, t * 0.7, d + t * 0.5]} />
+        {mats}
+      </mesh>
+    </group>
+  )
+}
+
+function DummyBuilding({
+  b,
+  dim,
+}: {
+  b: Dummy
+  dim: boolean
+}) {
+  return (
+    <group position={[b.x, 0, b.z]}>
+      <mesh position={[0, b.h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[b.w, b.h, b.d]} />
+        <meshStandardMaterial
+          color={b.tint}
+          roughness={0.78}
+          metalness={0.08}
+          transparent
+          opacity={dim ? 0.35 : 1}
+        />
+      </mesh>
+      {/* Tiny window dots */}
+      <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]}>
+        <planeGeometry args={[b.w * 0.7, b.h * 0.55]} />
+        <meshBasicMaterial
+          color="#94a3b8"
+          transparent
+          opacity={dim ? 0.08 : 0.18}
+        />
+      </mesh>
+      <EdgeFrame
+        w={b.w}
+        h={b.h}
+        d={b.d}
+        color="#94a3b8"
+        opacity={dim ? 0.15 : 0.35}
       />
-    </mesh>
+    </group>
   )
 }
 
 function GlassTower({
   t,
   cityLabel,
+  anyFocused,
 }: {
   t: Corp
   cityLabel: string
+  anyFocused: boolean
 }) {
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
+  const dim = anyFocused && !focused
   const [hot, setHot] = useState(false)
-  const glow = useRef<THREE.MeshStandardMaterial>(null)
+  const shell = useRef<THREE.MeshStandardMaterial>(null)
   const pin = useRef<THREE.Group>(null)
-  const bannerTex = useMemo(
-    () => makeTopBanner(t.name, t.n),
-    [t.name, t.n],
+  const banner = useMemo(
+    () => makeTopBanner(t.name, t.n, t.accent),
+    [t.name, t.n, t.accent],
   )
-  const pinTex = useMemo(() => makeJobPin(t.n), [t.n])
+  const pinTex = useMemo(() => makeJobPin(t.n, t.accent), [t.n, t.accent])
+  const glassCol = useMemo(() => {
+    const c = new THREE.Color()
+    c.setHSL(t.hue, 0.72, 0.48)
+    return c
+  }, [t.hue])
+  const warmCol = useMemo(() => new THREE.Color('#fb923c'), [])
 
   useFrame((state) => {
-    const breath = 0.35 + Math.sin(state.clock.elapsedTime * 1.3 + t.seed) * 0.08
-    if (glow.current) {
-      glow.current.emissiveIntensity = focused || hot ? 0.85 + breath : 0.45 + breath * 0.5
-      glow.current.opacity = focused || hot ? 0.72 : 0.55
+    const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
+    if (shell.current) {
+      const base = focused ? 0.95 : hot ? 0.75 : dim ? 0.12 : 0.48
+      shell.current.emissiveIntensity = base + breath * (focused ? 0.25 : 0.1)
+      shell.current.opacity = focused ? 0.78 : hot ? 0.65 : dim ? 0.18 : 0.5
     }
     if (pin.current) {
-      const s = 1 + Math.sin(state.clock.elapsedTime * 1.5 + t.seed) * 0.04
-      pin.current.scale.setScalar(s)
+      pin.current.visible = !dim || focused
+      const s = 1 + Math.sin(state.clock.elapsedTime * 1.6 + t.seed) * 0.05
+      pin.current.scale.setScalar(focused || hot ? s * 1.08 : s)
     }
   })
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     const st = useVigilStore.getState()
-    const worldY = CITY_Y + t.h * 0.45
+    // Focus on the ROOF / top of building
+    const roofY = CITY_Y + t.h + 0.15
     if (st.selectFocusId === selectId) {
       st.openCompanyJobs(t.company_id, t.name, 7)
       st.setStatus(`OPEN · ${t.name}`)
@@ -245,23 +370,20 @@ function GlassTower({
     st.requestCameraFocus({
       id: selectId,
       x: t.x,
-      y: worldY,
+      y: roofY,
       z: t.z,
-      distance: 1.85 + t.h * 0.2,
+      distance: 1.55 + t.h * 0.12,
     })
     st.setStatus(`FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`)
   }
 
-  // Soft cyan–blue by heat (more hiring = greener cyan)
-  const glass = useMemo(() => {
-    const c = new THREE.Color()
-    c.setHSL(0.52 - t.heat * 0.06, 0.75, 0.48 + t.heat * 0.08)
-    return c
-  }, [t.heat])
+  const floors = Math.max(4, Math.floor(t.h / 0.22))
+  const bannerH = 0.18 + wrapName(t.name, 11).length * 0.06
+  const bannerW = bannerH * banner.aspect
+  const pinY = t.h + 0.12 + bannerH + 0.18
 
   return (
     <group position={[t.x, 0, t.z]}>
-      {/* Hit volume */}
       <mesh
         position={[0, t.h / 2, 0]}
         onClick={onClick}
@@ -276,70 +398,120 @@ function GlassTower({
         }}
         onPointerOut={() => setHot(false)}
       >
-        <boxGeometry args={[t.w * 1.35, t.h, t.d * 1.35]} />
+        <boxGeometry args={[t.w * 1.4, t.h, t.d * 1.4]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* White floor plates inside glass */}
-      {Array.from({ length: Math.max(3, Math.floor(t.h / 0.28)) }).map((_, i) => {
-        const y = 0.12 + i * 0.28
-        if (y > t.h - 0.1) return null
+      {/* Interior core (warm accent on some towers) */}
+      <mesh position={[0, t.h * 0.45, 0]}>
+        <boxGeometry args={[t.w * 0.55, t.h * 0.75, t.d * 0.55]} />
+        <meshStandardMaterial
+          color={t.warmCore ? warmCol : '#1e293b'}
+          emissive={t.warmCore ? warmCol : glassCol}
+          emissiveIntensity={dim ? 0.05 : t.warmCore ? 0.55 : 0.2}
+          transparent
+          opacity={dim ? 0.15 : 0.85}
+        />
+      </mesh>
+
+      {/* Floor plates + mullion feel */}
+      {Array.from({ length: floors }).map((_, i) => {
+        const y = 0.1 + (i / floors) * (t.h - 0.15)
         return (
-          <mesh key={i} position={[0, y, 0]} receiveShadow>
-            <boxGeometry args={[t.w * 0.92, 0.03, t.d * 0.92]} />
-            <meshStandardMaterial color="#f8fafc" roughness={0.7} metalness={0.05} />
-          </mesh>
+          <group key={i}>
+            <mesh position={[0, y, 0]}>
+              <boxGeometry args={[t.w * 0.94, 0.018, t.d * 0.94]} />
+              <meshStandardMaterial
+                color="#e2e8f0"
+                roughness={0.55}
+                transparent
+                opacity={dim ? 0.12 : 0.85}
+              />
+            </mesh>
+            {/* Tiny desk/partition dots */}
+            {!dim && i % 2 === 0 && (
+              <mesh position={[t.w * 0.15, y + 0.02, 0]}>
+                <boxGeometry args={[0.04, 0.02, t.d * 0.35]} />
+                <meshBasicMaterial color="#64748b" transparent opacity={0.5} />
+              </mesh>
+            )}
+          </group>
         )
       })}
 
-      {/* Translucent glass shell */}
+      {/* Glass facade shell */}
       <mesh position={[0, t.h / 2, 0]} castShadow>
         <boxGeometry args={[t.w, t.h, t.d]} />
         <meshStandardMaterial
-          ref={glow}
-          color={glass}
-          emissive={glass}
+          ref={shell}
+          color={glassCol}
+          emissive={glassCol}
           emissiveIntensity={0.5}
           transparent
-          opacity={0.55}
-          roughness={0.15}
-          metalness={0.2}
+          opacity={0.52}
+          roughness={0.12}
+          metalness={0.35}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Soft rim light */}
+      {/* Window grid planes (glass morphism detail) */}
+      {[
+        [0, t.h / 2, t.d / 2 + 0.003],
+        [0, t.h / 2, -t.d / 2 - 0.003],
+      ].map(([x, y, z], i) => (
+        <mesh key={`f${i}`} position={[x, y, z]}>
+          <planeGeometry args={[t.w * 0.96, t.h * 0.96]} />
+          <meshBasicMaterial
+            color={t.accent}
+            transparent
+            opacity={dim ? 0.04 : 0.12}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+
+      <EdgeFrame
+        w={t.w}
+        h={t.h}
+        d={t.d}
+        color={focused || hot ? t.accent : '#e2e8f0'}
+        opacity={dim ? 0.12 : focused || hot ? 0.9 : 0.55}
+      />
+
       {(focused || hot) && (
         <pointLight
-          position={[0, t.h * 0.6, 0]}
-          color="#38bdf8"
-          intensity={1.1}
-          distance={2.4}
+          position={[0, t.h * 0.7, 0]}
+          color={t.accent}
+          intensity={focused ? 1.4 : 0.9}
+          distance={2.6}
           decay={2}
         />
       )}
 
-      {/* Banner ALWAYS on top */}
-      <Billboard follow position={[0, t.h + 0.22, 0]}>
-        <mesh onClick={onClick}>
-          <planeGeometry args={[0.95, 0.2]} />
+      {/* Banner — roof top, wraps @ 11 chars */}
+      <Billboard follow position={[0, t.h + 0.14 + bannerH / 2, 0]}>
+        <mesh onClick={onClick} visible={!dim || focused}>
+          <planeGeometry args={[bannerW, bannerH]} />
           <meshBasicMaterial
-            map={bannerTex}
+            map={banner.tex}
             transparent
+            opacity={dim ? 0.15 : 1}
             depthWrite={false}
             toneMapped={false}
           />
         </mesh>
       </Billboard>
 
-      {/* Job pin above banner */}
+      {/* Pin ALWAYS at absolute top */}
       <Billboard follow>
-        <group ref={pin} position={[0, t.h + 0.48, 0]}>
+        <group ref={pin} position={[0, pinY, 0]}>
           <mesh onClick={onClick}>
-            <planeGeometry args={[0.28, 0.28]} />
+            <planeGeometry args={[0.3, 0.3]} />
             <meshBasicMaterial
               map={pinTex}
               transparent
+              opacity={dim ? 0.12 : 1}
               depthWrite={false}
               toneMapped={false}
             />
@@ -350,17 +522,22 @@ function GlassTower({
   )
 }
 
-function CampusPad() {
+function CampusPad({ dim }: { dim: boolean }) {
   return (
-    <group position={[CAMPUS.cx, 0.01, CAMPUS.cz]}>
+    <group position={[CAMPUS.cx, 0.012, CAMPUS.cz]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[CAMPUS.half * 2.3, CAMPUS.half * 2.3]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.55} metalness={0.08} />
+        <planeGeometry args={[CAMPUS.half * 2.25, CAMPUS.half * 2.25]} />
+        <meshStandardMaterial
+          color="#0f172a"
+          roughness={0.45}
+          metalness={0.2}
+          transparent
+          opacity={dim ? 0.5 : 1}
+        />
       </mesh>
-      {/* Cyan neon pad edge */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-        <planeGeometry args={[CAMPUS.half * 2.42, CAMPUS.half * 2.42]} />
-        <meshBasicMaterial color="#38bdf8" transparent opacity={0.35} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
+        <planeGeometry args={[CAMPUS.half * 2.35, CAMPUS.half * 2.35]} />
+        <meshBasicMaterial color="#a78bfa" transparent opacity={dim ? 0.15 : 0.4} />
       </mesh>
     </group>
   )
@@ -372,12 +549,11 @@ function Ground() {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#eef2f6'
+    ctx.fillStyle = '#dbe3ec'
     ctx.fillRect(0, 0, 1024, 1024)
-    // Soft block grid
-    ctx.strokeStyle = 'rgba(148,163,184,0.18)'
+    ctx.strokeStyle = 'rgba(100,116,139,0.2)'
     ctx.lineWidth = 1
-    for (let i = 0; i < 1024; i += 32) {
+    for (let i = 0; i < 1024; i += 28) {
       ctx.beginPath()
       ctx.moveTo(i, 0)
       ctx.lineTo(i, 1024)
@@ -388,16 +564,18 @@ function Ground() {
       ctx.stroke()
     }
     const toPx = (w: number) => ((w + CITY_HALF) / (CITY_HALF * 2)) * 1024
-    const half = (0.42 / (CITY_HALF * 2)) * 1024
+    const half = (0.48 / (CITY_HALF * 2)) * 1024
     for (const r of ROAD) {
       const p = toPx(r)
-      ctx.fillStyle = '#1e293b'
+      // Deep navy cyberpunk asphalt
+      ctx.fillStyle = '#0b1220'
       ctx.fillRect(p - half, 0, half * 2, 1024)
       ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)'
+    // Lane marks + crosswalks
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'
     ctx.lineWidth = 2
-    ctx.setLineDash([14, 16])
+    ctx.setLineDash([16, 14])
     for (const r of ROAD) {
       const p = toPx(r)
       ctx.beginPath()
@@ -409,6 +587,17 @@ function Ground() {
       ctx.lineTo(1024, p)
       ctx.stroke()
     }
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'
+    for (const x of ROAD) {
+      for (const z of ROAD) {
+        const px = toPx(x)
+        const pz = toPx(z)
+        for (let k = -6; k <= 6; k++) {
+          ctx.fillRect(px - half * 0.7, pz + k * 5 - 1, half * 1.4, 2)
+        }
+      }
+    }
     const tex = new THREE.CanvasTexture(c)
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
@@ -416,15 +605,16 @@ function Ground() {
 
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[CITY_HALF * 2.2, CITY_HALF * 2.2]} />
-      <meshStandardMaterial map={roadTex} roughness={0.9} metalness={0.02} />
+      <planeGeometry args={[CITY_HALF * 2.15, CITY_HALF * 2.15]} />
+      <meshStandardMaterial map={roadTex} roughness={0.88} metalness={0.05} />
     </mesh>
   )
 }
 
-/** Tiny accent cars on roads only */
-function MiniTraffic() {
+/** More realistic mini cars — body + cabin + lights */
+function Traffic({ dim }: { dim: boolean }) {
   const cars = useMemo(() => {
+    const colors = ['#fb923c', '#e2e8f0', '#38bdf8', '#1e293b', '#f472b6', '#a78bfa']
     const list: {
       axis: 'h' | 'v'
       fixed: number
@@ -436,20 +626,20 @@ function MiniTraffic() {
     let i = 0
     for (const r of ROAD) {
       for (const dir of [1, -1] as const) {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < 3; k++) {
           list.push({
             axis: i % 2 === 0 ? 'h' : 'v',
-            fixed: r + (dir > 0 ? 0.1 : -0.1),
+            fixed: r + (k % 2 === 0 ? 0.12 : -0.12),
             dir,
-            pos: -CITY_HALF + hash01(i * 5 + k) * CITY_HALF * 1.8,
-            speed: 0.7 + hash01(i + k) * 0.5,
-            color: hash01(i * 2 + k) > 0.7 ? '#fb923c' : '#38bdf8',
+            pos: -CITY_HALF + hash01(i * 9 + k) * CITY_HALF * 1.9,
+            speed: 0.55 + hash01(i + k) * 0.55,
+            color: colors[(i + k) % colors.length],
           })
           i++
         }
       }
     }
-    return list.slice(0, 24)
+    return list.slice(0, 28)
   }, [])
   const refs = useRef<(THREE.Group | null)[]>([])
 
@@ -461,10 +651,10 @@ function MiniTraffic() {
       const g = refs.current[i]
       if (!g) return
       if (c.axis === 'h') {
-        g.position.set(c.pos, 0.04, c.fixed)
+        g.position.set(c.pos, 0.045, c.fixed)
         g.rotation.y = c.dir > 0 ? 0 : Math.PI
       } else {
-        g.position.set(c.fixed, 0.04, c.pos)
+        g.position.set(c.fixed, 0.045, c.pos)
         g.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
       }
     })
@@ -479,13 +669,50 @@ function MiniTraffic() {
             refs.current[i] = el
           }}
         >
+          {/* Body */}
           <mesh>
-            <boxGeometry args={[0.07, 0.025, 0.035]} />
+            <boxGeometry args={[0.1, 0.032, 0.048]} />
             <meshStandardMaterial
               color={c.color}
-              emissive={c.color}
-              emissiveIntensity={0.35}
-              roughness={0.4}
+              roughness={0.35}
+              metalness={0.4}
+              transparent
+              opacity={dim ? 0.25 : 1}
+            />
+          </mesh>
+          {/* Cabin */}
+          <mesh position={[0.01, 0.028, 0]}>
+            <boxGeometry args={[0.045, 0.022, 0.04]} />
+            <meshStandardMaterial
+              color="#0f172a"
+              transparent
+              opacity={dim ? 0.2 : 0.75}
+            />
+          </mesh>
+          {/* Headlights */}
+          <mesh position={[0.052, 0.01, 0.014]}>
+            <boxGeometry args={[0.012, 0.01, 0.01]} />
+            <meshBasicMaterial
+              color="#fff7d6"
+              transparent
+              opacity={dim ? 0.15 : 0.9}
+            />
+          </mesh>
+          <mesh position={[0.052, 0.01, -0.014]}>
+            <boxGeometry args={[0.012, 0.01, 0.01]} />
+            <meshBasicMaterial
+              color="#fff7d6"
+              transparent
+              opacity={dim ? 0.15 : 0.9}
+            />
+          </mesh>
+          {/* Taillights */}
+          <mesh position={[-0.05, 0.01, 0]}>
+            <boxGeometry args={[0.01, 0.01, 0.03]} />
+            <meshBasicMaterial
+              color="#ef4444"
+              transparent
+              opacity={dim ? 0.15 : 0.85}
             />
           </mesh>
         </group>
@@ -494,34 +721,40 @@ function MiniTraffic() {
   )
 }
 
-function CityTitle({ label, jobs }: { label: string; jobs: number }) {
-  const tex = useMemo(() => {
-    const c = document.createElement('canvas')
-    c.width = 512
-    c.height = 96
-    const ctx = c.getContext('2d')!
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'
-    ctx.fillRect(8, 12, 496, 72)
-    ctx.strokeStyle = 'rgba(56,189,248,0.5)'
-    ctx.lineWidth = 2
-    ctx.strokeRect(8, 12, 496, 72)
-    ctx.fillStyle = '#0f172a'
-    ctx.font = '800 36px Orbitron, sans-serif'
-    ctx.fillText(label.toUpperCase(), 24, 48)
-    ctx.fillStyle = '#0284c7'
-    ctx.font = '700 22px Rajdhani, sans-serif'
-    ctx.fillText(`${jobs} openings · campus view`, 24, 74)
-    const t = new THREE.CanvasTexture(c)
-    t.colorSpace = THREE.SRGBColorSpace
-    return t
-  }, [label, jobs])
+function StreetLamps({ dim }: { dim: boolean }) {
+  const lamps = useMemo(() => {
+    const pts: { x: number; z: number; color: string }[] = []
+    for (const r of ROAD) {
+      for (let u = -CITY_HALF + 1; u < CITY_HALF; u += 2.2) {
+        pts.push({ x: r + 0.28, z: u, color: '#38bdf8' })
+        pts.push({ x: u, z: r + 0.28, color: '#a78bfa' })
+      }
+    }
+    return pts.slice(0, 40)
+  }, [])
   return (
-    <Billboard follow position={[0, 0.55, CAMPUS.half + 1.1]}>
-      <mesh>
-        <planeGeometry args={[2.2, 0.42]} />
-        <meshBasicMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
-      </mesh>
-    </Billboard>
+    <group>
+      {lamps.map((l, i) => (
+        <group key={i} position={[l.x, 0, l.z]}>
+          <mesh position={[0, 0.22, 0]}>
+            <cylinderGeometry args={[0.008, 0.01, 0.44, 6]} />
+            <meshStandardMaterial
+              color="#94a3b8"
+              transparent
+              opacity={dim ? 0.2 : 0.9}
+            />
+          </mesh>
+          <mesh position={[0, 0.45, 0]}>
+            <sphereGeometry args={[0.025, 8, 8]} />
+            <meshBasicMaterial
+              color={l.color}
+              transparent
+              opacity={dim ? 0.15 : 0.85}
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
   )
 }
 
@@ -534,6 +767,8 @@ export function NightCity({
 }) {
   const [companies, setCompanies] = useState<SkyCo[]>([])
   const [maxN, setMaxN] = useState(1)
+  const selectFocusId = useVigilStore((s) => s.selectFocusId)
+  const anyFocused = Boolean(selectFocusId?.startsWith('company:'))
 
   useEffect(() => {
     let alive = true
@@ -558,35 +793,39 @@ export function NightCity({
     [companies, maxN],
   )
   const dummies = useMemo(() => layoutDummies(corps), [corps])
-  const totalJobs = companies.reduce((a, c) => a + c.n, 0)
 
   return (
     <group position={[0, CITY_Y, 0]}>
-      <ambientLight intensity={0.72} color="#f8fafc" />
-      <hemisphereLight args={['#ffffff', '#cbd5e1', 0.55]} />
+      <ambientLight intensity={0.55} color="#e2e8f0" />
+      <hemisphereLight args={['#f8fafc', '#64748b', 0.45]} />
       <directionalLight
-        position={[6, 14, 4]}
-        intensity={1.15}
-        color="#fffaf0"
+        position={[5, 16, 3]}
+        intensity={1.05}
+        color="#fff7ed"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
-      <directionalLight position={[-4, 6, -5]} intensity={0.35} color="#bae6fd" />
+      <directionalLight position={[-6, 5, -4]} intensity={0.4} color="#c4b5fd" />
+      <pointLight position={[0, 3, 0]} intensity={0.35} color="#67e8f9" distance={10} />
 
       <Ground />
-      <CampusPad />
-      <MiniTraffic />
+      <CampusPad dim={anyFocused} />
+      <Traffic dim={anyFocused} />
+      <StreetLamps dim={anyFocused} />
 
       {dummies.map((b, i) => (
-        <DummyBuilding key={i} b={b} />
+        <DummyBuilding key={i} b={b} dim={anyFocused} />
       ))}
 
       {corps.map((t) => (
-        <GlassTower key={t.company_id} t={t} cityLabel={cityLabel} />
+        <GlassTower
+          key={t.company_id}
+          t={t}
+          cityLabel={cityLabel}
+          anyFocused={anyFocused}
+        />
       ))}
-
-      <CityTitle label={cityLabel} jobs={totalJobs} />
     </group>
   )
 }
