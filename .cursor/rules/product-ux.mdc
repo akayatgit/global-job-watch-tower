@@ -246,9 +246,9 @@ use — they should love opening the app, never fight it.
   Orbit/pan drag release must NOT count as a click (city, graph, globe).
   Empty click in campus never leaves immersive view — icon-only exit
   (door/arrow) in the scene-mode strip returns to the globe. No job pins;
-  compact roof banners with tiny “N openings”. Rank icons (▲/▼) step
-  focus by next higher/lower openings; same count → nearest neighbour;
-  still tied → campus path angle.
+  no roof cards — floating name + big white openings number only. Rank
+  icons (▲/▼) step by openings (ties → nearest → path angle) with
+  Spiderman whip-arc camera. Focus zoom stays tight on the roof.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

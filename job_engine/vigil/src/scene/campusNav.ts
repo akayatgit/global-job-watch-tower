@@ -1,6 +1,7 @@
 /**
  * Rank-step focus among campus towers by openings.
  * Higher / lower rung by n; ties → nearest neighbour; still tied → path angle.
+ * Camera: Spiderman whip-arcs between roofs.
  */
 
 import { useVigilStore } from '../store/vigilStore'
@@ -58,21 +59,61 @@ function pickNear(
   })[0]
 }
 
-function focusTower(t: CampusTower) {
+function focusDist(h: number) {
+  return 0.78 + h * 0.07
+}
+
+function roofOf(t: CampusTower) {
+  return { x: t.x, y: CITY_Y + t.h + 0.15, z: t.z }
+}
+
+function focusTower(t: CampusTower, from: CampusTower | null) {
   const st = useVigilStore.getState()
   const selectId = `company:${t.company_id}`
-  const roofY = CITY_Y + t.h + 0.15
+  const roof = roofOf(t)
+  const dist = focusDist(t.h)
+
   st.setSceneSpin(false)
-  st.requestCameraFocus({
-    id: selectId,
-    x: t.x,
-    y: roofY,
-    z: t.z,
-    distance: 1.55 + t.h * 0.12,
-  })
+  // Highlight immediately while the whip flies
+  st.setSelectFocusId(selectId)
   st.setStatus(
     `FOCUS · ${t.name} · ${t.n} openings in ${cityLabel || 'campus'} · click again to open`,
   )
+
+  if (from && from.company_id !== t.company_id) {
+    const dx = t.x - from.x
+    const dz = t.z - from.z
+    const len = Math.hypot(dx, dz) || 1
+    // Perpendicular swing + soar — Spiderman whip mid-beat
+    const swing = Math.min(1.35, 0.55 + len * 0.45)
+    const sx = (-dz / len) * swing
+    const sz = (dx / len) * swing
+    const midY =
+      CITY_Y + Math.max(from.h, t.h) + 0.85 + Math.min(1.1, len * 0.35)
+    const start = roofOf(from)
+    st.requestCameraPath({
+      waypoints: [
+        start,
+        {
+          x: (from.x + t.x) * 0.5 + sx,
+          y: midY,
+          z: (from.z + t.z) * 0.5 + sz,
+        },
+        roof,
+      ],
+      distance: dist,
+      endFocusId: selectId,
+    })
+    return
+  }
+
+  st.requestCameraFocus({
+    id: selectId,
+    x: roof.x,
+    y: roof.y,
+    z: roof.z,
+    distance: dist,
+  })
 }
 
 /**
@@ -98,7 +139,7 @@ export function stepCampusFocus(dir: 'higher' | 'lower') {
       origin,
       towers.filter((t) => t.n === targetN),
     )
-    if (pick) focusTower(pick)
+    if (pick) focusTower(pick, null)
     return
   }
 
@@ -108,7 +149,6 @@ export function stepCampusFocus(dir: 'higher' | 'lower') {
       : towers.filter((t) => t.n < cur.n)
 
   if (!pool.length) {
-    // Wrap: higher at top → lowest rung; lower at bottom → highest rung
     const wrapN =
       dir === 'higher'
         ? Math.min(...towers.map((t) => t.n))
@@ -117,7 +157,6 @@ export function stepCampusFocus(dir: 'higher' | 'lower') {
       origin,
       towers.filter((t) => t.n === wrapN && t.company_id !== cur.company_id),
     )
-    // If every tower shares the same n, walk the spatial path instead
     if (!wrap) {
       const same = towers.filter((t) => t.company_id !== cur.company_id)
       const path = [...same].sort((a, b) => {
@@ -126,14 +165,16 @@ export function stepCampusFocus(dir: 'higher' | 'lower') {
         if (Math.abs(pa - pb) > 1e-8) return pa - pb
         return a.company_id - b.company_id
       })
-      // Step along path in dir (higher → clockwise-ish)
       const ordered = dir === 'higher' ? path : [...path].reverse()
-      const nearFirst = pickNear(origin, ordered.slice(0, Math.min(3, ordered.length)))
-      if (nearFirst) focusTower(nearFirst)
-      else if (ordered[0]) focusTower(ordered[0])
+      const nearFirst = pickNear(
+        origin,
+        ordered.slice(0, Math.min(3, ordered.length)),
+      )
+      if (nearFirst) focusTower(nearFirst, cur)
+      else if (ordered[0]) focusTower(ordered[0], cur)
       return
     }
-    focusTower(wrap)
+    focusTower(wrap, cur)
     return
   }
 
@@ -143,5 +184,5 @@ export function stepCampusFocus(dir: 'higher' | 'lower') {
       : Math.max(...pool.map((t) => t.n))
   const tier = pool.filter((t) => t.n === nextN)
   const pick = pickNear(origin, tier)
-  if (pick) focusTower(pick)
+  if (pick) focusTower(pick, cur)
 }

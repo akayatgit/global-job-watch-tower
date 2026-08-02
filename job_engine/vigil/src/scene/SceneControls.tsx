@@ -19,10 +19,12 @@ type Flight =
       active: boolean
       fromPos: THREE.Vector3
       toPos: THREE.Vector3
+      midPos: THREE.Vector3 | null
       fromTarget: THREE.Vector3
       toTarget: THREE.Vector3
       t: number
       speed: number
+      cinematic: boolean
     }
   | {
       mode: 'path'
@@ -32,6 +34,7 @@ type Flight =
       endFocusId: string | null
       t: number
       speed: number
+      city: boolean
     }
 
 function samplePath(waypoints: THREE.Vector3[], u: number, out: THREE.Vector3) {
@@ -44,6 +47,30 @@ function samplePath(waypoints: THREE.Vector3[], u: number, out: THREE.Vector3) {
   const local = f - i
   const s = local * local * (3 - 2 * local)
   return out.copy(waypoints[i]).lerp(waypoints[i + 1], s)
+}
+
+/** Spiderman ease — slow coil, punch through mid, soft settle */
+function easeWhip(t: number) {
+  const x = THREE.MathUtils.clamp(t, 0, 1)
+  return x < 0.5
+    ? 8 * x * x * x * x
+    : 1 - Math.pow(-2 * x + 2, 4) / 2
+}
+
+function bezier3(
+  a: THREE.Vector3,
+  m: THREE.Vector3,
+  b: THREE.Vector3,
+  u: number,
+  out: THREE.Vector3,
+) {
+  const s = 1 - u
+  out.set(
+    s * s * a.x + 2 * s * u * m.x + u * u * b.x,
+    s * s * a.y + 2 * s * u * m.y + u * u * b.y,
+    s * s * a.z + 2 * s * u * m.z + u * u * b.z,
+  )
+  return out
 }
 
 /**
@@ -80,8 +107,8 @@ export function SceneControls() {
     const c = ref.current
     if (!c) return
     if (sceneMode === 'city') {
-      // Always high-angle isometric over the campus
-      camera.position.set(3.6, 7.2, 3.6)
+      // Closer high-angle isometric over the campus
+      camera.position.set(2.15, 4.6, 2.15)
     } else {
       camera.position.set(0, 0.6, sceneMode === 'graph' ? 7.5 : 7.2)
     }
@@ -133,6 +160,7 @@ export function SceneControls() {
     const c = ref.current
     const path = useVigilStore.getState().cameraPath
     if (!c || !path || path.waypoints.length < 2) return
+    const city = useVigilStore.getState().sceneMode === 'city'
     fly.current = {
       mode: 'path',
       active: true,
@@ -140,7 +168,9 @@ export function SceneControls() {
       distance: path.distance,
       endFocusId: path.endFocusId,
       t: 0,
-      speed: 0.55,
+      // City rank-steps get the whip; graph edge-follow stays a bit quicker
+      speed: city ? 0.48 : 0.55,
+      city,
     }
     setFlying(true)
   }, [cameraPathNonce])
@@ -154,12 +184,12 @@ export function SceneControls() {
     if (fly.current?.mode === 'path' && fly.current.active) return
     const dist = f.distance
     const cityHigh = useVigilStore.getState().sceneMode === 'city'
-    // City: steeper drone angle looking down at roof tops
+    // City: steeper + closer drone over the roof
     const toPos = cityHigh
       ? new THREE.Vector3(
-          f.x + dist * 0.55,
-          f.y + dist * 1.05,
-          f.z + dist * 0.55,
+          f.x + dist * 0.42,
+          f.y + dist * 0.95,
+          f.z + dist * 0.42,
         )
       : new THREE.Vector3(
           f.x + dist * 0.78,
@@ -167,15 +197,29 @@ export function SceneControls() {
           f.z + dist * 0.78,
         )
     const toTarget = new THREE.Vector3(f.x, f.y, f.z)
+    const fromPos = camera.position.clone()
+    let midPos: THREE.Vector3 | null = null
+    if (cityHigh) {
+      const mid = fromPos.clone().lerp(toPos, 0.45)
+      const dx = toPos.x - fromPos.x
+      const dz = toPos.z - fromPos.z
+      const len = Math.hypot(dx, dz) || 1
+      mid.x += (-dz / len) * dist * 0.55
+      mid.z += (dx / len) * dist * 0.55
+      mid.y += dist * 0.55
+      midPos = mid
+    }
     fly.current = {
       mode: 'point',
       active: true,
-      fromPos: camera.position.clone(),
+      fromPos,
       toPos,
+      midPos,
       fromTarget: c.target.clone(),
       toTarget,
       t: 0,
-      speed: 1.15,
+      speed: cityHigh ? 0.62 : 1.15,
+      cinematic: cityHigh,
     }
     setFlying(true)
   }, [cameraFocusNonce, camera])
@@ -187,15 +231,27 @@ export function SceneControls() {
     const flight = fly.current
     if (flight?.active && flight.mode === 'path') {
       flight.t = Math.min(1, flight.t + dt * flight.speed)
-      const u = flight.t * flight.t * (3 - 2 * flight.t)
+      const u = flight.city ? easeWhip(flight.t) : flight.t * flight.t * (3 - 2 * flight.t)
       samplePath(flight.waypoints, u, tmpLook.current)
       const dist = flight.distance
-      tmpCam.current.set(
-        tmpLook.current.x + dist * 0.78,
-        tmpLook.current.y + dist * 0.62,
-        tmpLook.current.z + dist * 0.78,
-      )
-      camera.position.lerp(tmpCam.current, 0.35)
+      if (flight.city) {
+        // High isometric + mid-flight soar (whip height pulse)
+        const soar = Math.sin(u * Math.PI) * dist * 0.4
+        const spread = 0.4 + Math.sin(u * Math.PI) * 0.12
+        tmpCam.current.set(
+          tmpLook.current.x + dist * spread,
+          tmpLook.current.y + dist * 0.92 + soar,
+          tmpLook.current.z + dist * spread,
+        )
+        camera.position.copy(tmpCam.current)
+      } else {
+        tmpCam.current.set(
+          tmpLook.current.x + dist * 0.78,
+          tmpLook.current.y + dist * 0.62,
+          tmpLook.current.z + dist * 0.78,
+        )
+        camera.position.lerp(tmpCam.current, 0.35)
+      }
       c.target.copy(tmpLook.current)
       c.update()
       if (flight.t >= 1) {
@@ -205,7 +261,7 @@ export function SceneControls() {
         if (endId) {
           const end = flight.waypoints[flight.waypoints.length - 1]
           useVigilStore.setState({
-            graphFocusId: endId,
+            graphFocusId: endId.startsWith('company:') ? null : endId,
             selectFocusId: endId,
             cameraFocus: {
               id: endId,
@@ -215,7 +271,9 @@ export function SceneControls() {
               distance: flight.distance,
             },
             cameraPath: null,
-            statusLine: 'FOCUS · parent · click again to open',
+            statusLine: flight.city
+              ? 'FOCUS · click again to open'
+              : 'FOCUS · parent · click again to open',
           })
         } else {
           useVigilStore.setState({ cameraPath: null })
@@ -226,8 +284,21 @@ export function SceneControls() {
 
     if (flight?.active && flight.mode === 'point') {
       flight.t = Math.min(1, flight.t + dt * flight.speed)
-      const u = flight.t * flight.t * (3 - 2 * flight.t)
-      camera.position.lerpVectors(flight.fromPos, flight.toPos, u)
+      const u = flight.cinematic
+        ? easeWhip(flight.t)
+        : flight.t * flight.t * (3 - 2 * flight.t)
+      if (flight.cinematic && flight.midPos) {
+        bezier3(
+          flight.fromPos,
+          flight.midPos,
+          flight.toPos,
+          u,
+          tmpCam.current,
+        )
+        camera.position.copy(tmpCam.current)
+      } else {
+        camera.position.lerpVectors(flight.fromPos, flight.toPos, u)
+      }
       c.target.lerpVectors(flight.fromTarget, flight.toTarget, u)
       c.update()
       if (flight.t >= 1) {

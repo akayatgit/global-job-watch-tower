@@ -95,44 +95,47 @@ function wrapName(name: string, max = 11): string[] {
   return lines.slice(0, 3)
 }
 
-function makeTopBanner(name: string, jobs: number, accent: string) {
+/** Floating roof text only — no card chrome. Name + big white count. */
+function makeRoofLabel(name: string, jobs: number) {
   const lines = wrapName(name, 11)
   const c = document.createElement('canvas')
-  c.width = 288
-  c.height = 26 + lines.length * 20 + 14
+  c.width = 512
+  c.height = 36 + lines.length * 34 + 78
   const ctx = c.getContext('2d')!
-  const h = c.height
-  const pad = 4
-  ctx.fillStyle = 'rgba(12, 16, 28, 0.82)'
-  ctx.fillRect(pad, pad, c.width - pad * 2, h - pad * 2)
-  ctx.strokeStyle = accent
-  ctx.lineWidth = 2
-  ctx.shadowColor = accent
-  ctx.shadowBlur = 5
-  ctx.strokeRect(pad, pad, c.width - pad * 2, h - pad * 2)
-  ctx.shadowBlur = 0
-  const g = ctx.createLinearGradient(0, 0, c.width, 0)
-  g.addColorStop(0, `${accent}28`)
-  g.addColorStop(0.5, `${accent}40`)
-  g.addColorStop(1, `${accent}1a`)
-  ctx.fillStyle = g
-  ctx.fillRect(pad + 2, pad + 2, c.width - pad * 2 - 4, h - pad * 2 - 4)
+  ctx.clearRect(0, 0, c.width, c.height)
   ctx.textAlign = 'center'
-  ctx.fillStyle = '#ffffff'
-  ctx.font = '700 16px Orbitron, sans-serif'
+  ctx.textBaseline = 'middle'
+  const cx = c.width / 2
+  // Name — white with dark rim for read on any glass
+  ctx.font = '800 28px Orbitron, sans-serif'
+  ctx.lineJoin = 'round'
+  ctx.miterLimit = 2
   lines.forEach((ln, i) => {
-    ctx.fillText(ln.toUpperCase(), c.width / 2, 20 + i * 18)
+    const y = 28 + i * 32
+    ctx.lineWidth = 7
+    ctx.strokeStyle = 'rgba(0,0,0,0.88)'
+    ctx.strokeText(ln.toUpperCase(), cx, y)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(ln.toUpperCase(), cx, y)
   })
-  // Tiny openings count
-  ctx.fillStyle = accent
-  ctx.font = '600 9px Rajdhani, sans-serif'
-  ctx.globalAlpha = 0.9
-  ctx.fillText(`${jobs} openings`, c.width / 2, h - 7)
-  ctx.globalAlpha = 1
+  // Big openings count — number only, white, loud
+  const numY = 36 + lines.length * 34 + 30
+  const num = jobs > 999 ? '999+' : String(jobs)
+  ctx.font = '900 68px Orbitron, sans-serif'
+  ctx.lineWidth = 10
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)'
+  ctx.strokeText(num, cx, numY)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(num, cx, numY)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
   return { tex, aspect: c.width / c.height }
+}
+
+function focusDistance(h: number) {
+  // Tight drone pull-in on the roof
+  return 0.78 + h * 0.07
 }
 
 function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
@@ -307,8 +310,8 @@ function GlassTower({
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const banner = useMemo(
-    () => makeTopBanner(t.name, t.n, t.accent),
-    [t.name, t.n, t.accent],
+    () => makeRoofLabel(t.name, t.n),
+    [t.name, t.n],
   )
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
@@ -358,14 +361,14 @@ function GlassTower({
       x: t.x,
       y: roofY,
       z: t.z,
-      distance: 1.55 + t.h * 0.12,
+      distance: focusDistance(t.h),
     })
     st.setStatus(`FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`)
   }
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.085 + wrapName(t.name, 11).length * 0.032
-  const bannerW = bannerH * banner.aspect * (lit ? 1.06 : 1)
+  const bannerH = 0.2 + wrapName(t.name, 11).length * 0.055
+  const bannerW = bannerH * banner.aspect * (lit ? 1.04 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
 
   return (
@@ -466,40 +469,26 @@ function GlassTower({
         />
       )}
 
-      {/* Compact roof banner — lit drawn on top */}
-      <Billboard follow position={[0, t.h + 0.08 + bannerH / 2, 0]}>
+      {/* Name + big count only — no card */}
+      <Billboard follow position={[0, t.h + 0.1 + bannerH / 2, 0]}>
         <mesh
           onClick={onClick}
           onPointerOver={enter}
           onPointerOut={leave}
           visible={lit || !dim}
           renderOrder={cardOrder}
-          scale={lit ? 1.05 : 1}
+          scale={lit ? 1.08 : 1}
         >
           <planeGeometry args={[bannerW, bannerH]} />
           <meshBasicMaterial
             map={banner.tex}
             transparent
-            opacity={dim ? 0.12 : 1}
+            opacity={dim ? 0.18 : 1}
             depthTest={!lit}
             depthWrite={false}
             toneMapped={false}
           />
         </mesh>
-        {lit && (
-          <mesh position={[0, 0, -0.01]} renderOrder={cardOrder - 1}>
-            <planeGeometry args={[bannerW * 1.14, bannerH * 1.28]} />
-            <meshBasicMaterial
-              color={t.accent}
-              transparent
-              opacity={0.28}
-              depthTest={false}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              toneMapped={false}
-            />
-          </mesh>
-        )}
       </Billboard>
     </group>
   )

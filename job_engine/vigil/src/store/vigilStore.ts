@@ -682,6 +682,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
         distance: f.distance ?? 3.2,
       },
       cameraFocusNonce: get().cameraFocusNonce + 1,
+      cameraPath: null,
       selectFocusId: f.id,
       statusLine: 'FOCUS · click again to open',
     }),
