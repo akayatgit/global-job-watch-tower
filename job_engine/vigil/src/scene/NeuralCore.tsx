@@ -56,9 +56,9 @@ const TIER_FOCUS = 1
 const TIER_NEAR = 0.2
 const TIER_FAR = 0.1
 
-/** Global relative size — clear but not huge (√ scale vs max jobs) */
-const R_MIN = 0.038
-const R_MAX = 0.22
+/** Dramatic but capped size vs graph-wide max jobs */
+const R_MIN = 0.02
+const R_MAX = 0.42
 
 function layoutNodes(nodes: GraphNode[]) {
   const byKind = new Map<string, GraphNode[]>()
@@ -97,9 +97,18 @@ function globalMaxWeight(nodes: GraphNode[]) {
   return m
 }
 
-/** √ relative to graph-wide max — 2545 vs 77 reads clearly (~3×), not same size */
+/**
+ * Size vs graph max — small nodes stay small, big ones clearly dominate.
+ * e.g. 2545 vs 77 ≈ 7× radius difference (not “almost same”).
+ */
 function radiusFor(node: GraphNode, globalMax: number) {
-  const t = Math.sqrt(THREE.MathUtils.clamp(node.weight / globalMax, 0.002, 1))
+  const ratio = THREE.MathUtils.clamp(node.weight / Math.max(globalMax, 1), 0, 1)
+  // Stretch low end so mid/small stay modest; top end fills R_MAX
+  const stretched =
+    ratio < 0.08
+      ? THREE.MathUtils.mapLinear(ratio, 0, 0.08, 0, 0.22)
+      : THREE.MathUtils.mapLinear(ratio, 0.08, 1, 0.22, 1)
+  const t = Math.sqrt(stretched)
   return THREE.MathUtils.lerp(R_MIN, R_MAX, t)
 }
 
@@ -117,13 +126,16 @@ function buildAdj(edges: GraphEdge[]) {
   return adj
 }
 
-/** Prefer upward parents from directed world-model edges (child = target). */
+/**
+ * Hierarchy climb (one hop): company → role first, then role → sector.
+ * Accenture + Data Scientist openings ⇒ climb Accenture → Data Scientist → Tech·AI.
+ */
 const PARENT_SCORE: Record<string, number> = {
-  role_in: 100, // sector → role
-  company_in: 90, // sector → company
-  hires_in: 80, // sector → city
-  company_at: 70, // city → company
-  hiring: 20, // role → company (weak; company is peer/child of hiring)
+  hiring: 500, // role → company  (company’s first parent = role)
+  role_in: 200, // sector → role
+  company_at: 80, // city → company (fallback if no role link)
+  company_in: 60, // sector → company (after role)
+  hires_in: 90, // sector → city
 }
 
 function findParentId(nodeId: string, edges: GraphEdge[]): string | null {
@@ -169,8 +181,7 @@ function openInsight(n: GraphNode) {
 }
 
 /**
- * Always-on label: readable white name + neon purple number.
- * Emphasized (hot/focused) = larger — still no card plate.
+ * Always-on label: big white name + subtle yellow number (no heavy glow).
  */
 function makeLabelTex(
   name: string,
@@ -178,34 +189,30 @@ function makeLabelTex(
   emphasized: boolean,
 ) {
   const c = document.createElement('canvas')
-  c.width = 768
-  c.height = 192
+  c.width = 1024
+  c.height = 256
   const ctx = c.getContext('2d')!
-  ctx.clearRect(0, 0, 768, 192)
+  ctx.clearRect(0, 0, 1024, 256)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
+  const label = name.length > 24 ? `${name.slice(0, 22)}…` : name
 
-  // Soft halo only — no rectangle fill
-  ctx.shadowColor = 'rgba(0,0,0,0.95)'
-  ctx.shadowBlur = emphasized ? 12 : 9
+  // Tiny soft shadow for legibility only — no bloom wash
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'
+  ctx.shadowBlur = 4
   ctx.fillStyle = '#ffffff'
   ctx.font = emphasized
-    ? '800 64px Orbitron, sans-serif'
-    : '800 52px Orbitron, sans-serif'
-  ctx.fillText(label, 384, emphasized ? 64 : 68)
+    ? '800 86px Orbitron, sans-serif'
+    : '800 72px Orbitron, sans-serif'
+  ctx.fillText(label, 512, emphasized ? 88 : 92)
 
-  const g = ctx.createLinearGradient(280, 110, 488, 170)
-  g.addColorStop(0, '#f5e0ff')
-  g.addColorStop(0.4, '#e879f9')
-  g.addColorStop(1, '#c026d3')
-  ctx.shadowColor = 'rgba(232, 121, 249, 0.85)'
-  ctx.shadowBlur = emphasized ? 16 : 12
-  ctx.fillStyle = g
+  ctx.shadowBlur = 3
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'
+  ctx.fillStyle = emphasized ? '#ffe08a' : '#ffd060'
   ctx.font = emphasized
-    ? '800 54px Rajdhani, sans-serif'
-    : '800 44px Rajdhani, sans-serif'
-  ctx.fillText(String(weight), 384, emphasized ? 140 : 138)
+    ? '800 72px Rajdhani, sans-serif'
+    : '800 60px Rajdhani, sans-serif'
+  ctx.fillText(String(weight), 512, emphasized ? 188 : 186)
 
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -395,9 +402,9 @@ function GraphCard({
     : focused || hot
       ? 1
       : Math.max(0.22, tier * 0.85)
-  const labelH = emphasized ? 0.48 : 0.38
-  const labelW = emphasized ? 1.85 : 1.55
-  const labelY = radius * 1.2 + (emphasized ? 0.32 : 0.26)
+  const labelH = emphasized ? 0.62 : 0.52
+  const labelW = emphasized ? 2.45 : 2.15
+  const labelY = radius * 1.25 + (emphasized ? 0.4 : 0.34)
 
   return (
     <group position={position}>

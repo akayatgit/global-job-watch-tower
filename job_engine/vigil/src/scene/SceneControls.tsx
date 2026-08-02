@@ -41,17 +41,17 @@ function samplePath(waypoints: THREE.Vector3[], u: number, out: THREE.Vector3) {
   const f = clamped * segCount
   const i = Math.min(segCount - 1, Math.floor(f))
   const local = f - i
-  // Smoothstep within segment
   const s = local * local * (3 - 2 * local)
   return out.copy(waypoints[i]).lerp(waypoints[i + 1], s)
 }
 
 /**
- * Miro / Figma–style nav + cinematic focus + edge-path follow to parent.
+ * Miro / Figma–style nav: cursor-pivot zoom with ease ramp,
+ * cinematic focus, edge-path follow to parent.
  */
 export function SceneControls() {
   const ref = useRef<ControlsHandle | null>(null)
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
   const trainingActive = useVigilStore((s) => s.trainingActive)
   const viewResetNonce = useVigilStore((s) => s.viewResetNonce)
@@ -64,6 +64,16 @@ export function SceneControls() {
   const fly = useRef<Flight | null>(null)
   const tmpLook = useRef(new THREE.Vector3())
   const tmpCam = useRef(new THREE.Vector3())
+  const tmpBefore = useRef(new THREE.Vector3())
+  const tmpAfter = useRef(new THREE.Vector3())
+  const tmpDir = useRef(new THREE.Vector3())
+  const tmpOffset = useRef(new THREE.Vector3())
+  const plane = useRef(new THREE.Plane())
+  const raycaster = useRef(new THREE.Raycaster())
+  const ndc = useRef(new THREE.Vector2())
+  const pointer = useRef({ x: 0.5, y: 0.5 }) // 0..1 in canvas
+  const scrollAccum = useRef(0)
+  const lastWheelAt = useRef(0)
 
   useEffect(() => {
     const c = ref.current
@@ -79,11 +89,42 @@ export function SceneControls() {
     c.update()
     fly.current = null
     useVigilStore.getState().setStatus(
-      'DRAG orbit · SCROLL zoom · RIGHT-DRAG pan · RIGHT-CLICK parent path · click focus · click again open',
+      'DRAG orbit · SCROLL zoom (cursor pivot) · RIGHT-DRAG pan · RIGHT-CLICK parent · click focus',
     )
   }, [viewResetNonce, sceneMode, camera])
 
-  // Path follow (edge → parent) takes priority over point fly
+  // Track pointer for zoom-to-cursor pivot
+  useEffect(() => {
+    const el = gl.domElement
+    const onMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect()
+      pointer.current.x = (e.clientX - rect.left) / Math.max(1, rect.width)
+      pointer.current.y = (e.clientY - rect.top) / Math.max(1, rect.height)
+    }
+    el.addEventListener('pointermove', onMove, { passive: true })
+    return () => el.removeEventListener('pointermove', onMove)
+  }, [gl])
+
+  // Custom wheel: ease ramp + zoom toward cursor
+  useEffect(() => {
+    const el = gl.domElement
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      if (!enabled) return
+      const now = performance.now()
+      const gap = now - lastWheelAt.current
+      lastWheelAt.current = now
+      // Continuous scroll ramps up speed
+      const ramp = gap < 50 ? 2.1 : gap < 100 ? 1.55 : gap < 180 ? 1.2 : 1
+      // Larger base step — more travel per notch
+      scrollAccum.current += e.deltaY * 0.0038 * ramp
+      // Cap so it doesn’t runaway
+      scrollAccum.current = THREE.MathUtils.clamp(scrollAccum.current, -1.8, 1.8)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [gl, enabled])
+
   useEffect(() => {
     const c = ref.current
     const path = useVigilStore.getState().cameraPath
@@ -100,7 +141,6 @@ export function SceneControls() {
     setFlying(true)
   }, [cameraPathNonce])
 
-  // Point fly-to (first click / teleport) — skipped while a path is queued
   useEffect(() => {
     const c = ref.current
     const st = useVigilStore.getState()
@@ -137,7 +177,6 @@ export function SceneControls() {
       flight.t = Math.min(1, flight.t + dt * flight.speed)
       const u = flight.t * flight.t * (3 - 2 * flight.t)
       samplePath(flight.waypoints, u, tmpLook.current)
-      // Drone rides beside the edge — offset rotates gently along the path
       const dist = flight.distance
       tmpCam.current.set(
         tmpLook.current.x + dist * 0.78,
@@ -186,6 +225,68 @@ export function SceneControls() {
       return
     }
 
+    // —— Cursor-pivot zoom with ease decay ——
+    if (enabled && Math.abs(scrollAccum.current) > 0.0002) {
+      // Ease: apply a chunk each frame, decay the rest (smooth ramp feel)
+      const step = scrollAccum.current * Math.min(1, dt * 10)
+      scrollAccum.current *= Math.exp(-dt * 7.5)
+
+      ndc.current.set(
+        pointer.current.x * 2 - 1,
+        -(pointer.current.y * 2 - 1),
+      )
+      raycaster.current.setFromCamera(ndc.current, camera)
+
+      // Pivot plane: through orbit target, facing camera
+      camera.getWorldDirection(tmpDir.current)
+      plane.current.setFromNormalAndCoplanarPoint(
+        tmpDir.current,
+        c.target,
+      )
+      const hitBefore = raycaster.current.ray.intersectPlane(
+        plane.current,
+        tmpBefore.current,
+      )
+
+      // Dolly along view axis
+      tmpOffset.current.copy(camera.position).sub(c.target)
+      const dist = tmpOffset.current.length()
+      const factor = Math.exp(step * 1.15)
+      const nextDist = THREE.MathUtils.clamp(
+        dist * factor,
+        c.minDistance,
+        c.maxDistance,
+      )
+      tmpOffset.current.setLength(nextDist)
+      camera.position.copy(c.target).add(tmpOffset.current)
+
+      // Keep the world point under the cursor stable
+      if (hitBefore) {
+        camera.getWorldDirection(tmpDir.current)
+        plane.current.setFromNormalAndCoplanarPoint(
+          tmpDir.current,
+          c.target,
+        )
+        raycaster.current.setFromCamera(ndc.current, camera)
+        const hitAfter = raycaster.current.ray.intersectPlane(
+          plane.current,
+          tmpAfter.current,
+        )
+        if (hitAfter) {
+          const dx = tmpBefore.current.x - tmpAfter.current.x
+          const dy = tmpBefore.current.y - tmpAfter.current.y
+          const dz = tmpBefore.current.z - tmpAfter.current.z
+          camera.position.x += dx
+          camera.position.y += dy
+          camera.position.z += dz
+          c.target.x += dx
+          c.target.y += dy
+          c.target.z += dz
+        }
+      }
+      c.update()
+    }
+
     const st = useVigilStore.getState()
     if (st.vigilMode && st.gestureMode === 'none' && !st.focusedPanel) {
       const pan = st.canvasPan
@@ -213,9 +314,8 @@ export function SceneControls() {
       enableDamping
       dampingFactor={0.085}
       enablePan
-      enableZoom
+      enableZoom={false}
       enableRotate
-      zoomSpeed={1.35}
       panSpeed={1.0}
       rotateSpeed={0.75}
       minDistance={0.25}

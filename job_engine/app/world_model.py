@@ -20,7 +20,7 @@ MAX_SECTORS = 8
 MAX_CITIES = 10
 MAX_COMPANIES = 12
 MAX_ROLES = 10
-MAX_EDGES = 120
+MAX_EDGES = 160
 RANK_CITIES = {
     'bengaluru', 'hyderabad', 'chennai', 'kerala', 'pune', 'mumbai',
     'delhi', 'gurugram', 'noida', 'ahmedabad', 'kolkata', 'remote',
@@ -217,9 +217,10 @@ def compute_world_model(db: Session, window_days: int = 7) -> dict:
         )
         .group_by(JobMaster.search_config_id, Company.id)
         .order_by(desc('n'))
-        .limit(30)
+        .limit(60)
     ).all()
     for search_id, company_id, n in rc_rows:
+        # Neural hierarchy: company ↔ role so climb is company → role → sector
         add_edge(f'role:{search_id}', f'company:{company_id}', n, 'hiring')
 
     max_w = max([n['weight'] for n in nodes] + [1])
