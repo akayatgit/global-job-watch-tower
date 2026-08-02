@@ -701,10 +701,12 @@ START OF EVERY SESSION
 
 | City id | Label |
 |---|---|
-| `bengaluru` … `kolkata` | India metros (aliases collapsed) |
+| `bengaluru` … `kolkata` + `kerala` | India metros / Kerala (aliases collapsed) |
 | `remote` | Remote / WFH |
 | `india` | India-wide (no city) |
 | `other` | Unmapped |
+
+**Favourite chips:** UI shows All + favourites (default Tech·AI / Tech·Digital · Bengaluru / Chennai / Kerala); Show more reveals the rest; ★ pins anytime.
 
 **Jobs store `city_key`** from scrape; DE-02 normalize-location started. **City Signals** module ranks cities by volume/growth and compares any two (top roles + companies). Global city chips stack with sector filters.
 

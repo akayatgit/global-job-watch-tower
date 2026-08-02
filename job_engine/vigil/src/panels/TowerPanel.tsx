@@ -63,9 +63,13 @@ export function TowerPanel() {
           </div>
 
           {topCities.length > 0 && (
-            <>
-              <div className="section-head">
-                <span className="muted">Top cities (7d)</span>
+            <section className="insight-block insight-cities">
+              <header className="insight-block-head">
+                <span className="insight-mark" aria-hidden />
+                <div>
+                  <h4>Top cities</h4>
+                  <p>Last 7 days — tap to filter Jobs</p>
+                </div>
                 <button
                   type="button"
                   className="show-all"
@@ -74,7 +78,7 @@ export function TowerPanel() {
                 >
                   City signals
                 </button>
-              </div>
+              </header>
               {topCities.slice(0, 6).map((c: any) => (
                 <button
                   type="button"
@@ -98,72 +102,89 @@ export function TowerPanel() {
                   <strong>{c.recent}</strong>
                 </button>
               ))}
-            </>
+            </section>
           )}
 
-          <div className="section-head">
-            <span className="muted">Top hiring (7d)</span>
-            <button
-              type="button"
-              className="show-all"
-              data-gesture-action="tower-show-companies"
-              onClick={() => openRankList('companies', 7)}
-            >
-              Show all
-            </button>
-          </div>
-          {top.map((c: any) => (
-            <button
-              type="button"
-              className="bar-row clickable"
-              key={c.company_id || c.name}
-              data-gesture-action={`tower-co-${c.company_id || c.name}`}
-              onClick={() => {
-                if (c.company_id) openCompanyJobs(c.company_id, c.name, 7)
-              }}
-            >
+          <section className="insight-block insight-fast">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
               <div>
-                <div>{c.name}</div>
-                <div className="bar-track"><div className="bar-fill" style={{ width: `${(c.n / maxC) * 100}%` }} /></div>
+                <h4>Top hiring</h4>
+                <p>Last 7 days — tap a company for jobs</p>
               </div>
-              <strong>{c.n}</strong>
-            </button>
-          ))}
-
-          <div className="section-head">
-            <span className="muted">Jobs per role (7d fair window) — click for companies</span>
-            {(moreRoles || roles.length > 0) && (
               <button
                 type="button"
                 className="show-all"
-                data-gesture-action="tower-show-roles"
-                onClick={() => openRankList('roles')}
+                data-gesture-action="tower-show-companies"
+                onClick={() => openRankList('companies', 7)}
               >
                 Show all
               </button>
-            )}
-          </div>
-          {roles.map((r: any) => (
-            <button
-              type="button"
-              className="bar-row clickable"
-              key={r.search_id || r.name}
-              data-gesture-action={`tower-role-${r.search_id || r.name}`}
-              onClick={() => {
-                if (r.search_id) openRoleHire(r.search_id, r.name, 7)
-              }}
-            >
-              <div>
-                <div>{r.name}</div>
-                <div className="bar-track"><div className="bar-fill" style={{ width: `${(r.n / maxR) * 100}%` }} /></div>
-              </div>
-              <strong>{r.n}</strong>
-            </button>
-          ))}
+            </header>
+            {top.map((c: any) => (
+              <button
+                type="button"
+                className="bar-row clickable"
+                key={c.company_id || c.name}
+                data-gesture-action={`tower-co-${c.company_id || c.name}`}
+                onClick={() => {
+                  if (c.company_id) openCompanyJobs(c.company_id, c.name, 7)
+                }}
+              >
+                <div>
+                  <div>{c.name}</div>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: `${(c.n / maxC) * 100}%` }} /></div>
+                </div>
+                <strong>{c.n}</strong>
+              </button>
+            ))}
+          </section>
 
-          <div className="section-head">
-            <span className="muted">Freshest catches — click to open</span>
-          </div>
+          <section className="insight-block insight-grow">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
+              <div>
+                <h4>Jobs per role</h4>
+                <p>Fair 7-day window — tap for companies</p>
+              </div>
+              {(moreRoles || roles.length > 0) && (
+                <button
+                  type="button"
+                  className="show-all"
+                  data-gesture-action="tower-show-roles"
+                  onClick={() => openRankList('roles')}
+                >
+                  Show all
+                </button>
+              )}
+            </header>
+            {roles.map((r: any) => (
+              <button
+                type="button"
+                className="bar-row clickable"
+                key={r.search_id || r.name}
+                data-gesture-action={`tower-role-${r.search_id || r.name}`}
+                onClick={() => {
+                  if (r.search_id) openRoleHire(r.search_id, r.name, 7)
+                }}
+              >
+                <div>
+                  <div>{r.name}</div>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: `${(r.n / maxR) * 100}%` }} /></div>
+                </div>
+                <strong>{r.n}</strong>
+              </button>
+            ))}
+          </section>
+
+          <section className="insight-block insight-fresh">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
+              <div>
+                <h4>Freshest catches</h4>
+                <p>Newest openings — tap to open</p>
+              </div>
+            </header>
           {latest.map((j: any) => (
             <div className="list-row" key={j.id}>
               <div>
@@ -205,6 +226,7 @@ export function TowerPanel() {
               <div className="meta" title={j.scraped_at}>{relTime(j.scraped_at)}</div>
             </div>
           ))}
+          </section>
         </>
       )}
     </PanelShell>

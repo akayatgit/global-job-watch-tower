@@ -10,6 +10,7 @@ CRITICAL_CITIES: list[dict[str, str]] = [
     {'id': 'bengaluru', 'label': 'Bengaluru'},
     {'id': 'hyderabad', 'label': 'Hyderabad'},
     {'id': 'chennai', 'label': 'Chennai'},
+    {'id': 'kerala', 'label': 'Kerala'},
     {'id': 'pune', 'label': 'Pune'},
     {'id': 'mumbai', 'label': 'Mumbai'},
     {'id': 'delhi', 'label': 'Delhi'},
@@ -35,6 +36,12 @@ _CITY_HINTS: list[tuple[str, tuple[str, ...]]] = [
     )),
     ('chennai', (
         'chennai', 'madras',
+    )),
+    ('kerala', (
+        'kerala', 'kochi', 'cochin', 'trivandrum', 'thiruvananthapuram',
+        'kozhikode', 'calicut', 'ernakulam', 'thrissur', 'kannur',
+        'kollam', 'alappuzha', 'palakkad', 'malappuram', 'kottayam',
+        'sulthanbathery',
     )),
     ('pune', (
         'pune', 'pimpri', 'chinchwad',
@@ -129,6 +136,6 @@ def city_options() -> list[dict[str, str]]:
 # Metros shown in ranking boards (exclude india/other/remote from "growing cities"
 # lists optionally — callers decide).
 METRO_CITY_IDS = [
-    'bengaluru', 'hyderabad', 'chennai', 'pune', 'mumbai',
+    'bengaluru', 'hyderabad', 'chennai', 'kerala', 'pune', 'mumbai',
     'delhi', 'gurugram', 'noida', 'ahmedabad', 'kolkata',
 ]

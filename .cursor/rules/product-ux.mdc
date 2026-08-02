@@ -176,8 +176,15 @@ use — they should love opening the app, never fight it.
   persists (`vigil.sector`); live refresh; All sectors default. Skip Health /
   Ask / Live / AI-vs-Keyword (not hiring lists).
 - **City chips + City Signals (2026-08-02):** Normalize LinkedIn locations to
-  city keys (Bengaluru, Hyderabad, Chennai, Pune, Mumbai, Delhi, Gurugram,
-  Noida, Ahmedabad, Kolkata, Remote, India-wide, Other). Global city chips on
-  Tower, Jobs, Signals, Watchlist, Show-all, Companies Hiring — persist
-  (`vigil.city`); stack with sector. New Cities module: city hiring ranking +
-  pick-two compare. Never show `city_key` / `geo_id` in UI.
+  city keys (Bengaluru, Hyderabad, Chennai, Kerala, Pune, Mumbai, Delhi,
+  Gurugram, Noida, Ahmedabad, Kolkata, Remote, India-wide, Other). Global city
+  chips on Tower, Jobs, Signals, Watchlist, Show-all, Companies Hiring —
+  persist (`vigil.city`); stack with sector. New Cities module: city hiring
+  ranking + pick-two compare. Never show `city_key` / `geo_id` in UI.
+- **Favourite filter chips (2026-08-02):** Sector/city rows show All + favourites
+  only; rest behind Show more. Default favs: Tech·AI, Tech·Digital · Bengaluru,
+  Chennai, Kerala. ★/☆ on any chip pins/unpins anytime (`vigil.sectorFavs` /
+  `vigil.cityFavs`). Same widget everywhere SectorChips/CityChips appear.
+- **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
+  matching Tower/Cities/Role sections) use coloured section cards + strong
+  titles so lists are not a flat wall of rows.

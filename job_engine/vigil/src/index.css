@@ -1447,3 +1447,205 @@ button, input, select {
   color: var(--vg-ink);
   letter-spacing: 0.04em;
 }
+
+/* —— Favourite chip collapse —— */
+.chip-unit {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 999px;
+  border: 1px solid var(--vg-line);
+  background: rgba(255, 85, 0, 0.08);
+  overflow: hidden;
+}
+.chip-unit .chip {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.chip-unit.active,
+.chip-unit.is-fav {
+  border-color: rgba(255, 170, 0, 0.55);
+}
+.chip-unit.active {
+  background: rgba(255, 170, 0, 0.22);
+}
+.chip-star {
+  border: 0;
+  border-left: 1px solid rgba(255, 85, 0, 0.2);
+  background: transparent;
+  color: var(--vg-muted);
+  padding: 0 7px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.chip-star.on {
+  color: var(--vg-amber);
+}
+.chip-star:hover {
+  color: var(--vg-amber);
+  background: rgba(255, 170, 0, 0.12);
+}
+.chip-more {
+  letter-spacing: 0.04em;
+  color: var(--vg-amber);
+  border-style: dashed;
+}
+.chip-lead {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vg-amber);
+  letter-spacing: 0.12em;
+  min-width: 1.2em;
+}
+
+/* —— Insight focus blocks (Signals / Tower / Cities / Role) —— */
+.signal-hero {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 170, 0, 0.35);
+  background:
+    linear-gradient(135deg, rgba(255, 170, 0, 0.14), rgba(255, 85, 0, 0.06));
+}
+.signal-hero .stat-grid {
+  margin-bottom: 6px;
+}
+.signal-stat .n {
+  color: var(--vg-amber);
+}
+.signal-headline {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vg-ink);
+  font-weight: 500;
+}
+
+.insight-block {
+  margin: 12px 0 14px;
+  padding: 8px 10px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 85, 0, 0.18);
+  background: rgba(0, 0, 0, 0.18);
+}
+.insight-block-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 85, 0, 0.16);
+}
+.insight-block-head h4 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--vg-ink);
+  font-weight: 650;
+}
+.insight-block-head p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--vg-muted);
+}
+.insight-mark {
+  width: 4px;
+  align-self: stretch;
+  min-height: 28px;
+  border-radius: 999px;
+  background: var(--vg-amber);
+  flex-shrink: 0;
+}
+.insight-count {
+  margin-left: auto;
+  font-family: var(--font-hud);
+  font-size: 12px;
+  color: var(--vg-amber);
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+.insight-grow {
+  border-color: rgba(80, 220, 140, 0.35);
+  background: linear-gradient(180deg, rgba(80, 220, 140, 0.1), rgba(0, 0, 0, 0.12));
+}
+.insight-grow .insight-mark {
+  background: #50dc8c;
+  box-shadow: 0 0 10px rgba(80, 220, 140, 0.45);
+}
+.insight-grow .insight-block-head h4 {
+  color: #7dffb0;
+}
+.insight-fast {
+  border-color: rgba(255, 140, 60, 0.4);
+  background: linear-gradient(180deg, rgba(255, 140, 60, 0.12), rgba(0, 0, 0, 0.12));
+}
+.insight-fast .insight-mark {
+  background: var(--vg-orange);
+  box-shadow: 0 0 10px rgba(255, 140, 60, 0.45);
+}
+.insight-fast .insight-block-head h4 {
+  color: #ffb06a;
+}
+.insight-cities {
+  border-color: rgba(100, 180, 255, 0.35);
+  background: linear-gradient(180deg, rgba(100, 180, 255, 0.1), rgba(0, 0, 0, 0.12));
+}
+.insight-cities .insight-mark {
+  background: #64b4ff;
+  box-shadow: 0 0 10px rgba(100, 180, 255, 0.4);
+}
+.insight-cities .insight-block-head h4 {
+  color: #9ad0ff;
+}
+.insight-compare {
+  border-color: rgba(200, 140, 255, 0.35);
+  background: linear-gradient(180deg, rgba(200, 140, 255, 0.1), rgba(0, 0, 0, 0.12));
+}
+.insight-compare .insight-mark {
+  background: #c88cff;
+}
+.insight-compare .insight-block-head h4 {
+  color: #e0b8ff;
+}
+.insight-fresh {
+  border-color: rgba(255, 210, 80, 0.3);
+  background: linear-gradient(180deg, rgba(255, 210, 80, 0.08), rgba(0, 0, 0, 0.12));
+}
+.insight-fresh .insight-mark {
+  background: #ffd250;
+}
+.insight-fresh .insight-block-head h4 {
+  color: #ffe08a;
+}
+.insight-row {
+  border-radius: 4px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.insight-grow .insight-row:hover {
+  background: rgba(80, 220, 140, 0.08);
+}
+.insight-fast .insight-row:hover {
+  background: rgba(255, 140, 60, 0.1);
+}
+.delta-pill {
+  font-family: var(--font-hud);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 2px 8px;
+  border-radius: 999px;
+  align-self: center;
+}
+.delta-pill.up {
+  color: #7dffb0;
+  background: rgba(80, 220, 140, 0.16);
+  border: 1px solid rgba(80, 220, 140, 0.35);
+}
+.empty.soft {
+  border: 0;
+  background: transparent;
+  color: var(--vg-muted);
+  padding: 8px 4px;
+}

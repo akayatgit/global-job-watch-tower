@@ -52,6 +52,29 @@ function readStoredCity(): string {
   }
 }
 
+const DEFAULT_SECTOR_FAVS = ['tech_ai', 'tech_digital']
+const DEFAULT_CITY_FAVS = ['bengaluru', 'chennai', 'kerala']
+
+function readStoredFavs(key: string, fallback: string[]): string[] {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return [...fallback]
+    const parsed = JSON.parse(raw) as string[]
+    if (!Array.isArray(parsed)) return [...fallback]
+    return parsed.filter((x) => typeof x === 'string' && x)
+  } catch {
+    return [...fallback]
+  }
+}
+
+function persistFavs(key: string, ids: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids))
+  } catch {
+    /* ignore */
+  }
+}
+
 export type OrbitNode = {
   id: PanelId
   label: string
@@ -296,6 +319,12 @@ type VigilStore = {
   setCityFilter: (id: string) => void
   cityOptions: CityOption[]
   setCityOptions: (opts: CityOption[]) => void
+  /** Favourite sector ids (persisted) — shown before Show more */
+  sectorFavorites: string[]
+  toggleSectorFavorite: (id: string) => void
+  /** Favourite city ids (persisted) — shown before Show more */
+  cityFavorites: string[]
+  toggleCityFavorite: (id: string) => void
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (
     companyId: number,
@@ -503,6 +532,36 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   cityOptions: [],
   setCityOptions: (opts) => set({ cityOptions: opts }),
+  sectorFavorites: readStoredFavs('vigil.sectorFavs', DEFAULT_SECTOR_FAVS),
+  toggleSectorFavorite: (id) => {
+    if (!id) return
+    const cur = get().sectorFavorites
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistFavs('vigil.sectorFavs', next)
+    const label =
+      get().sectorOptions.find((o) => o.id === id)?.label || id
+    set({
+      sectorFavorites: next,
+      statusLine: next.includes(id)
+        ? `FAVOURITE SECTOR · ${label.toUpperCase()}`
+        : `UNFAVOURITE SECTOR · ${label.toUpperCase()}`,
+    })
+  },
+  cityFavorites: readStoredFavs('vigil.cityFavs', DEFAULT_CITY_FAVS),
+  toggleCityFavorite: (id) => {
+    if (!id) return
+    const cur = get().cityFavorites
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistFavs('vigil.cityFavs', next)
+    const label =
+      get().cityOptions.find((o) => o.id === id)?.label || id
+    set({
+      cityFavorites: next,
+      statusLine: next.includes(id)
+        ? `FAVOURITE CITY · ${label.toUpperCase()}`
+        : `UNFAVOURITE CITY · ${label.toUpperCase()}`,
+    })
+  },
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)

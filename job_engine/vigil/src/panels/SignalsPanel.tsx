@@ -33,6 +33,8 @@ export function SignalsPanel() {
 
   const s = data?.signals
   const windows = data?.window_options || WINDOW_FALLBACK
+  const growing = (s?.growing_roles || []).slice(0, 8)
+  const fastest = (s?.fastest_companies || []).slice(0, 8)
 
   return (
     <PanelShell id="signals">
@@ -55,37 +57,79 @@ export function SignalsPanel() {
         <div className="empty">Reading hiring signals…</div>
       ) : (
         <>
-          <div className="stat-grid">
-            <div className="stat-card"><div className="n">{s.recent_total}</div><div className="l">Recent</div></div>
-            <div className="stat-card"><div className="n">{s.prior_total}</div><div className="l">Prior</div></div>
+          <div className="signal-hero">
+            <div className="stat-grid">
+              <div className="stat-card signal-stat">
+                <div className="n">{s.recent_total}</div>
+                <div className="l">Recent</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{s.prior_total}</div>
+                <div className="l">Prior</div>
+              </div>
+            </div>
+            <p className="signal-headline">{s.headline}</p>
           </div>
-          <p className="muted">{s.headline}</p>
-          <div className="muted" style={{ marginTop: 8 }}>Growing roles — open companies</div>
-          {(s.growing_roles || []).slice(0, 8).map((r: any) => (
-            <button
-              type="button"
-              className="list-row clickable"
-              key={r.search_id}
-              data-gesture-action={`sig-role-${r.search_id}`}
-              onClick={() => openRoleHire(r.search_id, r.name, days)}
-            >
-              <div>{r.name}<div className="meta">{r.recent} recent</div></div>
-              <span className="ok">+{r.delta}</span>
-            </button>
-          ))}
-          <div className="muted" style={{ marginTop: 8 }}>Fastest companies — open jobs</div>
-          {(s.fastest_companies || []).slice(0, 8).map((c: any) => (
-            <button
-              type="button"
-              className="list-row clickable"
-              key={c.company_id}
-              data-gesture-action={`sig-co-${c.company_id}`}
-              onClick={() => openCompanyJobs(c.company_id, c.name, days)}
-            >
-              <div>{c.name}<div className="meta">{c.recent} recent</div></div>
-              <span className="ok">+{c.delta}</span>
-            </button>
-          ))}
+
+          <section className="insight-block insight-grow">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
+              <div>
+                <h4>Growing roles</h4>
+                <p>Open companies hiring for these rises</p>
+              </div>
+              <span className="insight-count">{growing.length}</span>
+            </header>
+            {growing.length === 0 ? (
+              <div className="empty soft">No growing roles in this window</div>
+            ) : (
+              growing.map((r: any) => (
+                <button
+                  type="button"
+                  className="list-row clickable insight-row"
+                  key={r.search_id}
+                  data-gesture-action={`sig-role-${r.search_id}`}
+                  onClick={() => openRoleHire(r.search_id, r.name, days)}
+                >
+                  <div>
+                    {r.name}
+                    <div className="meta">{r.recent} recent</div>
+                  </div>
+                  <span className="delta-pill up">+{r.delta}</span>
+                </button>
+              ))
+            )}
+          </section>
+
+          <section className="insight-block insight-fast">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
+              <div>
+                <h4>Fastest companies</h4>
+                <p>Open jobs at the hottest hirers</p>
+              </div>
+              <span className="insight-count">{fastest.length}</span>
+            </header>
+            {fastest.length === 0 ? (
+              <div className="empty soft">No company pace yet in this window</div>
+            ) : (
+              fastest.map((c: any) => (
+                <button
+                  type="button"
+                  className="list-row clickable insight-row"
+                  key={c.company_id}
+                  data-gesture-action={`sig-co-${c.company_id}`}
+                  onClick={() => openCompanyJobs(c.company_id, c.name, days)}
+                >
+                  <div>
+                    {c.name}
+                    <div className="meta">{c.recent} recent</div>
+                  </div>
+                  <span className="delta-pill up">+{c.delta}</span>
+                </button>
+              ))
+            )}
+          </section>
         </>
       )}
     </PanelShell>

@@ -79,8 +79,15 @@ export function RoleHirePanel() {
             ))}
           </div>
           {cities.length > 0 && (
-            <>
-              <div className="muted" style={{ marginTop: 8 }}>Where this role is hiring</div>
+            <section className="insight-block insight-cities">
+              <header className="insight-block-head">
+                <span className="insight-mark" aria-hidden />
+                <div>
+                  <h4>Where this role is hiring</h4>
+                  <p>Tap a city to filter companies below</p>
+                </div>
+                <span className="insight-count">{cities.length}</span>
+              </header>
               <div className="hire-bars">
                 {cities.slice(0, 8).map((c: any) => (
                   <button
@@ -103,41 +110,51 @@ export function RoleHirePanel() {
                   </button>
                 ))}
               </div>
-            </>
+            </section>
           )}
-          {error ? (
-            <div className="empty fail">{error}</div>
-          ) : companies.length === 0 ? (
-            <div className="empty">No companies hiring this role in this window</div>
-          ) : (
-            <div className="hire-bars">
-              {companies.map((c: any) => (
-                <button
-                  type="button"
-                  className="hire-bar-row clickable"
-                  key={c.company_id}
-                  data-gesture-action={`role-co-${c.company_id}`}
-                  onClick={() =>
-                    openCompanyJobs(c.company_id, c.name, days, {
-                      searchId: role.searchId,
-                      roleName: role.name,
-                    })
-                  }
-                >
-                  <div className="hire-bar-main">
-                    <div className="hire-bar-name">{c.name}</div>
-                    <div className="bar-track tall">
-                      <div
-                        className="bar-fill"
-                        style={{ width: `${(c.recent / maxN) * 100}%` }}
-                      />
+          <section className="insight-block insight-fast">
+            <header className="insight-block-head">
+              <span className="insight-mark" aria-hidden />
+              <div>
+                <h4>Companies hiring</h4>
+                <p>Sorted max → min — tap for jobs</p>
+              </div>
+              <span className="insight-count">{companies.length}</span>
+            </header>
+            {error ? (
+              <div className="empty fail">{error}</div>
+            ) : companies.length === 0 ? (
+              <div className="empty soft">No companies hiring this role in this window</div>
+            ) : (
+              <div className="hire-bars">
+                {companies.map((c: any) => (
+                  <button
+                    type="button"
+                    className="hire-bar-row clickable"
+                    key={c.company_id}
+                    data-gesture-action={`role-co-${c.company_id}`}
+                    onClick={() =>
+                      openCompanyJobs(c.company_id, c.name, days, {
+                        searchId: role.searchId,
+                        roleName: role.name,
+                      })
+                    }
+                  >
+                    <div className="hire-bar-main">
+                      <div className="hire-bar-name">{c.name}</div>
+                      <div className="bar-track tall">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${(c.recent / maxN) * 100}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <strong className="hire-bar-n">{c.recent}</strong>
-                </button>
-              ))}
-            </div>
-          )}
+                    <strong className="hire-bar-n">{c.recent}</strong>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       )}
     </PanelShell>
