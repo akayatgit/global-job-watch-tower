@@ -14,6 +14,8 @@
   --vg-fail: #ef4444;
   --font-hud: 'Orbitron', sans-serif;
   --font-body: 'Rajdhani', sans-serif;
+  --rail-w: 200px;
+  --rail-w-collapsed: 52px;
 }
 
 * { box-sizing: border-box; }
@@ -47,11 +49,11 @@ button, input, select {
   transition: filter 0.25s ease;
 }
 
-/* Dock + orb stay under windows in the layered stack */
-.vigil-root.layer-focus .module-dock {
-  filter: blur(7px) brightness(0.55);
-  pointer-events: none;
-  opacity: 0.45;
+/* Module rail stays sharp + usable — separate from widget canvas layer stack */
+.vigil-root.layer-focus .module-rail {
+  filter: none;
+  pointer-events: auto;
+  opacity: 1;
 }
 
 .vigil-root.layer-focus .float-panel.layer-dimmed {
@@ -215,49 +217,183 @@ button, input, select {
   min-width: 28px;
 }
 
-.module-dock {
+/* Left module rail — own chrome strip; widget canvas lives in .vigil-stage */
+.module-rail {
   position: absolute;
-  left: 50%;
-  bottom: 72px;
-  transform: translateX(-50%);
-  /* Under panel-layer (20) + orb/canvas (1) — never cover open windows */
-  z-index: 5;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--rail-w);
+  z-index: 30;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  max-width: min(920px, 92vw);
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 10px 16px;
+  background: linear-gradient(180deg, rgba(10, 5, 2, 0.97), rgba(6, 3, 1, 0.94));
+  border-right: 1px solid var(--vg-line);
+  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
+  transition: width 0.2s ease, padding 0.2s ease;
 }
 
+.module-rail.collapsed {
+  width: var(--rail-w-collapsed);
+  padding: 12px 6px 16px;
+}
+
+.vigil-stage {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--rail-w);
+  z-index: 1;
+  overflow: hidden;
+  transition: left 0.2s ease;
+}
+
+.vigil-root.rail-collapsed .vigil-stage {
+  left: var(--rail-w-collapsed);
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 32px;
+  margin-bottom: 4px;
+}
+
+.rail-title {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--vg-amber);
+}
+
+.rail-toggle {
+  border: 1px solid var(--vg-line);
+  background: rgba(255, 85, 0, 0.12);
+  color: var(--vg-ink);
+  width: 32px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.rail-toggle:hover {
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+}
+
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rail-chip {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--vg-line);
+  background: rgba(12, 6, 2, 0.88);
+  color: var(--vg-ink);
+  padding: 9px 10px;
+  border-radius: 4px;
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.module-rail.collapsed .rail-chip {
+  padding: 9px 4px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+}
+
+.rail-chip:hover {
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+}
+
+.rail-row.active .rail-chip {
+  background: rgba(255, 170, 0, 0.18);
+  border-color: var(--vg-amber);
+  color: var(--vg-amber);
+  box-shadow: 0 0 14px rgba(255, 85, 0, 0.22);
+}
+
+.rail-row.pinned .rail-chip {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.rail-pin-dot {
+  color: var(--vg-ok);
+  font-weight: 700;
+}
+
+.rail-pin-btn {
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: transparent;
+  color: var(--vg-muted);
+  font-family: var(--font-hud);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rail-pin-btn:hover,
+.rail-pin-btn.active {
+  color: var(--vg-ok);
+  border-color: rgba(34, 197, 94, 0.7);
+}
+
+.rail-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--vg-muted);
+}
+
+/* Legacy dock-chip class kept for any residual refs */
 .dock-chip {
   border: 1px solid var(--vg-line);
   background: rgba(12, 6, 2, 0.88);
   color: var(--vg-ink);
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: 4px;
   font-family: var(--font-hud);
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-}
-
-.dock-chip:hover {
-  border-color: var(--vg-amber);
-  color: var(--vg-amber);
-}
-
-.dock-chip.active {
-  background: rgba(255, 170, 0, 0.18);
-  border-color: var(--vg-amber);
-  color: var(--vg-amber);
-  box-shadow: 0 0 16px rgba(255, 85, 0, 0.25);
-}
-
-.dock-chip.pinned {
-  border-color: rgba(34, 197, 94, 0.45);
 }
 
 .webcam-wrap {
@@ -803,8 +939,19 @@ button, input, select {
 .panel-layer {
   position: absolute;
   inset: 0;
-  /* Above canvas (1) and module-dock (5); below status chrome / training */
+  /* Inside .vigil-stage — above canvas; below left module rail (30) */
   z-index: 20;
+  pointer-events: none;
+}
+
+.vigil-stage .vigil-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.vigil-stage .vigil-hud {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
 }
 

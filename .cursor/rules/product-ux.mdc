@@ -149,5 +149,10 @@ use — they should love opening the app, never fight it.
 - **Telegram VIGIL boards (2026-08-02):** Slash boards `/towerinsights`,
   `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/brief`
   must send live Postgres/API data in the same compact panel format as the
-  dashboard — never LLM essays or invented companies/salaries. Free-form Ask
-  only after MCP tools; if tools fail, say unavailable (no fill-in).
+  dashboard — never LLM essays or invented companies/salaries. Free-form hiring
+  answers without a successful MCP/`render_board` result must hard-refuse and
+  point to boards (no fill-in).
+- **Left module rail (2026-08-02):** Module names live in a left rail (separate
+  from the floating widget canvas). Rail can hide/show; Pin on a row pins the
+  widget onto the canvas. Tower Insights remains pin-able on the canvas — not
+  a substitute for the rail.

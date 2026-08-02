@@ -30,7 +30,9 @@ Early Telegram replies invented markets (fake “47k jobs”, “AI Infinitive�
 | `/brief` | Daily hiring brief |
 | `/boards` | Help menu |
 
-Free-form chat may use Ollama **only** with MCP `mcp-watch_tower`. If tools fail → say unavailable; never invent.
+Free-form hiring questions without a board match **hard-refuse** and point to
+slash boards. Telegram SOUL requires MCP/`render_board` before any numbers;
+otherwise the refuse block only. No invented markets.
 
 ## Capacity rule (non-negotiable)
 

@@ -16,6 +16,7 @@ export default function App() {
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const trainingActive = useVigilStore((s) => s.trainingActive)
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
+  const railOpen = useVigilStore((s) => s.railOpen)
   const layerFocus = Boolean(focusedPanel) && !trainingActive
 
   // Camera stays mounted — remounting the <video> killed hand tracking in Train
@@ -35,20 +36,23 @@ export default function App() {
   useEffect(() => {
     document.body.dataset.vigilMode = vigilMode ? 'on' : 'off'
     document.body.dataset.layerFocus = layerFocus ? 'on' : 'off'
-  }, [vigilMode, layerFocus])
+    document.body.dataset.rail = railOpen ? 'open' : 'collapsed'
+  }, [vigilMode, layerFocus, railOpen])
 
   return (
     <div
-      className={`vigil-root ${trainingActive ? 'mode-vigil mode-training' : vigilMode ? 'mode-vigil' : 'mode-desktop'}${layerFocus ? ' layer-focus' : ''}`}
+      className={`vigil-root ${trainingActive ? 'mode-vigil mode-training' : vigilMode ? 'mode-vigil' : 'mode-desktop'}${layerFocus ? ' layer-focus' : ''}${railOpen ? ' rail-open' : ' rail-collapsed'}`}
     >
       {trainingActive ? (
         <TrainingScreen />
       ) : (
         <>
-          <VigilCanvas />
-          <StatusHud />
           <ModuleDock />
-          <PanelHost />
+          <div className="vigil-stage">
+            <VigilCanvas />
+            <StatusHud />
+            <PanelHost />
+          </div>
         </>
       )}
 

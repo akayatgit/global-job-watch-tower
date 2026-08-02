@@ -180,9 +180,22 @@ export type GestureMode =
   | 'pan_canvas'
   | 'core_zoom'
 
+function readRailOpen(): boolean {
+  try {
+    const raw = localStorage.getItem('vigil.rail')
+    if (raw === null) return true
+    return raw === '1' || raw === 'true' || raw === 'open'
+  } catch {
+    return true
+  }
+}
+
 type VigilStore = {
   vigilMode: boolean
   setVigilMode: (on: boolean) => void
+  /** Left module rail visible (separate from widget canvas). */
+  railOpen: boolean
+  setRailOpen: (open: boolean) => void
   calibration: VigilCalibration
   setCalibration: (c: VigilCalibration) => void
   trainingActive: boolean
@@ -277,6 +290,18 @@ function initialPanels(): Record<PanelId, PanelState> {
 
 export const useVigilStore = create<VigilStore>((set, get) => ({
   vigilMode: readStoredVigilMode(),
+  railOpen: readRailOpen(),
+  setRailOpen: (open) => {
+    try {
+      localStorage.setItem('vigil.rail', open ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+    set({
+      railOpen: open,
+      statusLine: open ? 'MODULE RAIL OPEN' : 'MODULE RAIL HIDDEN',
+    })
+  },
   setVigilMode: (on) => {
     try {
       localStorage.setItem('vigil.mode', on ? 'on' : 'off')
