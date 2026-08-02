@@ -195,7 +195,15 @@ export function useGestureOS() {
           st.setGrabTarget(grabId)
           st.focusPanel(grabId)
           const p = st.panels[grabId]
-          grabOffset.current = { dx: idx.x * 100 - p.x, dy: idx.y * 100 - p.y }
+          const stage = document.querySelector('.vigil-stage') as HTMLElement | null
+          const rect = stage?.getBoundingClientRect()
+          let cx = idx.x * 100
+          let cy = idx.y * 100
+          if (rect && rect.width > 0 && rect.height > 0) {
+            cx = ((idx.x * window.innerWidth - rect.left) / rect.width) * 100
+            cy = ((idx.y * window.innerHeight - rect.top) / rect.height) * 100
+          }
+          grabOffset.current = { dx: cx - p.x, dy: cy - p.y }
           st.setGestureMode('drag_panel')
           modeRef.current = 'drag_panel'
           st.setStatus(`MOVE ${p.title}`)
@@ -219,16 +227,21 @@ export function useGestureOS() {
         }
       }
 
-      // Drag panel — x/y are window center % (training allows farther right into DROP ZONE)
+      // Drag panel — center as % of .vigil-stage (clamped in store)
       if (pinching && modeRef.current === 'drag_panel' && st.grabTarget && grabOffset.current) {
         const id = st.grabTarget as PanelId
-        const maxX = training ? 88 : 78
-        const maxY = training ? 78 : 78
-        const minXY = training ? 12 : 22
+        const stage = document.querySelector('.vigil-stage') as HTMLElement | null
+        const rect = stage?.getBoundingClientRect()
+        let cx = idx.x * 100
+        let cy = idx.y * 100
+        if (rect && rect.width > 0 && rect.height > 0) {
+          cx = ((idx.x * window.innerWidth - rect.left) / rect.width) * 100
+          cy = ((idx.y * window.innerHeight - rect.top) / rect.height) * 100
+        }
         st.movePanel(
           id,
-          Math.max(minXY, Math.min(maxX, idx.x * 100 - grabOffset.current.dx)),
-          Math.max(minXY, Math.min(maxY, idx.y * 100 - grabOffset.current.dy)),
+          cx - grabOffset.current.dx,
+          cy - grabOffset.current.dy,
         )
       }
 

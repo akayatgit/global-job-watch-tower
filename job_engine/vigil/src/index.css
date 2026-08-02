@@ -113,7 +113,8 @@ button, input, select {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  max-width: 62%;
+  max-width: min(62%, calc(100% - 24px));
+  margin-right: 4px;
 }
 
 .vigil-controls {
@@ -975,28 +976,65 @@ button, input, select {
 
 .float-panel {
   position: absolute;
-  /* All insight windows: large, readable, layered-stack size */
-  width: min(560px, 56vw);
-  max-height: min(78vh, 720px);
+  /* Size comes from panel.w / panel.h (% of stage) — corner-resizable */
+  min-width: 240px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   pointer-events: auto;
   background: rgba(8, 6, 4, 0.94);
   border: 1px solid var(--vg-line);
   border-radius: 6px;
-  box-shadow: 0 0 40px rgba(255, 85, 0, 0.18);
+  box-shadow: 0 0 18px rgba(255, 85, 0, 0.12);
   backdrop-filter: blur(10px);
   overflow: hidden;
+  container-type: size;
+  container-name: vigil-panel;
 }
 
 .float-panel.focused {
   border-color: var(--vg-amber);
-  box-shadow: 0 0 48px rgba(255, 170, 0, 0.35);
+  box-shadow: 0 0 22px rgba(255, 170, 0, 0.22);
 }
 
 .float-panel.grabbed {
   border-color: var(--vg-white);
   opacity: 0.95;
+}
+
+.panel-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background:
+    linear-gradient(
+      135deg,
+      transparent 50%,
+      rgba(255, 140, 40, 0.35) 50%,
+      rgba(255, 140, 40, 0.35) 62%,
+      transparent 62%,
+      transparent 72%,
+      rgba(255, 170, 60, 0.75) 72%
+    );
+  cursor: nwse-resize;
+  z-index: 5;
+  border-radius: 0 0 6px 0;
+}
+.panel-resize-handle:hover {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 45%,
+      rgba(255, 170, 60, 0.55) 45%,
+      rgba(255, 170, 60, 0.55) 58%,
+      transparent 58%,
+      transparent 70%,
+      rgba(255, 200, 100, 0.95) 70%
+    );
 }
 
 .panel-head {
@@ -1057,18 +1095,52 @@ button, input, select {
 }
 
 .float-panel.pinned {
-  box-shadow: 0 0 36px rgba(34, 197, 94, 0.12), 0 0 40px rgba(255, 85, 0, 0.18);
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.1), 0 0 18px rgba(255, 85, 0, 0.12);
 }
 
 .float-panel.pinned.focused {
-  box-shadow: 0 0 48px rgba(255, 170, 0, 0.35), 0 0 24px rgba(34, 197, 94, 0.18);
+  box-shadow: 0 0 22px rgba(255, 170, 0, 0.22), 0 0 14px rgba(34, 197, 94, 0.14);
 }
 
 .panel-body {
   padding: 10px 12px 14px;
   overflow: auto;
   flex: 1;
+  min-height: 0;
   font-size: 14px;
+}
+
+/* Content reflows with widget size */
+@container vigil-panel (min-width: 520px) {
+  .stat-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@container vigil-panel (max-width: 380px) {
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .glass-chart-pillars {
+    min-height: 110px;
+    height: 120px;
+  }
+  .chip-row .chip {
+    font-size: 9px;
+    padding: 4px 8px;
+  }
+}
+@container vigil-panel (min-width: 640px) {
+  .glass-compare-duo {
+    grid-template-columns: 1fr 1fr;
+  }
+  .glass-chart-pillars {
+    height: clamp(160px, 36cqh, 260px);
+  }
+}
+@container vigil-panel (max-width: 520px) {
+  .glass-compare-duo {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel-body::-webkit-scrollbar { width: 6px; }

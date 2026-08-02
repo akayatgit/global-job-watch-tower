@@ -163,6 +163,10 @@ use — they should love opening the app, never fight it.
   small icon-only (hover title for meaning). No desktop/rail helper blurbs on
   the canvas. Collapsed module rail shows glass-style logos (same language as
   compare pillars), not abbreviated text.
+- **Resizable widgets (2026-08-02):** Drag the bottom-right corner to resize.
+  Size + place persist (`vigil.geometry` / pins) and reopen the same.
+  Content reflows with widget size (container queries). Panels must stay fully
+  inside the stage — never clipped off the right edge.
 - **Heat pacing (2026-08-02):** Prefer longer Warm/Hot Ollama rests + cool-down
   retries before Plan B keyword. Ideal path = stay on Ollama; orange Plan B
   strip should be rare, not flapping every spike.

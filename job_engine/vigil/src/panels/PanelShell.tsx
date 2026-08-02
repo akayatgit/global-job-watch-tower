@@ -17,8 +17,17 @@ export function PanelShell({
   const closePanel = useVigilStore((s) => s.closePanel)
   const focusPanel = useVigilStore((s) => s.focusPanel)
   const movePanel = useVigilStore((s) => s.movePanel)
+  const resizePanel = useVigilStore((s) => s.resizePanel)
   const togglePin = useVigilStore((s) => s.togglePin)
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
+  const resizeRef = useRef<{
+    startX: number
+    startY: number
+    startW: number
+    startH: number
+    stageW: number
+    stageH: number
+  } | null>(null)
 
   if (!panel.open) return null
 
@@ -31,24 +40,67 @@ export function PanelShell({
     Boolean(hoverTarget?.includes(`close-${id}`)) ||
     Boolean(hoverTarget?.includes(`pin-${id}`))
 
+  const stageEl = () =>
+    document.querySelector('.vigil-stage') as HTMLElement | null
+
   const onHeaderDown = (e: ReactMouseEvent) => {
     focusPanel(id)
     if (vigilMode) return
     if ((e.target as HTMLElement).closest('button')) return
     e.preventDefault()
-    // panel.x/y are the center of the window
+    const stage = stageEl()
+    const sw = stage?.clientWidth || window.innerWidth
+    const sh = stage?.clientHeight || window.innerHeight
+    const stageLeft = stage?.getBoundingClientRect().left ?? 0
+    const stageTop = stage?.getBoundingClientRect().top ?? 0
+    // panel.x/y are the center of the window within the stage
     dragRef.current = {
-      dx: e.clientX - (panel.x / 100) * window.innerWidth,
-      dy: e.clientY - (panel.y / 100) * window.innerHeight,
+      dx: e.clientX - stageLeft - (panel.x / 100) * sw,
+      dy: e.clientY - stageTop - (panel.y / 100) * sh,
     }
     const onMove = (ev: globalThis.MouseEvent) => {
       if (!dragRef.current) return
-      const x = ((ev.clientX - dragRef.current.dx) / window.innerWidth) * 100
-      const y = ((ev.clientY - dragRef.current.dy) / window.innerHeight) * 100
+      const st = stageEl()
+      const w = st?.clientWidth || window.innerWidth
+      const h = st?.clientHeight || window.innerHeight
+      const left = st?.getBoundingClientRect().left ?? 0
+      const top = st?.getBoundingClientRect().top ?? 0
+      const x = ((ev.clientX - left - dragRef.current.dx) / w) * 100
+      const y = ((ev.clientY - top - dragRef.current.dy) / h) * 100
       movePanel(id, x, y)
     }
     const onUp = () => {
       dragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const onResizeDown = (e: ReactMouseEvent) => {
+    focusPanel(id)
+    if (vigilMode) return
+    e.preventDefault()
+    e.stopPropagation()
+    const stage = stageEl()
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: panel.w,
+      startH: panel.h,
+      stageW: stage?.clientWidth || window.innerWidth,
+      stageH: stage?.clientHeight || window.innerHeight,
+    }
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const r = resizeRef.current
+      if (!r) return
+      const dw = ((ev.clientX - r.startX) / r.stageW) * 100
+      const dh = ((ev.clientY - r.startY) / r.stageH) * 100
+      resizePanel(id, r.startW + dw, r.startH + dh, { anchor: 'se' })
+    }
+    const onUp = () => {
+      resizeRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
@@ -63,6 +115,8 @@ export function PanelShell({
       style={{
         left: `${panel.x}%`,
         top: `${panel.y}%`,
+        width: `${panel.w}%`,
+        height: `${panel.h}%`,
         zIndex: panel.z,
         transform: `translate(-50%, -50%) scale(${panel.scale})`,
         transformOrigin: 'center center',
@@ -101,7 +155,18 @@ export function PanelShell({
           </button>
         </div>
       </div>
-      <div className="panel-body">{children}</div>
+      <div className="panel-body" data-panel-body={id}>
+        {children}
+      </div>
+      {!vigilMode ? (
+        <button
+          type="button"
+          className="panel-resize-handle"
+          aria-label="Resize window"
+          title="Drag to resize"
+          onMouseDown={onResizeDown}
+        />
+      ) : null}
     </div>
   )
 }

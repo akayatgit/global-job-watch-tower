@@ -118,32 +118,67 @@ export type PanelState = {
   title: string
   open: boolean
   pinned: boolean
+  /** Center of panel as % of .vigil-stage */
   x: number
   y: number
+  /** Size as % of .vigil-stage (persisted; corner-resize) */
+  w: number
+  h: number
   scale: number
   z: number
 }
 
-/** x/y are viewport % of the panel CENTER (transform translate -50%-50%). */
-const PANEL_CENTER = { x: 50, y: 48, scale: 1 }
-/** Default home for Tower Insights — pinned on the right. */
-export const TOWER_PIN_HOME = { x: 78, y: 48, scale: 1 }
+type PanelGeo = { x: number; y: number; w: number; h: number; scale: number }
 
-const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
-  { id: 'tower', title: 'TOWER INSIGHTS', ...TOWER_PIN_HOME },
-  { id: 'signals', title: 'HIRING SIGNALS', ...PANEL_CENTER },
-  { id: 'watchlist', title: 'WATCHLIST', ...PANEL_CENTER },
-  { id: 'searches', title: 'SEARCHES', ...PANEL_CENTER },
-  { id: 'activity', title: 'ACTIVITY', ...PANEL_CENTER },
-  { id: 'jobs', title: 'JOBS', ...PANEL_CENTER },
-  { id: 'live', title: 'LIVE FEED', ...PANEL_CENTER },
-  { id: 'health', title: 'TOWER HEALTH', ...PANEL_CENTER },
-  { id: 'ask', title: 'ASK TOWER', ...PANEL_CENTER },
-  { id: 'filter_mix', title: 'AI VS KEYWORD', ...PANEL_CENTER },
-  { id: 'cities', title: 'CITY SIGNALS', ...PANEL_CENTER },
-  { id: 'role_hire', title: 'COMPANIES HIRING', ...PANEL_CENTER },
-  { id: 'rank_list', title: 'FULL LIST', ...PANEL_CENTER },
+/** x/y are stage % of the panel CENTER (transform translate -50%-50%). */
+const PANEL_CENTER: PanelGeo = { x: 50, y: 50, w: 46, h: 68, scale: 1 }
+/** Default Tower home — inset so the right edge never clips. */
+export const TOWER_PIN_HOME: PanelGeo = { x: 56, y: 52, w: 48, h: 72, scale: 1 }
+
+const MIN_W = 28
+const MAX_W = 92
+const MIN_H = 32
+const MAX_H = 90
+
+const PANEL_META: { id: PanelId; title: string }[] = [
+  { id: 'tower', title: 'TOWER INSIGHTS' },
+  { id: 'signals', title: 'HIRING SIGNALS' },
+  { id: 'watchlist', title: 'WATCHLIST' },
+  { id: 'searches', title: 'SEARCHES' },
+  { id: 'activity', title: 'ACTIVITY' },
+  { id: 'jobs', title: 'JOBS' },
+  { id: 'live', title: 'LIVE FEED' },
+  { id: 'health', title: 'TOWER HEALTH' },
+  { id: 'ask', title: 'ASK TOWER' },
+  { id: 'filter_mix', title: 'AI VS KEYWORD' },
+  { id: 'cities', title: 'CITY SIGNALS' },
+  { id: 'role_hire', title: 'COMPANIES HIRING' },
+  { id: 'rank_list', title: 'FULL LIST' },
 ]
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+/** Keep the full panel (by center + size) inside the stage. */
+export function clampPanelGeo(geo: PanelGeo): PanelGeo {
+  const w = clamp(geo.w, MIN_W, MAX_W)
+  const h = clamp(geo.h, MIN_H, MAX_H)
+  const pad = 1.5
+  const halfW = w / 2
+  const halfH = h / 2
+  return {
+    w,
+    h,
+    scale: clamp(geo.scale, 0.75, 1.6),
+    x: clamp(geo.x, halfW + pad, 100 - halfW - pad),
+    y: clamp(geo.y, halfH + pad, 100 - halfH - pad),
+  }
+}
+
+function defaultGeo(id: PanelId): PanelGeo {
+  return id === 'tower' ? { ...TOWER_PIN_HOME } : { ...PANEL_CENTER }
+}
 
 /** Panels that can be pinned to the admin dashboard (not transient drill-downs). */
 export const PINNABLE_PANELS: PanelId[] = [
@@ -166,12 +201,44 @@ export const ORBIT_NODES: OrbitNode[] = [
 
 type PinLayout = {
   pinned: PanelId[]
-  positions: Partial<Record<PanelId, { x: number; y: number; scale: number }>>
+  positions: Partial<Record<PanelId, PanelGeo>>
 }
 
 const DEFAULT_PIN_LAYOUT: PinLayout = {
   pinned: ['tower'],
   positions: { tower: { ...TOWER_PIN_HOME } },
+}
+
+function loadGeometry(): Partial<Record<PanelId, PanelGeo>> {
+  try {
+    const raw = localStorage.getItem('vigil.geometry')
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Partial<Record<PanelId, PanelGeo>>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistGeometry(panels: Record<PanelId, PanelState>) {
+  const geo: Partial<Record<PanelId, PanelGeo>> = { ...loadGeometry() }
+  for (const id of Object.keys(panels) as PanelId[]) {
+    const p = panels[id]
+    if (!p) continue
+    // Remember last size/place for every panel that has been positioned
+    geo[id] = clampPanelGeo({
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
+      scale: p.scale,
+    })
+  }
+  try {
+    localStorage.setItem('vigil.geometry', JSON.stringify(geo))
+  } catch {
+    /* ignore */
+  }
 }
 
 function loadPinLayout(): PinLayout {
@@ -183,6 +250,15 @@ function loadPinLayout(): PinLayout {
       PINNABLE_PANELS.includes(id),
     ) as PanelId[]
     const positions = { ...(parsed.positions || {}) }
+    // Migrate old tower home that sat too far right (clipped)
+    if (positions.tower && positions.tower.x > 70) {
+      positions.tower = clampPanelGeo({
+        ...TOWER_PIN_HOME,
+        w: positions.tower.w ?? TOWER_PIN_HOME.w,
+        h: positions.tower.h ?? TOWER_PIN_HOME.h,
+        scale: positions.tower.scale ?? 1,
+      })
+    }
     return { pinned, positions }
   } catch {
     return { ...DEFAULT_PIN_LAYOUT, positions: { ...DEFAULT_PIN_LAYOUT.positions } }
@@ -195,13 +271,37 @@ function persistPinLayout(panels: Record<PanelId, PanelState>) {
   for (const id of pinned) {
     const p = panels[id]
     if (!p) continue
-    positions[id] = { x: p.x, y: p.y, scale: p.scale }
+    positions[id] = clampPanelGeo({
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
+      scale: p.scale,
+    })
   }
   try {
     localStorage.setItem('vigil.pins', JSON.stringify({ pinned, positions }))
   } catch {
     /* ignore */
   }
+  persistGeometry(panels)
+}
+
+function resolveGeo(
+  id: PanelId,
+  pinPos?: PanelGeo,
+  stored?: PanelGeo,
+): PanelGeo {
+  const base = defaultGeo(id)
+  const merged = {
+    ...base,
+    ...(stored || {}),
+    ...(pinPos || {}),
+  }
+  // Older saves may lack w/h
+  if (merged.w == null) merged.w = base.w
+  if (merged.h == null) merged.h = base.h
+  return clampPanelGeo(merged as PanelGeo)
 }
 
 function readStoredVigilMode(): boolean {
@@ -299,6 +399,8 @@ type VigilStore = {
   closePanel: (id: PanelId, opts?: { force?: boolean }) => void
   movePanel: (id: PanelId, x: number, y: number) => void
   scalePanel: (id: PanelId, scale: number) => void
+  /** Resize panel; w/h are % of stage. Keeps top-left fixed when fromCorner. */
+  resizePanel: (id: PanelId, w: number, h: number, opts?: { anchor?: 'se' }) => void
   focusPanel: (id: PanelId) => void
   togglePin: (id: PanelId) => void
   restoreDashboard: () => void
@@ -342,18 +444,21 @@ type VigilStore = {
 
 function initialPanels(): Record<PanelId, PanelState> {
   const layout = loadPinLayout()
+  const stored = loadGeometry()
   const out = {} as Record<PanelId, PanelState>
   PANEL_META.forEach((p, i) => {
     const pinned = layout.pinned.includes(p.id)
-    const pos = layout.positions[p.id]
+    const geo = resolveGeo(p.id, layout.positions[p.id], stored[p.id])
     out[p.id] = {
       id: p.id,
       title: p.title,
       open: false,
       pinned,
-      x: pos?.x ?? p.x,
-      y: pos?.y ?? p.y,
-      scale: pos?.scale ?? 1,
+      x: geo.x,
+      y: geo.y,
+      w: geo.w,
+      h: geo.h,
+      scale: geo.scale,
       z: i,
     }
   })
@@ -554,16 +659,21 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     const cur = panels[id]
-    const pinned = cur.pinned
+    const stored = loadGeometry()[id]
+    const geo = clampPanelGeo({
+      x: cur.pinned ? cur.x : (stored?.x ?? cur.x ?? PANEL_CENTER.x),
+      y: cur.pinned ? cur.y : (stored?.y ?? cur.y ?? PANEL_CENTER.y),
+      w: stored?.w ?? cur.w ?? PANEL_CENTER.w,
+      h: stored?.h ?? cur.h ?? PANEL_CENTER.h,
+      scale: stored?.scale ?? cur.scale ?? 1,
+    })
     panels[id] = {
       ...cur,
       open: true,
       z: maxZ + 1,
-      // Pinned widgets reopen at their dashboard spot; others center
-      x: pinned ? cur.x : PANEL_CENTER.x,
-      y: pinned ? cur.y : PANEL_CENTER.y,
-      scale: pinned ? cur.scale : 1,
+      ...geo,
     }
+    persistGeometry(panels)
     set({
       panels,
       focusedPanel: id,
@@ -573,6 +683,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   closePanel: (id, _opts) => {
     const panels = { ...get().panels }
     panels[id] = { ...panels[id], open: false }
+    persistGeometry(panels)
     const remaining = Object.values(panels)
       .filter((p) => p.open)
       .sort((a, b) => b.z - a.z)
@@ -589,22 +700,58 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   movePanel: (id, x, y) => {
     const panels = { ...get().panels }
-    // Center-point clamps — keep window mostly on-screen
-    panels[id] = {
-      ...panels[id],
-      x: Math.max(22, Math.min(82, x)),
-      y: Math.max(22, Math.min(78, y)),
-    }
-    if (panels[id].pinned) persistPinLayout(panels)
+    const cur = panels[id]
+    const geo = clampPanelGeo({
+      x,
+      y,
+      w: cur.w,
+      h: cur.h,
+      scale: cur.scale,
+    })
+    panels[id] = { ...cur, ...geo }
+    if (cur.pinned) persistPinLayout(panels)
+    else persistGeometry(panels)
     set({ panels })
   },
   scalePanel: (id, scale) => {
     const panels = { ...get().panels }
-    panels[id] = {
-      ...panels[id],
-      scale: Math.max(0.75, Math.min(1.6, scale)),
+    const cur = panels[id]
+    const geo = clampPanelGeo({
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: cur.h,
+      scale,
+    })
+    panels[id] = { ...cur, ...geo }
+    if (cur.pinned) persistPinLayout(panels)
+    else persistGeometry(panels)
+    set({ panels })
+  },
+  resizePanel: (id, w, h, opts) => {
+    const panels = { ...get().panels }
+    const cur = panels[id]
+    const nextW = clamp(w, MIN_W, MAX_W)
+    const nextH = clamp(h, MIN_H, MAX_H)
+    let x = cur.x
+    let y = cur.y
+    // SE corner: keep top-left fixed while growing/shrinking
+    if (opts?.anchor === 'se') {
+      const left = cur.x - cur.w / 2
+      const top = cur.y - cur.h / 2
+      x = left + nextW / 2
+      y = top + nextH / 2
     }
-    if (panels[id].pinned) persistPinLayout(panels)
+    const geo = clampPanelGeo({
+      x,
+      y,
+      w: nextW,
+      h: nextH,
+      scale: cur.scale,
+    })
+    panels[id] = { ...cur, ...geo }
+    if (cur.pinned) persistPinLayout(panels)
+    else persistGeometry(panels)
     set({ panels })
   },
   focusPanel: (id) => {
@@ -625,9 +772,14 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       ...cur,
       pinned: nextPinned,
       open: nextPinned ? true : cur.open,
-      // First pin of Tower defaults to the right home spot
+      // First pin of Tower uses inset home (never clipped)
       ...(nextPinned && id === 'tower' && !cur.pinned
-        ? { x: TOWER_PIN_HOME.x, y: TOWER_PIN_HOME.y }
+        ? clampPanelGeo({
+            ...TOWER_PIN_HOME,
+            w: cur.w || TOWER_PIN_HOME.w,
+            h: cur.h || TOWER_PIN_HOME.h,
+            scale: cur.scale || 1,
+          })
         : {}),
     }
     persistPinLayout(panels)
@@ -641,6 +793,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   restoreDashboard: () => {
     const layout = loadPinLayout()
+    const stored = loadGeometry()
     const panels = { ...get().panels }
     let maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     let focus: PanelId | null = null
@@ -651,17 +804,13 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       }
     }
     for (const id of layout.pinned) {
-      const pos =
-        layout.positions[id] ||
-        (id === 'tower' ? TOWER_PIN_HOME : PANEL_CENTER)
+      const geo = resolveGeo(id, layout.positions[id], stored[id])
       maxZ += 1
       panels[id] = {
         ...panels[id],
         open: true,
         pinned: true,
-        x: pos.x,
-        y: pos.y,
-        scale: pos.scale ?? 1,
+        ...geo,
         z: maxZ,
       }
       focus = id
@@ -679,13 +828,13 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   openRoleHire: (searchId, name, days = 7) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    const stored = loadGeometry().role_hire
+    const geo = resolveGeo('role_hire', undefined, stored)
     panels.role_hire = {
       ...panels.role_hire,
       open: true,
       z: maxZ + 1,
-      x: PANEL_CENTER.x,
-      y: PANEL_CENTER.y,
-      scale: 1,
+      ...geo,
       title: `HIRING · ${name.toUpperCase()}`,
     }
     set({
@@ -699,13 +848,12 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     const roleBit = opts?.roleName ? ` · ${opts.roleName}` : ''
+    const geo = resolveGeo('jobs', undefined, loadGeometry().jobs)
     panels.jobs = {
       ...panels.jobs,
       open: true,
       z: maxZ + 1,
-      x: PANEL_CENTER.x,
-      y: PANEL_CENTER.y,
-      scale: 1,
+      ...geo,
       title: `JOBS · ${name.toUpperCase()}${roleBit ? roleBit.toUpperCase() : ''}`,
     }
     set({
@@ -727,13 +875,12 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   openRoleJobs: (searchId, name) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
+    const geo = resolveGeo('jobs', undefined, loadGeometry().jobs)
     panels.jobs = {
       ...panels.jobs,
       open: true,
       z: maxZ + 1,
-      x: PANEL_CENTER.x,
-      y: PANEL_CENTER.y,
-      scale: 1,
+      ...geo,
       title: `JOBS · ${name.toUpperCase()}`,
     }
     set({
@@ -747,13 +894,12 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     const title = kind === 'companies' ? 'ALL TOP HIRING' : 'ALL ROLES'
+    const geo = resolveGeo('rank_list', undefined, loadGeometry().rank_list)
     panels.rank_list = {
       ...panels.rank_list,
       open: true,
       z: maxZ + 1,
-      x: PANEL_CENTER.x,
-      y: PANEL_CENTER.y,
-      scale: 1,
+      ...geo,
       title,
     }
     set({
