@@ -72,8 +72,12 @@ use — they should love opening the app, never fight it.
   coverage outranks secondary UI until the daily insight flywheel is green.
 - Default scrape cadence: once per day per search (past-24h LinkedIn
   window), staggered — not hourly — when the catalogue is large.
-- Standing YES (2026-08-01): commit after each finished slice; leave the
-  tower collecting while Ashok sleeps unless he says stop.
+- Standing YES (2026-08-01 / reinforced 2026-08-02): **commit locally** after
+  each finished slice as work lands; leave the tower collecting while Ashok
+  sleeps unless he says stop. **Push only with Ashok’s permission** — ask
+  twice before any push; prefer one end-of-day push; alert if unpushed >2
+  days. Before proposing push/deploy, always name which live search(es) will
+  be disturbed (cancel-active-then-retrigger kills in-flight roles).
 - Tower Health: header always shows PC heat/memory/CPU, last search with
   vs without Ollama, searches today + 24h, next-search countdown, last
   browser open, Ollama load (now / day / 24h) and capacity target. Full
@@ -104,6 +108,8 @@ use — they should love opening the app, never fight it.
   and GPU readable) — not a sticky 30‑minute wait after recovery.
 - Deploy priority: pause beat, cancel active searches, deploy immediately, then
   retrigger cancelled roles — never wait for scrape idle (job ids dedupe).
+  **But** Ashok must approve the push that triggers deploy; Akay must warn
+  which job(s) will be disturbed before asking (2026-08-02).
 - Dashboard uses full viewport width (no narrow centered column); insight cards
   in a compact masonry grid (natural card heights, no row stretching); long
   lists capped at ~8 rows with Show more; teasers side-by-side; tight padding.
@@ -212,3 +218,7 @@ use — they should love opening the app, never fight it.
   Labels sit on each bar tip (not a shared top row); names wrap at 11 chars;
   all values use thick/full weight; glow = hard rim + inner base light +
   per-bar floor streak reflection — never soft blur bloom around pillars.
+- **Git push sovereignty (2026-08-02):** Commit freely locally as slices finish.
+  Push is Ashok-only: ask twice; no frequent pushes; target one push end of
+  day; if no push for >2 days (unpushed commits stacking), alert Ashok.
+  Always disclose live-job disturbance before any push ask.

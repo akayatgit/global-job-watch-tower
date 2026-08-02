@@ -13,10 +13,25 @@ Akay’s mandate fails. **Protecting the local git history outranks features.**
 - Work inside the git repo at `/home/user/Documents` (Watch Tower workspace).
 - Before risky edits/refactors/deletes: `git status` + ensure a clean commit
   or stash exists for the current good state.
-- After every meaningful completed slice: **commit** (Ashok standing YES
-  2026-08-01 — “end of hour / end of slice commits”). Use clear messages;
-  never commit secrets. Leave the collector running overnight when Ashok rests
-  unless he says stop.
+- After every meaningful completed slice: **commit locally** (Ashok standing
+  YES 2026-08-01, reinforced 2026-08-02 — commit as changes land). Use clear
+  messages; never commit secrets. Leave the collector running overnight when
+  Ashok rests unless he says stop.
+- **Push is Ashok-controlled (2026-08-02):** Never `git push` (or any remote
+  publish that triggers deploy) without Ashok’s permission. Default cadence =
+  **one push at end of day**, only after Ashok says yes. No frequent pushes.
+- **Ask twice before every push:** (1) propose the push with unpushed commit
+  count + SHA range + which live searches a deploy would cancel/disturb;
+  (2) after Ashok’s first YES, ask once more to confirm, then push only on
+  the second YES. First YES alone is not enough.
+- **Disturbance warning is mandatory:** Before proposing a push/deploy, check
+  live runs and tell Ashok plainly which role(s) will be cancelled or
+  interrupted (name + count). If any search is running, say so up front —
+  never surprise him with a cancel stack in Activity.
+- **Stale-push alert:** If local commits sit unpushed for **more than 2 days**,
+  or the unpushed commit count is large enough that risk is obvious, **alert
+  Ashok** (do not push — only inform and ask). Track via `git status` /
+  commits ahead of origin.
 - Never commit `.env`, passwords, Chrome profiles, or `job_engine/.data/`.
 - Never run destructive git (`reset --hard`, force-push, `clean -fdx`) unless
   Ashok explicitly orders it.
