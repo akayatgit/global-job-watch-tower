@@ -1,27 +1,31 @@
 import { useEffect, useState } from 'react'
+import { SectorChips } from '../components/SectorChips'
 import { api } from '../lib/api'
 import { PanelShell } from './PanelShell'
 import { useVigilStore } from '../store/vigilStore'
 
 export function SearchesPanel() {
   const [configs, setConfigs] = useState<any[]>([])
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const setStatus = useVigilStore((s) => s.setStatus)
 
-  const reload = () => api.configs().then(setConfigs).catch(() => {})
+  const reload = () =>
+    api.configs(sectorFilter).then(setConfigs).catch(() => {})
 
   useEffect(() => {
     reload()
     const id = window.setInterval(reload, 10000)
     return () => clearInterval(id)
-  }, [])
+  }, [sectorFilter])
 
   return (
     <PanelShell id="searches">
+      <SectorChips actionPrefix="searches-sector" />
       <div className="muted" style={{ marginBottom: 8 }}>
         {configs.length} roles · dwell Run / Pause chips
       </div>
       {configs.length === 0 ? (
-        <div className="empty">No searches yet — use legacy shell /legacy/configs to create</div>
+        <div className="empty">No searches in this sector — try All sectors</div>
       ) : (
         configs.map((c) => (
           <div className="list-row" key={c.id}>

@@ -20,6 +20,11 @@ export type JobsQuery = {
   company_id?: number
   company?: string
   title?: string
+  sector?: string
+}
+
+function appendSector(p: URLSearchParams, sector?: string) {
+  if (sector) p.set('sector', sector)
 }
 
 function jobsUrl(q: JobsQuery = {}) {
@@ -29,28 +34,65 @@ function jobsUrl(q: JobsQuery = {}) {
   if (q.company_id) p.set('company_id', String(q.company_id))
   if (q.company) p.set('company', q.company)
   if (q.title) p.set('title', q.title)
+  appendSector(p, q.sector)
   return `/api/jobs?${p}`
 }
 
 export const api = {
   status: () => getJson<any>('/api/ultron/status'),
-  tower: () => getJson<any>('/api/ultron/tower'),
-  signals: (days = 7) => getJson<any>(`/api/ultron/signals?days=${days}`),
-  watchlist: (days = 7, q = '') =>
-    getJson<any>(`/api/ultron/watchlist?days=${days}&q=${encodeURIComponent(q)}`),
+  tower: (sector = '') => {
+    const p = new URLSearchParams()
+    appendSector(p, sector)
+    const qs = p.toString()
+    return getJson<any>(`/api/ultron/tower${qs ? `?${qs}` : ''}`)
+  },
+  signals: (days = 7, sector = '') => {
+    const p = new URLSearchParams({ days: String(days) })
+    appendSector(p, sector)
+    return getJson<any>(`/api/ultron/signals?${p}`)
+  },
+  watchlist: (days = 7, q = '', sector = '') => {
+    const p = new URLSearchParams({
+      days: String(days),
+      q,
+    })
+    appendSector(p, sector)
+    return getJson<any>(`/api/ultron/watchlist?${p}`)
+  },
   roleCompanies: (searchId: number, days = 7) =>
     getJson<any>(`/api/ultron/roles/${searchId}/companies?days=${days}`),
-  topCompanies: (days = 7, limit = 80) =>
-    getJson<any>(`/api/ultron/top-companies?days=${days}&limit=${limit}`),
-  rolesRank: (limit = 200, days = 7, mode: 'count' | 'rate' = 'count') =>
-    getJson<any>(
-      `/api/ultron/roles-rank?limit=${limit}&days=${days}&mode=${mode}`,
-    ),
+  topCompanies: (days = 7, limit = 80, sector = '') => {
+    const p = new URLSearchParams({
+      days: String(days),
+      limit: String(limit),
+    })
+    appendSector(p, sector)
+    return getJson<any>(`/api/ultron/top-companies?${p}`)
+  },
+  rolesRank: (
+    limit = 200,
+    days = 7,
+    mode: 'count' | 'rate' = 'count',
+    sector = '',
+  ) => {
+    const p = new URLSearchParams({
+      limit: String(limit),
+      days: String(days),
+      mode,
+    })
+    appendSector(p, sector)
+    return getJson<any>(`/api/ultron/roles-rank?${p}`)
+  },
   sectors: () => getJson<any>('/api/ultron/sectors'),
   health: () => getJson<any>('/api/ultron/health'),
   filterCompare: (window = '24h') =>
     getJson<any>(`/api/ultron/filter-compare?window=${encodeURIComponent(window)}`),
-  configs: () => getJson<any[]>('/api/configs'),
+  configs: (sector = '') => {
+    const p = new URLSearchParams()
+    appendSector(p, sector)
+    const qs = p.toString()
+    return getJson<any[]>(`/api/configs${qs ? `?${qs}` : ''}`)
+  },
   runs: (limit = 50) => getJson<any[]>(`/api/runs?limit=${limit}`),
   jobs: (limitOrQuery: number | JobsQuery = 80) => {
     if (typeof limitOrQuery === 'number') return getJson<any[]>(jobsUrl({ limit: limitOrQuery }))

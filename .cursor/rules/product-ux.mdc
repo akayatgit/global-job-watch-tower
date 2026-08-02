@@ -171,3 +171,7 @@ use — they should love opening the app, never fight it.
 - **Critical sectors (2026-08-02):** Tech·AI, Tech·Digital, Manufacturing,
   Healthcare, Green economy, Logistics, Tourism — light everyday searches
   outside Tech; stamp on each search/job.
+- **Sector chips (2026-08-02):** Global sector filter chips on Tower, Jobs,
+  Signals, Watchlist, Searches, Activity, and Show-all ranks. One selection
+  persists (`vigil.sector`); live refresh; All sectors default. Skip Health /
+  Ask / Live / AI-vs-Keyword (not hiring lists).

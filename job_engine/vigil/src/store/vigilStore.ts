@@ -25,6 +25,19 @@ export type RankListFocus =
   | { kind: 'roles'; days?: number }
   | null
 
+/** Sector chip id; empty string = all sectors */
+export type SectorOption = { id: string; label: string; industry?: string }
+
+function readStoredSector(): string {
+  try {
+    const raw = localStorage.getItem('vigil.sector')
+    if (raw == null) return ''
+    return raw
+  } catch {
+    return ''
+  }
+}
+
 export type OrbitNode = {
   id: PanelId
   label: string
@@ -257,6 +270,11 @@ type VigilStore = {
   restoreDashboard: () => void
   insightFocus: InsightFocus
   rankFocus: RankListFocus
+  /** Global sector filter (persisted). '' = all sectors */
+  sectorFilter: string
+  setSectorFilter: (id: string) => void
+  sectorOptions: SectorOption[]
+  setSectorOptions: (opts: SectorOption[]) => void
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (
     companyId: number,
@@ -426,6 +444,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   panels: initialPanels(),
   insightFocus: null,
   rankFocus: null,
+  sectorFilter: readStoredSector(),
+  setSectorFilter: (id) => {
+    const next = id || ''
+    try {
+      localStorage.setItem('vigil.sector', next)
+    } catch {
+      /* ignore */
+    }
+    const opts = get().sectorOptions
+    const label =
+      opts.find((o) => (o.id || '') === next)?.label ||
+      (next ? next : 'All sectors')
+    set({
+      sectorFilter: next,
+      statusLine: `SECTOR · ${label.toUpperCase()}`,
+    })
+  },
+  sectorOptions: [],
+  setSectorOptions: (opts) => set({ sectorOptions: opts }),
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)

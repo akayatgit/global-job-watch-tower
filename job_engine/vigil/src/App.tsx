@@ -8,6 +8,7 @@ import { PanelHost } from './panels/PanelHost'
 import { TrainingScreen } from './training/TrainingScreen'
 import { useHandTracking } from './gestures/useHandTracking'
 import { useGestureOS } from './gestures/useGestureOS'
+import { api } from './lib/api'
 import { useUltronSocket } from './lib/ultronWs'
 import { panelFromQuery, useVigilStore } from './store/vigilStore'
 
@@ -24,6 +25,16 @@ export default function App() {
   useHandTracking(videoRef, cameraOn)
   useGestureOS()
   useUltronSocket()
+
+  useEffect(() => {
+    api
+      .sectors()
+      .then((d) => {
+        const opts = d?.sector_options || []
+        if (opts.length) useVigilStore.getState().setSectorOptions(opts)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (trainingActive) return

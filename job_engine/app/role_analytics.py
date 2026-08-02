@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import JobMaster, SearchConfig
-from app.sectors import sector_label
+from app.sectors import normalize_sector, sector_label
 from app.signals import ALLOWED_WINDOWS, WINDOW_OPTIONS, _window_bounds
 
 
@@ -23,17 +23,27 @@ def roles_in_window(
     days: int = 7,
     limit: int = 200,
     mode: str = 'count',
+    sector: str | None = None,
 ) -> dict:
     """Rank roles by windowed job count (default) or jobs-per-active-day."""
     if days not in ALLOWED_WINDOWS:
         days = 7
     mode = 'rate' if mode == 'rate' else 'count'
     limit = max(1, min(limit, 300))
+    sector = normalize_sector(sector)
 
     _d, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
 
-    count_rows = db.execute(
+    join_on = (
+        (JobMaster.search_config_id == SearchConfig.id)
+        & (time_col >= recent_start)
+        & (time_col < recent_end)
+    )
+    if sector:
+        join_on = join_on & (JobMaster.sector == sector)
+
+    q = (
         select(
             SearchConfig.id,
             SearchConfig.name,
@@ -41,14 +51,12 @@ def roles_in_window(
             func.count(JobMaster.id).label('n'),
             func.min(JobMaster.scraped_at).label('first_in_window'),
         )
-        .outerjoin(
-            JobMaster,
-            (JobMaster.search_config_id == SearchConfig.id)
-            & (time_col >= recent_start)
-            & (time_col < recent_end),
-        )
+        .outerjoin(JobMaster, join_on)
         .group_by(SearchConfig.id, SearchConfig.name, SearchConfig.sector)
-    ).all()
+    )
+    if sector:
+        q = q.where(SearchConfig.sector == sector)
+    count_rows = db.execute(q).all()
 
     # Lifetime first scrape — coverage age (for honesty badge)
     first_all = dict(db.execute(

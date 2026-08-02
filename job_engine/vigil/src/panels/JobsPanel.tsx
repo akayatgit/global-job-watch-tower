@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -6,21 +7,16 @@ import { PanelShell } from './PanelShell'
 export function JobsPanel() {
   const [jobs, setJobs] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'remote' | 'tech'>('all')
+  const [remoteOnly, setRemoteOnly] = useState(false)
   const insightFocus = useVigilStore((s) => s.insightFocus)
   const clearInsightFocus = useVigilStore((s) => s.clearInsightFocus)
-
-  // Role-scoped company drills must not keep a leftover Tech chip
-  useEffect(() => {
-    if (insightFocus?.kind === 'company' && insightFocus.searchId) {
-      setFilter('all')
-    }
-  }, [insightFocus])
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
 
   useEffect(() => {
     let alive = true
     const load = () => {
       const q: Parameters<typeof api.jobs>[0] = { limit: 120 }
+      if (sectorFilter) q.sector = sectorFilter
       if (insightFocus?.kind === 'company') {
         q.company_id = insightFocus.companyId
         if (insightFocus.searchId) q.search_config_id = insightFocus.searchId
@@ -45,23 +41,18 @@ export function JobsPanel() {
       alive = false
       clearInterval(id)
     }
-  }, [insightFocus])
+  }, [insightFocus, sectorFilter])
 
   const roleScoped =
     insightFocus?.kind === 'company' && Boolean(insightFocus.searchId)
 
   const filtered = useMemo(() => {
+    if (!remoteOnly) return jobs
     return jobs.filter((j) => {
       const blob = `${j.title || ''} ${j.location || ''} ${j.company || ''}`.toLowerCase()
-      if (filter === 'remote') return blob.includes('remote')
-      // Skip Tech chip when already scoped to a non-tech role drill
-      if (filter === 'tech' && !roleScoped) {
-        return /engineer|developer|software|data|ai|ml|cloud|devops|sre/.test(blob)
-      }
-      if (filter === 'tech' && roleScoped) return true
-      return true
+      return blob.includes('remote')
     })
-  }, [jobs, filter, roleScoped])
+  }, [jobs, remoteOnly])
 
   const focusLabel =
     insightFocus?.kind === 'company'
@@ -74,22 +65,16 @@ export function JobsPanel() {
 
   return (
     <PanelShell id="jobs">
+      <SectorChips actionPrefix="jobs-sector" />
       <div className="chip-row">
-        {([
-          ['all', 'All'],
-          ['tech', 'Tech'],
-          ['remote', 'Remote'],
-        ] as const).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            className={`chip ${filter === k ? 'active' : ''}`}
-            data-gesture-action={`jobs-${k}`}
-            onClick={() => setFilter(k)}
-          >
-            {label}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`chip ${remoteOnly ? 'active' : ''}`}
+          data-gesture-action="jobs-remote"
+          onClick={() => setRemoteOnly((v) => !v)}
+        >
+          Remote
+        </button>
         {focusLabel && (
           <button
             type="button"
@@ -109,7 +94,7 @@ export function JobsPanel() {
       {error ? (
         <div className="empty fail">Jobs failed to load — {error}</div>
       ) : filtered.length === 0 ? (
-        <div className="empty">No jobs match — widen the chip filter</div>
+        <div className="empty">No jobs match — widen the sector filter</div>
       ) : (
         filtered.slice(0, 60).map((j) => (
           <a

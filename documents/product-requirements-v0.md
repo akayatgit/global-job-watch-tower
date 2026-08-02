@@ -695,6 +695,8 @@ START OF EVERY SESSION
 
 **Fair compare rule:** Jobs-per-role analytics use a **shared time window** (default 7d) and optional **jobs/day** rate — never all-time totals — so early-started roles (e.g. Risks & Controls) do not permanently dominate rankings as new sector searches come online.
 
+**Sector chips (UI):** Global filter on Tower Insights, Jobs, Hiring Signals, Watchlist, Searches, Activity, and Show-all ranks — All sectors · Tech·AI · Tech·Digital · Manufacturing · Healthcare · Green economy · Logistics · Tourism. Persists across panels; Health / Ask / Live / AI-vs-Keyword stay unscoped.
+
 ---
 
 *End of PRD v0 — Global Job WATCH TOWER · Quanta HR Labs*

@@ -112,3 +112,22 @@ def sector_label(sector_id: str) -> str:
     if meta:
         return meta['label']
     return sector_id or '—'
+
+
+def normalize_sector(sector: str | None) -> str | None:
+    """Return a valid sector id or None (= all sectors)."""
+    if not sector:
+        return None
+    key = sector.strip().lower()
+    if key in ('', 'all', '*', 'any'):
+        return None
+    if key in VALID_SECTOR_IDS:
+        return key
+    return None
+
+
+def sector_options() -> list[dict[str, str]]:
+    return [
+        {'id': '', 'label': 'All sectors', 'industry': 'All'},
+        *[{'id': s['id'], 'label': s['label'], 'industry': s['industry']} for s in CRITICAL_SECTORS],
+    ]

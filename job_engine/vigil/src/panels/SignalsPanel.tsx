@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -16,20 +17,32 @@ const FALLBACK_WINDOWS = [
 export function SignalsPanel() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   useEffect(() => {
     let alive = true
-    api.signals(days).then((d) => alive && setData(d)).catch(() => {})
-    return () => { alive = false }
-  }, [days])
+    api
+      .signals(days, sectorFilter)
+      .then((d) => {
+        if (!alive) return
+        setData(d)
+        if (d?.sector_options?.length) setSectorOptions(d.sector_options)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [days, sectorFilter, setSectorOptions])
 
   const s = data?.signals
   const windows = data?.window_options || FALLBACK_WINDOWS
 
   return (
     <PanelShell id="signals">
+      <SectorChips actionPrefix="signals-sector" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

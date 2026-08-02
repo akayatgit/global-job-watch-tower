@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -15,6 +16,8 @@ const FALLBACK_WINDOWS = [
 
 export function RankListPanel() {
   const rankFocus = useVigilStore((s) => s.rankFocus)
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const [days, setDays] = useState(7)
@@ -35,13 +38,14 @@ export function RankListPanel() {
     let alive = true
     const load =
       rankFocus.kind === 'companies'
-        ? api.topCompanies(days, 100)
-        : api.rolesRank(200, days, mode)
+        ? api.topCompanies(days, 100, sectorFilter)
+        : api.rolesRank(200, days, mode, sectorFilter)
     load
       .then((d) => {
         if (!alive) return
         setData(d)
         setError(null)
+        if (d?.sector_options?.length) setSectorOptions(d.sector_options)
       })
       .catch((e: Error) => {
         if (!alive) return
@@ -51,7 +55,7 @@ export function RankListPanel() {
     return () => {
       alive = false
     }
-  }, [rankFocus, days, mode])
+  }, [rankFocus, days, mode, sectorFilter, setSectorOptions])
 
   if (!rankFocus) {
     return (
@@ -80,6 +84,7 @@ export function RankListPanel() {
           {!isCompanies ? ' · fair window (not all-time)' : ''}
         </div>
       </div>
+      <SectorChips actionPrefix="rank-sector" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

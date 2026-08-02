@@ -1,11 +1,34 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { PanelShell } from './PanelShell'
 import { useVigilStore } from '../store/vigilStore'
 
 export function ActivityPanel() {
   const [runs, setRuns] = useState<any[]>([])
+  const [sectorIds, setSectorIds] = useState<Set<number> | null>(null)
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const setStatus = useVigilStore((s) => s.setStatus)
+
+  useEffect(() => {
+    let alive = true
+    if (!sectorFilter) {
+      setSectorIds(null)
+      return
+    }
+    api
+      .configs(sectorFilter)
+      .then((cfgs) => {
+        if (!alive) return
+        setSectorIds(new Set(cfgs.map((c) => c.id as number)))
+      })
+      .catch(() => {
+        if (alive) setSectorIds(new Set())
+      })
+    return () => {
+      alive = false
+    }
+  }, [sectorFilter])
 
   const reload = () => api.runs(40).then(setRuns).catch(() => {})
 
@@ -15,13 +38,24 @@ export function ActivityPanel() {
     return () => clearInterval(id)
   }, [])
 
+  const shown = useMemo(() => {
+    if (!sectorIds) return runs
+    return runs.filter((r) => sectorIds.has(r.search_config_id))
+  }, [runs, sectorIds])
+
   return (
     <PanelShell id="activity">
-      <div className="muted" style={{ marginBottom: 8 }}>Showing {runs.length} · newest first</div>
-      {runs.length === 0 ? (
-        <div className="empty">No activity yet</div>
+      <SectorChips actionPrefix="activity-sector" />
+      <div className="muted" style={{ marginBottom: 8 }}>
+        Showing {shown.length}
+        {sectorFilter ? ` · sector filtered` : ''} · newest first
+      </div>
+      {shown.length === 0 ? (
+        <div className="empty">
+          {sectorFilter ? 'No activity in this sector yet' : 'No activity yet'}
+        </div>
       ) : (
-        runs.map((r) => (
+        shown.map((r) => (
           <div className="list-row" key={r.id}>
             <div>
               <div>Search #{r.search_config_id} · {r.status}</div>

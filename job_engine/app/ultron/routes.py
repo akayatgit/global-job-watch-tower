@@ -28,7 +28,7 @@ from app.ai_capacity import compute_ai_capacity
 from app.filter_compare import ALLOWED_FILTER_WINDOWS, compute_filter_compare
 from app.hermes_ask import ask_hermes
 from app.role_analytics import roles_in_window
-from app.sectors import CRITICAL_SECTORS
+from app.sectors import CRITICAL_SECTORS, normalize_sector, sector_options
 from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
 from app.ultron.hub import hub
@@ -120,44 +120,57 @@ def ultron_status(db: Session = Depends(get_db)):
 
 
 @router.get('/api/ultron/tower')
-def ultron_tower(db: Session = Depends(get_db)):
+def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
     today = datetime.now(timezone.utc).date()
     week_ago = today - timedelta(days=7)
-    top_companies = db.execute(
+    sector = normalize_sector(sector)
+    co_q = (
         select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
         .join(JobMaster, JobMaster.company_id == Company.id)
         .where(JobMaster.posted_date >= week_ago)
         .group_by(Company.id, Company.name).order_by(desc('n')).limit(8)
-    ).all()
+    )
+    if sector:
+        co_q = co_q.where(JobMaster.sector == sector)
+    top_companies = db.execute(co_q).all()
     # Fair: same 7d window as top companies — early-started roles no longer dominate
-    fair_roles = roles_in_window(db, days=7, limit=40, mode='count')
+    fair_roles = roles_in_window(db, days=7, limit=40, mode='count', sector=sector)
     per_role = fair_roles['roles']
-    daily = dict(db.execute(
+    daily_q = (
         select(JobMaster.posted_date, func.count(JobMaster.id))
         .where(JobMaster.posted_date >= today - timedelta(days=13))
         .group_by(JobMaster.posted_date)
-    ).all())
+    )
+    if sector:
+        daily_q = daily_q.where(JobMaster.sector == sector)
+    daily = dict(db.execute(daily_q).all())
     daily_series = [
         {'day': str(today - timedelta(days=13 - i)), 'n': daily.get(today - timedelta(days=13 - i), 0)}
         for i in range(14)
     ]
-    latest = db.execute(
+    latest_q = (
         select(JobMaster, Company.id, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
         .order_by(desc(JobMaster.scraped_at)).limit(8)
-    ).all()
-    signals = compute_hiring_signals(db, window_days=7)
-    watched = watchlist_rows(db, window_days=7)[:6]
+    )
+    if sector:
+        latest_q = latest_q.where(JobMaster.sector == sector)
+    latest = db.execute(latest_q).all()
+    signals = compute_hiring_signals(db, window_days=7, sector=sector)
+    watched = watchlist_rows(db, window_days=7, sector=sector)[:6]
+    jobs_q = select(func.count(JobMaster.id))
+    today_q = select(func.count(JobMaster.id)).where(func.date(JobMaster.scraped_at) == today)
+    cfg_q = select(func.count(SearchConfig.id)).where(SearchConfig.enabled.is_(True))
+    if sector:
+        jobs_q = jobs_q.where(JobMaster.sector == sector)
+        today_q = today_q.where(JobMaster.sector == sector)
+        cfg_q = cfg_q.where(SearchConfig.sector == sector)
     return {
         'stats': {
-            'total_jobs': db.execute(select(func.count(JobMaster.id))).scalar(),
-            'jobs_today': db.execute(
-                select(func.count(JobMaster.id)).where(func.date(JobMaster.scraped_at) == today)
-            ).scalar(),
+            'total_jobs': db.execute(jobs_q).scalar(),
+            'jobs_today': db.execute(today_q).scalar(),
             'companies': db.execute(select(func.count(Company.id))).scalar(),
-            'configs_enabled': db.execute(
-                select(func.count(SearchConfig.id)).where(SearchConfig.enabled.is_(True))
-            ).scalar(),
+            'configs_enabled': db.execute(cfg_q).scalar(),
             'runs_active': db.execute(
                 select(func.count(ScrapeRun.id)).where(
                     ScrapeRun.status.in_(('queued', 'dispatched', 'running'))
@@ -170,7 +183,9 @@ def ultron_tower(db: Session = Depends(get_db)):
         'per_role': per_role,
         'per_role_window_days': 7,
         'fair_hint': fair_roles.get('fair_hint'),
+        'sector': sector or '',
         'sectors': CRITICAL_SECTORS,
+        'sector_options': sector_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'daily_series': daily_series,
         'latest_jobs': [{
@@ -189,24 +204,33 @@ def ultron_tower(db: Session = Depends(get_db)):
 
 
 @router.get('/api/ultron/top-companies')
-def ultron_top_companies(days: int = 7, limit: int = 80, db: Session = Depends(get_db)):
+def ultron_top_companies(
+    days: int = 7, limit: int = 80, sector: str | None = None,
+    db: Session = Depends(get_db),
+):
     """Full company hiring ranking for Show all — max → min."""
     if days not in ALLOWED_WINDOWS:
         days = 7
+    sector = normalize_sector(sector)
     limit = max(1, min(limit, 200))
     _days, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
-    rows = db.execute(
+    q = (
         select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
         .join(JobMaster, JobMaster.company_id == Company.id)
         .where(time_col >= recent_start, time_col < recent_end)
         .group_by(Company.id, Company.name)
         .order_by(desc('n'))
         .limit(limit)
-    ).all()
+    )
+    if sector:
+        q = q.where(JobMaster.sector == sector)
+    rows = db.execute(q).all()
     max_n = max([n for _, _, n in rows] + [1])
     return {
         'days': days,
+        'sector': sector or '',
+        'sector_options': sector_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'max': max_n,
         'total': len(rows),
@@ -221,26 +245,35 @@ def ultron_roles_rank(
     days: int = 7,
     mode: str = 'count',
     limit: int = 200,
+    sector: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Jobs-per-role ranking — windowed (fair) count or per-day rate."""
-    return roles_in_window(db, days=days, limit=limit, mode=mode)
+    data = roles_in_window(db, days=days, limit=limit, mode=mode, sector=sector)
+    data['sector'] = normalize_sector(sector) or ''
+    data['sector_options'] = sector_options()
+    return data
 
 
 @router.get('/api/ultron/sectors')
 def ultron_sectors():
     """Critical sector catalogue for UI filters and labels."""
-    return {'sectors': CRITICAL_SECTORS}
+    return {'sectors': CRITICAL_SECTORS, 'sector_options': sector_options()}
 
 
 @router.get('/api/ultron/signals')
-def ultron_signals(days: int = 7, db: Session = Depends(get_db)):
+def ultron_signals(
+    days: int = 7, sector: str | None = None, db: Session = Depends(get_db),
+):
     if days not in ALLOWED_WINDOWS:
         days = 7
+    sector = normalize_sector(sector)
     return {
         'days': days,
+        'sector': sector or '',
+        'sector_options': sector_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
-        'signals': to_jsonable(compute_hiring_signals(db, window_days=days)),
+        'signals': to_jsonable(compute_hiring_signals(db, window_days=days, sector=sector)),
     }
 
 
@@ -254,14 +287,20 @@ def ultron_filter_compare(window: str = '24h', db: Session = Depends(get_db)):
 
 
 @router.get('/api/ultron/watchlist')
-def ultron_watchlist(days: int = 7, q: str = '', db: Session = Depends(get_db)):
+def ultron_watchlist(
+    days: int = 7, q: str = '', sector: str | None = None,
+    db: Session = Depends(get_db),
+):
     if days not in ALLOWED_WINDOWS:
         days = 7
+    sector = normalize_sector(sector)
     return {
         'days': days,
+        'sector': sector or '',
+        'sector_options': sector_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'q': q,
-        'watched': to_jsonable(watchlist_rows(db, window_days=days, q=q)),
+        'watched': to_jsonable(watchlist_rows(db, window_days=days, q=q, sector=sector)),
         'directory': to_jsonable(company_directory(db, q=q, limit=50)),
     }
 

@@ -15,8 +15,13 @@ router = APIRouter(prefix='/api')
 # ---------- search configs ----------
 
 @router.get('/configs', response_model=list[ConfigOut])
-def list_configs(db: Session = Depends(get_db)):
-    return db.execute(select(SearchConfig).order_by(SearchConfig.id)).scalars().all()
+def list_configs(sector: str | None = None, db: Session = Depends(get_db)):
+    from app.sectors import normalize_sector
+    q = select(SearchConfig).order_by(SearchConfig.id)
+    sector = normalize_sector(sector)
+    if sector:
+        q = q.where(SearchConfig.sector == sector)
+    return db.execute(q).scalars().all()
 
 
 @router.post('/configs', response_model=ConfigOut, status_code=201)
@@ -124,6 +129,9 @@ def list_jobs(
     company_id: int | None = None,
     db: Session = Depends(get_db),
 ):
+    from app.sectors import normalize_sector
+
+    sector = normalize_sector(sector)
     query = (
         select(JobMaster, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
