@@ -86,6 +86,7 @@ class JobMaster(Base):
     title: Mapped[str] = mapped_column(String(500))
     company_id: Mapped[int | None] = mapped_column(ForeignKey('companies.id'), nullable=True, index=True)
     location: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    city_key: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     sector: Mapped[str] = mapped_column(String(100), default='software')
     job_url: Mapped[str] = mapped_column(String(800))
     posted_date: Mapped[datetime | None] = mapped_column(Date, nullable=True, index=True)
@@ -98,6 +99,7 @@ class JobMaster(Base):
 
     __table_args__ = (
         Index('ix_jobs_sector_scraped', 'sector', 'scraped_at'),
+        Index('ix_jobs_city_scraped', 'city_key', 'scraped_at'),
     )
 
 

@@ -19,6 +19,7 @@ export type PanelId =
   | 'filter_mix'
   | 'role_hire'
   | 'rank_list'
+  | 'cities'
 
 export type RankListFocus =
   | { kind: 'companies'; days: number }
@@ -28,9 +29,22 @@ export type RankListFocus =
 /** Sector chip id; empty string = all sectors */
 export type SectorOption = { id: string; label: string; industry?: string }
 
+/** City chip id; empty string = all cities */
+export type CityOption = { id: string; label: string }
+
 function readStoredSector(): string {
   try {
     const raw = localStorage.getItem('vigil.sector')
+    if (raw == null) return ''
+    return raw
+  } catch {
+    return ''
+  }
+}
+
+function readStoredCity(): string {
+  try {
+    const raw = localStorage.getItem('vigil.city')
     if (raw == null) return ''
     return raw
   } catch {
@@ -103,19 +117,21 @@ const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
   { id: 'health', title: 'TOWER HEALTH', ...PANEL_CENTER },
   { id: 'ask', title: 'ASK TOWER', ...PANEL_CENTER },
   { id: 'filter_mix', title: 'AI VS KEYWORD', ...PANEL_CENTER },
+  { id: 'cities', title: 'CITY SIGNALS', ...PANEL_CENTER },
   { id: 'role_hire', title: 'COMPANIES HIRING', ...PANEL_CENTER },
   { id: 'rank_list', title: 'FULL LIST', ...PANEL_CENTER },
 ]
 
 /** Panels that can be pinned to the admin dashboard (not transient drill-downs). */
 export const PINNABLE_PANELS: PanelId[] = [
-  'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask', 'filter_mix',
+  'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask', 'filter_mix', 'cities',
 ]
 
 export const ORBIT_NODES: OrbitNode[] = [
   { id: 'tower', label: 'Tower', angle: -0.95, radius: 2.55 },
   { id: 'jobs', label: 'Jobs', angle: -0.4, radius: 2.6 },
   { id: 'signals', label: 'Hiring Signals', angle: 0.35, radius: 2.7 },
+  { id: 'cities', label: 'Cities', angle: 0.52, radius: 2.68 },
   { id: 'filter_mix', label: 'AI vs Keyword', angle: 0.7, radius: 2.62 },
   { id: 'searches', label: 'Searches', angle: 1.1, radius: 2.55 },
   { id: 'activity', label: 'Activity', angle: 1.85, radius: 2.65 },
@@ -275,6 +291,11 @@ type VigilStore = {
   setSectorFilter: (id: string) => void
   sectorOptions: SectorOption[]
   setSectorOptions: (opts: SectorOption[]) => void
+  /** Global city filter (persisted). '' = all cities */
+  cityFilter: string
+  setCityFilter: (id: string) => void
+  cityOptions: CityOption[]
+  setCityOptions: (opts: CityOption[]) => void
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (
     companyId: number,
@@ -463,6 +484,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   sectorOptions: [],
   setSectorOptions: (opts) => set({ sectorOptions: opts }),
+  cityFilter: readStoredCity(),
+  setCityFilter: (id) => {
+    const next = id || ''
+    try {
+      localStorage.setItem('vigil.city', next)
+    } catch {
+      /* ignore */
+    }
+    const opts = get().cityOptions
+    const label =
+      opts.find((o) => (o.id || '') === next)?.label ||
+      (next ? next : 'All cities')
+    set({
+      cityFilter: next,
+      statusLine: `CITY · ${label.toUpperCase()}`,
+    })
+  },
+  cityOptions: [],
+  setCityOptions: (opts) => set({ cityOptions: opts }),
   openPanel: (id) => {
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
@@ -735,7 +775,7 @@ export function panelFromQuery(): PanelId | null {
   const params = new URLSearchParams(window.location.search)
   const p = params.get('panel')
   const valid: PanelId[] = [
-    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask', 'filter_mix', 'role_hire', 'rank_list',
+    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask', 'filter_mix', 'cities', 'role_hire', 'rank_list',
   ]
   return p && (valid as string[]).includes(p) ? (p as PanelId) : null
 }

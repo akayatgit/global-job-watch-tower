@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 
 from app import config as app_config
 from app.celery_app import celery
+from app.cities import normalize_city
 from app.console import console_log
 from app.db import SessionLocal
 from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig
@@ -293,6 +294,7 @@ def run_scrape(self, scrape_run_id: int):
                     title=job.title,
                     company_id=company.id if company else None,
                     location=job.location,
+                    city_key=normalize_city(job.location, job.title),
                     sector=cfg.sector,
                     job_url=job.job_url,
                     posted_date=job.posted_date,

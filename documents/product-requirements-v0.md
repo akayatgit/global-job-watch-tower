@@ -697,6 +697,17 @@ START OF EVERY SESSION
 
 **Sector chips (UI):** Global filter on Tower Insights, Jobs, Hiring Signals, Watchlist, Searches, Activity, and Show-all ranks — All sectors · Tech·AI · Tech·Digital · Manufacturing · Healthcare · Green economy · Logistics · Tourism. Persists across panels; Health / Ask / Live / AI-vs-Keyword stay unscoped.
 
+### City normalize + City Signals (2026-08-02)
+
+| City id | Label |
+|---|---|
+| `bengaluru` … `kolkata` | India metros (aliases collapsed) |
+| `remote` | Remote / WFH |
+| `india` | India-wide (no city) |
+| `other` | Unmapped |
+
+**Jobs store `city_key`** from scrape; DE-02 normalize-location started. **City Signals** module ranks cities by volume/growth and compares any two (top roles + companies). Global city chips stack with sector filters.
+
 ---
 
 *End of PRD v0 — Global Job WATCH TOWER · Quanta HR Labs*

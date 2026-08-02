@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -11,12 +12,14 @@ export function JobsPanel() {
   const insightFocus = useVigilStore((s) => s.insightFocus)
   const clearInsightFocus = useVigilStore((s) => s.clearInsightFocus)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
 
   useEffect(() => {
     let alive = true
     const load = () => {
       const q: Parameters<typeof api.jobs>[0] = { limit: 120 }
       if (sectorFilter) q.sector = sectorFilter
+      if (cityFilter) q.city = cityFilter
       if (insightFocus?.kind === 'company') {
         q.company_id = insightFocus.companyId
         if (insightFocus.searchId) q.search_config_id = insightFocus.searchId
@@ -41,7 +44,7 @@ export function JobsPanel() {
       alive = false
       clearInterval(id)
     }
-  }, [insightFocus, sectorFilter])
+  }, [insightFocus, sectorFilter, cityFilter])
 
   const roleScoped =
     insightFocus?.kind === 'company' && Boolean(insightFocus.searchId)
@@ -50,7 +53,7 @@ export function JobsPanel() {
     if (!remoteOnly) return jobs
     return jobs.filter((j) => {
       const blob = `${j.title || ''} ${j.location || ''} ${j.company || ''}`.toLowerCase()
-      return blob.includes('remote')
+      return blob.includes('remote') || j.city_key === 'remote'
     })
   }, [jobs, remoteOnly])
 
@@ -66,6 +69,7 @@ export function JobsPanel() {
   return (
     <PanelShell id="jobs">
       <SectorChips actionPrefix="jobs-sector" />
+      <CityChips actionPrefix="jobs-city" />
       <div className="chip-row">
         <button
           type="button"
@@ -94,7 +98,7 @@ export function JobsPanel() {
       {error ? (
         <div className="empty fail">Jobs failed to load — {error}</div>
       ) : filtered.length === 0 ? (
-        <div className="empty">No jobs match — widen the sector filter</div>
+        <div className="empty">No jobs match — widen sector or city</div>
       ) : (
         filtered.slice(0, 60).map((j) => (
           <a
@@ -107,7 +111,9 @@ export function JobsPanel() {
           >
             <div>
               <div>{j.title}</div>
-              <div className="meta">{j.company || '—'} · {j.location || '—'}</div>
+              <div className="meta">
+                {j.company || '—'} · {j.location || '—'}
+              </div>
             </div>
             <div className="meta" title={j.scraped_at}>{relTime(j.scraped_at)}</div>
           </a>

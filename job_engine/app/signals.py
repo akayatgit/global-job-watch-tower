@@ -106,6 +106,7 @@ def _count_jobs(db: Session, start: date | datetime, end: date | datetime,
                 search_id: int | None = None,
                 company_id: int | None = None,
                 sector: str | None = None,
+                city: str | None = None,
                 *,
                 by_scraped: bool = False) -> int:
     """Count jobs in [start, end). Uses posted_date or scraped_at."""
@@ -125,6 +126,8 @@ def _count_jobs(db: Session, start: date | datetime, end: date | datetime,
         q = q.where(JobMaster.company_id == company_id)
     if sector:
         q = q.where(JobMaster.sector == sector)
+    if city:
+        q = q.where(JobMaster.city_key == city)
     return db.execute(q).scalar() or 0
 
 
@@ -158,17 +161,22 @@ def _window_labels(window_days: int) -> tuple[str, str]:
 
 
 def compute_hiring_signals(
-    db: Session, window_days: int = 7, sector: str | None = None,
+    db: Session,
+    window_days: int = 7,
+    sector: str | None = None,
+    city: str | None = None,
 ) -> HiringSignals:
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
     today = date.today()
 
     recent_total = _count_jobs(
-        db, recent_start, recent_end, sector=sector, by_scraped=by_scraped,
+        db, recent_start, recent_end, sector=sector, city=city,
+        by_scraped=by_scraped,
     )
     prior_total = _count_jobs(
-        db, prior_start, prior_end, sector=sector, by_scraped=by_scraped,
+        db, prior_start, prior_end, sector=sector, city=city,
+        by_scraped=by_scraped,
     )
 
     # Daily series spanning recent window (for sparkline)
@@ -186,6 +194,8 @@ def compute_hiring_signals(
         )
         if sector:
             dq = dq.where(JobMaster.sector == sector)
+        if city:
+            dq = dq.where(JobMaster.city_key == city)
         daily_map = dict(db.execute(dq).all())
         daily = [
             DayPoint(day=recent_start + timedelta(days=i),
@@ -205,11 +215,11 @@ def compute_hiring_signals(
             keywords=cfg.keywords,
             recent=_count_jobs(
                 db, recent_start, recent_end, search_id=cfg.id,
-                sector=sector, by_scraped=by_scraped,
+                sector=sector, city=city, by_scraped=by_scraped,
             ),
             prior=_count_jobs(
                 db, prior_start, prior_end, search_id=cfg.id,
-                sector=sector, by_scraped=by_scraped,
+                sector=sector, city=city, by_scraped=by_scraped,
             ),
         ))
     growing_roles = sorted(
@@ -237,12 +247,14 @@ def compute_hiring_signals(
     )
     if sector:
         co_q = co_q.where(JobMaster.sector == sector)
+    if city:
+        co_q = co_q.where(JobMaster.city_key == city)
     recent_by_co = db.execute(co_q).all()
     fastest: list[CompanySignal] = []
     for cid, name, watched, recent_n in recent_by_co:
         prior_n = _count_jobs(
             db, prior_start, prior_end, company_id=cid,
-            sector=sector, by_scraped=by_scraped,
+            sector=sector, city=city, by_scraped=by_scraped,
         )
         fastest.append(CompanySignal(
             company_id=cid, name=name, recent=recent_n, prior=prior_n,
@@ -341,7 +353,12 @@ def ensure_starter_watchlist(db: Session, limit: int = 10) -> int:
 
 
 def companies_for_role(
-    db: Session, search_id: int, window_days: int = 7, limit: int = 40,
+    db: Session,
+    search_id: int,
+    window_days: int = 7,
+    limit: int = 40,
+    city: str | None = None,
+    sector: str | None = None,
 ) -> tuple[str, list[CompanySignal]]:
     """Companies hiring for a search role, ranked max → min in the window."""
     (window_days, recent_start, recent_end, prior_start, prior_end,
@@ -349,7 +366,7 @@ def companies_for_role(
     cfg = db.get(SearchConfig, search_id)
     role_name = cfg.name if cfg else f'Role {search_id}'
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
-    rows = db.execute(
+    q = (
         select(
             Company.id, Company.name, Company.watched,
             func.count(JobMaster.id).label('n'),
@@ -363,12 +380,18 @@ def companies_for_role(
         .group_by(Company.id, Company.name, Company.watched)
         .order_by(func.count(JobMaster.id).desc())
         .limit(limit)
-    ).all()
+    )
+    if city:
+        q = q.where(JobMaster.city_key == city)
+    if sector:
+        q = q.where(JobMaster.sector == sector)
+    rows = db.execute(q).all()
     out: list[CompanySignal] = []
     for cid, name, watched, recent_n in rows:
         prior_n = _count_jobs(
             db, prior_start, prior_end,
-            search_id=search_id, company_id=cid, by_scraped=by_scraped,
+            search_id=search_id, company_id=cid,
+            city=city, sector=sector, by_scraped=by_scraped,
         )
         out.append(CompanySignal(
             company_id=cid, name=name, recent=recent_n, prior=prior_n,
@@ -377,10 +400,50 @@ def companies_for_role(
     return role_name, out
 
 
+def cities_for_role(
+    db: Session,
+    search_id: int,
+    window_days: int = 7,
+    sector: str | None = None,
+) -> list[dict]:
+    """City breakdown for a role in the window — max → min."""
+    from app.cities import city_label
+
+    (window_days, recent_start, recent_end, _ps, _pe,
+     by_scraped) = _window_bounds(window_days)
+    time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
+    q = (
+        select(JobMaster.city_key, func.count(JobMaster.id).label('n'))
+        .where(
+            JobMaster.search_config_id == search_id,
+            time_col >= recent_start,
+            time_col < recent_end,
+            JobMaster.city_key.is_not(None),
+        )
+        .group_by(JobMaster.city_key)
+        .order_by(func.count(JobMaster.id).desc())
+    )
+    if sector:
+        q = q.where(JobMaster.sector == sector)
+    rows = db.execute(q).all()
+    return [
+        {
+            'city': key or 'other',
+            'label': city_label(key or 'other'),
+            'n': int(n or 0),
+        }
+        for key, n in rows
+    ]
+
+
 def watchlist_rows(
-    db: Session, window_days: int = 7, q: str = '', sector: str | None = None,
+    db: Session,
+    window_days: int = 7,
+    q: str = '',
+    sector: str | None = None,
+    city: str | None = None,
 ) -> list[CompanySignal]:
-    """Watched companies with velocity; optional name / sector filter."""
+    """Watched companies with velocity; optional name / sector / city filter."""
     ensure_starter_watchlist(db)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
@@ -395,11 +458,11 @@ def watchlist_rows(
     for company in companies:
         recent = _count_jobs(
             db, recent_start, recent_end, company_id=company.id,
-            sector=sector, by_scraped=by_scraped,
+            sector=sector, city=city, by_scraped=by_scraped,
         )
         prior = _count_jobs(
             db, prior_start, prior_end, company_id=company.id,
-            sector=sector, by_scraped=by_scraped,
+            sector=sector, city=city, by_scraped=by_scraped,
         )
         rows.append(CompanySignal(
             company_id=company.id,

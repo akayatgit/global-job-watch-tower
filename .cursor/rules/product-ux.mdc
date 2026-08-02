@@ -175,3 +175,9 @@ use — they should love opening the app, never fight it.
   Signals, Watchlist, Searches, Activity, and Show-all ranks. One selection
   persists (`vigil.sector`); live refresh; All sectors default. Skip Health /
   Ask / Live / AI-vs-Keyword (not hiring lists).
+- **City chips + City Signals (2026-08-02):** Normalize LinkedIn locations to
+  city keys (Bengaluru, Hyderabad, Chennai, Pune, Mumbai, Delhi, Gurugram,
+  Noida, Ahmedabad, Kolkata, Remote, India-wide, Other). Global city chips on
+  Tower, Jobs, Signals, Watchlist, Show-all, Companies Hiring — persist
+  (`vigil.city`); stack with sector. New Cities module: city hiring ranking +
+  pick-two compare. Never show `city_key` / `geo_id` in UI.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -18,24 +19,27 @@ export function SignalsPanel() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
+  const setCityOptions = useVigilStore((s) => s.setCityOptions)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   useEffect(() => {
     let alive = true
     api
-      .signals(days, sectorFilter)
+      .signals(days, sectorFilter, cityFilter)
       .then((d) => {
         if (!alive) return
         setData(d)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
+        if (d?.city_options?.length) setCityOptions(d.city_options)
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [days, sectorFilter, setSectorOptions])
+  }, [days, sectorFilter, cityFilter, setSectorOptions, setCityOptions])
 
   const s = data?.signals
   const windows = data?.window_options || FALLBACK_WINDOWS
@@ -43,6 +47,7 @@ export function SignalsPanel() {
   return (
     <PanelShell id="signals">
       <SectorChips actionPrefix="signals-sector" />
+      <CityChips actionPrefix="signals-city" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

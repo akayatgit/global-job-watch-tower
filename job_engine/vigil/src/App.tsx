@@ -34,6 +34,13 @@ export default function App() {
         if (opts.length) useVigilStore.getState().setSectorOptions(opts)
       })
       .catch(() => {})
+    api
+      .citySignals(7)
+      .then((d) => {
+        const opts = d?.city_options || []
+        if (opts.length) useVigilStore.getState().setCityOptions(opts)
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {

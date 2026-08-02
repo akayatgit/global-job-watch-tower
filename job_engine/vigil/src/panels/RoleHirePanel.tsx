@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { api, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -6,6 +7,10 @@ import { PanelShell } from './PanelShell'
 export function RoleHirePanel() {
   const insightFocus = useVigilStore((s) => s.insightFocus)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const setCityFilter = useVigilStore((s) => s.setCityFilter)
+  const setCityOptions = useVigilStore((s) => s.setCityOptions)
   const role =
     insightFocus?.kind === 'role'
       ? insightFocus
@@ -25,11 +30,12 @@ export function RoleHirePanel() {
     }
     let alive = true
     api
-      .roleCompanies(role.searchId, days)
+      .roleCompanies(role.searchId, days, cityFilter, sectorFilter)
       .then((d) => {
         if (!alive) return
         setData(d)
         setError(null)
+        if (d?.city_options?.length) setCityOptions(d.city_options)
       })
       .catch((e: Error) => {
         if (!alive) return
@@ -39,10 +45,12 @@ export function RoleHirePanel() {
     return () => {
       alive = false
     }
-  }, [role?.searchId, days])
+  }, [role?.searchId, days, cityFilter, sectorFilter, setCityOptions])
 
   const companies = data?.companies || []
+  const cities = data?.cities || []
   const maxN = data?.max || Math.max(...companies.map((c: any) => c.recent), 1)
+  const maxCity = data?.max_city || Math.max(...cities.map((c: any) => c.n), 1)
   const windows = data?.window_options || [
     { days: 0, label: 'Last 24 hours' },
     { days: 1, label: 'Today' },
@@ -64,6 +72,7 @@ export function RoleHirePanel() {
             <h3>{role.name}</h3>
             <div className="muted">{companies.length} companies · sorted max → min</div>
           </div>
+          <CityChips actionPrefix="role-hire-city" />
           <div className="chip-row wrap">
             {windows.map((w: { days: number; label: string }) => (
               <button
@@ -77,6 +86,33 @@ export function RoleHirePanel() {
               </button>
             ))}
           </div>
+          {cities.length > 0 && (
+            <>
+              <div className="muted" style={{ marginTop: 8 }}>Where this role is hiring</div>
+              <div className="hire-bars">
+                {cities.slice(0, 8).map((c: any) => (
+                  <button
+                    type="button"
+                    className="hire-bar-row clickable"
+                    key={c.city}
+                    data-gesture-action={`role-city-${c.city}`}
+                    onClick={() => setCityFilter(c.city)}
+                  >
+                    <div className="hire-bar-main">
+                      <div className="hire-bar-name">{c.label}</div>
+                      <div className="bar-track tall">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${(c.n / maxCity) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <strong className="hire-bar-n">{c.n}</strong>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {error ? (
             <div className="empty fail">{error}</div>
           ) : companies.length === 0 ? (

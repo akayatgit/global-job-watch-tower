@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel } from '../lib/api'
 import { PanelShell } from './PanelShell'
@@ -18,28 +19,32 @@ export function WatchlistPanel() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
+  const setCityOptions = useVigilStore((s) => s.setCityOptions)
   const setStatus = useVigilStore((s) => s.setStatus)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   const reload = () =>
     api
-      .watchlist(days, '', sectorFilter)
+      .watchlist(days, '', sectorFilter, cityFilter)
       .then((d) => {
         setData(d)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
+        if (d?.city_options?.length) setCityOptions(d.city_options)
       })
       .catch(() => {})
 
   useEffect(() => {
     reload()
-  }, [days, sectorFilter])
+  }, [days, sectorFilter, cityFilter])
 
   const windows = data?.window_options || FALLBACK_WINDOWS
 
   return (
     <PanelShell id="watchlist">
       <SectorChips actionPrefix="watch-sector" />
+      <CityChips actionPrefix="watch-city" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

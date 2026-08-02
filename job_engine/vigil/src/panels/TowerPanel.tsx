@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -7,20 +8,25 @@ import { PanelShell } from './PanelShell'
 export function TowerPanel() {
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
+  const setCityOptions = useVigilStore((s) => s.setCityOptions)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRankList = useVigilStore((s) => s.openRankList)
+  const openPanel = useVigilStore((s) => s.openPanel)
+  const setCityFilter = useVigilStore((s) => s.setCityFilter)
 
   useEffect(() => {
     let alive = true
     const load = () =>
       api
-        .tower(sectorFilter)
+        .tower(sectorFilter, cityFilter)
         .then((d) => {
           if (!alive) return
           setData(d)
           if (d?.sector_options?.length) setSectorOptions(d.sector_options)
+          if (d?.city_options?.length) setCityOptions(d.city_options)
         })
         .catch(() => {})
     load()
@@ -29,7 +35,7 @@ export function TowerPanel() {
       alive = false
       clearInterval(id)
     }
-  }, [sectorFilter, setSectorOptions])
+  }, [sectorFilter, cityFilter, setSectorOptions, setCityOptions])
 
   const stats = data?.stats
   const top = data?.top_companies || []
@@ -42,6 +48,7 @@ export function TowerPanel() {
   return (
     <PanelShell id="tower">
       <SectorChips actionPrefix="tower-sector" />
+      <CityChips actionPrefix="tower-city" />
       {!data ? (
         <div className="empty">Syncing tower insights…</div>
       ) : (
@@ -52,6 +59,47 @@ export function TowerPanel() {
             <div className="stat-card"><div className="n">{stats.companies}</div><div className="l">Companies</div></div>
             <div className="stat-card"><div className="n">{stats.runs_active}</div><div className="l">Active</div></div>
           </div>
+
+          {(data.top_cities || []).length > 0 && (
+            <>
+              <div className="section-head">
+                <span className="muted">Top cities (7d)</span>
+                <button
+                  type="button"
+                  className="show-all"
+                  data-gesture-action="tower-show-cities"
+                  onClick={() => openPanel('cities')}
+                >
+                  City signals
+                </button>
+              </div>
+              {(data.top_cities || []).slice(0, 6).map((c: any) => (
+                <button
+                  type="button"
+                  className="bar-row clickable"
+                  key={c.city}
+                  data-gesture-action={`tower-city-bar-${c.city}`}
+                  onClick={() => {
+                    setCityFilter(c.city)
+                    openPanel('jobs')
+                  }}
+                >
+                  <div>
+                    <div>{c.label}</div>
+                    <div className="bar-track">
+                      <div
+                        className="bar-fill"
+                        style={{
+                          width: `${(c.recent / Math.max(...(data.top_cities || []).map((x: any) => x.recent), 1)) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <strong>{c.recent}</strong>
+                </button>
+              ))}
+            </>
+          )}
 
           <div className="section-head">
             <span className="muted">Top hiring (7d)</span>

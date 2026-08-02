@@ -18,6 +18,7 @@ from app.signals import (
     ALLOWED_WINDOWS,
     WINDOW_OPTIONS,
     _window_bounds,
+    cities_for_role,
     companies_for_role,
     company_directory,
     compute_hiring_signals,
@@ -25,6 +26,8 @@ from app.signals import (
     watchlist_rows,
 )
 from app.ai_capacity import compute_ai_capacity
+from app.cities import CRITICAL_CITIES, city_options, normalize_city_filter
+from app.city_analytics import compare_cities, compute_city_signals
 from app.filter_compare import ALLOWED_FILTER_WINDOWS, compute_filter_compare
 from app.hermes_ask import ask_hermes
 from app.role_analytics import roles_in_window
@@ -120,10 +123,14 @@ def ultron_status(db: Session = Depends(get_db)):
 
 
 @router.get('/api/ultron/tower')
-def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
+def ultron_tower(
+    sector: str | None = None, city: str | None = None,
+    db: Session = Depends(get_db),
+):
     today = datetime.now(timezone.utc).date()
     week_ago = today - timedelta(days=7)
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
     co_q = (
         select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
         .join(JobMaster, JobMaster.company_id == Company.id)
@@ -132,9 +139,13 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
     )
     if sector:
         co_q = co_q.where(JobMaster.sector == sector)
+    if city:
+        co_q = co_q.where(JobMaster.city_key == city)
     top_companies = db.execute(co_q).all()
     # Fair: same 7d window as top companies — early-started roles no longer dominate
-    fair_roles = roles_in_window(db, days=7, limit=40, mode='count', sector=sector)
+    fair_roles = roles_in_window(
+        db, days=7, limit=40, mode='count', sector=sector, city=city,
+    )
     per_role = fair_roles['roles']
     daily_q = (
         select(JobMaster.posted_date, func.count(JobMaster.id))
@@ -143,6 +154,8 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
     )
     if sector:
         daily_q = daily_q.where(JobMaster.sector == sector)
+    if city:
+        daily_q = daily_q.where(JobMaster.city_key == city)
     daily = dict(db.execute(daily_q).all())
     daily_series = [
         {'day': str(today - timedelta(days=13 - i)), 'n': daily.get(today - timedelta(days=13 - i), 0)}
@@ -155,9 +168,12 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
     )
     if sector:
         latest_q = latest_q.where(JobMaster.sector == sector)
+    if city:
+        latest_q = latest_q.where(JobMaster.city_key == city)
     latest = db.execute(latest_q).all()
-    signals = compute_hiring_signals(db, window_days=7, sector=sector)
-    watched = watchlist_rows(db, window_days=7, sector=sector)[:6]
+    signals = compute_hiring_signals(db, window_days=7, sector=sector, city=city)
+    watched = watchlist_rows(db, window_days=7, sector=sector, city=city)[:6]
+    city_teaser = compute_city_signals(db, window_days=7, sector=sector)
     jobs_q = select(func.count(JobMaster.id))
     today_q = select(func.count(JobMaster.id)).where(func.date(JobMaster.scraped_at) == today)
     cfg_q = select(func.count(SearchConfig.id)).where(SearchConfig.enabled.is_(True))
@@ -165,6 +181,9 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
         jobs_q = jobs_q.where(JobMaster.sector == sector)
         today_q = today_q.where(JobMaster.sector == sector)
         cfg_q = cfg_q.where(SearchConfig.sector == sector)
+    if city:
+        jobs_q = jobs_q.where(JobMaster.city_key == city)
+        today_q = today_q.where(JobMaster.city_key == city)
     return {
         'stats': {
             'total_jobs': db.execute(jobs_q).scalar(),
@@ -184,8 +203,12 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
         'per_role_window_days': 7,
         'fair_hint': fair_roles.get('fair_hint'),
         'sector': sector or '',
+        'city': city or '',
         'sectors': CRITICAL_SECTORS,
         'sector_options': sector_options(),
+        'cities': CRITICAL_CITIES,
+        'city_options': city_options(),
+        'top_cities': (city_teaser.get('cities') or [])[:6],
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'daily_series': daily_series,
         'latest_jobs': [{
@@ -194,6 +217,7 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
             'company_id': cid,
             'company': cname,
             'location': j.location,
+            'city_key': j.city_key,
             'job_url': j.job_url,
             'scraped_at': _iso(j.scraped_at),
             'posted_date': str(j.posted_date) if j.posted_date else None,
@@ -206,12 +230,13 @@ def ultron_tower(sector: str | None = None, db: Session = Depends(get_db)):
 @router.get('/api/ultron/top-companies')
 def ultron_top_companies(
     days: int = 7, limit: int = 80, sector: str | None = None,
-    db: Session = Depends(get_db),
+    city: str | None = None, db: Session = Depends(get_db),
 ):
     """Full company hiring ranking for Show all — max → min."""
     if days not in ALLOWED_WINDOWS:
         days = 7
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
     limit = max(1, min(limit, 200))
     _days, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
@@ -225,12 +250,16 @@ def ultron_top_companies(
     )
     if sector:
         q = q.where(JobMaster.sector == sector)
+    if city:
+        q = q.where(JobMaster.city_key == city)
     rows = db.execute(q).all()
     max_n = max([n for _, _, n in rows] + [1])
     return {
         'days': days,
         'sector': sector or '',
+        'city': city or '',
         'sector_options': sector_options(),
+        'city_options': city_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'max': max_n,
         'total': len(rows),
@@ -246,12 +275,17 @@ def ultron_roles_rank(
     mode: str = 'count',
     limit: int = 200,
     sector: str | None = None,
+    city: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Jobs-per-role ranking — windowed (fair) count or per-day rate."""
-    data = roles_in_window(db, days=days, limit=limit, mode=mode, sector=sector)
+    data = roles_in_window(
+        db, days=days, limit=limit, mode=mode, sector=sector, city=city,
+    )
     data['sector'] = normalize_sector(sector) or ''
+    data['city'] = normalize_city_filter(city) or ''
     data['sector_options'] = sector_options()
+    data['city_options'] = city_options()
     return data
 
 
@@ -261,19 +295,51 @@ def ultron_sectors():
     return {'sectors': CRITICAL_SECTORS, 'sector_options': sector_options()}
 
 
+@router.get('/api/ultron/cities')
+def ultron_cities(
+    days: int = 7, sector: str | None = None, db: Session = Depends(get_db),
+):
+    """City hiring signals — volume + growth ranking."""
+    if days not in ALLOWED_WINDOWS:
+        days = 7
+    return to_jsonable(compute_city_signals(db, window_days=days, sector=sector))
+
+
+@router.get('/api/ultron/cities/compare')
+def ultron_cities_compare(
+    a: str = '',
+    b: str = '',
+    days: int = 7,
+    sector: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Side-by-side hiring snapshot for two cities."""
+    if days not in ALLOWED_WINDOWS:
+        days = 7
+    return to_jsonable(compare_cities(db, a, b, window_days=days, sector=sector))
+
+
 @router.get('/api/ultron/signals')
 def ultron_signals(
-    days: int = 7, sector: str | None = None, db: Session = Depends(get_db),
+    days: int = 7,
+    sector: str | None = None,
+    city: str | None = None,
+    db: Session = Depends(get_db),
 ):
     if days not in ALLOWED_WINDOWS:
         days = 7
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
     return {
         'days': days,
         'sector': sector or '',
+        'city': city or '',
         'sector_options': sector_options(),
+        'city_options': city_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
-        'signals': to_jsonable(compute_hiring_signals(db, window_days=days, sector=sector)),
+        'signals': to_jsonable(
+            compute_hiring_signals(db, window_days=days, sector=sector, city=city)
+        ),
     }
 
 
@@ -289,39 +355,62 @@ def ultron_filter_compare(window: str = '24h', db: Session = Depends(get_db)):
 @router.get('/api/ultron/watchlist')
 def ultron_watchlist(
     days: int = 7, q: str = '', sector: str | None = None,
-    db: Session = Depends(get_db),
+    city: str | None = None, db: Session = Depends(get_db),
 ):
     if days not in ALLOWED_WINDOWS:
         days = 7
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
     return {
         'days': days,
         'sector': sector or '',
+        'city': city or '',
         'sector_options': sector_options(),
+        'city_options': city_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'q': q,
-        'watched': to_jsonable(watchlist_rows(db, window_days=days, q=q, sector=sector)),
+        'watched': to_jsonable(
+            watchlist_rows(db, window_days=days, q=q, sector=sector, city=city)
+        ),
         'directory': to_jsonable(company_directory(db, q=q, limit=50)),
     }
 
 
 @router.get('/api/ultron/roles/{search_id}/companies')
-def ultron_role_companies(search_id: int, days: int = 7, db: Session = Depends(get_db)):
+def ultron_role_companies(
+    search_id: int,
+    days: int = 7,
+    city: str | None = None,
+    sector: str | None = None,
+    db: Session = Depends(get_db),
+):
     if days not in ALLOWED_WINDOWS:
         days = 7
     cfg = db.get(SearchConfig, search_id)
     if cfg is None:
         return JSONResponse({'ok': False, 'error': 'role not found'}, status_code=404)
-    role_name, companies = companies_for_role(db, search_id, window_days=days)
+    city = normalize_city_filter(city)
+    sector = normalize_sector(sector)
+    role_name, companies = companies_for_role(
+        db, search_id, window_days=days, city=city, sector=sector,
+    )
+    cities = cities_for_role(db, search_id, window_days=days, sector=sector)
     max_n = max([c.recent for c in companies] + [1])
+    max_city = max([c['n'] for c in cities] + [1])
     return {
         'ok': True,
         'search_id': search_id,
         'role': role_name,
         'days': days,
+        'city': city or '',
+        'sector': sector or '',
+        'city_options': city_options(),
+        'sector_options': sector_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'max': max_n,
+        'max_city': max_city,
         'companies': to_jsonable(companies),
+        'cities': cities,
     }
 
 

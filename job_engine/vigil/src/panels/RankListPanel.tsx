@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CityChips } from '../components/CityChips'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -17,7 +18,9 @@ const FALLBACK_WINDOWS = [
 export function RankListPanel() {
   const rankFocus = useVigilStore((s) => s.rankFocus)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
+  const setCityOptions = useVigilStore((s) => s.setCityOptions)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const [days, setDays] = useState(7)
@@ -38,14 +41,15 @@ export function RankListPanel() {
     let alive = true
     const load =
       rankFocus.kind === 'companies'
-        ? api.topCompanies(days, 100, sectorFilter)
-        : api.rolesRank(200, days, mode, sectorFilter)
+        ? api.topCompanies(days, 100, sectorFilter, cityFilter)
+        : api.rolesRank(200, days, mode, sectorFilter, cityFilter)
     load
       .then((d) => {
         if (!alive) return
         setData(d)
         setError(null)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
+        if (d?.city_options?.length) setCityOptions(d.city_options)
       })
       .catch((e: Error) => {
         if (!alive) return
@@ -55,7 +59,7 @@ export function RankListPanel() {
     return () => {
       alive = false
     }
-  }, [rankFocus, days, mode, sectorFilter, setSectorOptions])
+  }, [rankFocus, days, mode, sectorFilter, cityFilter, setSectorOptions, setCityOptions])
 
   if (!rankFocus) {
     return (
@@ -85,6 +89,7 @@ export function RankListPanel() {
         </div>
       </div>
       <SectorChips actionPrefix="rank-sector" />
+      <CityChips actionPrefix="rank-city" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

@@ -44,7 +44,9 @@ export function ModuleDock() {
               ? 'AI/K'
               : node.id === 'signals'
                 ? 'Signals'
-                : node.label.split(' ')[0]
+                : node.id === 'cities'
+                  ? 'Cities'
+                  : node.label.split(' ')[0]
           return (
             <div
               key={node.id}

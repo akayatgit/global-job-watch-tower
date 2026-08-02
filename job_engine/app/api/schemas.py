@@ -52,6 +52,7 @@ class JobOut(BaseModel):
     title: str
     company: str | None = None
     location: str | None
+    city_key: str | None = None
     sector: str
     job_url: str
     posted_date: date | None

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.cities import normalize_city_filter
 from app.models import JobMaster, SearchConfig
 from app.sectors import normalize_sector, sector_label
 from app.signals import ALLOWED_WINDOWS, WINDOW_OPTIONS, _window_bounds
@@ -24,6 +25,7 @@ def roles_in_window(
     limit: int = 200,
     mode: str = 'count',
     sector: str | None = None,
+    city: str | None = None,
 ) -> dict:
     """Rank roles by windowed job count (default) or jobs-per-active-day."""
     if days not in ALLOWED_WINDOWS:
@@ -31,6 +33,7 @@ def roles_in_window(
     mode = 'rate' if mode == 'rate' else 'count'
     limit = max(1, min(limit, 300))
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
 
     _d, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
@@ -42,6 +45,8 @@ def roles_in_window(
     )
     if sector:
         join_on = join_on & (JobMaster.sector == sector)
+    if city:
+        join_on = join_on & (JobMaster.city_key == city)
 
     q = (
         select(

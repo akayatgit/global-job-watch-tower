@@ -122,6 +122,7 @@ def list_jobs(
     limit: int = Query(100, le=1000),
     offset: int = 0,
     sector: str | None = None,
+    city: str | None = None,
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
@@ -129,9 +130,11 @@ def list_jobs(
     company_id: int | None = None,
     db: Session = Depends(get_db),
 ):
+    from app.cities import normalize_city_filter
     from app.sectors import normalize_sector
 
     sector = normalize_sector(sector)
+    city = normalize_city_filter(city)
     query = (
         select(JobMaster, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
@@ -141,6 +144,8 @@ def list_jobs(
     )
     if sector:
         query = query.where(JobMaster.sector == sector)
+    if city:
+        query = query.where(JobMaster.city_key == city)
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -162,6 +167,7 @@ def list_jobs(
             title=job.title,
             company=company_name,
             location=job.location,
+            city_key=job.city_key,
             sector=job.sector,
             job_url=job.job_url,
             posted_date=job.posted_date,
