@@ -227,6 +227,7 @@ use — they should love opening the app, never fight it.
   3D: left-drag orbit, scroll/pinch dolly deep into the orb, right-drag /
   two-finger pan, Esc/double-click reset. Particles dim when inside (no
   whiteout). Graph/City show text tags on nodes, strong edges, cities, and
-  company buildings. **Locked milestone:** `milestone/singularity-core-v1`
+  company buildings.   **Locked milestone:** `milestone/singularity-core-v1`
   (Ashok accepted 2026-08-03 — evolve from here). Older: `milestone/pre-neural-core-v0`.
-  Singularity shape is brand-candidate mark — do not casually replace.
+  **Forget logo** (2026-08-03): do not extract/pitch a logo from the
+  singularity — keep evolving it as the live world-model core only.

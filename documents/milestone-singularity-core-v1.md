@@ -9,7 +9,9 @@
 
 ## What was true at this milestone
 
-- **Core** = GPU particle singularity (labor-market world-model heart). Brand-candidate shape (golden spiral shells, breath, orange heat). Ashok: “amazing — could be our logo.”
+- **Core** = GPU particle singularity (labor-market world-model heart).
+  Ashok liked the shape; **logo path cancelled** (2026-08-03) — evolve as
+  live product core only, not a brand mark.
 - **Nav** = OrbitControls: drag orbit · scroll/pinch dolly deep · right-drag pan · Esc/double-click reset. Particles dim inside (no whiteout).
 - **Graph** = Obsidian-style clusters with text tags on nodes + strong edges (live Postgres world-model API).
 - **City** = globe with city tags → district skyline with company building tags.
