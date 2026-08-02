@@ -1,19 +1,19 @@
 import { useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useVigilStore } from '../store/vigilStore'
 
 /**
  * Labor-market singularity — GPU particle swarm.
- * Stays a readable orb in dark space (never a full-screen whiteout).
+ * Safe to fly through: dims + shrinks points when camera is inside.
  */
-const COUNT = 14000
+const COUNT = 16000
 
 const vertexShader = /* glsl */ `
 uniform float uTime;
 uniform float uBurst;
 uniform float uScale;
-uniform float uDim;
+uniform float uCamDist;
 attribute float aIndex;
 varying vec3 vColor;
 varying float vAlpha;
@@ -24,8 +24,7 @@ void main() {
   float t = i / max(count - 1.0, 1.0);
   float golden = 2.399963229728653;
   float breathe = 1.0 + 0.1 * sin(uTime * 0.65);
-  // Compact orb — camera stays outside this radius
-  float radius = pow(t, 0.55) * 1.15 * breathe * uScale;
+  float radius = pow(t, 0.55) * 1.35 * breathe * uScale;
   float theta = i * golden + uTime * 0.14;
   float phi = acos(clamp(1.0 - 2.0 * ((i + 0.5) / count), -1.0, 1.0));
   float swirl = uTime * 0.32 + radius * 2.0;
@@ -39,21 +38,20 @@ void main() {
   float kick = 1.0 + uBurst * (1.0 - t) * 0.35;
   vec3 pos = vec3(px, py, pz) * kick;
 
-  // Orange/amber heat — little pure white (white + bloom = whiteout)
-  vColor = mix(
-    vec3(1.0, 0.28, 0.02),
-    vec3(1.0, 0.62, 0.12),
-    t
-  );
-  vColor = mix(vColor, vec3(1.0, 0.85, 0.45), pow(1.0 - t, 6.0) * 0.35);
-  vColor *= (0.55 + 0.45 * uDim);
+  vColor = mix(vec3(1.0, 0.28, 0.02), vec3(1.0, 0.62, 0.12), t);
+  vColor = mix(vColor, vec3(1.0, 0.85, 0.45), pow(1.0 - t, 6.0) * 0.28);
+
+  // Inside the orb: thin the fog so structure stays readable
+  float inside = smoothstep(3.2, 0.6, uCamDist);
+  vColor *= mix(1.0, 0.35, inside);
+  vAlpha = mix(0.75, 0.22, inside) * (0.5 + 0.5 * (1.0 - t));
 
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-  float dist = max(-mvPosition.z, 1.0);
-  // HARD CAP — never let points fill the viewport
-  float psz = (1.4 + 2.2 * (1.0 - t)) * (90.0 / dist);
-  gl_PointSize = clamp(psz, 0.8, 6.5);
-  vAlpha = (0.55 + 0.35 * (1.0 - t)) * uDim;
+  float dist = max(-mvPosition.z, 0.35);
+  float psz = (1.2 + 2.0 * (1.0 - t)) * (70.0 / dist);
+  // Cap harder when deep inside
+  float maxSz = mix(7.0, 2.8, inside);
+  gl_PointSize = clamp(psz, 0.6, maxSz);
   gl_Position = projectionMatrix * mvPosition;
 }
 `
@@ -64,8 +62,8 @@ varying float vAlpha;
 void main() {
   vec2 c = gl_PointCoord - vec2(0.5);
   float d = length(c);
-  float alpha = smoothstep(0.5, 0.12, d) * vAlpha;
-  if (alpha < 0.03) discard;
+  float alpha = smoothstep(0.5, 0.14, d) * vAlpha;
+  if (alpha < 0.025) discard;
   gl_FragColor = vec4(vColor, alpha);
 }
 `
@@ -73,10 +71,10 @@ void main() {
 export function EnergyCore() {
   const points = useRef<THREE.Points>(null)
   const mat = useRef<THREE.ShaderMaterial>(null)
+  const { camera } = useThree()
   const coreScale = useVigilStore((s) => s.coreScale)
   const coreBurst = useVigilStore((s) => s.coreBurst)
   const sceneMode = useVigilStore((s) => s.sceneMode)
-  const sceneZoom = useVigilStore((s) => s.sceneZoom)
 
   const { positions, aIndex } = useMemo(() => {
     const positions = new Float32Array(COUNT * 3)
@@ -90,26 +88,24 @@ export function EnergyCore() {
       uTime: { value: 0 },
       uBurst: { value: 0 },
       uScale: { value: 1 },
-      uDim: { value: 1 },
+      uCamDist: { value: 8 },
     }),
     [],
   )
 
   useFrame((state) => {
     if (!mat.current) return
-    const t = state.clock.elapsedTime
-    mat.current.uniforms.uTime.value = t
+    mat.current.uniforms.uTime.value = state.clock.elapsedTime
     const burstAge = (performance.now() - coreBurst) / 1000
-    const burst =
+    mat.current.uniforms.uBurst.value =
       burstAge >= 0 && burstAge < 0.7 ? (0.7 - burstAge) / 0.7 : 0
-    mat.current.uniforms.uBurst.value = burst
     const modeScale =
       sceneMode === 'core' ? 1 : sceneMode === 'graph' ? 0.28 : 0.18
     mat.current.uniforms.uScale.value = coreScale * modeScale
-    // Dim slightly as you approach — keeps shape readable
-    mat.current.uniforms.uDim.value =
-      sceneMode === 'core' ? 1.0 - sceneZoom * 0.25 : 0.55
-    if (points.current) points.current.rotation.y = t * 0.035
+    mat.current.uniforms.uCamDist.value = camera.position.length()
+    if (points.current) {
+      points.current.rotation.y = state.clock.elapsedTime * 0.035
+    }
   })
 
   if (sceneMode === 'city') return null

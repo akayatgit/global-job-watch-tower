@@ -377,9 +377,12 @@ type VigilStore = {
   /** core = particle singularity · graph = Obsidian data · city = globe/district */
   sceneMode: 'core' | 'graph' | 'city'
   setSceneMode: (m: 'core' | 'graph' | 'city') => void
-  /** 0 = far overview, 1 = deep inside the orb */
+  /** Legacy 0–1 approach hint (OrbitControls owns real camera now) */
   sceneZoom: number
   setSceneZoom: (z: number) => void
+  /** Bump to snap OrbitControls back to home (Esc / mode change) */
+  viewResetNonce: number
+  resetView: () => void
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
   setCityFocus: (id: string | null) => void
@@ -572,22 +575,30 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   sceneMode: 'core',
   setSceneMode: (m) => {
     const labels = {
-      core: 'CORE · scroll to approach · Esc resets view',
-      graph: 'GRAPH · OBSIDIAN WORLD MODEL',
-      city: 'CITY · GLOBE — click a metro to enter',
+      core: 'CORE · drag/scroll/pinch · Esc reset',
+      graph: 'GRAPH · tagged world model',
+      city: 'CITY · globe → click metro → buildings',
     } as const
     set({
       sceneMode: m,
       cityFocus: m === 'city' ? null : get().cityFocus,
       statusLine: labels[m],
-      // Always reset zoom when changing mode — never inherit a whiteout
       sceneZoom: 0,
       canvasPan: { x: 0, y: 0 },
+      viewResetNonce: get().viewResetNonce + 1,
     })
   },
   sceneZoom: 0,
   setSceneZoom: (z) =>
-    set({ sceneZoom: Math.max(0, Math.min(0.85, z)) }),
+    set({ sceneZoom: Math.max(0, Math.min(1, z)) }),
+  viewResetNonce: 0,
+  resetView: () =>
+    set({
+      viewResetNonce: get().viewResetNonce + 1,
+      sceneZoom: 0,
+      canvasPan: { x: 0, y: 0 },
+      statusLine: 'VIEW RESET · drag orbit · scroll/pinch enter',
+    }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
   canvasPan: { x: 0, y: 0 },

@@ -6,11 +6,14 @@ layered on top of the core.
 
 | Mode | What you see | How to move |
 |---|---|---|
-| **Core** (default) | 20k GPU particle swarm — labor-market singularity | Scroll wheel / pinch → camera enters the orb |
-| **Graph** | Obsidian-style 3D knowledge graph (live Postgres) | Click node → panel; city node → jumps to City mode |
-| **City** | Globe with hiring density glow | Click metro → district skyline; click empty → back to globe |
+| **Core** (default) | GPU particle singularity | **Drag** orbit · **scroll/pinch** enter deep · **right-drag** pan · Esc reset |
+| **Graph** | Obsidian graph + text tags on nodes/edges | Click tagged node → panel; city tag → City mode |
+| **City** | Globe with city tags → company buildings tagged | Click metro → skyline; click building → jobs; empty → globe |
 
 Top-right icon strip: Core · Graph · City.
+
+**Navigation law (2026-08-03):** same freedom as Miro/Figma — full 3D control
+to go in and out easily. Never clamp the camera outside the orb.
 
 ## Design lessons applied
 

@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Line } from '@react-three/drei'
+import { Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
-
-/**
- * Obsidian-style knowledge graph mode — separate from the particle singularity.
- * Lessons applied: color by kind (groups), smaller nodes, no dual halos,
- * progressive clusters, edges as soft single strokes (not angled hairlines).
- */
 
 type GraphNode = {
   id: string
@@ -27,6 +21,7 @@ type GraphEdge = {
   source: string
   target: string
   weight: number
+  relation?: string
 }
 
 type WorldModel = {
@@ -43,12 +38,22 @@ const KIND_COLOR: Record<string, string> = {
   role: '#fb923c',
 }
 
-/** Cluster centers — Obsidian neighborhoods, not rings around the core */
 const CLUSTER: Record<string, THREE.Vector3> = {
-  sector: new THREE.Vector3(-1.8, 0.4, 0.2),
-  role: new THREE.Vector3(0.2, 1.6, -0.4),
-  city: new THREE.Vector3(1.9, 0.2, 0.5),
-  company: new THREE.Vector3(0.1, -1.7, 0.3),
+  sector: new THREE.Vector3(-2.2, 0.5, 0.2),
+  role: new THREE.Vector3(0.3, 2.0, -0.5),
+  city: new THREE.Vector3(2.3, 0.25, 0.6),
+  company: new THREE.Vector3(0.15, -2.1, 0.35),
+}
+
+const EDGE_LABEL: Record<string, string> = {
+  contains: 'in',
+  places: 'at',
+  employs: 'hires',
+  role_in: 'role',
+  hires_in: 'hires in',
+  company_in: 'in sector',
+  company_at: 'in city',
+  hiring: 'hiring',
 }
 
 function layoutNodes(nodes: GraphNode[]) {
@@ -61,13 +66,13 @@ function layoutNodes(nodes: GraphNode[]) {
   }
   const pos = new Map<string, THREE.Vector3>()
   for (const [kind, list] of byKind) {
-    const center = CLUSTER[kind] || new THREE.Vector3(0, 0, 0)
+    const center = CLUSTER[kind] || new THREE.Vector3()
     const sorted = [...list].sort((a, b) => b.weight - a.weight)
     const n = sorted.length
     sorted.forEach((node, i) => {
       const a = (i / Math.max(n, 1)) * Math.PI * 2 + kind.length * 0.2
-      const spread = 0.55 + Math.min(n, 12) * 0.04
-      const r = spread * (0.45 + (i % 5) * 0.12)
+      const spread = 0.7 + Math.min(n, 12) * 0.05
+      const r = spread * (0.5 + (i % 5) * 0.12)
       pos.set(
         node.id,
         new THREE.Vector3(
@@ -83,7 +88,7 @@ function layoutNodes(nodes: GraphNode[]) {
 
 function nodeRadius(n: GraphNode, maxW: number) {
   const t = Math.sqrt(n.weight / Math.max(maxW, 1))
-  return 0.045 + t * 0.09
+  return 0.05 + t * 0.1
 }
 
 function activateNode(n: GraphNode) {
@@ -116,11 +121,13 @@ function GraphNodeMesh({
   position,
   maxW,
   interactive,
+  showLabel,
 }: {
   node: GraphNode
   position: THREE.Vector3
   maxW: number
   interactive: boolean
+  showLabel: boolean
 }) {
   const mesh = useRef<THREE.Mesh>(null)
   const [hot, setHot] = useState(false)
@@ -129,38 +136,52 @@ function GraphNodeMesh({
 
   useFrame(() => {
     if (!mesh.current) return
-    const s = hot ? 1.25 : 1
+    const s = hot ? 1.28 : 1
     mesh.current.scale.setScalar(
       THREE.MathUtils.lerp(mesh.current.scale.x, s, 0.2),
     )
   })
 
   return (
-    <mesh
-      ref={mesh}
-      position={position}
-      onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-        if (!interactive) return
-        e.stopPropagation()
-        setHot(true)
-        document.body.style.cursor = 'pointer'
-        useVigilStore.setState({
-          statusLine: `${node.kind.toUpperCase()} · ${node.label} · ${node.weight}`,
-        })
-      }}
-      onPointerOut={() => {
-        setHot(false)
-        document.body.style.cursor = 'default'
-      }}
-      onClick={(e: ThreeEvent<MouseEvent>) => {
-        if (!interactive) return
-        e.stopPropagation()
-        activateNode(node)
-      }}
-    >
-      <sphereGeometry args={[r, 20, 20]} />
-      <meshBasicMaterial color={color} transparent opacity={hot ? 1 : 0.92} />
-    </mesh>
+    <group position={position}>
+      <mesh
+        ref={mesh}
+        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+          if (!interactive) return
+          e.stopPropagation()
+          setHot(true)
+          document.body.style.cursor = 'pointer'
+          useVigilStore.setState({
+            statusLine: `${node.kind.toUpperCase()} · ${node.label} · ${node.weight}`,
+          })
+        }}
+        onPointerOut={() => {
+          setHot(false)
+          document.body.style.cursor = 'default'
+        }}
+        onClick={(e: ThreeEvent<MouseEvent>) => {
+          if (!interactive) return
+          e.stopPropagation()
+          activateNode(node)
+        }}
+      >
+        <sphereGeometry args={[r, 20, 20]} />
+        <meshBasicMaterial color={color} transparent opacity={hot ? 1 : 0.92} />
+      </mesh>
+      {showLabel && (
+        <Html
+          center
+          distanceFactor={8}
+          style={{ pointerEvents: 'none' }}
+          zIndexRange={[20, 0]}
+        >
+          <div className={`vigil-tag vigil-tag-${node.kind}${hot ? ' hot' : ''}`}>
+            <span className="vigil-tag-name">{node.label}</span>
+            <span className="vigil-tag-meta">{node.weight}</span>
+          </div>
+        </Html>
+      )}
+    </group>
   )
 }
 
@@ -199,16 +220,29 @@ export function NeuralCore() {
   const maxW = model?.stats?.max_weight || 1
 
   const edgeLines = useMemo(() => {
-    if (!model) return [] as { key: string; points: [number, number, number][] }[]
-    const out: { key: string; points: [number, number, number][] }[] = []
-    for (const e of model.edges) {
-      if (e.source === 'core' || e.target.startsWith('core')) continue
+    if (!model) return [] as {
+      key: string
+      points: [number, number, number][]
+      mid: THREE.Vector3
+      label: string
+      weight: number
+    }[]
+    const out: {
+      key: string
+      points: [number, number, number][]
+      mid: THREE.Vector3
+      label: string
+      weight: number
+    }[] = []
+    const sorted = [...model.edges]
+      .filter((e) => e.source !== 'core' && !e.target.startsWith('core'))
+      .sort((a, b) => b.weight - a.weight)
+    for (const e of sorted) {
       const a = positions.get(e.source)
       const b = positions.get(e.target)
       if (!a || !b) continue
-      // Midpoint lift for a gentle curve feel (3-point polyline)
       const mid = a.clone().lerp(b, 0.5)
-      mid.y += 0.12
+      mid.y += 0.1
       out.push({
         key: `${e.source}->${e.target}`,
         points: [
@@ -216,32 +250,49 @@ export function NeuralCore() {
           [mid.x, mid.y, mid.z],
           [b.x, b.y, b.z],
         ],
+        mid,
+        label: EDGE_LABEL[e.relation || ''] || e.relation || 'link',
+        weight: e.weight,
       })
-      if (out.length >= 80) break
+      if (out.length >= 70) break
     }
     return out
   }, [model, positions])
 
-  useFrame((state) => {
-    if (group.current && sceneMode === 'graph') {
-      group.current.rotation.y = state.clock.elapsedTime * 0.03
-    }
-  })
+  // Label strongest nodes + top edge labels only (readable, not spam)
+  const labelNodeIds = useMemo(() => {
+    const top = [...dataNodes].sort((a, b) => b.weight - a.weight).slice(0, 22)
+    return new Set(top.map((n) => n.id))
+  }, [dataNodes])
 
   if (sceneMode !== 'graph' || !model || dataNodes.length === 0) return null
 
   return (
-    <group ref={group} position={[0, 0, 0]}>
+    <group ref={group}>
       {edgeLines.map((e) => (
-        <Line
-          key={e.key}
-          points={e.points}
-          color="#ff5500"
-          transparent
-          opacity={0.32}
-          lineWidth={1.25}
-          depthWrite={false}
-        />
+        <group key={e.key}>
+          <Line
+            points={e.points}
+            color="#ff5500"
+            transparent
+            opacity={0.3}
+            lineWidth={1.2}
+            depthWrite={false}
+          />
+          {e.weight >= 8 && (
+            <Html
+              position={e.mid}
+              center
+              distanceFactor={10}
+              style={{ pointerEvents: 'none' }}
+              zIndexRange={[10, 0]}
+            >
+              <div className="vigil-tag vigil-tag-edge">
+                {e.label} · {e.weight}
+              </div>
+            </Html>
+          )}
+        </group>
       ))}
       {dataNodes.map((n) => {
         const p = positions.get(n.id)
@@ -253,6 +304,7 @@ export function NeuralCore() {
             position={p}
             maxW={maxW}
             interactive={interactive}
+            showLabel={labelNodeIds.has(n.id)}
           />
         )
       })}
