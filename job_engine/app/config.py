@@ -33,13 +33,13 @@ CHROME_BOT_PROFILE = Path(os.getenv('CHROME_BOT_PROFILE', str(Path.home() / '.co
 
 HEADLESS = os.getenv('HEADLESS', 'false').lower() == 'true'
 
-# Title-relevance filter only — keep SMALL. 27b overthinks, burns heat & time.
-# Locked default: qwen3.5:9b (not 27b / 35b).
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:9b')
+# Title-relevance filter only — keep SMALL (title match, not deep reasoning).
+# Locked default: qwen3.5:4b (not 9b/27b — cooler + faster for this job).
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:4b')
 # Thinking mode is slow (can take many minutes per batch). Default OFF for
 # reliable throughput; set true only when debugging filter quality.
 OLLAMA_THINK = os.getenv('OLLAMA_THINK', 'false').lower() == 'true'
-OLLAMA_TIMEOUT_S = float(os.getenv('OLLAMA_TIMEOUT_S', '60'))
+OLLAMA_TIMEOUT_S = float(os.getenv('OLLAMA_TIMEOUT_S', '45'))
 # ollama = quality path (default). keyword = Plan B ONLY for critical heat /
 # missing GPU — never normal ops (keyword corrupts relevance data).
 # auto = same as ollama (legacy alias).

@@ -645,8 +645,8 @@ START OF EVERY SESSION
 
 #### Discovery harden notes (v0.2)
 
-- AI title filter: **`qwen3.5:9b` only** (not 27b — overthink/heat/time). Fast JSON
-  (`OLLAMA_THINK=false`), short prompt, 60s timeout. Title match only.
+- AI title filter: **`qwen3.5:4b`** (not 9b/27b — title match only). Fast JSON
+  (`OLLAMA_THINK=false`), short prompt, 45s timeout.
 - Session sync clears Chrome Singleton locks; fails loud if cookies missing
 - Per-page dwell floor enforced at ≥75s; mouse never fully idle; deeper lazy-load scroll; more popup dismissors
 - Between-page delay raised to 8–22s; fetch retries on transient/5xx
