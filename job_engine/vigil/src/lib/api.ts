@@ -104,6 +104,16 @@ export const api = {
     appendSector(p, sector)
     return getJson<any>(`/api/ultron/cities?${p}`)
   },
+  citySkyline: (city: string, days = 7, limit = 28) => {
+    const p = new URLSearchParams({
+      days: String(days),
+      limit: String(limit),
+    })
+    return getJson<any>(
+      `/api/ultron/cities/${encodeURIComponent(city)}/skyline?${p}`,
+    )
+  },
+
   cityCompare: (a: string, b: string, days = 7, sector = '') => {
     const p = new URLSearchParams({
       a,

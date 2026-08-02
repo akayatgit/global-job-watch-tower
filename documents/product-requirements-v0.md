@@ -607,6 +607,7 @@ START OF EVERY SESSION
 | v0.12 | 2026-08-02 | Akay | Scene modes: Core particle singularity (20k GPU) · Graph Obsidian clusters · City globe→district; wheel zooms into orb not page. Doc: `documents/vigil-scene-modes.md` |
 | v0.13-milestone | 2026-08-03 | Akay | **Recover here:** Singularity Core v1 locked (Ashok accepted). Tag `milestone/singularity-core-v1`. Doc: `documents/milestone-singularity-core-v1.md`. Miro/Figma 3D nav + tags. |
 | v0.14 | 2026-08-03 | Akay | Agile roadmap live (`documents/roadmap.md`). Sprint: Graph local-focus + spin freeze + clickable cards. Next milestone: richer City districts. |
+| v0.15 | 2026-08-03 | Akay | Night City districts: cinematic skyline, sector clusters, height=hiring, facade name boards, flickering windows (`/api/ultron/cities/{id}/skyline`) |
 
 ### Phase 0 progress (living)
 

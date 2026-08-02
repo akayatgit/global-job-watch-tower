@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
+import { NightCity } from './NightCity'
 
 const CITY_GEO: Record<string, { lat: number; lon: number; label: string }> = {
   bengaluru: { lat: 12.97, lon: 77.59, label: 'Bengaluru' },
@@ -32,141 +33,6 @@ function latLonToVec(lat: number, lon: number, r: number) {
 }
 
 type CityNode = { id: string; label: string; n: number }
-type CoRow = { company_id: number; name: string; n: number }
-
-function CityDistrict({
-  cityId,
-  cityLabel,
-  weight,
-}: {
-  cityId: string
-  cityLabel: string
-  weight: number
-}) {
-  const group = useRef<THREE.Group>(null)
-  const [companies, setCompanies] = useState<CoRow[]>([])
-
-  useEffect(() => {
-    let alive = true
-    api
-      .topCompanies(7, 20, '', cityId)
-      .then((d) => {
-        if (!alive) return
-        const rows = (d?.companies || d?.top_companies || d || []) as CoRow[]
-        const list = Array.isArray(rows) ? rows : []
-        setCompanies(
-          list
-            .map((r: any) => ({
-              company_id: r.company_id ?? r.id,
-              name: r.name || 'Company',
-              n: r.n ?? r.count ?? 1,
-            }))
-            .filter((r) => r.company_id != null)
-            .slice(0, 16),
-        )
-      })
-      .catch(() => setCompanies([]))
-    return () => {
-      alive = false
-    }
-  }, [cityId])
-
-  const blocks = useMemo(() => {
-    const maxN = Math.max(...companies.map((c) => c.n), 1)
-    if (companies.length === 0) {
-      // Placeholder skyline until data arrives
-      return Array.from({ length: 12 }, (_, i) => ({
-        pos: [(i % 6) - 2.5, 0.3, Math.floor(i / 6) - 0.5] as [
-          number,
-          number,
-          number,
-        ],
-        h: 0.4 + (i % 5) * 0.15,
-        glow: 0.4,
-        name: '',
-        company_id: 0,
-        n: 0,
-      }))
-    }
-    return companies.map((c, i) => {
-      const gx = (i % 6) - 2.5
-      const gz = Math.floor(i / 6) - 0.8
-      const h = 0.35 + (c.n / maxN) * 1.6
-      return {
-        pos: [gx * 0.55, h / 2, gz * 0.55] as [number, number, number],
-        h,
-        glow: c.n / maxN,
-        name: c.name,
-        company_id: c.company_id,
-        n: c.n,
-      }
-    })
-  }, [companies, weight])
-
-  return (
-    <group ref={group} position={[0, -0.5, 0]}>
-      <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
-        <div className="vigil-tag vigil-tag-city-title">{cityLabel}</div>
-      </Html>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[2.8, 48]} />
-        <meshBasicMaterial color="#0a0604" transparent opacity={0.88} />
-      </mesh>
-      {blocks.map((b, i) => (
-        <group key={i} position={b.pos}>
-          {/* Fat invisible pick volume — click the building, not the text */}
-          <mesh
-            position={[0, 0, 0]}
-            onClick={(e: ThreeEvent<MouseEvent>) => {
-              if (!b.company_id) return
-              e.stopPropagation()
-              useVigilStore
-                .getState()
-                .openCompanyJobs(b.company_id, b.name, 7)
-            }}
-            onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-              if (!b.name) return
-              e.stopPropagation()
-              document.body.style.cursor = 'pointer'
-              useVigilStore.setState({
-                statusLine: `${b.name} · ${b.n} jobs in ${cityLabel}`,
-              })
-            }}
-            onPointerOut={() => {
-              document.body.style.cursor = 'default'
-            }}
-          >
-            <boxGeometry args={[0.55, Math.max(b.h, 0.5), 0.55]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-          <mesh>
-            <boxGeometry args={[0.36, b.h, 0.36]} />
-            <meshBasicMaterial
-              color={
-                b.glow > 0.7 ? '#ffaa00' : b.glow > 0.4 ? '#ff5500' : '#cc1100'
-              }
-              transparent
-              opacity={0.92}
-            />
-          </mesh>
-          {b.name && (
-            <Html
-              position={[0, b.h / 2 + 0.18, 0]}
-              center
-              distanceFactor={7}
-              style={{ pointerEvents: 'none' }}
-            >
-              <div className="vigil-tag vigil-tag-building" aria-hidden>
-                <span className="vigil-tag-name">{b.name}</span>
-                <span className="vigil-tag-meta">{b.n}</span>
-              </div>
-            </Html>
-          )}
-        </group>
-      ))}
-    </group>
-  )
-}
 
 export function CityGlobe() {
   const sceneMode = useVigilStore((s) => s.sceneMode)
@@ -225,13 +91,7 @@ export function CityGlobe() {
     focusRow?.label || CITY_GEO[cityFocus || '']?.label || cityFocus || ''
 
   if (cityFocus) {
-    return (
-      <CityDistrict
-        cityId={cityFocus}
-        cityLabel={focusLabel}
-        weight={focusRow?.n || 10}
-      />
-    )
+    return <NightCity cityId={cityFocus} cityLabel={focusLabel} />
   }
 
   const R = 1.85

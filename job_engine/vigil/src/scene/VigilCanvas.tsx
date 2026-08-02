@@ -12,19 +12,22 @@ import { useVigilStore } from '../store/vigilStore'
 function SceneBody() {
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const sceneMode = useVigilStore((s) => s.sceneMode)
+  const cityFocus = useVigilStore((s) => s.cityFocus)
+  const nightDistrict = sceneMode === 'city' && Boolean(cityFocus)
   return (
     <>
-      <Starfield />
-      <EnergyCore />
+      {!nightDistrict && <Starfield />}
+      {!nightDistrict && <EnergyCore />}
       {sceneMode === 'graph' && <NeuralCore />}
       {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
+      {nightDistrict && <fog attach="fog" args={['#06020a', 7, 24]} />}
       <EffectComposer multisampling={0}>
         <Bloom
-          intensity={sceneMode === 'core' ? 0.45 : 0.65}
-          luminanceThreshold={0.5}
-          luminanceSmoothing={0.9}
+          intensity={nightDistrict ? 1.15 : sceneMode === 'core' ? 0.45 : 0.65}
+          luminanceThreshold={nightDistrict ? 0.28 : 0.5}
+          luminanceSmoothing={0.85}
           mipmapBlur
         />
       </EffectComposer>

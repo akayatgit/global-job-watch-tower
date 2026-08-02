@@ -236,3 +236,7 @@ use — they should love opening the app, never fight it.
   tiny text the only clickable surface.
 - **Scene spin freeze (2026-08-03):** User can stop auto-rotation in Core /
   Graph / City (HUD control + Space) while working.
+- **Night city districts (2026-08-03):** Entering a metro shows a cinematic
+  night skyline — towers clustered by sector, height = hiring volume, facade
+  name boards (same angle as building, not floating tags), flickering office
+  lights. Click the tower body/board (fat mesh), not text.

@@ -21,33 +21,31 @@
 
 ---
 
-## 🔥 Current sprint — Graph local-focus (Maps)
-
-**Goal:** Obsidian-style neighborhood focus on the world-model graph.
+## ✅ Closed sprint — Graph local-focus
 
 | ID | Slice | Status |
 |---|---|---|
-| WM-G1 | Click a **card** (fat hit target, not text) → focus depth‑1/2 neighborhood | Done |
-| WM-G2 | Hide non-neighborhood; Esc / empty click → global graph | Done |
-| WM-G3 | Second click on focused card → open insight panel | Done |
-| WM-G4 | Freeze auto-rotation while working (all 3 modes) — HUD + Space | Done |
-| WM-G5 | Labels never steal clicks (`pointer-events: none`) | Done |
-
-**Sprint exit:** Ashok can click big graph cards, explore a local cluster, open a panel, freeze spin, recover to global.  
-**Next after verify:** start **Richer City districts** milestone (WM-C1…).
+| WM-G1–G5 | Local-focus, spin freeze, clickable cards | Done |
 
 ---
 
-## ⏭ Next milestone — Richer City districts
+## 🔥 Current sprint — Richer City districts (night city of employers)
 
-**Queued after Graph local-focus ships.** Do not start mid-sprint unless Ashok reorders.
+**Goal:** Fly into a cinematic night city — tallest towers = most hiring; cluster by sector; facade name boards.
 
-| ID | Slice | Notes |
+| ID | Slice | Status |
 |---|---|---|
-| WM-C1 | City skyline = real employers; height/glow = hiring volume | Building **cards** clickable |
-| WM-C2 | Sector blocks / streets inside metro | Place-based Maps |
-| WM-C3 | Hover pace + click → jobs for company **in that city** | Role filter preserved where relevant |
-| WM-C4 | Globe → city → district zoom beats | Same OrbitControls language |
+| WM-C1 | Skyline API + height proportional to hiring volume | Done |
+| WM-C2 | Sector districts / street grid clusters | Done |
+| WM-C3 | Night windows + flicker + bloom fog | Done |
+| WM-C4 | Facade name boards (building angle, not floating tags) | Done |
+| WM-C5 | Click tower → jobs; street monument city title | Done |
+
+---
+
+## ⏭ Next milestone — (pick after City sprint)
+
+TBD with Ashok — candidates: Competitor Intelligence (`EC-06`), Skills Radar, Domestic/Global.
 
 ---
 

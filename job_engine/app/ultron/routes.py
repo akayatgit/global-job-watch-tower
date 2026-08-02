@@ -38,6 +38,7 @@ from app.ultron.hub import hub
 from app.ultron.serialize import to_jsonable
 from app.vigil_boards import BOARD_HELP, render_board, resolve_board
 from app.world_model import compute_world_model
+from app.city_skyline import compute_city_skyline
 
 router = APIRouter(tags=['ultron'])
 
@@ -236,6 +237,14 @@ def ultron_tower(
         'signals_teaser': to_jsonable(signals),
         'watched': to_jsonable(watched),
     }
+
+
+@router.get('/api/ultron/cities/{city_id}/skyline')
+def ultron_city_skyline(
+    city_id: str, days: int = 7, limit: int = 28, db: Session = Depends(get_db),
+):
+    """Employers for night-city district — height = hiring, clustered by sector."""
+    return compute_city_skyline(db, city=city_id, window_days=days, limit=limit)
 
 
 @router.get('/api/ultron/top-companies')
