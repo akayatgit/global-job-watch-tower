@@ -65,7 +65,7 @@ export type PanelState = {
 }
 
 /** x/y are viewport % of the panel CENTER (transform translate -50%-50%). */
-const PANEL_CENTER = { x: 50, y: 48 }
+const PANEL_CENTER = { x: 50, y: 48, scale: 1 }
 /** Default home for Tower Insights — pinned on the right. */
 export const TOWER_PIN_HOME = { x: 78, y: 48, scale: 1 }
 
