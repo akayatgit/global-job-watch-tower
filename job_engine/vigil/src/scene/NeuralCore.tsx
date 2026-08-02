@@ -182,7 +182,7 @@ function GraphCard({
         x: world.x,
         y: world.y,
         z: world.z,
-        distance: 2.6,
+        distance: 1.7,
       })
       st.setStatus(`FOCUS · ${node.label} · click again to open`)
       return

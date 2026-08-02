@@ -251,6 +251,10 @@ use — they should love opening the app, never fight it.
   cards on a flat India map; near = small cards at lat/lon on the globe.
   Each city card has a Remote twin slightly behind — hover pops it out;
   second click opens Remote jobs.
-- **Immersive cursor (2026-08-03):** Small white lerp-dot with subtle halo +
-  soft trail only — no hex/circle rings. Clear motion lag. Native cursor
-  hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.
+- **Immersive cursor (2026-08-03):** Instant white cursor (zero position lag).
+  Only the motion path fades behind. Subtle halo, no hex/circle rings. Native
+  cursor hidden in VIGIL. Canvas overlay, `pointer-events: none`, rAF 60fps.
+- **Night city traffic (2026-08-03):** Manhattan grid roads; small multi-color
+  cars with front light glow; stop at signals; keep gaps (no collisions);
+  buildings sit off the road bed. Windows/pins use glass-pillar cyan→orange
+  glow — soft breath, not hard flicker.

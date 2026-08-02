@@ -23,9 +23,10 @@ const CITY_GEO: Record<string, { lat: number; lon: number; label: string }> = {
 
 /** Flat “overview” map (India-relative) — used when camera is far */
 function overviewPos(lat: number, lon: number) {
-  const x = ((lon - 78) / 18) * 2.6
-  const y = ((lat - 18) / 16) * 2.2
-  return new THREE.Vector3(x, y, 2.55)
+  // Wider spacing so cards don’t collide
+  const x = ((lon - 78) / 18) * 3.4
+  const y = ((lat - 18) / 16) * 2.9
+  return new THREE.Vector3(x, y, 2.7)
 }
 
 function latLonToVec(lat: number, lon: number, r: number) {
@@ -50,25 +51,36 @@ function makeCityCardTex(
   focused: boolean,
 ) {
   const c = document.createElement('canvas')
-  c.width = 320
-  c.height = 96
+  c.width = 384
+  c.height = 112
   const ctx = c.getContext('2d')!
-  const accent = kind === 'remote' ? '#38bdf8' : focused ? '#ffaa00' : '#56d4ff'
-  ctx.fillStyle = focused ? '#1a1008' : '#060810'
-  ctx.fillRect(0, 0, 320, 96)
+  const accent = kind === 'remote' ? '#7dd3fc' : focused ? '#ffaa00' : '#ff8c40'
+  ctx.fillStyle = focused ? '#1c1006' : '#08060c'
+  ctx.fillRect(0, 0, 384, 112)
+  // Glass-pillar style: cool top wash → orange base glow
+  const wash = ctx.createLinearGradient(0, 0, 0, 112)
+  wash.addColorStop(0, 'rgba(180, 230, 255, 0.22)')
+  wash.addColorStop(0.55, 'rgba(20, 16, 12, 0.2)')
+  wash.addColorStop(1, 'rgba(255, 90, 0, 0.35)')
+  ctx.fillStyle = wash
+  ctx.fillRect(8, 8, 368, 96)
   ctx.strokeStyle = accent
   ctx.shadowColor = accent
-  ctx.shadowBlur = focused ? 22 : 12
-  ctx.lineWidth = focused ? 5 : 3
-  ctx.strokeRect(6, 6, 308, 84)
+  ctx.shadowBlur = focused ? 26 : 14
+  ctx.lineWidth = focused ? 5 : 3.5
+  ctx.strokeRect(6, 6, 372, 100)
   ctx.shadowBlur = 0
   ctx.fillStyle = '#ffffff'
-  ctx.font = 'bold 28px Orbitron, sans-serif'
+  ctx.font = '800 36px Orbitron, sans-serif'
+  ctx.shadowColor = 'rgba(255,255,255,0.55)'
+  ctx.shadowBlur = 8
   const name = label.length > 14 ? `${label.slice(0, 12)}…` : label
-  ctx.fillText(name, 18, 42)
-  ctx.fillStyle = kind === 'remote' ? '#7dd3fc' : '#ffaa00'
-  ctx.font = 'bold 26px Rajdhani, sans-serif'
-  ctx.fillText(String(n), 18, 74)
+  ctx.fillText(name, 20, 48)
+  ctx.shadowBlur = 10
+  ctx.shadowColor = kind === 'remote' ? 'rgba(125,211,252,0.8)' : 'rgba(255,140,40,0.9)'
+  ctx.fillStyle = kind === 'remote' ? '#e0f6ff' : '#ffe0b0'
+  ctx.font = '800 34px Rajdhani, sans-serif'
+  ctx.fillText(String(n), 20, 88)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 4
@@ -150,6 +162,7 @@ function CityMarker({
     pos: new THREE.Vector3(),
     world: new THREE.Vector3(),
     scale: 1,
+    camDir: new THREE.Vector3(),
   }).current
 
   useFrame(() => {
@@ -160,21 +173,39 @@ function CityMarker({
     tmp.pos.lerpVectors(overPos, geoPos, nearness)
     // If this city is focused, snap harder to geo + pull slightly out
     if (cityFocused || remoteFocused) {
-      tmp.pos.lerp(geoPos, 0.85)
-      const out = geoPos.clone().normalize().multiplyScalar(0.12)
+      tmp.pos.lerp(geoPos, 0.9)
+      const out = geoPos.clone().normalize().multiplyScalar(0.14)
       tmp.pos.add(out)
     }
     group.current.position.copy(tmp.pos)
-    tmp.scale = THREE.MathUtils.lerp(1.15, 0.38, nearness)
-    if (cityFocused) tmp.scale *= 1.15
+
+    // Hide cards on the far side of the globe — stops all-sides interference
+    if (globeRef.current && nearness > 0.35) {
+      tmp.world.copy(tmp.pos)
+      globeRef.current.localToWorld(tmp.world)
+      tmp.camDir.copy(camera.position).sub(tmp.world).normalize()
+      const outward = tmp.world.clone().normalize()
+      const facing = outward.dot(tmp.camDir)
+      const show = facing > 0.18 || cityFocused || remoteFocused || remoteHot
+      group.current.visible = show
+      if (!show) return
+    } else {
+      group.current.visible = true
+    }
+
+    tmp.scale = THREE.MathUtils.lerp(1.05, 0.34, nearness)
+    if (cityFocused) tmp.scale *= 1.2
     group.current.scale.setScalar(tmp.scale)
 
-    // Remote twin sits slightly behind city card; pops forward on hover
+    // Remote twin — only when near / hovered / focused (cuts clutter)
     if (remoteGroup.current) {
-      const back = remoteHot || remoteFocused ? 0.02 : -0.1
-      const lift = remoteHot || remoteFocused ? 0.08 : -0.02
-      remoteGroup.current.position.set(0.06, lift, back)
-      const rs = remoteHot || remoteFocused ? 0.92 : 0.72
+      const showRemote =
+        nearness > 0.45 || remoteHot || remoteFocused || cityFocused
+      remoteGroup.current.visible = showRemote
+      const back = remoteHot || remoteFocused ? 0.03 : -0.12
+      const lift = remoteHot || remoteFocused ? 0.1 : -0.03
+      remoteGroup.current.position.set(0.05, lift, back)
+      const rs = remoteHot || remoteFocused ? 0.9 : 0.68
       remoteGroup.current.scale.setScalar(rs)
     }
   })
@@ -199,7 +230,7 @@ function CityMarker({
     e.stopPropagation()
     const st = useVigilStore.getState()
     if (st.selectFocusId !== citySelect) {
-      worldFocus(geoPos.clone().multiplyScalar(1.02), citySelect, 2.2)
+      worldFocus(geoPos.clone().multiplyScalar(1.04), citySelect, 1.35)
       st.setStatus(`FOCUS · ${geo.label} · click again to enter`)
       return
     }
@@ -217,7 +248,7 @@ function CityMarker({
     const st = useVigilStore.getState()
     if (st.selectFocusId !== remoteSelect) {
       const behind = geoPos.clone().multiplyScalar(0.98)
-      worldFocus(behind, remoteSelect, 2.0)
+      worldFocus(behind, remoteSelect, 1.25)
       st.setStatus(`FOCUS · Remote @ ${geo.label} · click again to open`)
       return
     }

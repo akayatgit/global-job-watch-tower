@@ -36,19 +36,37 @@ type Tower = {
 }
 
 const CITY_Y = -1.2
+/** Manhattan road lines (world X / Z). Buildings sit in the blocks between. */
+const ROAD_LINES = [-6, -3, 0, 3, 6]
+const CITY_EDGE = 7.5
+const LANE_W = 0.075
+const SIGNAL_CYCLE = 9
+const STOP_DIST = 0.42
+const CAR_GAP = 0.28
 
 const SECTOR_BLOCK: Record<string, { x: number; z: number }> = {
-  tech_ai: { x: -3.8, z: -2.6 },
-  tech_digital: { x: 3.2, z: -2.8 },
-  manufacturing_advanced: { x: -4.0, z: 2.4 },
-  healthcare: { x: 0.4, z: 3.4 },
-  green_economy: { x: 3.6, z: 2.2 },
-  logistics: { x: -1.4, z: 0.3 },
-  tourism: { x: 1.6, z: 0.5 },
-  software: { x: 0.2, z: -0.6 },
+  tech_ai: { x: -4.5, z: -4.5 },
+  tech_digital: { x: 4.5, z: -4.5 },
+  manufacturing_advanced: { x: -4.5, z: 4.5 },
+  healthcare: { x: 1.5, z: 4.5 },
+  green_economy: { x: 4.5, z: 1.5 },
+  logistics: { x: -1.5, z: 1.5 },
+  tourism: { x: 1.5, z: -1.5 },
+  software: { x: -1.5, z: -1.5 },
 }
 
 const STYLES: TowerStyle[] = ['slab', 'taper', 'spire', 'step', 'twin']
+
+const CAR_COLORS = [
+  '#c45a2c',
+  '#3a6ea5',
+  '#2f8f6b',
+  '#8b5a2b',
+  '#5c6b7a',
+  '#a33b3b',
+  '#6b5b95',
+  '#b8860b',
+]
 
 const towerVert = /* glsl */ `
 varying vec2 vUv;
@@ -58,6 +76,7 @@ void main() {
 }
 `
 
+/** Glass-pillar language: cool cyan → warm orange, almost no flicker */
 const towerFrag = /* glsl */ `
 uniform float uTime;
 uniform float uHeat;
@@ -80,90 +99,117 @@ void main() {
   vec2 id = floor(gv);
   vec2 f = fract(gv);
 
-  // Smaller window squares, thicker mullions
-  float frame = step(0.22, f.x) * step(f.x, 0.78) * step(0.28, f.y) * step(f.y, 0.78);
+  float frame = step(0.2, f.x) * step(f.x, 0.8) * step(0.26, f.y) * step(f.y, 0.8);
   float n = hash(id);
-  float on = step(0.32 - uHeat * 0.12, n);
-  float flick = 0.72 + 0.28 * step(0.55, fract(n * 19.0 + uTime * (0.55 + n * 1.8)));
-  float lit = frame * on * flick;
+  float on = step(0.28 - uHeat * 0.1, n);
+  // Soft breath only — no hard flicker
+  float breath = 0.9 + 0.1 * sin(uTime * 0.28 + n * 6.2831);
+  float lit = frame * on * breath;
 
-  // White office light only
-  vec3 win = vec3(0.92, 0.94, 1.0) * (0.55 + 0.45 * uHeat);
-  col = mix(col, win, lit * 0.85);
+  // Glass chart: cool blue → orange by hiring heat
+  vec3 cool = vec3(0.55, 0.78, 0.98);
+  vec3 warm = vec3(1.0, 0.42, 0.08);
+  vec3 win = mix(cool, warm, clamp(uHeat * 0.85 + n * 0.12, 0.0, 1.0));
+  col = mix(col, win, lit * 0.78);
 
-  float rim = pow(1.0 - abs(vUv.x - 0.5) * 2.0, 2.5) * 0.08;
-  col += vec3(rim);
+  // Soft base glow like pillar floor light
+  float base = smoothstep(0.0, 0.22, vUv.y) * (1.0 - smoothstep(0.0, 0.35, vUv.y));
+  col += vec3(1.0, 0.4, 0.08) * base * 0.12 * (0.4 + uHeat);
 
   gl_FragColor = vec4(col, 1.0);
 }
 `
+
+/** Keep towers off the road bed */
+function snapOffRoad(x: number, z: number, halfW: number, halfD: number) {
+  let nx = x
+  let nz = z
+  for (const r of ROAD_LINES) {
+    if (Math.abs(nx - r) < 0.55 + halfW) {
+      nx = r + (nx >= r ? 1 : -1) * (0.7 + halfW)
+    }
+    if (Math.abs(nz - r) < 0.55 + halfD) {
+      nz = r + (nz >= r ? 1 : -1) * (0.7 + halfD)
+    }
+  }
+  return {
+    x: THREE.MathUtils.clamp(nx, -CITY_EDGE + 0.8, CITY_EDGE - 0.8),
+    z: THREE.MathUtils.clamp(nz, -CITY_EDGE + 0.8, CITY_EDGE - 0.8),
+  }
+}
 
 function hash01(n: number) {
   const x = Math.sin(n * 127.1) * 43758.5453
   return x - Math.floor(x)
 }
 
-function makeNeonBoard(name: string, jobs: number, hue: number) {
+function makeNeonBoard(name: string, jobs: number, heat: number) {
   const c = document.createElement('canvas')
   c.width = 512
   c.height = 140
   const ctx = c.getContext('2d')!
-  // Dark glass
-  ctx.fillStyle = '#050308'
+  ctx.fillStyle = '#05080e'
   ctx.fillRect(0, 0, 512, 140)
-  // Neon frame
-  ctx.strokeStyle = `hsla(${hue}, 100%, 60%, 0.95)`
-  ctx.lineWidth = 5
-  ctx.shadowColor = `hsla(${hue}, 100%, 60%, 0.95)`
-  ctx.shadowBlur = 18
-  ctx.strokeRect(12, 12, 488, 116)
-  ctx.shadowBlur = 8
-  ctx.strokeRect(20, 20, 472, 100)
-  // Accent bar
-  const g = ctx.createLinearGradient(24, 0, 488, 0)
-  g.addColorStop(0, `hsla(${hue}, 100%, 55%, 0.15)`)
-  g.addColorStop(0.5, `hsla(${hue}, 100%, 65%, 0.45)`)
-  g.addColorStop(1, `hsla(${hue}, 100%, 55%, 0.15)`)
+  // Glass pillar wash: cyan → orange
+  const g = ctx.createLinearGradient(0, 0, 0, 140)
+  g.addColorStop(0, 'rgba(180, 230, 255, 0.35)')
+  g.addColorStop(0.45, 'rgba(40, 50, 70, 0.25)')
+  g.addColorStop(1, `rgba(255, ${Math.round(70 + heat * 40)}, 0, 0.55)`)
   ctx.fillStyle = g
-  ctx.fillRect(24, 24, 464, 92)
-  // Name
-  ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.9)`
-  ctx.shadowBlur = 14
+  ctx.fillRect(14, 14, 484, 112)
+  const rim = heat > 0.55 ? '#7dd3fc' : '#ff8c40'
+  ctx.strokeStyle = rim
+  ctx.shadowColor = rim
+  ctx.shadowBlur = 16
+  ctx.lineWidth = 4
+  ctx.strokeRect(12, 12, 488, 116)
+  ctx.shadowBlur = 0
   ctx.fillStyle = '#ffffff'
-  ctx.font = 'bold 34px Orbitron, sans-serif'
-  const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
-  ctx.fillText(label.toUpperCase(), 36, 72)
+  ctx.font = '800 34px Orbitron, sans-serif'
+  ctx.shadowColor = 'rgba(255,255,255,0.45)'
   ctx.shadowBlur = 6
-  ctx.fillStyle = `hsla(${hue}, 100%, 70%, 1)`
-  ctx.font = '20px Rajdhani, sans-serif'
-  ctx.fillText(`${jobs} OPEN ROLES`, 36, 104)
+  const label = name.length > 22 ? `${name.slice(0, 20)}…` : name
+  ctx.fillText(label.toUpperCase(), 36, 68)
+  ctx.shadowColor = 'rgba(255, 140, 40, 0.75)'
+  ctx.shadowBlur = 8
+  ctx.fillStyle = '#ffe0b0'
+  ctx.font = '800 22px Rajdhani, sans-serif'
+  ctx.fillText(`${jobs} OPEN ROLES`, 36, 102)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
   return tex
 }
 
-function makePinTexture(n: number) {
+/** Soft glass-pillar pin — amber/cyan, easy on the eyes */
+function makePinTexture(n: number, heat: number) {
   const c = document.createElement('canvas')
   c.width = 128
   c.height = 128
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, 128, 128)
+  const top = `rgba(${Math.round(160 + heat * 40)}, ${Math.round(200 - heat * 40)}, 255, 0.95)`
+  const bot = `rgba(255, ${Math.round(100 - heat * 30)}, 20, 0.95)`
+  const grad = ctx.createRadialGradient(64, 48, 4, 64, 52, 38)
+  grad.addColorStop(0, 'rgba(255, 230, 200, 0.95)')
+  grad.addColorStop(0.45, top)
+  grad.addColorStop(1, bot)
   ctx.beginPath()
-  ctx.arc(64, 52, 36, 0, Math.PI * 2)
-  ctx.fillStyle = '#ffffff'
-  ctx.shadowColor = 'rgba(255,255,255,0.9)'
-  ctx.shadowBlur = 16
+  ctx.arc(64, 52, 34, 0, Math.PI * 2)
+  ctx.fillStyle = grad
+  ctx.shadowColor = 'rgba(255, 120, 40, 0.55)'
+  ctx.shadowBlur = 12
   ctx.fill()
   ctx.beginPath()
-  ctx.moveTo(40, 78)
-  ctx.lineTo(64, 118)
-  ctx.lineTo(88, 78)
+  ctx.moveTo(42, 78)
+  ctx.lineTo(64, 116)
+  ctx.lineTo(86, 78)
   ctx.closePath()
+  ctx.fillStyle = bot
   ctx.fill()
   ctx.shadowBlur = 0
-  ctx.fillStyle = '#0a0604'
-  ctx.font = 'bold 36px Orbitron, sans-serif'
+  ctx.fillStyle = '#1a1008'
+  ctx.font = '800 34px Orbitron, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const text = n > 99 ? '99+' : String(n)
@@ -197,14 +243,15 @@ function layoutTowers(companies: SkyCo[], maxN: number): Tower[] {
       const z = block.z + Math.sin(a) * rad * 0.85 + (hash01(seed + 5) - 0.5) * 0.4
       const w = 0.32 + heat * 0.28 + hash01(seed + 6) * 0.18
       const d = 0.28 + heat * 0.22 + hash01(seed + 7) * 0.16
+      const snapped = snapOffRoad(x, z, w * 0.55, d * 0.55)
       towers.push({
         company_id: c.company_id,
         name: c.name,
         n: c.n,
         sector_id: sid,
         sector_label: c.sector_label,
-        x,
-        z,
+        x: snapped.x,
+        z: snapped.z,
         w,
         d,
         h,
@@ -312,13 +359,11 @@ function TowerBody({ t }: { t: Tower }) {
 }
 
 function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
-  // Per-building neon hue: orange / amber / cyan / magenta accents
-  const hue = [28, 42, 185, 320, 12][Math.floor(hash01(t.seed + 20) * 5)]
   const boardTex = useMemo(
-    () => makeNeonBoard(t.name, t.n, hue),
-    [t.name, t.n, hue],
+    () => makeNeonBoard(t.name, t.n, t.heat),
+    [t.name, t.n, t.heat],
   )
-  const pinTex = useMemo(() => makePinTexture(t.n), [t.n])
+  const pinTex = useMemo(() => makePinTexture(t.n, t.heat), [t.n, t.heat])
   const pin = useRef<THREE.Group>(null)
   const glow = useRef<THREE.Mesh>(null)
   const selectId = `company:${t.company_id}`
@@ -326,16 +371,17 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
 
   useFrame((state) => {
     if (pin.current) {
-      const breath = 1 + Math.sin(state.clock.elapsedTime * 2.4 + t.seed) * 0.08
+      // Gentle breath — not aggressive flicker
+      const breath = 1 + Math.sin(state.clock.elapsedTime * 1.1 + t.seed) * 0.045
       pin.current.scale.setScalar(breath)
       pin.current.position.y =
-        t.h / 2 + 0.28 + Math.sin(state.clock.elapsedTime * 2.1 + t.seed) * 0.05
+        t.h / 2 + 0.28 + Math.sin(state.clock.elapsedTime * 0.9 + t.seed) * 0.03
     }
     if (glow.current) {
       glow.current.visible = focused
       if (focused) {
-        const pulse = 0.25 + Math.sin(state.clock.elapsedTime * 3.0) * 0.18
-        glow.current.scale.setScalar(1.2 + Math.sin(state.clock.elapsedTime * 2.2) * 0.1)
+        const pulse = 0.22 + Math.sin(state.clock.elapsedTime * 2.0) * 0.1
+        glow.current.scale.setScalar(1.15 + Math.sin(state.clock.elapsedTime * 1.6) * 0.06)
         ;(glow.current.material as THREE.MeshBasicMaterial).opacity = pulse
       }
     }
@@ -356,7 +402,7 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
       x: t.x,
       y: worldY,
       z: t.z,
-      distance: 2.6 + t.h * 0.45,
+      distance: 1.55 + t.h * 0.28,
     })
     st.setStatus(`FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`)
   }
@@ -420,7 +466,7 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
           <mesh position={[0, 0, 0.03]}>
             <planeGeometry args={[boardW * 1.05, boardH * 1.15]} />
             <meshBasicMaterial
-              color={new THREE.Color().setHSL(hue / 360, 1, 0.55)}
+              color={t.heat > 0.55 ? '#7dd3fc' : '#ff8c40'}
               transparent
               opacity={0.22}
               depthWrite={false}
@@ -442,121 +488,303 @@ function WorkTower({ t, cityLabel }: { t: Tower; cityLabel: string }) {
               toneMapped={false}
             />
           </mesh>
-          <pointLight intensity={0.28} distance={1.2} color="#ffffff" />
+          <pointLight intensity={0.2} distance={1.1} color="#ff8c40" />
         </group>
       </Billboard>
     </group>
   )
 }
 
-/** NPC cars — subtle white/grey traffic keeping the city alive */
-function Traffic() {
-  const cars = useMemo(() => {
-    const list: {
-      lane: 'h' | 'v'
-      offset: number
-      speed: number
-      phase: number
-      y: number
-      color: string
-    }[] = []
-    for (let i = 0; i < 48; i++) {
-      list.push({
-        lane: i % 2 === 0 ? 'h' : 'v',
-        offset: (hash01(i * 3.1) - 0.5) * 10,
-        speed: 1.2 + hash01(i * 7.7) * 2.8,
-        phase: hash01(i * 2.2) * Math.PI * 2,
-        y: 0.06,
-        color: hash01(i) > 0.85 ? '#ffffff' : '#c8c8d0',
-      })
-    }
-    return list
-  }, [])
-  const group = useRef<THREE.Group>(null)
-  const meshes = useRef<(THREE.Mesh | null)[]>([])
+type CarSim = {
+  axis: 'h' | 'v'
+  fixed: number
+  lane: number
+  dir: 1 | -1
+  pos: number
+  speed: number
+  maxSpeed: number
+  color: string
+}
 
-  useFrame((state) => {
-    const t = state.clock.elapsedTime
-    cars.forEach((c, i) => {
-      const m = meshes.current[i]
-      if (!m) return
-      const u = (t * c.speed + c.phase * 3) % 16 - 8
-      if (c.lane === 'h') {
-        m.position.set(u, c.y, c.offset)
-        m.rotation.y = Math.sin(t * 0.2 + i) > 0 ? 0 : Math.PI
-      } else {
-        m.position.set(c.offset, c.y, u)
-        m.rotation.y = Math.PI / 2
+/** Is this axis green at the nearest intersection? */
+function axisGreen(axis: 'h' | 'v', ix: number, iz: number, t: number) {
+  const phase = (t + (ix * 2.3 + iz * 1.7)) % SIGNAL_CYCLE
+  // NS (v) green, all-red gap, EW (h) green, all-red gap
+  if (axis === 'v') return phase < 3.4
+  return phase >= 4.5 && phase < 7.9
+}
+
+function nextIntersection(pos: number, dir: number) {
+  let best: number | null = null
+  let bestDist = Infinity
+  for (const r of ROAD_LINES) {
+    const d = (r - pos) * dir
+    if (d > 0.02 && d < bestDist) {
+      bestDist = d
+      best = r
+    }
+  }
+  return best
+}
+
+function Traffic() {
+  const sims = useMemo(() => {
+    const list: CarSim[] = []
+    let i = 0
+    // East–west traffic on each Z road
+    for (const roadZ of ROAD_LINES) {
+      for (const dir of [1, -1] as const) {
+        for (const laneSign of [-1, 1] as const) {
+          for (let k = 0; k < 2; k++) {
+            list.push({
+              axis: 'h',
+              fixed: roadZ + laneSign * LANE_W,
+              lane: laneSign,
+              dir,
+              pos: -CITY_EDGE + 0.4 + hash01(i * 13.1 + k) * (CITY_EDGE * 1.7),
+              speed: 0,
+              maxSpeed: 0.85 + hash01(i * 4.2 + k) * 0.65,
+              color: CAR_COLORS[i % CAR_COLORS.length],
+            })
+            i++
+          }
+        }
       }
-    })
+    }
+    // North–south traffic on each X road
+    for (const roadX of ROAD_LINES) {
+      for (const dir of [1, -1] as const) {
+        for (const laneSign of [-1, 1] as const) {
+          for (let k = 0; k < 2; k++) {
+            list.push({
+              axis: 'v',
+              fixed: roadX + laneSign * LANE_W,
+              lane: laneSign,
+              dir,
+              pos: -CITY_EDGE + 0.4 + hash01(i * 9.7 + k) * (CITY_EDGE * 1.7),
+              speed: 0,
+              maxSpeed: 0.85 + hash01(i * 5.1 + k) * 0.65,
+              color: CAR_COLORS[i % CAR_COLORS.length],
+            })
+            i++
+          }
+        }
+      }
+    }
+    return list.slice(0, 48)
+  }, [])
+
+  const groups = useRef<(THREE.Group | null)[]>([])
+  const lightMats = useRef<(THREE.MeshBasicMaterial | null)[]>([])
+
+  useFrame((state, dt) => {
+    const t = state.clock.elapsedTime
+    const step = Math.min(dt, 0.05)
+
+    for (let i = 0; i < sims.length; i++) {
+      const c = sims[i]
+      let want = c.maxSpeed
+
+      // Signal stop line at next cross-street
+      const nxt = nextIntersection(c.pos, c.dir)
+      if (nxt != null) {
+        const dist = (nxt - c.pos) * c.dir
+        if (dist < STOP_DIST) {
+          const nearX =
+            c.axis === 'h'
+              ? nxt
+              : ROAD_LINES.reduce((a, b) =>
+                  Math.abs(b - c.fixed) < Math.abs(a - c.fixed) ? b : a,
+                )
+          const nearZ =
+            c.axis === 'v'
+              ? nxt
+              : ROAD_LINES.reduce((a, b) =>
+                  Math.abs(b - c.fixed) < Math.abs(a - c.fixed) ? b : a,
+                )
+          if (!axisGreen(c.axis, nearX, nearZ, t)) {
+            want = dist < 0.12 ? 0 : Math.min(want, dist * 1.4)
+          }
+        }
+      }
+
+      // Car ahead on same lane — keep gap (no accidents)
+      let aheadDist = Infinity
+      for (let j = 0; j < sims.length; j++) {
+        if (i === j) continue
+        const o = sims[j]
+        if (o.axis !== c.axis || o.dir !== c.dir) continue
+        if (Math.abs(o.fixed - c.fixed) > 0.04) continue
+        const d = (o.pos - c.pos) * c.dir
+        if (d > 0.01 && d < aheadDist) aheadDist = d
+      }
+      if (aheadDist < CAR_GAP) {
+        want = 0
+      } else if (aheadDist < CAR_GAP * 2.2) {
+        want = Math.min(want, c.maxSpeed * ((aheadDist - CAR_GAP) / CAR_GAP))
+      }
+
+      // Smooth accel / brake
+      c.speed += (want - c.speed) * Math.min(1, step * 4)
+      if (c.speed < 0.01) c.speed = 0
+      c.pos += c.dir * c.speed * step
+      if (c.pos > CITY_EDGE) c.pos = -CITY_EDGE
+      if (c.pos < -CITY_EDGE) c.pos = CITY_EDGE
+
+      const g = groups.current[i]
+      if (!g) continue
+      if (c.axis === 'h') {
+        g.position.set(c.pos, 0.035, c.fixed)
+        g.rotation.y = c.dir > 0 ? 0 : Math.PI
+      } else {
+        g.position.set(c.fixed, 0.035, c.pos)
+        g.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
+      }
+      const lm = lightMats.current[i]
+      if (lm) lm.opacity = 0.45 + Math.min(0.45, c.speed * 0.35)
+    }
   })
 
   return (
-    <group ref={group}>
-      {cars.map((c, i) => (
-        <mesh
+    <group>
+      {/* Traffic signal heads at intersections */}
+      {ROAD_LINES.map((x) =>
+        ROAD_LINES.map((z) => (
+          <Signal key={`${x},${z}`} x={x} z={z} />
+        )),
+      )}
+      {sims.map((c, i) => (
+        <group
           key={i}
           ref={(el) => {
-            meshes.current[i] = el
+            groups.current[i] = el
           }}
         >
-          <boxGeometry args={[0.22, 0.07, 0.1]} />
-          <meshBasicMaterial color={c.color} />
-        </mesh>
+          {/* Tiny body */}
+          <mesh>
+            <boxGeometry args={[0.085, 0.028, 0.042]} />
+            <meshBasicMaterial color={c.color} transparent opacity={0.82} />
+          </mesh>
+          {/* Cabin */}
+          <mesh position={[0.01, 0.02, 0]}>
+            <boxGeometry args={[0.04, 0.02, 0.034]} />
+            <meshBasicMaterial color="#1a2030" transparent opacity={0.7} />
+          </mesh>
+          {/* Front lights */}
+          <mesh position={[0.048, 0.008, 0.012]}>
+            <boxGeometry args={[0.012, 0.01, 0.01]} />
+            <meshBasicMaterial
+              ref={(m) => {
+                lightMats.current[i] = m
+              }}
+              color="#ffe6a0"
+              transparent
+              opacity={0.7}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+          <mesh position={[0.048, 0.008, -0.012]}>
+            <boxGeometry args={[0.012, 0.01, 0.01]} />
+            <meshBasicMaterial
+              color="#ffe6a0"
+              transparent
+              opacity={0.65}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        </group>
       ))}
     </group>
+  )
+}
+
+function Signal({ x, z }: { x: number; z: number }) {
+  const lamp = useRef<THREE.MeshBasicMaterial>(null)
+  useFrame((state) => {
+    if (!lamp.current) return
+    const phase = (state.clock.elapsedTime + (x * 2.3 + z * 1.7)) % SIGNAL_CYCLE
+    // Show EW state on the lamp (orange/red/green cycle feel)
+    if (phase < 3.4) {
+      lamp.current.color.set('#22c55e') // NS green → EW red implied; show green pulse
+      lamp.current.opacity = 0.55
+    } else if (phase < 4.5) {
+      lamp.current.color.set('#f59e0b')
+      lamp.current.opacity = 0.7
+    } else if (phase < 7.9) {
+      lamp.current.color.set('#ef4444')
+      lamp.current.opacity = 0.5
+    } else {
+      lamp.current.color.set('#f59e0b')
+      lamp.current.opacity = 0.65
+    }
+  })
+  return (
+    <mesh position={[x + 0.22, 0.28, z + 0.22]}>
+      <boxGeometry args={[0.04, 0.12, 0.04]} />
+      <meshBasicMaterial ref={lamp} color="#22c55e" transparent opacity={0.5} />
+    </mesh>
   )
 }
 
 function Ground() {
   const roadTex = useMemo(() => {
     const c = document.createElement('canvas')
-    c.width = 512
-    c.height = 512
+    c.width = 1024
+    c.height = 1024
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#06060a'
-    ctx.fillRect(0, 0, 512, 512)
-    // Asphalt noise
-    for (let i = 0; i < 4000; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.03})`
-      ctx.fillRect(Math.random() * 512, Math.random() * 512, 1, 1)
+    // Blocks
+    ctx.fillStyle = '#0a0c12'
+    ctx.fillRect(0, 0, 1024, 1024)
+    for (let i = 0; i < 6000; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.025})`
+      ctx.fillRect(Math.random() * 1024, Math.random() * 1024, 1, 1)
     }
-    // Road grid with lane dashes
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)'
-    ctx.lineWidth = 6
-    for (let i = 64; i < 512; i += 128) {
-      ctx.beginPath()
-      ctx.moveTo(i, 0)
-      ctx.lineTo(i, 512)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(0, i)
-      ctx.lineTo(512, i)
-      ctx.stroke()
+    // Map world -7.5..7.5 → 0..1024
+    const toPx = (w: number) => ((w + CITY_EDGE) / (CITY_EDGE * 2)) * 1024
+    const roadHalf = ((0.55) / (CITY_EDGE * 2)) * 1024
+    for (const r of ROAD_LINES) {
+      const p = toPx(r)
+      // Vertical road
+      ctx.fillStyle = '#141820'
+      ctx.fillRect(p - roadHalf, 0, roadHalf * 2, 1024)
+      // Horizontal road
+      ctx.fillRect(0, p - roadHalf, 1024, roadHalf * 2)
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)'
+    // Lane dashes
+    ctx.strokeStyle = 'rgba(255, 200, 120, 0.35)'
     ctx.lineWidth = 2
-    ctx.setLineDash([10, 14])
-    for (let i = 64; i < 512; i += 128) {
+    ctx.setLineDash([12, 16])
+    for (const r of ROAD_LINES) {
+      const p = toPx(r)
       ctx.beginPath()
-      ctx.moveTo(i, 0)
-      ctx.lineTo(i, 512)
+      ctx.moveTo(p, 0)
+      ctx.lineTo(p, 1024)
       ctx.stroke()
       ctx.beginPath()
-      ctx.moveTo(0, i)
-      ctx.lineTo(512, i)
+      ctx.moveTo(0, p)
+      ctx.lineTo(1024, p)
       ctx.stroke()
+    }
+    // Intersection boxes
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(255, 140, 40, 0.08)'
+    for (const x of ROAD_LINES) {
+      for (const z of ROAD_LINES) {
+        const px = toPx(x)
+        const pz = toPx(z)
+        ctx.fillRect(px - roadHalf, pz - roadHalf, roadHalf * 2, roadHalf * 2)
+      }
     }
     const tex = new THREE.CanvasTexture(c)
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-    tex.repeat.set(3, 3)
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
   }, [])
 
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-      <planeGeometry args={[24, 24]} />
+      <planeGeometry args={[CITY_EDGE * 2, CITY_EDGE * 2]} />
       <meshBasicMaterial map={roadTex} />
     </mesh>
   )

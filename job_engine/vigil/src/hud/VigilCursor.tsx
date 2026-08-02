@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Immersive VIGIL cursor — small glowing white dot.
- * Noticeable fluid lag, subtle halo, soft trail. No rings / hex chrome.
+ * Instant cursor (zero lag). Only the motion path fades behind it.
  */
 
-const LERP = 0.038 // clearly felt lag (lower = dreamier)
-const TRAIL_LEN = 10
-const CORE_R = 2.4 // small crisp core
-const HALO_R = 5.5 // subtle outer only
+const TRAIL_LEN = 14
+const CORE_R = 2.5
+const HALO_R = 5.2
+/** How fast trail ghosts die (higher = shorter path) */
+const TRAIL_DECAY = 0.88
 
-type Pt = { x: number; y: number }
+type Pt = { x: number; y: number; a: number }
 
 export function VigilCursor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -28,9 +28,12 @@ export function VigilCursor() {
     let h = 0
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
 
-    const target: Pt = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
-    const pos: Pt = { x: target.x, y: target.y }
-    const prev: Pt = { x: pos.x, y: pos.y }
+    const pos: Pt = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+      a: 1,
+    }
+    const prev: Pt = { x: pos.x, y: pos.y, a: 1 }
     const trail: Pt[] = []
     let vel = 0
     let angle = 0
@@ -49,8 +52,9 @@ export function VigilCursor() {
     resize()
 
     const onMove = (e: PointerEvent) => {
-      target.x = e.clientX
-      target.y = e.clientY
+      // Instant — no lerp on the cursor itself
+      pos.x = e.clientX
+      pos.y = e.clientY
       visible = true
     }
     const onLeave = () => {
@@ -66,19 +70,24 @@ export function VigilCursor() {
     window.addEventListener('resize', resize)
 
     const draw = () => {
-      pos.x += (target.x - pos.x) * LERP
-      pos.y += (target.y - pos.y) * LERP
-
       const dx = pos.x - prev.x
       const dy = pos.y - prev.y
       const instant = Math.hypot(dx, dy)
-      vel = vel * 0.88 + instant * 0.12
-      if (instant > 0.04) angle = Math.atan2(dy, dx)
+      vel = vel * 0.85 + instant * 0.15
+      if (instant > 0.2) angle = Math.atan2(dy, dx)
+
+      // Path samples: exact positions, fade over time
+      if (instant > 0.35) {
+        trail.unshift({ x: prev.x, y: prev.y, a: 0.55 })
+        if (trail.length > TRAIL_LEN) trail.pop()
+      }
+      for (let i = 0; i < trail.length; i++) {
+        trail[i].a *= TRAIL_DECAY
+      }
+      while (trail.length && trail[trail.length - 1].a < 0.02) trail.pop()
+
       prev.x = pos.x
       prev.y = pos.y
-
-      trail.unshift({ x: pos.x, y: pos.y })
-      if (trail.length > TRAIL_LEN) trail.pop()
 
       ctx.clearRect(0, 0, w, h)
       if (!visible) {
@@ -86,45 +95,42 @@ export function VigilCursor() {
         return
       }
 
-      const speedNorm = Math.min(1, vel / 22)
+      const speedNorm = Math.min(1, vel / 18)
 
-      // Soft trail echoes
-      if (speedNorm > 0.06) {
-        for (let i = trail.length - 1; i >= 1; i--) {
-          const t = trail[i]
-          const a = (1 - i / trail.length) * 0.14 * speedNorm
-          ctx.beginPath()
-          ctx.fillStyle = `rgba(255, 255, 255, ${a})`
-          ctx.shadowColor = 'rgba(255, 255, 255, 0.25)'
-          ctx.shadowBlur = 4
-          ctx.arc(t.x, t.y, CORE_R * 0.55, 0, Math.PI * 2)
-          ctx.fill()
-        }
+      // Fading motion path only
+      for (let i = trail.length - 1; i >= 0; i--) {
+        const t = trail[i]
+        const a = t.a * (0.35 + speedNorm * 0.45)
+        ctx.beginPath()
+        ctx.fillStyle = `rgba(255, 255, 255, ${a})`
+        ctx.shadowColor = `rgba(255, 200, 140, ${a * 0.4})`
+        ctx.shadowBlur = 3
+        ctx.arc(t.x, t.y, CORE_R * 0.45, 0, Math.PI * 2)
+        ctx.fill()
       }
 
+      // Instant cursor core
       ctx.save()
       ctx.translate(pos.x, pos.y)
-      const stretch = 1 + speedNorm * 0.4
+      const stretch = 1 + speedNorm * 0.35
       const squash = 1 / Math.sqrt(stretch)
       ctx.rotate(angle)
       ctx.scale(stretch, squash)
 
-      // Subtle halo only
       const aura = ctx.createRadialGradient(0, 0, 0, 0, 0, HALO_R)
-      aura.addColorStop(0, 'rgba(255, 255, 255, 0.75)')
-      aura.addColorStop(0.45, 'rgba(255, 255, 255, 0.22)')
+      aura.addColorStop(0, 'rgba(255, 255, 255, 0.8)')
+      aura.addColorStop(0.5, 'rgba(255, 220, 180, 0.18)')
       aura.addColorStop(1, 'rgba(255, 255, 255, 0)')
       ctx.beginPath()
       ctx.fillStyle = aura
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.35)'
-      ctx.shadowBlur = 6
+      ctx.shadowColor = 'rgba(255, 200, 140, 0.3)'
+      ctx.shadowBlur = 5
       ctx.arc(0, 0, HALO_R, 0, Math.PI * 2)
       ctx.fill()
 
-      // Crisp small core
       ctx.beginPath()
-      ctx.shadowBlur = 3
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.5)'
+      ctx.shadowBlur = 2
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.45)'
       ctx.fillStyle = '#ffffff'
       ctx.arc(0, 0, CORE_R, 0, Math.PI * 2)
       ctx.fill()
