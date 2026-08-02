@@ -139,7 +139,10 @@ use — they should love opening the app, never fight it.
   title opens the job posting; company name opens that company’s jobs.
 - **Pinned dashboard (2026-08-02):** Tower Insights stays pinned on the right
   (cannot disappear — Close snaps it home; Tower dock chip always available).
-  Any main widget (Jobs, Signals, Watchlist, Searches, Activity, Live, Health)
-  has Pin/Unpin; pinned layout + positions persist in localStorage as the
+  Any main widget (Jobs, Signals, Watchlist, Searches, Activity, Live, Health,
+  Ask) has Pin/Unpin; pinned layout + positions persist in localStorage as the
   admin-centric canvas. Pinned windows stay usable (not dimmed) while another
   window is focused.
+- **Ask Tower / Hermes (2026-08-02):** Ask panel chats via local Hermes + Watch
+  Tower MCP. If the tower is collecting or warm, Ask queues and says so —
+  never fight Ollama scrape. Daily brief also lands under `documents/briefs/`.

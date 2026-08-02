@@ -1050,6 +1050,64 @@ button, input, select {
   text-decoration: underline;
 }
 
+.ask-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 220px;
+  max-height: min(52vh, 480px);
+  overflow: auto;
+  margin-bottom: 10px;
+}
+
+.ask-bubble {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ask-bubble.user {
+  align-self: flex-end;
+  background: rgba(255, 170, 0, 0.16);
+  border: 1px solid rgba(255, 170, 0, 0.35);
+  max-width: 92%;
+}
+
+.ask-bubble.assistant {
+  align-self: flex-start;
+  background: rgba(255, 85, 0, 0.08);
+  border: 1px solid rgba(255, 85, 0, 0.2);
+  max-width: 96%;
+}
+
+.ask-bubble.queued {
+  border-color: var(--vg-warn);
+  color: var(--vg-warn);
+}
+
+.ask-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ask-form input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--vg-line);
+  color: var(--vg-ink);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.ask-form input:focus {
+  outline: none;
+  border-color: var(--vg-amber);
+}
+
 .chip {
   border: 1px solid var(--vg-line);
   background: rgba(255, 85, 0, 0.08);

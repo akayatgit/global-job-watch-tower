@@ -1,0 +1,34 @@
+WATCH TOWER DAILY BRIEF · 2026-08-02 13:36 IST
+
+Jobs indexed: 2812 · Today: 736 · Companies: 1238 · Active searches: 0
+
+Last 24h: Openings are up 16% vs prior 24 hours (1427 now vs 1229 before). Fastest role rise: Product Manager (+56). Top hiring pace: Scoutit (55).
+Last 7d: 2812 openings last 7 days — first signal window for this tower.
+
+Top hiring (7d):
+  · Scoutit — 91
+  · Accenture in India — 71
+  · Tata Consultancy Services — 38
+  · EY — 35
+  · Deloitte — 35
+
+Jobs per role:
+  · Risks & Controls — 181
+  · AI Product Owner — 126
+  · AI Engineer — 74
+  · Software Engineer — 71
+  · Software Tester — 66
+
+Rising roles (signal window):
+  · Product Manager (+?)
+  · Software Tester (+?)
+  · Digital Marketing Executive (+?)
+
+Watchlist pulse:
+  · Scoutit — recent 91 / prior 0
+  · Accenture in India — recent 71 / prior 0
+  · Deloitte — recent 35 / prior 0
+  · EY — recent 35 / prior 0
+
+Tower AI capacity: BUSY — PC heat is hot (cpu=79C gpu=59C load=2.14)
+Next: open VIGIL → Tower / Hiring Signals for drill-down.

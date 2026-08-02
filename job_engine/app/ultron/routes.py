@@ -24,6 +24,8 @@ from app.signals import (
     set_watched,
     watchlist_rows,
 )
+from app.ai_capacity import compute_ai_capacity
+from app.hermes_ask import ask_hermes
 from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
 from app.ultron.hub import hub
@@ -306,6 +308,20 @@ def ultron_health(db: Session = Depends(get_db)):
             'created_at': _iso(e.ts),
         } for e in recent],
     }
+
+
+@router.get('/api/ultron/ai-capacity')
+def ultron_ai_capacity(db: Session = Depends(get_db)):
+    """Scrape-first mutex: Hermes / VIGIL Ask must check before using Ollama."""
+    return compute_ai_capacity(db)
+
+
+@router.post('/api/ultron/ask')
+def ultron_ask(payload: dict, db: Session = Depends(get_db)):
+    """VIGIL Ask → Hermes (local Ollama), capacity-gated."""
+    prompt = str(payload.get('prompt') or payload.get('q') or '')
+    force = bool(payload.get('force'))
+    return ask_hermes(db, prompt, force=force)
 
 
 @router.post('/api/ultron/toggle-headless')

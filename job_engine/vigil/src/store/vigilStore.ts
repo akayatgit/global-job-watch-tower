@@ -15,6 +15,7 @@ export type PanelId =
   | 'jobs'
   | 'live'
   | 'health'
+  | 'ask'
   | 'role_hire'
   | 'rank_list'
 
@@ -78,13 +79,14 @@ const PANEL_META: { id: PanelId; title: string; x: number; y: number }[] = [
   { id: 'jobs', title: 'JOBS', ...PANEL_CENTER },
   { id: 'live', title: 'LIVE FEED', ...PANEL_CENTER },
   { id: 'health', title: 'TOWER HEALTH', ...PANEL_CENTER },
+  { id: 'ask', title: 'ASK TOWER', ...PANEL_CENTER },
   { id: 'role_hire', title: 'COMPANIES HIRING', ...PANEL_CENTER },
   { id: 'rank_list', title: 'FULL LIST', ...PANEL_CENTER },
 ]
 
 /** Panels that can be pinned to the admin dashboard (not transient drill-downs). */
 export const PINNABLE_PANELS: PanelId[] = [
-  'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health',
+  'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask',
 ]
 
 export const ORBIT_NODES: OrbitNode[] = [
@@ -95,6 +97,7 @@ export const ORBIT_NODES: OrbitNode[] = [
   { id: 'activity', label: 'Activity', angle: 1.85, radius: 2.65 },
   { id: 'live', label: 'Live', angle: 2.55, radius: 2.5 },
   { id: 'health', label: 'Health', angle: 3.4, radius: 2.7 },
+  { id: 'ask', label: 'Ask', angle: 4.7, radius: 2.55 },
   { id: 'watchlist', label: 'Watchlist', angle: 4.2, radius: 2.6 },
 ]
 
@@ -644,7 +647,7 @@ export function panelFromQuery(): PanelId | null {
   const params = new URLSearchParams(window.location.search)
   const p = params.get('panel')
   const valid: PanelId[] = [
-    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'role_hire', 'rank_list',
+    'tower', 'signals', 'watchlist', 'searches', 'activity', 'jobs', 'live', 'health', 'ask', 'role_hire', 'rank_list',
   ]
   return p && (valid as string[]).includes(p) ? (p as PanelId) : null
 }

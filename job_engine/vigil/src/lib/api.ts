@@ -55,6 +55,8 @@ export const api = {
   stats: () => getJson<any>('/api/stats'),
   toggleHeadless: () => postJson<any>('/api/ultron/toggle-headless'),
   dismissAlert: () => postJson<any>('/api/ultron/dismiss-alert'),
+  aiCapacity: () => getJson<any>('/api/ultron/ai-capacity'),
+  ask: (prompt: string) => postJson<any>('/api/ultron/ask', { prompt }),
   toggleWatch: (companyId: number) =>
     postJson<any>(`/api/ultron/watchlist/${companyId}/toggle`),
   toggleConfig: (id: number) => postJson<any>(`/api/configs/${id}/toggle`),
