@@ -23,9 +23,28 @@ type Props = {
   emptyText?: string
 }
 
+/** Wrap label at ~11 chars; prefer break on space. */
+export function wrapGlassLabel(label: string, maxChars = 11): string[] {
+  const text = label.trim().replace(/\s+/g, ' ')
+  if (!text) return ['']
+  if (text.length <= maxChars) return [text]
+
+  const lines: string[] = []
+  let rest = text
+  while (rest.length > maxChars) {
+    const chunk = rest.slice(0, maxChars + 1)
+    let breakAt = chunk.lastIndexOf(' ')
+    if (breakAt < 3) breakAt = maxChars
+    lines.push(rest.slice(0, breakAt).trim())
+    rest = rest.slice(breakAt).trim()
+  }
+  if (rest) lines.push(rest)
+  return lines.slice(0, 3)
+}
+
 /**
  * Responsive glass-pillar comparison chart (reference: glowing crystal bars).
- * Width follows the panel — pillars flex; never force a wide fixed layout.
+ * Labels sit on each bar tip; width follows the panel.
  */
 export function GlassCompareChart({
   title,
@@ -66,11 +85,15 @@ export function GlassCompareChart({
             style={{ ['--glass-n' as string]: String(rows.length) }}
           >
             {rows.map((item) => {
-              const pct = Math.max(8, Math.round((item.value / max) * 100))
+              const pct = Math.max(10, Math.round((item.value / max) * 100))
               const leader = item.id === leaderId
               const clickable = Boolean(onSelect)
+              const nameLines = wrapGlassLabel(item.label, 11)
               const body = (
-                <>
+                <div
+                  className="glass-pillar-rise"
+                  style={{ height: `${pct}%` }}
+                >
                   <div className="glass-pillar-label">
                     <span className="glass-pillar-value">
                       {formatValue(item.value)}
@@ -78,19 +101,26 @@ export function GlassCompareChart({
                     {item.meta ? (
                       <span className="glass-pillar-meta">{item.meta}</span>
                     ) : null}
-                    <span className="glass-pillar-name">{item.label}</span>
+                    <span className="glass-pillar-name">
+                      {nameLines.map((line, i) => (
+                        <span key={`${item.id}-ln-${i}`} className="glass-pillar-name-line">
+                          {line}
+                        </span>
+                      ))}
+                    </span>
                   </div>
-                  <div className="glass-pillar-shaft-wrap">
-                    <div
-                      className="glass-pillar-shaft"
-                      style={{ height: `${pct}%` }}
-                    >
-                      <span className="glass-pillar-face" aria-hidden />
-                      <span className="glass-pillar-edge" aria-hidden />
-                      <span className="glass-pillar-glow" aria-hidden />
-                    </div>
+                  <div className="glass-pillar-shaft">
+                    <span className="glass-pillar-sheen" aria-hidden />
+                    <span className="glass-pillar-rim left" aria-hidden />
+                    <span className="glass-pillar-rim right" aria-hidden />
+                    <span className="glass-pillar-core" aria-hidden />
+                    <span className="glass-pillar-cap" aria-hidden />
                   </div>
-                </>
+                  <div className="glass-pillar-reflect" aria-hidden>
+                    <span className="glass-reflect-shaft" />
+                    <span className="glass-reflect-streak" />
+                  </div>
+                </div>
               )
               const cls = `glass-pillar ${leader ? 'leader' : ''} ${clickable ? 'clickable' : ''}`
               if (clickable) {
@@ -114,10 +144,7 @@ export function GlassCompareChart({
               )
             })}
           </div>
-          <div className="glass-chart-floor" aria-hidden>
-            <span className="glass-floor-line" />
-            <span className="glass-floor-grid" />
-          </div>
+          <div className="glass-chart-floor" aria-hidden />
         </div>
       )}
     </section>

@@ -194,3 +194,6 @@ use — they should love opening the app, never fight it.
   cyan edge on the leader, value + name above each pillar, title with orange
   underline. Charts flex to panel width — never a fixed wide layout. Prefer
   this over flat horizontal orange bars whenever ranking/comparing.
+  Labels sit on each bar tip (not a shared top row); names wrap at 11 chars;
+  all values use thick/full weight; glow = hard rim + inner base light +
+  per-bar floor streak reflection — never soft blur bloom around pillars.

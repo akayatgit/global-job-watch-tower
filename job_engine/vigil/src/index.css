@@ -1655,22 +1655,20 @@ button, input, select {
   width: 100%;
   max-width: 100%;
   margin: 12px 0 16px;
-  padding: 12px 10px 8px;
+  padding: 12px 10px 6px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 140, 40, 0.28);
+  border: 1px solid rgba(255, 140, 40, 0.22);
   background:
-    linear-gradient(180deg, rgba(10, 18, 28, 0.92), rgba(4, 6, 10, 0.96));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 28px rgba(255, 100, 0, 0.08);
-  overflow: hidden;
+    radial-gradient(120% 80% at 50% 100%, rgba(255, 90, 0, 0.07), transparent 55%),
+    linear-gradient(180deg, rgba(6, 10, 16, 0.96), rgba(2, 4, 8, 0.98));
+  overflow: visible;
 }
 .glass-chart-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .glass-chart-titles {
   min-width: 0;
@@ -1680,19 +1678,17 @@ button, input, select {
   margin: 0;
   font-family: var(--font-hud);
   font-size: clamp(11px, 2.4vw, 13px);
-  font-weight: 650;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #fff;
   line-height: 1.25;
 }
 .glass-chart-rule {
-  height: 2px;
-  width: min(100%, 220px);
+  height: 1px;
+  width: min(100%, 240px);
   margin: 6px 0 5px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--vg-orange), var(--vg-amber), transparent);
-  box-shadow: 0 0 12px rgba(255, 140, 0, 0.65);
+  background: linear-gradient(90deg, #ff8c00, #ff5500 40%, transparent);
 }
 .glass-chart-sub {
   margin: 0;
@@ -1700,38 +1696,38 @@ button, input, select {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #8a96a8;
+  font-weight: 400;
 }
 .glass-chart-action {
   flex-shrink: 0;
-}
-.glass-chart-action .show-all {
-  box-shadow: 0 0 14px rgba(255, 170, 0, 0.25);
 }
 
 .glass-chart-stage {
   position: relative;
   width: 100%;
-  padding: 4px 2px 0;
+  padding: 2px 0 0;
 }
 .glass-chart-pillars {
   --glass-n: 6;
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: space-between;
-  gap: clamp(4px, 1.2vw, 14px);
+  gap: clamp(6px, 1.4vw, 16px);
   width: 100%;
-  min-height: clamp(140px, 28vh, 220px);
-  padding: 0 2px;
+  height: clamp(168px, 32vh, 248px);
+  /* Reserve headroom so labels sit on each bar tip (not a shared top row) */
+  padding: 52px 4px 0;
+  box-sizing: border-box;
 }
 .glass-pillar {
   flex: 1 1 0;
   min-width: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
-  height: clamp(140px, 28vh, 220px);
+  height: 100%;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1743,185 +1739,260 @@ button, input, select {
   cursor: pointer;
 }
 .glass-pillar.clickable:hover .glass-pillar-shaft {
-  filter: brightness(1.12);
+  filter: brightness(1.08) saturate(1.08);
 }
 .glass-pillar.clickable:hover .glass-pillar-name {
-  color: var(--vg-amber);
+  color: #ffc070;
 }
 
+/* Rise = bar height from floor; label rides on the tip */
+.glass-pillar-rise {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 48px;
+}
 .glass-pillar-label {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  width: 100%;
+  width: max(100%, 3.2em);
+  max-width: 140%;
   text-align: center;
-  z-index: 2;
+  z-index: 3;
+  pointer-events: none;
+  margin-bottom: 4px;
 }
 .glass-pillar-value {
   font-family: var(--font-hud);
-  font-size: clamp(11px, 2.6vw, 16px);
-  font-weight: 500;
+  font-size: clamp(12px, 2.8vw, 17px);
+  font-weight: 700;
   color: #fff;
-  letter-spacing: 0.02em;
-  line-height: 1.1;
-  text-shadow: 0 0 12px rgba(255, 160, 60, 0.35);
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+  -webkit-text-stroke: 0.2px rgba(255, 255, 255, 0.35);
 }
 .glass-pillar.leader .glass-pillar-value {
-  font-size: clamp(15px, 3.4vw, 22px);
-  font-weight: 650;
-  text-shadow: 0 0 18px rgba(140, 210, 255, 0.55);
+  font-size: clamp(16px, 3.6vw, 24px);
+  font-weight: 800;
 }
 .glass-pillar-meta {
-  font-size: 10px;
+  font-size: 9px;
+  font-weight: 700;
   color: #7dffb0;
   letter-spacing: 0.04em;
 }
 .glass-pillar-name {
-  font-size: clamp(8px, 1.6vw, 11px);
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  font-size: clamp(8px, 1.55vw, 10px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.88);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #fff;
+  line-height: 1.15;
+  padding: 0 1px;
+}
+.glass-pillar-name-line {
+  display: block;
   white-space: nowrap;
-  padding: 0 2px;
 }
 .glass-pillar.leader .glass-pillar-name {
-  font-size: clamp(9px, 1.9vw, 12px);
-  color: #fff;
+  font-size: clamp(9px, 1.85vw, 12px);
+  font-weight: 800;
 }
 
-.glass-pillar-shaft-wrap {
-  position: relative;
-  width: 100%;
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  min-height: 0;
-}
 .glass-pillar-shaft {
   position: relative;
-  width: clamp(18px, 8cqi, 42px);
-  max-width: 72%;
-  min-height: 12px;
-  border-radius: 3px 3px 2px 2px;
-  transform: perspective(180px) rotateX(8deg);
-  transform-origin: bottom center;
-  background:
-    linear-gradient(
-      105deg,
-      rgba(255, 255, 255, 0.18) 0%,
-      rgba(160, 210, 255, 0.12) 18%,
-      rgba(40, 55, 75, 0.35) 42%,
-      rgba(255, 120, 30, 0.22) 78%,
-      rgba(255, 90, 10, 0.45) 100%
-    );
-  border: 1px solid rgba(255, 180, 100, 0.45);
-  box-shadow:
-    0 0 14px rgba(255, 110, 0, 0.45),
-    inset 0 0 12px rgba(255, 255, 255, 0.12),
-    inset -4px 0 10px rgba(120, 190, 255, 0.15);
-  overflow: hidden;
-}
-.glass-pillar.leader .glass-pillar-shaft {
-  border-color: rgba(160, 220, 255, 0.65);
-  box-shadow:
-    0 0 18px rgba(255, 120, 20, 0.55),
-    0 0 22px rgba(100, 190, 255, 0.35),
-    inset 0 0 14px rgba(200, 230, 255, 0.2);
-}
-.glass-pillar-face {
-  position: absolute;
-  inset: 0;
+  width: clamp(20px, 55%, 46px);
+  flex: 1 1 auto;
+  min-height: 18px;
+  border-radius: 2px 2px 1px 1px;
+  /* Crystal glass: cool body, hard orange light locked in the base */
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.22) 0%,
-      transparent 28%,
-      transparent 70%,
-      rgba(255, 100, 0, 0.35) 100%
+      rgba(210, 230, 255, 0.28) 0%,
+      rgba(70, 95, 125, 0.22) 22%,
+      rgba(35, 45, 60, 0.38) 48%,
+      rgba(255, 110, 20, 0.42) 78%,
+      rgba(255, 70, 0, 0.78) 100%
     );
+  border: 1px solid rgba(255, 170, 90, 0.55);
+  border-bottom-color: rgba(255, 140, 40, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -18px 22px rgba(255, 90, 0, 0.55),
+    inset 0 10px 14px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  z-index: 2;
+}
+.glass-pillar.leader .glass-pillar-shaft {
+  border-color: rgba(150, 210, 255, 0.7);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(180, 230, 255, 0.55) 0%,
+      rgba(90, 160, 220, 0.28) 28%,
+      rgba(40, 55, 75, 0.35) 52%,
+      rgba(255, 110, 20, 0.45) 78%,
+      rgba(255, 70, 0, 0.82) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(180, 230, 255, 0.2),
+    inset 0 -18px 22px rgba(255, 90, 0, 0.55),
+    inset 0 12px 16px rgba(160, 220, 255, 0.18);
+}
+.glass-pillar-sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(255, 255, 255, 0.06) 18%,
+    transparent 38%,
+    transparent 70%,
+    rgba(255, 120, 40, 0.12) 100%
+  );
   pointer-events: none;
 }
-.glass-pillar-edge {
+.glass-pillar-rim {
   position: absolute;
   top: 0;
   bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+.glass-pillar-rim.left {
   left: 0;
-  width: 35%;
   background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.28),
-    transparent
-  );
-  pointer-events: none;
-}
-.glass-pillar.leader .glass-pillar-edge {
-  background: linear-gradient(
-    90deg,
-    rgba(160, 220, 255, 0.45),
-    transparent
+    180deg,
+    rgba(255, 255, 255, 0.75),
+    rgba(255, 180, 100, 0.55) 55%,
+    rgba(255, 100, 0, 0.9)
   );
 }
-.glass-pillar-glow {
+.glass-pillar-rim.right {
+  right: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 140, 60, 0.4) 55%,
+    rgba(255, 80, 0, 0.75)
+  );
+}
+.glass-pillar.leader .glass-pillar-rim.left {
+  background: linear-gradient(
+    180deg,
+    rgba(200, 240, 255, 0.95),
+    rgba(120, 200, 255, 0.55) 45%,
+    rgba(255, 120, 40, 0.85)
+  );
+}
+.glass-pillar-core {
   position: absolute;
-  left: -20%;
-  right: -20%;
-  bottom: -2px;
-  height: 28%;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(255, 140, 20, 0.85) 0%,
-    rgba(255, 100, 0, 0.25) 55%,
-    transparent 75%
+  left: 18%;
+  right: 18%;
+  bottom: 0;
+  height: 42%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(255, 140, 30, 0.55) 40%,
+    rgba(255, 90, 0, 0.95)
   );
-  filter: blur(2px);
   pointer-events: none;
+}
+.glass-pillar-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.7),
+    rgba(255, 255, 255, 0.15)
+  );
+  pointer-events: none;
+}
+.glass-pillar.leader .glass-pillar-cap {
+  background: linear-gradient(
+    90deg,
+    rgba(120, 200, 255, 0.2),
+    rgba(220, 245, 255, 0.9),
+    rgba(120, 200, 255, 0.2)
+  );
+}
+
+/* Per-bar floor reflection — sharp streaks, not a blur bloom */
+.glass-pillar-reflect {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: clamp(20px, 55%, 46px);
+  height: 28px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+.glass-reflect-shaft {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleY(-1);
+  transform-origin: top center;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 100, 0, 0.55) 0%,
+    rgba(255, 80, 0, 0.18) 35%,
+    transparent 85%
+  );
+  opacity: 0.55;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 90%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 90%);
+}
+.glass-reflect-streak {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 140%;
+  height: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 120, 20, 0.95) 35%,
+    rgba(255, 180, 80, 1) 50%,
+    rgba(255, 120, 20, 0.95) 65%,
+    transparent 100%
+  );
+  box-shadow: 0 0 6px rgba(255, 120, 0, 0.65);
 }
 
 .glass-chart-floor {
   position: relative;
-  height: 18px;
+  height: 30px;
   margin-top: -2px;
-  overflow: hidden;
-}
-.glass-floor-line {
-  display: block;
-  height: 2px;
-  margin: 0 4%;
-  border-radius: 999px;
   background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 140, 30, 0.95) 20%,
-    rgba(255, 180, 60, 1) 50%,
-    rgba(255, 140, 30, 0.95) 80%,
-    transparent
+    180deg,
+    rgba(255, 90, 0, 0.06) 0%,
+    transparent 70%
   );
-  box-shadow:
-    0 0 10px rgba(255, 140, 0, 0.85),
-    0 4px 16px rgba(255, 100, 0, 0.35);
-}
-.glass-floor-grid {
-  display: block;
-  height: 14px;
-  margin: 0 6%;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      transparent 0 10%,
-      rgba(255, 120, 20, 0.12) 10% 11%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 120, 20, 0.22),
-      transparent 85%
-    );
-  mask-image: linear-gradient(180deg, #000, transparent);
+  pointer-events: none;
 }
 
 .glass-compare-shell {
@@ -1954,8 +2025,5 @@ button, input, select {
   margin: 0;
 }
 .glass-compare-duo .glass-chart-pillars {
-  min-height: 120px;
-}
-.glass-compare-duo .glass-pillar {
-  height: 120px;
+  height: 150px;
 }
