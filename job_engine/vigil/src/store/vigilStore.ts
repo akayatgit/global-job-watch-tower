@@ -182,10 +182,7 @@ function loadPinLayout(): PinLayout {
     const pinned = (parsed.pinned || []).filter((id) =>
       PINNABLE_PANELS.includes(id),
     ) as PanelId[]
-    // Tower always stays on the dashboard pin list
-    if (!pinned.includes('tower')) pinned.unshift('tower')
-    const positions = { ...DEFAULT_PIN_LAYOUT.positions, ...(parsed.positions || {}) }
-    if (!positions.tower) positions.tower = { ...TOWER_PIN_HOME }
+    const positions = { ...(parsed.positions || {}) }
     return { pinned, positions }
   } catch {
     return { ...DEFAULT_PIN_LAYOUT, positions: { ...DEFAULT_PIN_LAYOUT.positions } }
@@ -194,14 +191,12 @@ function loadPinLayout(): PinLayout {
 
 function persistPinLayout(panels: Record<PanelId, PanelState>) {
   const pinned = PINNABLE_PANELS.filter((id) => panels[id]?.pinned)
-  if (!pinned.includes('tower')) pinned.unshift('tower')
   const positions: PinLayout['positions'] = {}
   for (const id of pinned) {
     const p = panels[id]
     if (!p) continue
     positions[id] = { x: p.x, y: p.y, scale: p.scale }
   }
-  if (!positions.tower) positions.tower = { ...TOWER_PIN_HOME }
   try {
     localStorage.setItem('vigil.pins', JSON.stringify({ pinned, positions }))
   } catch {
@@ -349,7 +344,7 @@ function initialPanels(): Record<PanelId, PanelState> {
   const layout = loadPinLayout()
   const out = {} as Record<PanelId, PanelState>
   PANEL_META.forEach((p, i) => {
-    const pinned = layout.pinned.includes(p.id) || p.id === 'tower'
+    const pinned = layout.pinned.includes(p.id)
     const pos = layout.positions[p.id]
     out[p.id] = {
       id: p.id,
@@ -362,13 +357,6 @@ function initialPanels(): Record<PanelId, PanelState> {
       z: i,
     }
   })
-  // Tower always pinned
-  out.tower.pinned = true
-  if (!layout.positions.tower) {
-    out.tower.x = TOWER_PIN_HOME.x
-    out.tower.y = TOWER_PIN_HOME.y
-    out.tower.scale = TOWER_PIN_HOME.scale
-  }
   return out
 }
 
@@ -566,11 +554,10 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const panels = { ...get().panels }
     const maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     const cur = panels[id]
-    const pinned = cur.pinned || id === 'tower'
+    const pinned = cur.pinned
     panels[id] = {
       ...cur,
       open: true,
-      pinned: id === 'tower' ? true : cur.pinned,
       z: maxZ + 1,
       // Pinned widgets reopen at their dashboard spot; others center
       x: pinned ? cur.x : PANEL_CENTER.x,
@@ -583,25 +570,8 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: `OPENING ${panels[id].title}`,
     })
   },
-  closePanel: (id, opts) => {
+  closePanel: (id, _opts) => {
     const panels = { ...get().panels }
-    // Tower Insights stays on the canvas while pinned — snap home instead of closing
-    if (id === 'tower' && panels.tower.pinned && !opts?.force) {
-      panels.tower = {
-        ...panels.tower,
-        open: true,
-        x: TOWER_PIN_HOME.x,
-        y: TOWER_PIN_HOME.y,
-        scale: panels.tower.scale || TOWER_PIN_HOME.scale,
-      }
-      persistPinLayout(panels)
-      set({
-        panels,
-        focusedPanel: 'tower',
-        statusLine: 'TOWER STAYS PINNED ON THE RIGHT',
-      })
-      return
-    }
     panels[id] = { ...panels[id], open: false }
     const remaining = Object.values(panels)
       .filter((p) => p.open)
@@ -650,34 +620,20 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     }
     const panels = { ...get().panels }
     const cur = panels[id]
-    // Tower cannot be fully unpinned from the dashboard — keep pin, snap right
-    if (id === 'tower' && cur.pinned) {
-      panels.tower = {
-        ...panels.tower,
-        open: true,
-        pinned: true,
-        x: TOWER_PIN_HOME.x,
-        y: TOWER_PIN_HOME.y,
-      }
-      persistPinLayout(panels)
-      set({
-        panels,
-        focusedPanel: 'tower',
-        statusLine: 'TOWER ALWAYS STAYS PINNED — SNAPPED RIGHT',
-      })
-      return
-    }
     const nextPinned = !cur.pinned
     panels[id] = {
       ...cur,
       pinned: nextPinned,
-      open: true,
-      ...(nextPinned && id === 'tower' ? { ...TOWER_PIN_HOME } : {}),
+      open: nextPinned ? true : cur.open,
+      // First pin of Tower defaults to the right home spot
+      ...(nextPinned && id === 'tower' && !cur.pinned
+        ? { x: TOWER_PIN_HOME.x, y: TOWER_PIN_HOME.y }
+        : {}),
     }
     persistPinLayout(panels)
     set({
       panels,
-      focusedPanel: id,
+      focusedPanel: nextPinned || cur.open ? id : get().focusedPanel,
       statusLine: nextPinned
         ? `PINNED ${cur.title} TO DASHBOARD`
         : `UNPINNED ${cur.title}`,
@@ -688,8 +644,16 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const panels = { ...get().panels }
     let maxZ = Math.max(...Object.values(panels).map((p) => p.z), 0)
     let focus: PanelId | null = null
+    // Close unpinned panels; reopen only what admin pinned
+    for (const id of Object.keys(panels) as PanelId[]) {
+      if (!layout.pinned.includes(id)) {
+        panels[id] = { ...panels[id], open: false, pinned: false }
+      }
+    }
     for (const id of layout.pinned) {
-      const pos = layout.positions[id] || (id === 'tower' ? TOWER_PIN_HOME : PANEL_CENTER)
+      const pos =
+        layout.positions[id] ||
+        (id === 'tower' ? TOWER_PIN_HOME : PANEL_CENTER)
       maxZ += 1
       panels[id] = {
         ...panels[id],
@@ -702,26 +666,14 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       }
       focus = id
     }
-    // Prefer focusing a non-tower panel if several are pinned; else tower
-    const nonTower = layout.pinned.filter((id) => id !== 'tower')
-    if (nonTower.length) focus = nonTower[nonTower.length - 1]
-    else focus = 'tower'
-    panels.tower = {
-      ...panels.tower,
-      open: true,
-      pinned: true,
-      x: layout.positions.tower?.x ?? TOWER_PIN_HOME.x,
-      y: layout.positions.tower?.y ?? TOWER_PIN_HOME.y,
-      scale: layout.positions.tower?.scale ?? TOWER_PIN_HOME.scale,
-    }
     persistPinLayout(panels)
     set({
       panels,
       focusedPanel: focus,
       statusLine:
-        layout.pinned.length > 1
+        layout.pinned.length > 0
           ? `DASHBOARD · ${layout.pinned.length} PINNED`
-          : 'TOWER PINNED ON THE RIGHT',
+          : 'DASHBOARD EMPTY — PIN ANY MODULE',
     })
   },
   openRoleHire: (searchId, name, days = 7) => {

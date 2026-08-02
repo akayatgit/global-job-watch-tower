@@ -85,27 +85,17 @@ export function PanelShell({
               type="button"
               className={panel.pinned ? 'pin-btn active' : 'pin-btn'}
               data-gesture-action={`pin-${id}`}
-              title={
-                id === 'tower'
-                  ? 'Tower Insights stays pinned on the right'
-                  : panel.pinned
-                    ? 'Unpin from dashboard'
-                    : 'Pin to dashboard'
-              }
+              title={panel.pinned ? 'Unpin from dashboard' : 'Pin to dashboard'}
               onClick={() => togglePin(id)}
             >
-              {id === 'tower' ? 'Pinned' : panel.pinned ? 'Unpin' : 'Pin'}
+              {panel.pinned ? 'Unpin' : 'Pin'}
             </button>
           )}
           <button
             type="button"
             data-gesture-action={`close-${id}`}
             onClick={() => closePanel(id)}
-            title={
-              id === 'tower' && panel.pinned
-                ? 'Tower stays pinned — snaps back to the right'
-                : 'Close'
-            }
+            title="Close"
           >
             Close
           </button>

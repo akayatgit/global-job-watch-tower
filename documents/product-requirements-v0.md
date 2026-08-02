@@ -281,7 +281,7 @@ Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the Think
 | Training | Practice hub: skip, guided tour, or pick any drill; calibration applies to live; gesture logs for Akay |
 | Modules | Floating panels: Tower, Hiring signals, Watchlist, Searches, Activity, Jobs (Remote chip inside), Live feed, Tower health, Companies Hiring (role drill-down) |
 | Window stack | All panels open large + centered (layered stack). Orb + module dock always under windows |
-| Pin dashboard | Tower Insights always pinned right. Pin any main widget; layout persists (admin canvas) |
+| Pin dashboard | Admin pins/unpins any main widget (including Tower Insights); layout persists (admin canvas). Default first visit may pin Tower right — never locked. |
 | Hermes CIO | Local Hermes Agent (Ollama 4b) + MCP read tools; VIGIL Ask + Telegram-ready briefs. Scrape wins capacity — see `documents/hermes-agent-integration.md` |
 | Insight windows | Signals/Watchlist: 24h · Today · 2d · 4d · 7d · 14d · 30d. Role click → companies max→min glass pillars; company click → filtered Jobs |
 | Compare visuals | Glass-pillar charts (crystal bars, orange base glow, cyan leader) for city/company/role/watchlist/filter comparisons; flex to panel width |
