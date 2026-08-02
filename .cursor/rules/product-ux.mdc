@@ -134,3 +134,6 @@ use — they should love opening the app, never fight it.
 - **Layered stack windows (2026-08-02):** Every panel opens large and centered
   (same readable size as Companies Hiring). Orb + module dock stay under
   windows (never cover open panels). Focused window on top; others dim.
+- **Tower Show all (2026-08-02):** Top hiring + Jobs per role teasers (~8) get
+  a Show all control that opens a full ranked window. Freshest catches:
+  title opens the job posting; company name opens that company’s jobs.
