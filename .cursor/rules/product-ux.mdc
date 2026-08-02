@@ -227,4 +227,6 @@ use — they should love opening the app, never fight it.
   3D: left-drag orbit, scroll/pinch dolly deep into the orb, right-drag /
   two-finger pan, Esc/double-click reset. Particles dim when inside (no
   whiteout). Graph/City show text tags on nodes, strong edges, cities, and
-  company buildings. Recovery tag: `milestone/pre-neural-core-v0`.
+  company buildings. **Locked milestone:** `milestone/singularity-core-v1`
+  (Ashok accepted 2026-08-03 — evolve from here). Older: `milestone/pre-neural-core-v0`.
+  Singularity shape is brand-candidate mark — do not casually replace.
