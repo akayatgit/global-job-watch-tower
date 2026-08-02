@@ -247,8 +247,9 @@ use — they should love opening the app, never fight it.
   Empty click in campus never leaves immersive view — icon-only exit
   (door/arrow) in the scene-mode strip returns to the globe. No job pins;
   no roof cards — floating name + big white openings number only. Rank
-  icons (▲/▼) step by openings (ties → nearest → path angle) with
-  Spiderman whip-arc camera. Focus zoom stays tight on the roof.
+  icons (▲/▼) visit every tower (openings ASC; same count via nearest
+  path). Camera glides shortest roof-to-roof with a slight hyperbola —
+  constant angle, no zoom-out/in pulse.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

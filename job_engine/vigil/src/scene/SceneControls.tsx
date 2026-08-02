@@ -19,12 +19,14 @@ type Flight =
       active: boolean
       fromPos: THREE.Vector3
       toPos: THREE.Vector3
-      midPos: THREE.Vector3 | null
       fromTarget: THREE.Vector3
       toTarget: THREE.Vector3
+      fromDist: number
+      toDist: number
       t: number
       speed: number
-      cinematic: boolean
+      /** City: constant-angle glide + slight hyperbola */
+      citySlide: boolean
     }
   | {
       mode: 'path'
@@ -49,28 +51,19 @@ function samplePath(waypoints: THREE.Vector3[], u: number, out: THREE.Vector3) {
   return out.copy(waypoints[i]).lerp(waypoints[i + 1], s)
 }
 
-/** Spiderman ease — slow coil, punch through mid, soft settle */
-function easeWhip(t: number) {
+/** Smooth ease — no punch, no frame-skip feel */
+function easeSmooth(t: number) {
   const x = THREE.MathUtils.clamp(t, 0, 1)
-  return x < 0.5
-    ? 8 * x * x * x * x
-    : 1 - Math.pow(-2 * x + 2, 4) / 2
+  return x * x * (3 - 2 * x)
 }
 
-function bezier3(
-  a: THREE.Vector3,
-  m: THREE.Vector3,
-  b: THREE.Vector3,
-  u: number,
-  out: THREE.Vector3,
-) {
-  const s = 1 - u
-  out.set(
-    s * s * a.x + 2 * s * u * m.x + u * u * b.x,
-    s * s * a.y + 2 * s * u * m.y + u * u * b.y,
-    s * s * a.z + 2 * s * u * m.z + u * u * b.z,
-  )
-  return out
+/** 0 at ends, 1 at mid — soft hyperbolic bulge */
+function hyperBulge(u: number) {
+  const x = u - 0.5
+  const k = 2.4
+  const peak = Math.cosh(0) - Math.cosh(k * 0.5)
+  if (Math.abs(peak) < 1e-6) return Math.sin(u * Math.PI)
+  return (Math.cosh(k * x) - Math.cosh(k * 0.5)) / peak
 }
 
 /**
@@ -168,8 +161,7 @@ export function SceneControls() {
       distance: path.distance,
       endFocusId: path.endFocusId,
       t: 0,
-      // City rank-steps get the whip; graph edge-follow stays a bit quicker
-      speed: city ? 0.48 : 0.55,
+      speed: city ? 0.7 : 0.55,
       city,
     }
     setFlying(true)
@@ -183,9 +175,9 @@ export function SceneControls() {
     if (!c || !f) return
     if (fly.current?.mode === 'path' && fly.current.active) return
     const dist = f.distance
-    const cityHigh = useVigilStore.getState().sceneMode === 'city'
-    // City: steeper + closer drone over the roof
-    const toPos = cityHigh
+    const citySlide = useVigilStore.getState().sceneMode === 'city'
+    const toTarget = new THREE.Vector3(f.x, f.y, f.z)
+    const toPos = citySlide
       ? new THREE.Vector3(
           f.x + dist * 0.42,
           f.y + dist * 0.95,
@@ -196,30 +188,22 @@ export function SceneControls() {
           f.y + dist * 0.72,
           f.z + dist * 0.78,
         )
-    const toTarget = new THREE.Vector3(f.x, f.y, f.z)
+    const fromTarget = c.target.clone()
     const fromPos = camera.position.clone()
-    let midPos: THREE.Vector3 | null = null
-    if (cityHigh) {
-      const mid = fromPos.clone().lerp(toPos, 0.45)
-      const dx = toPos.x - fromPos.x
-      const dz = toPos.z - fromPos.z
-      const len = Math.hypot(dx, dz) || 1
-      mid.x += (-dz / len) * dist * 0.55
-      mid.z += (dx / len) * dist * 0.55
-      mid.y += dist * 0.55
-      midPos = mid
-    }
+    // Actual distance — rank steps stay steady; first pull-in eases in
+    const fromDist = Math.max(0.35, fromPos.distanceTo(fromTarget))
     fly.current = {
       mode: 'point',
       active: true,
       fromPos,
       toPos,
-      midPos,
-      fromTarget: c.target.clone(),
+      fromTarget,
       toTarget,
+      fromDist,
+      toDist: dist,
       t: 0,
-      speed: cityHigh ? 0.62 : 1.15,
-      cinematic: cityHigh,
+      speed: citySlide ? 0.9 : 1.15,
+      citySlide,
     }
     setFlying(true)
   }, [cameraFocusNonce, camera])
@@ -231,17 +215,17 @@ export function SceneControls() {
     const flight = fly.current
     if (flight?.active && flight.mode === 'path') {
       flight.t = Math.min(1, flight.t + dt * flight.speed)
-      const u = flight.city ? easeWhip(flight.t) : flight.t * flight.t * (3 - 2 * flight.t)
+      const u = flight.city
+        ? easeSmooth(flight.t)
+        : flight.t * flight.t * (3 - 2 * flight.t)
       samplePath(flight.waypoints, u, tmpLook.current)
       const dist = flight.distance
       if (flight.city) {
-        // High isometric + mid-flight soar (whip height pulse)
-        const soar = Math.sin(u * Math.PI) * dist * 0.4
-        const spread = 0.4 + Math.sin(u * Math.PI) * 0.12
+        // Constant isometric offset — no zoom pulse
         tmpCam.current.set(
-          tmpLook.current.x + dist * spread,
-          tmpLook.current.y + dist * 0.92 + soar,
-          tmpLook.current.z + dist * spread,
+          tmpLook.current.x + dist * 0.42,
+          tmpLook.current.y + dist * 0.95,
+          tmpLook.current.z + dist * 0.42,
         )
         camera.position.copy(tmpCam.current)
       } else {
@@ -283,23 +267,39 @@ export function SceneControls() {
     }
 
     if (flight?.active && flight.mode === 'point') {
-      flight.t = Math.min(1, flight.t + dt * flight.speed)
-      const u = flight.cinematic
-        ? easeWhip(flight.t)
+      // Cap dt so a hitch doesn’t jump the glide
+      const stepDt = Math.min(dt, 1 / 30)
+      flight.t = Math.min(1, flight.t + stepDt * flight.speed)
+      const u = flight.citySlide
+        ? easeSmooth(flight.t)
         : flight.t * flight.t * (3 - 2 * flight.t)
-      if (flight.cinematic && flight.midPos) {
-        bezier3(
-          flight.fromPos,
-          flight.midPos,
-          flight.toPos,
-          u,
-          tmpCam.current,
+
+      if (flight.citySlide) {
+        // Shortest look path + slight hyperbolic bulge (no zoom out/in)
+        tmpLook.current.lerpVectors(flight.fromTarget, flight.toTarget, u)
+        const dx = flight.toTarget.x - flight.fromTarget.x
+        const dz = flight.toTarget.z - flight.fromTarget.z
+        const travel = Math.hypot(dx, dz)
+        const bulge = hyperBulge(u)
+        const amp = Math.min(0.22, travel * 0.1)
+        if (travel > 1e-4) {
+          tmpLook.current.x += (-dz / travel) * amp * bulge * 0.35
+          tmpLook.current.z += (dx / travel) * amp * bulge * 0.35
+        }
+        tmpLook.current.y += amp * bulge
+
+        const dist = THREE.MathUtils.lerp(flight.fromDist, flight.toDist, u)
+        tmpCam.current.set(
+          tmpLook.current.x + dist * 0.42,
+          tmpLook.current.y + dist * 0.95,
+          tmpLook.current.z + dist * 0.42,
         )
         camera.position.copy(tmpCam.current)
+        c.target.copy(tmpLook.current)
       } else {
         camera.position.lerpVectors(flight.fromPos, flight.toPos, u)
+        c.target.lerpVectors(flight.fromTarget, flight.toTarget, u)
       }
-      c.target.lerpVectors(flight.fromTarget, flight.toTarget, u)
       c.update()
       if (flight.t >= 1) {
         flight.active = false
