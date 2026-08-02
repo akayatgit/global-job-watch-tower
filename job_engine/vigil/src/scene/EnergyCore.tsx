@@ -75,6 +75,9 @@ export function EnergyCore() {
   const coreScale = useVigilStore((s) => s.coreScale)
   const coreBurst = useVigilStore((s) => s.coreBurst)
   const sceneMode = useVigilStore((s) => s.sceneMode)
+  const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const spinY = useRef(0)
+  const lastT = useRef(0)
 
   const { positions, aIndex } = useMemo(() => {
     const positions = new Float32Array(COUNT * 3)
@@ -104,7 +107,10 @@ export function EnergyCore() {
     mat.current.uniforms.uScale.value = coreScale * modeScale
     mat.current.uniforms.uCamDist.value = camera.position.length()
     if (points.current) {
-      points.current.rotation.y = state.clock.elapsedTime * 0.035
+      const t = state.clock.elapsedTime
+      if (sceneSpin) spinY.current += Math.max(0, t - lastT.current) * 0.035
+      lastT.current = t
+      points.current.rotation.y = spinY.current
     }
   })
 

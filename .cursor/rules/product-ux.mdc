@@ -231,3 +231,8 @@ use — they should love opening the app, never fight it.
   (Ashok accepted 2026-08-03 — evolve from here). Older: `milestone/pre-neural-core-v0`.
   **Forget logo** (2026-08-03): do not extract/pitch a logo from the
   singularity — keep evolving it as the live world-model core only.
+- **Click cards not text (2026-08-03):** 3D hit targets are fat meshes/cards/
+  buildings. Labels are decoration only (`pointer-events: none`). Never make
+  tiny text the only clickable surface.
+- **Scene spin freeze (2026-08-03):** User can stop auto-rotation in Core /
+  Graph / City (HUD control + Space) while working.

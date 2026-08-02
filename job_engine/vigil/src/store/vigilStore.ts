@@ -383,6 +383,13 @@ type VigilStore = {
   /** Bump to snap OrbitControls back to home (Esc / mode change) */
   viewResetNonce: number
   resetView: () => void
+  /** Auto-spin of core/globe/graph ambience — off while working */
+  sceneSpin: boolean
+  setSceneSpin: (on: boolean) => void
+  toggleSceneSpin: () => void
+  /** Graph local-focus node id; null = full graph */
+  graphFocusId: string | null
+  setGraphFocusId: (id: string | null) => void
   /** City mode drill-down (city_key); null = globe overview */
   cityFocus: string | null
   setCityFocus: (id: string | null) => void
@@ -597,8 +604,24 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       viewResetNonce: get().viewResetNonce + 1,
       sceneZoom: 0,
       canvasPan: { x: 0, y: 0 },
+      graphFocusId: null,
       statusLine: 'VIEW RESET · drag orbit · scroll/pinch enter',
     }),
+  sceneSpin: true,
+  setSceneSpin: (on) =>
+    set({
+      sceneSpin: on,
+      statusLine: on ? 'SPIN ON' : 'SPIN OFF — work freely',
+    }),
+  toggleSceneSpin: () => {
+    const on = !get().sceneSpin
+    set({
+      sceneSpin: on,
+      statusLine: on ? 'SPIN ON' : 'SPIN OFF — work freely',
+    })
+  },
+  graphFocusId: null,
+  setGraphFocusId: (id) => set({ graphFocusId: id }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
   canvasPan: { x: 0, y: 0 },

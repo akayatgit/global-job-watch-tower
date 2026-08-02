@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Html, Line } from '@react-three/drei'
+import { Billboard, Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -86,18 +86,41 @@ function layoutNodes(nodes: GraphNode[]) {
   return pos
 }
 
-function nodeRadius(n: GraphNode, maxW: number) {
-  const t = Math.sqrt(n.weight / Math.max(maxW, 1))
-  return 0.05 + t * 0.1
+function buildAdj(edges: GraphEdge[]) {
+  const adj = new Map<string, Set<string>>()
+  const add = (a: string, b: string) => {
+    if (!adj.has(a)) adj.set(a, new Set())
+    adj.get(a)!.add(b)
+  }
+  for (const e of edges) {
+    if (e.source === 'core' || e.target === 'core') continue
+    add(e.source, e.target)
+    add(e.target, e.source)
+  }
+  return adj
 }
 
-function activateNode(n: GraphNode) {
+/** Focus + depth-1 + depth-2 neighbors */
+function neighborhood(
+  focusId: string,
+  adj: Map<string, Set<string>>,
+): Set<string> {
+  const out = new Set<string>([focusId])
+  const d1 = adj.get(focusId) || new Set()
+  for (const n of d1) out.add(n)
+  for (const n of d1) {
+    for (const m of adj.get(n) || []) out.add(m)
+  }
+  return out
+}
+
+function openInsight(n: GraphNode) {
   const st = useVigilStore.getState()
   st.triggerBurst()
   if (n.kind === 'sector' && n.sector_id) {
     st.setSectorFilter(n.sector_id)
     st.openPanel('tower')
-    st.setStatus(`GRAPH · ${n.label}`)
+    st.setStatus(`OPEN · ${n.label}`)
     return
   }
   if (n.kind === 'city' && n.city_id) {
@@ -116,70 +139,118 @@ function activateNode(n: GraphNode) {
   }
 }
 
-function GraphNodeMesh({
+function GraphCard({
   node,
   position,
-  maxW,
   interactive,
   showLabel,
+  dimmed,
+  focused,
 }: {
   node: GraphNode
   position: THREE.Vector3
-  maxW: number
   interactive: boolean
   showLabel: boolean
+  dimmed: boolean
+  focused: boolean
 }) {
-  const mesh = useRef<THREE.Mesh>(null)
   const [hot, setHot] = useState(false)
   const color = KIND_COLOR[node.kind] || '#ff5500'
-  const r = nodeRadius(node, maxW)
+  const cardW = 0.72
+  const cardH = 0.28
 
-  useFrame(() => {
-    if (!mesh.current) return
-    const s = hot ? 1.28 : 1
-    mesh.current.scale.setScalar(
-      THREE.MathUtils.lerp(mesh.current.scale.x, s, 0.2),
-    )
-  })
+  const onEnter = (e: ThreeEvent<PointerEvent>) => {
+    if (!interactive || dimmed) return
+    e.stopPropagation()
+    setHot(true)
+    document.body.style.cursor = 'pointer'
+    useVigilStore.setState({
+      statusLine: focused
+        ? `FOCUSED · click again to open · ${node.label}`
+        : `${node.kind.toUpperCase()} · ${node.label} · ${node.weight}`,
+    })
+  }
+  const onLeave = () => {
+    setHot(false)
+    document.body.style.cursor = 'default'
+  }
+  const onCardClick = (e: ThreeEvent<MouseEvent>) => {
+    if (!interactive || dimmed) return
+    e.stopPropagation()
+    const st = useVigilStore.getState()
+    // First click = local focus; second click on same card = open panel
+    if (st.graphFocusId !== node.id) {
+      st.setGraphFocusId(node.id)
+      st.setSceneSpin(false)
+      st.setStatus(`LOCAL · ${node.label} (depth 2) · click card again to open`)
+      return
+    }
+    openInsight(node)
+  }
+
+  const opacity = dimmed ? 0.12 : hot || focused ? 1 : 0.92
 
   return (
     <group position={position}>
+      {/* Fat invisible pick sphere — never rely on text */}
       <mesh
-        ref={mesh}
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-          if (!interactive) return
-          e.stopPropagation()
-          setHot(true)
-          document.body.style.cursor = 'pointer'
-          useVigilStore.setState({
-            statusLine: `${node.kind.toUpperCase()} · ${node.label} · ${node.weight}`,
-          })
-        }}
-        onPointerOut={() => {
-          setHot(false)
-          document.body.style.cursor = 'default'
-        }}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          if (!interactive) return
-          e.stopPropagation()
-          activateNode(node)
-        }}
+        onPointerOver={onEnter}
+        onPointerOut={onLeave}
+        onClick={onCardClick}
       >
-        <sphereGeometry args={[r, 20, 20]} />
-        <meshBasicMaterial color={color} transparent opacity={hot ? 1 : 0.92} />
+        <sphereGeometry args={[0.28, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
+
+      {/* Visible node */}
+      <mesh>
+        <sphereGeometry args={[focused ? 0.12 : 0.08, 20, 20]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} />
+      </mesh>
+
+      {/* Clickable CARD plate (UX: big target) + non-interactive label */}
       {showLabel && (
-        <Html
-          center
-          distanceFactor={8}
-          style={{ pointerEvents: 'none' }}
-          zIndexRange={[20, 0]}
-        >
-          <div className={`vigil-tag vigil-tag-${node.kind}${hot ? ' hot' : ''}`}>
-            <span className="vigil-tag-name">{node.label}</span>
-            <span className="vigil-tag-meta">{node.weight}</span>
-          </div>
-        </Html>
+        <Billboard follow>
+          <mesh
+            position={[0, 0.22, 0]}
+            onPointerOver={onEnter}
+            onPointerOut={onLeave}
+            onClick={onCardClick}
+          >
+            <planeGeometry args={[cardW, cardH]} />
+            <meshBasicMaterial
+              color={focused || hot ? '#2a1408' : '#140a04'}
+              transparent
+              opacity={dimmed ? 0.08 : 0.92}
+              depthWrite={false}
+            />
+          </mesh>
+          {/* Card rim */}
+          <mesh position={[0, 0.22, -0.001]}>
+            <planeGeometry args={[cardW + 0.03, cardH + 0.03]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={dimmed ? 0.05 : hot || focused ? 0.85 : 0.45}
+              depthWrite={false}
+            />
+          </mesh>
+          <Html
+            position={[0, 0.22, 0.01]}
+            center
+            distanceFactor={6.5}
+            style={{ pointerEvents: 'none' }}
+            zIndexRange={[40, 0]}
+          >
+            <div
+              className={`vigil-tag vigil-tag-card vigil-tag-${node.kind}${hot || focused ? ' hot' : ''}`}
+              aria-hidden
+            >
+              <span className="vigil-tag-name">{node.label}</span>
+              <span className="vigil-tag-meta">{node.weight}</span>
+            </div>
+          </Html>
+        </Billboard>
       )}
     </group>
   )
@@ -189,9 +260,12 @@ export function NeuralCore() {
   const [model, setModel] = useState<WorldModel | null>(null)
   const group = useRef<THREE.Group>(null)
   const sceneMode = useVigilStore((s) => s.sceneMode)
+  const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const graphFocusId = useVigilStore((s) => s.graphFocusId)
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
   const trainingActive = useVigilStore((s) => s.trainingActive)
   const interactive = sceneMode === 'graph' && !focusedPanel && !trainingActive
+  const spinAngle = useRef(0)
 
   useEffect(() => {
     if (sceneMode !== 'graph') return
@@ -212,12 +286,26 @@ export function NeuralCore() {
     }
   }, [sceneMode])
 
+  // Clear focus when leaving graph mode
+  useEffect(() => {
+    if (sceneMode !== 'graph') {
+      useVigilStore.getState().setGraphFocusId(null)
+    }
+  }, [sceneMode])
+
   const dataNodes = useMemo(
     () => (model?.nodes || []).filter((n) => n.kind !== 'core'),
     [model],
   )
   const positions = useMemo(() => layoutNodes(dataNodes), [dataNodes])
-  const maxW = model?.stats?.max_weight || 1
+  const adj = useMemo(
+    () => buildAdj(model?.edges || []),
+    [model],
+  )
+  const localSet = useMemo(() => {
+    if (!graphFocusId) return null
+    return neighborhood(graphFocusId, adj)
+  }, [graphFocusId, adj])
 
   const edgeLines = useMemo(() => {
     if (!model) return [] as {
@@ -226,6 +314,7 @@ export function NeuralCore() {
       mid: THREE.Vector3
       label: string
       weight: number
+      dimmed: boolean
     }[]
     const out: {
       key: string
@@ -233,14 +322,19 @@ export function NeuralCore() {
       mid: THREE.Vector3
       label: string
       weight: number
+      dimmed: boolean
     }[] = []
     const sorted = [...model.edges]
-      .filter((e) => e.source !== 'core' && !e.target.startsWith('core'))
+      .filter((e) => e.source !== 'core' && e.target !== 'core')
       .sort((a, b) => b.weight - a.weight)
     for (const e of sorted) {
       const a = positions.get(e.source)
       const b = positions.get(e.target)
       if (!a || !b) continue
+      const dimmed = Boolean(
+        localSet && (!localSet.has(e.source) || !localSet.has(e.target)),
+      )
+      if (localSet && dimmed) continue // hide edges outside neighborhood
       const mid = a.clone().lerp(b, 0.5)
       mid.y += 0.1
       out.push({
@@ -253,17 +347,26 @@ export function NeuralCore() {
         mid,
         label: EDGE_LABEL[e.relation || ''] || e.relation || 'link',
         weight: e.weight,
+        dimmed: false,
       })
-      if (out.length >= 70) break
+      if (out.length >= 80) break
     }
     return out
-  }, [model, positions])
+  }, [model, positions, localSet])
 
-  // Label strongest nodes + top edge labels only (readable, not spam)
   const labelNodeIds = useMemo(() => {
+    if (localSet) return localSet
     const top = [...dataNodes].sort((a, b) => b.weight - a.weight).slice(0, 22)
     return new Set(top.map((n) => n.id))
-  }, [dataNodes])
+  }, [dataNodes, localSet])
+
+  useFrame((_, dt) => {
+    if (!group.current) return
+    if (sceneSpin && !graphFocusId) {
+      spinAngle.current += dt * 0.03
+    }
+    group.current.rotation.y = spinAngle.current
+  })
 
   if (sceneMode !== 'graph' || !model || dataNodes.length === 0) return null
 
@@ -275,11 +378,11 @@ export function NeuralCore() {
             points={e.points}
             color="#ff5500"
             transparent
-            opacity={0.3}
-            lineWidth={1.2}
+            opacity={0.35}
+            lineWidth={1.35}
             depthWrite={false}
           />
-          {e.weight >= 8 && (
+          {e.weight >= 10 && (
             <Html
               position={e.mid}
               center
@@ -287,7 +390,7 @@ export function NeuralCore() {
               style={{ pointerEvents: 'none' }}
               zIndexRange={[10, 0]}
             >
-              <div className="vigil-tag vigil-tag-edge">
+              <div className="vigil-tag vigil-tag-edge" aria-hidden>
                 {e.label} · {e.weight}
               </div>
             </Html>
@@ -297,14 +400,17 @@ export function NeuralCore() {
       {dataNodes.map((n) => {
         const p = positions.get(n.id)
         if (!p) return null
+        const dimmed = Boolean(localSet && !localSet.has(n.id))
+        if (dimmed) return null // hide outside neighborhood — clean Obsidian local graph
         return (
-          <GraphNodeMesh
+          <GraphCard
             key={n.id}
             node={n}
             position={p}
-            maxW={maxW}
             interactive={interactive}
             showLabel={labelNodeIds.has(n.id)}
+            dimmed={false}
+            focused={graphFocusId === n.id}
           />
         )
       })}

@@ -19,6 +19,8 @@ export function StatusHud() {
   const setVigilMode = useVigilStore((s) => s.setVigilMode)
   const sceneMode = useVigilStore((s) => s.sceneMode)
   const setSceneMode = useVigilStore((s) => s.setSceneMode)
+  const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const toggleSceneSpin = useVigilStore((s) => s.toggleSceneSpin)
   const trainingActive = useVigilStore((s) => s.trainingActive)
   const startTraining = useVigilStore((s) => s.startTraining)
   const sessions = useVigilStore((s) => s.calibration.sessionsCompleted)
@@ -125,6 +127,31 @@ export function StatusHud() {
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
                   <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
                   <path d="M4 12h16M12 4a14 14 0 0 1 0 16M12 4a14 14 0 0 0 0 16" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`hud-icon-btn ${sceneSpin ? 'on' : ''}`}
+                title={sceneSpin ? 'Spin on — click or Space to freeze' : 'Spin off — click or Space to resume'}
+                aria-label={sceneSpin ? 'Freeze spin' : 'Resume spin'}
+                aria-pressed={sceneSpin}
+                onClick={() => toggleSceneSpin()}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                  {sceneSpin ? (
+                    <path
+                      d="M12 4a8 8 0 1 1-5.7 2.3M12 4v4M12 4l2.5 2"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                  ) : (
+                    <>
+                      <rect x="7" y="6" width="3" height="12" rx="0.5" fill="currentColor" />
+                      <rect x="14" y="6" width="3" height="12" rx="0.5" fill="currentColor" />
+                    </>
+                  )}
                 </svg>
               </button>
             </div>

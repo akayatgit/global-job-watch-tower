@@ -10,11 +10,13 @@ import { ORBIT_NODES, useVigilStore } from '../store/vigilStore'
 export function OrbitNodes() {
   const group = useRef<THREE.Group>(null)
   const hover = useVigilStore((s) => s.hoverTarget)
+  const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const phase = useRef(0)
 
   useFrame((state) => {
-    if (group.current) {
-      group.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.15) * 0.08
-    }
+    if (!group.current) return
+    if (sceneSpin) phase.current = state.clock.elapsedTime * 0.15
+    group.current.rotation.y = Math.sin(phase.current) * 0.08
   })
 
   return (

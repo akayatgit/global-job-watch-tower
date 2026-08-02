@@ -109,6 +109,15 @@ button, input, select {
   box-shadow: 0 0 12px rgba(255, 85, 0, 0.2);
   transform: translateZ(0);
   user-select: none;
+  /* Labels never steal clicks — hit the 3D card / building */
+  pointer-events: none !important;
+}
+.vigil-tag-card {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 12px;
+  max-width: 140px;
 }
 .vigil-tag-name {
   overflow: hidden;

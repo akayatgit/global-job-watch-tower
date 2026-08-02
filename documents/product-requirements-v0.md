@@ -605,7 +605,8 @@ START OF EVERY SESSION
 | v0.10-milestone | 2026-08-02 | Akay | **Recover here:** pre–Neural Core baseline. Tag `milestone/pre-neural-core-v0`. Doc: `documents/milestone-pre-neural-core.md`. Next: world-model core (data graph), not decorative orb. |
 | v0.11 | 2026-08-02 | Akay | Neural Core v0: live Postgres world-model graph in Three.js (sectors/cities/companies/roles + edges); click opens insight panels |
 | v0.12 | 2026-08-02 | Akay | Scene modes: Core particle singularity (20k GPU) · Graph Obsidian clusters · City globe→district; wheel zooms into orb not page. Doc: `documents/vigil-scene-modes.md` |
-| v0.13-milestone | 2026-08-03 | Akay | **Recover here:** Singularity Core v1 locked (Ashok accepted). Tag `milestone/singularity-core-v1`. Doc: `documents/milestone-singularity-core-v1.md`. Miro/Figma 3D nav + tags; singularity = brand-candidate mark. |
+| v0.13-milestone | 2026-08-03 | Akay | **Recover here:** Singularity Core v1 locked (Ashok accepted). Tag `milestone/singularity-core-v1`. Doc: `documents/milestone-singularity-core-v1.md`. Miro/Figma 3D nav + tags. |
+| v0.14 | 2026-08-03 | Akay | Agile roadmap live (`documents/roadmap.md`). Sprint: Graph local-focus + spin freeze + clickable cards. Next milestone: richer City districts. |
 
 ### Phase 0 progress (living)
 

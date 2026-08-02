@@ -114,7 +114,9 @@ function CityDistrict({
       </mesh>
       {blocks.map((b, i) => (
         <group key={i} position={b.pos}>
+          {/* Fat invisible pick volume — click the building, not the text */}
           <mesh
+            position={[0, 0, 0]}
             onClick={(e: ThreeEvent<MouseEvent>) => {
               if (!b.company_id) return
               e.stopPropagation()
@@ -134,6 +136,10 @@ function CityDistrict({
               document.body.style.cursor = 'default'
             }}
           >
+            <boxGeometry args={[0.55, Math.max(b.h, 0.5), 0.55]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+          <mesh>
             <boxGeometry args={[0.36, b.h, 0.36]} />
             <meshBasicMaterial
               color={
@@ -150,7 +156,7 @@ function CityDistrict({
               distanceFactor={7}
               style={{ pointerEvents: 'none' }}
             >
-              <div className="vigil-tag vigil-tag-building">
+              <div className="vigil-tag vigil-tag-building" aria-hidden>
                 <span className="vigil-tag-name">{b.name}</span>
                 <span className="vigil-tag-meta">{b.n}</span>
               </div>
@@ -168,8 +174,11 @@ export function CityGlobe() {
   const setCityFocus = useVigilStore((s) => s.setCityFocus)
   const setCityFilter = useVigilStore((s) => s.setCityFilter)
   const focusedPanel = useVigilStore((s) => s.focusedPanel)
+  const sceneSpin = useVigilStore((s) => s.sceneSpin)
   const [cities, setCities] = useState<CityNode[]>([])
   const globe = useRef<THREE.Group>(null)
+  const spinY = useRef(0)
+  const lastT = useRef(0)
 
   useEffect(() => {
     if (sceneMode !== 'city') return
@@ -201,7 +210,10 @@ export function CityGlobe() {
 
   useFrame((state) => {
     if (globe.current && !cityFocus) {
-      globe.current.rotation.y = state.clock.elapsedTime * 0.1
+      const t = state.clock.elapsedTime
+      if (sceneSpin) spinY.current += Math.max(0, t - lastT.current) * 0.1
+      lastT.current = t
+      globe.current.rotation.y = spinY.current
     }
   })
 
@@ -239,6 +251,7 @@ export function CityGlobe() {
         const size = 0.05 + heat * 0.1
         return (
           <group key={c.id} position={p}>
+            {/* Fat pick sphere — click the marker card, not the label */}
             <mesh
               onPointerOver={(e: ThreeEvent<PointerEvent>) => {
                 if (!interactive) return
@@ -256,11 +269,16 @@ export function CityGlobe() {
                 e.stopPropagation()
                 setCityFocus(c.id)
                 setCityFilter(c.id)
+                useVigilStore.getState().setSceneSpin(false)
                 useVigilStore.getState().resetView()
                 useVigilStore.getState().setStatus(`ENTERING ${geo.label}`)
                 useVigilStore.getState().triggerBurst()
               }}
             >
+              <sphereGeometry args={[Math.max(size * 2.4, 0.16), 16, 16]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+            <mesh>
               <sphereGeometry args={[size, 16, 16]} />
               <meshBasicMaterial
                 color={heat > 0.66 ? '#ffaa00' : heat > 0.33 ? '#ff5500' : '#cc4400'}
@@ -272,7 +290,7 @@ export function CityGlobe() {
               style={{ pointerEvents: 'none' }}
               zIndexRange={[30, 0]}
             >
-              <div className="vigil-tag vigil-tag-city">
+              <div className="vigil-tag vigil-tag-city" aria-hidden>
                 <span className="vigil-tag-name">{geo.label}</span>
                 <span className="vigil-tag-meta">{c.n}</span>
               </div>

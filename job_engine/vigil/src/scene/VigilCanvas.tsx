@@ -50,7 +50,12 @@ export function VigilCanvas() {
       if (s.focusedPanel || s.trainingActive) return
       if (e.key === 'Escape' || e.key === 'Home' || e.key === '0') {
         e.preventDefault()
+        s.setGraphFocusId(null)
         s.resetView()
+      }
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault()
+        s.toggleSceneSpin()
       }
     }
     const onDbl = () => {
@@ -81,6 +86,11 @@ export function VigilCanvas() {
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         onPointerMissed={() => {
           const st = useVigilStore.getState()
+          if (st.sceneMode === 'graph' && st.graphFocusId) {
+            st.setGraphFocusId(null)
+            st.setStatus('GRAPH · global view')
+            return
+          }
           if (st.sceneMode === 'city' && st.cityFocus) {
             st.setCityFocus(null)
             st.resetView()
