@@ -92,12 +92,12 @@ use — they should love opening the app, never fight it.
   words like captcha/recaptcha always appear in LinkedIn HTML. Only alert
   when there are no usable job results / real security wall. Dismissible
   popups are closed and scraping continues.
-- Big live countdown on every page: ticks to next search start (5…4…3…),
-  then “Searching {role}…” with seconds left (122…121…). Client ticks
-  every second; server sync every ~3s.
-- Header layout: brand + nav + status on one row; one strip = countdown +
-  search-pulse + HealthBoard filling remaining width; no “Domestic & Global
-  24×7” pill.
+- Next-search countdown (2026-08-02): small grey text at the bottom of the
+  left module rail only — e.g. “1m 2s to go”. No big center countdown, no
+  role name repeat. Client ticks every second; server sync ~3s. Hover shows
+  full next-search title if needed.
+- Header layout: brand + nav + status on one row; HealthBoard/vitals strip;
+  no “Domestic & Global 24×7” pill.
 - HealthBoard: icon-first colourful status tiles (green/amber/red/blue/purple);
   minimal text (numbers + ON/OK); hover title for meaning; at-a-glance only.
 - Plan B orange banner clears as soon as Ollama is allowed again (heat &lt; 85°C

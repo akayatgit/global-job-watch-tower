@@ -630,10 +630,6 @@ button, input, select {
   pointer-events: none;
 }
 
-.mode-training .countdown-big {
-  opacity: 0.35;
-}
-
 .training-close-target {
   display: flex;
   flex-direction: column;
@@ -1387,27 +1383,29 @@ button, input, select {
   color: var(--vg-muted);
 }
 
-.countdown-big {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
+.rail-countdown {
+  margin-top: auto;
+  padding: 10px 4px 2px;
   text-align: center;
+  font-family: var(--font-hud);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  color: #6b7280;
+  user-select: none;
   pointer-events: none;
 }
-
-.countdown-big .title {
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  color: var(--vg-accent);
+.module-rail.open .rail-countdown {
+  font-size: 10px;
+  letter-spacing: 0.06em;
 }
-
-.countdown-big .secs {
-  font-family: var(--font-hud);
-  font-size: 28px;
-  color: var(--vg-amber);
-  text-shadow: 0 0 20px rgba(255, 85, 0, 0.5);
+.module-rail.collapsed .rail-countdown {
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  padding-left: 2px;
+  padding-right: 2px;
+  word-break: break-word;
 }
 
 /* AI vs Keyword compare */

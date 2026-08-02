@@ -43,7 +43,6 @@ export function StatusHud() {
   }, [setVitals])
 
   const v = vitals
-  const secs = v?.countdown_secs
   void tick
 
   return (
@@ -160,17 +159,6 @@ export function StatusHud() {
       ) : v?.filter_mode_policy === 'keyword' || v?.alert_level === 'planb' ? (
         <div className="alert-strip planb">Plan B keyword filter — heat/GPU recovery</div>
       ) : null}
-
-      <div className="countdown-big">
-        <div className="title">{v?.countdown_title || v?.phase_label || 'NEXT SEARCH'}</div>
-        <div className="secs">
-          {v?.countdown_mode === 'searching'
-            ? `${v?.countdown_role || 'Searching'}… ${secs ?? ''}`
-            : secs != null
-              ? `${secs}`
-              : '—'}
-        </div>
-      </div>
     </div>
   )
 }

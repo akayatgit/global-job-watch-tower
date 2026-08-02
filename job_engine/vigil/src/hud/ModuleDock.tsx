@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from 'react'
+import { railCountdownLabel } from '../lib/formatCountdown'
 import { ORBIT_NODES, useVigilStore, type PanelId } from '../store/vigilStore'
 import { sendUltron } from '../lib/ultronWs'
 import { ModuleIcon } from './ModuleIcons'
@@ -10,6 +12,32 @@ export function ModuleDock() {
   const railOpen = useVigilStore((s) => s.railOpen)
   const setRailOpen = useVigilStore((s) => s.setRailOpen)
   const togglePin = useVigilStore((s) => s.togglePin)
+  const vitals = useVigilStore((s) => s.vitals)
+  const [tick, setTick] = useState(0)
+  const [anchor, setAnchor] = useState({ secs: 0, at: 0, mode: '' })
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (vitals?.countdown_secs == null) return
+    setAnchor({
+      secs: vitals.countdown_secs,
+      at: Date.now(),
+      mode: vitals.countdown_mode || '',
+    })
+  }, [vitals?.countdown_secs, vitals?.countdown_mode])
+
+  const countdownText = useMemo(() => {
+    void tick
+    const mode = anchor.mode || vitals?.countdown_mode
+    if (mode === 'paused' || mode === 'idle') return railCountdownLabel(mode, 0)
+    const elapsed = anchor.at ? Math.floor((Date.now() - anchor.at) / 1000) : 0
+    const secs = Math.max(0, (anchor.secs || 0) - elapsed)
+    return railCountdownLabel(mode, secs)
+  }, [anchor, tick, vitals?.countdown_mode])
 
   const launch = (id: PanelId) => {
     openPanel(id)
@@ -81,6 +109,13 @@ export function ModuleDock() {
           )
         })}
       </nav>
+
+      <div
+        className="rail-countdown"
+        title={vitals?.countdown_title || 'Next search'}
+      >
+        {countdownText}
+      </div>
     </aside>
   )
 }
