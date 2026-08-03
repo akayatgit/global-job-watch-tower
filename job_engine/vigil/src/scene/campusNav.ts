@@ -81,9 +81,8 @@ function focusDist(h: number, roleHint = 1) {
 }
 
 function aimOf(t: CampusTower) {
-  // Aim mid label stack (not bare roof) so company name isn't cropped
-  const lift = 0.45 + Math.min(0.35, t.n * 0.04)
-  return { x: t.x, y: CITY_Y + t.h + lift, z: t.z }
+  // Orbit / focus pivot = top-floor center (roof), not building mid-mass
+  return { x: t.x, y: CITY_Y + t.h, z: t.z }
 }
 
 function focusTower(t: CampusTower) {

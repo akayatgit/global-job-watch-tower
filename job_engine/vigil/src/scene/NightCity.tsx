@@ -116,7 +116,7 @@ function wrapName(name: string, max = 11): string[] {
   return lines.slice(0, 3)
 }
 
-/** Soft neon fill — no hard stroke outlines */
+/** Soft neon fill — glow halved vs earlier campus look */
 function neonFill(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -126,7 +126,7 @@ function neonFill(
   glow: string,
 ) {
   ctx.shadowColor = glow
-  ctx.shadowBlur = 10
+  ctx.shadowBlur = 5
   ctx.fillStyle = fill
   ctx.fillText(text, x, y)
   ctx.shadowBlur = 0
@@ -284,11 +284,11 @@ function makeRoleLabel(title: string, n: number) {
   g.addColorStop(1, 'rgba(6, 16, 32, 0.9)')
   ctx.fillStyle = g
   ctx.fill()
-  // Neon rim
-  ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)'
+  // Neon rim (glow −50%)
+  ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)'
   ctx.lineWidth = 1.5
   ctx.shadowColor = '#facc15'
-  ctx.shadowBlur = 6
+  ctx.shadowBlur = 3
   ctx.stroke()
   ctx.shadowBlur = 0
   // Inner cyan hairline
@@ -348,12 +348,9 @@ function focusDistance(h: number, roleCount = 0) {
   return 2.35 + h * 0.22 + rows * 0.32
 }
 
-/** Aim at the center of the roof label stack (not the bare roof edge). */
-function focusAimY(h: number, bannerH: number, roleCount: number, roleH: number) {
-  const rows = Math.max(0, Math.ceil(roleCount / 2))
-  const stackMid =
-    h + 0.14 + bannerH / 2 + rows * roleH * 0.28
-  return CITY_Y + stackMid
+/** Orbit / focus pivot = center of the top floor (roof), not building mid-mass. */
+function focusRoofY(h: number) {
+  return CITY_Y + h
 }
 
 /** Role cards must never outnumber openings on the building. */
@@ -541,11 +538,16 @@ function EdgeFrame({
 function DummyBuilding({
   b,
   dim,
+  neighborGlow = 0,
+  spillColor = '#38bdf8',
 }: {
   b: Dummy
   dim: boolean
+  neighborGlow?: number
+  spillColor?: string
 }) {
   const op = dim ? 0.4 : 1
+  const wash = neighborGlow > 0.08
   return (
     <group position={[b.x, 0, b.z]}>
       <mesh
@@ -557,27 +559,29 @@ function DummyBuilding({
         <boxGeometry args={[b.w, b.h, b.d]} />
         <meshStandardMaterial
           color={b.tint}
+          emissive={wash ? spillColor : '#000000'}
+          emissiveIntensity={wash ? neighborGlow * 0.22 : 0}
           roughness={0.78}
           metalness={0.08}
           transparent
           opacity={op}
         />
       </mesh>
-      {/* Tiny window dots */}
+      {/* Tiny window dots — catch neon spill */}
       <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]} raycast={() => null}>
         <planeGeometry args={[b.w * 0.7, b.h * 0.55]} />
         <meshBasicMaterial
-          color="#94a3b8"
+          color={wash ? spillColor : '#94a3b8'}
           transparent
-          opacity={dim ? 0.12 : 0.18}
+          opacity={dim ? 0.12 : 0.14 + neighborGlow * 0.2}
         />
       </mesh>
       <EdgeFrame
         w={b.w}
         h={b.h}
         d={b.d}
-        color="#94a3b8"
-        opacity={dim ? 0.25 : 0.35}
+        color={wash ? spillColor : '#94a3b8'}
+        opacity={dim ? 0.25 : 0.28 + neighborGlow * 0.25}
       />
     </group>
   )
@@ -589,6 +593,8 @@ function GlassTower({
   windowDays,
   openingsCaptionText,
   sceneDimmed,
+  neighborGlow = 0,
+  spillColor,
   onHoverEnter,
   onHoverLeave,
 }: {
@@ -599,6 +605,9 @@ function GlassTower({
   openingsCaptionText?: string
   /** True when any tower is focused or hovered — dim non-active ones */
   sceneDimmed: boolean
+  /** 0–1 wash from a nearby lit tower's neon spill */
+  neighborGlow?: number
+  spillColor?: string
   onHoverEnter: (id: string) => void
   onHoverLeave: (id: string) => void
 }) {
@@ -609,6 +618,7 @@ function GlassTower({
   const lit = focused || (hot && !interactionBlocked)
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
+  const core = useRef<THREE.MeshStandardMaterial>(null)
   const banner = useMemo(
     () => makeRoofLabel(t.name, t.n, windowDays, openingsCaptionText),
     [t.name, t.n, windowDays, openingsCaptionText],
@@ -623,6 +633,11 @@ function GlassTower({
     return c
   }, [t.hue])
   const warmCol = useMemo(() => new THREE.Color('#fb923c'), [])
+  const spill = useMemo(
+    () => new THREE.Color(spillColor || t.accent),
+    [spillColor, t.accent],
+  )
+  const whiteCore = useMemo(() => new THREE.Color('#f8fafc'), [])
 
   useEffect(() => {
     if (interactionBlocked && hot) {
@@ -633,11 +648,22 @@ function GlassTower({
 
   useFrame((state) => {
     const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
+    const spillBoost = neighborGlow * 0.35
     if (shell.current) {
-      const base = lit ? 1.15 : dim ? 0.28 : 0.48
-      shell.current.emissiveIntensity = base + breath * (lit ? 0.32 : 0.08)
-      // Dimmed ≈ 60% transparent (0.4 opacity) — still readable
+      // Glow intensities −50% vs prior campus
+      const base = lit ? 0.58 : dim ? 0.14 + spillBoost : 0.24 + spillBoost
+      shell.current.emissiveIntensity = base + breath * (lit ? 0.16 : 0.04)
       shell.current.opacity = lit ? 0.85 : dim ? 0.4 : 0.52
+      if (!lit && neighborGlow > 0.05) {
+        shell.current.emissive.copy(spill)
+      } else if (!lit) {
+        shell.current.emissive.copy(glassCol)
+      }
+    }
+    if (core.current) {
+      const cBase = lit ? 0.42 : neighborGlow * 0.28
+      core.current.emissiveIntensity = cBase + breath * (lit ? 0.12 : 0.04)
+      core.current.opacity = lit ? 0.9 : Math.max(0.25, neighborGlow * 0.55)
     }
   })
 
@@ -681,11 +707,11 @@ function GlassTower({
       return
     }
     st.setSceneSpin(false)
-    // Frame company name + count + all role cards with padding
+    // Pivot = top-floor center; distance still frames name + roles
     st.requestCameraFocus({
       id: selectId,
       x: t.x,
-      y: focusAimY(t.h, bannerH, t.roles.length, roleH),
+      y: focusRoofY(t.h),
       z: t.z,
       distance: focusDistance(t.h, t.roles.length),
     })
@@ -707,15 +733,33 @@ function GlassTower({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Interior core (warm accent on some towers) */}
+      {/* Inner white neon core */}
+      <mesh position={[0, t.h * 0.52, 0]} raycast={() => null}>
+        <boxGeometry args={[t.w * 0.32, t.h * 0.72, t.d * 0.32]} />
+        <meshStandardMaterial
+          ref={core}
+          color={whiteCore}
+          emissive={whiteCore}
+          emissiveIntensity={lit ? 0.42 : neighborGlow * 0.28}
+          transparent
+          opacity={lit ? 0.88 : Math.max(0.2, neighborGlow * 0.5)}
+          roughness={0.2}
+          metalness={0.15}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Warm / accent mid shell around the white core */}
       <mesh position={[0, t.h * 0.45, 0]} raycast={() => null}>
         <boxGeometry args={[t.w * 0.55, t.h * 0.75, t.d * 0.55]} />
         <meshStandardMaterial
           color={t.warmCore ? warmCol : '#1e293b'}
-          emissive={t.warmCore ? warmCol : glassCol}
-          emissiveIntensity={dim ? 0.18 : lit ? 0.85 : t.warmCore ? 0.55 : 0.2}
+          emissive={lit || neighborGlow > 0.08 ? spill : glassCol}
+          emissiveIntensity={
+            dim ? 0.09 + neighborGlow * 0.2 : lit ? 0.42 : 0.1 + neighborGlow * 0.25
+          }
           transparent
-          opacity={dim ? dimOpacity : 0.85}
+          opacity={dim ? dimOpacity : 0.75}
         />
       </mesh>
 
@@ -754,7 +798,7 @@ function GlassTower({
           ref={shell}
           color={glassCol}
           emissive={glassCol}
-          emissiveIntensity={0.5}
+          emissiveIntensity={0.25}
           transparent
           opacity={dim ? dimOpacity : lit ? 0.72 : 0.52}
           roughness={0.12}
@@ -773,7 +817,13 @@ function GlassTower({
           <meshBasicMaterial
             color={t.accent}
             transparent
-            opacity={dim ? 0.08 : lit ? 0.28 : 0.12}
+            opacity={
+              dim
+                ? 0.08 + neighborGlow * 0.1
+                : lit
+                  ? 0.2
+                  : 0.1 + neighborGlow * 0.12
+            }
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -783,16 +833,41 @@ function GlassTower({
         w={t.w}
         h={t.h}
         d={t.d}
-        color={lit ? t.accent : '#e2e8f0'}
-        opacity={dim ? dimOpacity : lit ? 0.95 : 0.55}
+        color={lit || neighborGlow > 0.15 ? t.accent : '#e2e8f0'}
+        opacity={
+          dim
+            ? dimOpacity
+            : lit
+              ? 0.7
+              : 0.4 + neighborGlow * 0.35
+        }
       />
 
+      {/* Neon spill — lights surrounding buildings (intensity −50%) */}
       {lit && (
+        <>
+          <pointLight
+            position={[0, t.h * 0.85, 0]}
+            color="#ffffff"
+            intensity={focused ? 0.55 : 0.38}
+            distance={2.2}
+            decay={2}
+          />
+          <pointLight
+            position={[0, t.h * 0.55, 0]}
+            color={t.accent}
+            intensity={focused ? 0.9 : 0.62}
+            distance={4.8}
+            decay={1.6}
+          />
+        </>
+      )}
+      {!lit && neighborGlow > 0.12 && (
         <pointLight
-          position={[0, t.h * 0.7, 0]}
-          color={t.accent}
-          intensity={focused ? 1.75 : 1.25}
-          distance={2.8}
+          position={[0, t.h * 0.5, 0]}
+          color={spillColor || t.accent}
+          intensity={neighborGlow * 0.35}
+          distance={2.4}
           decay={2}
         />
       )}
@@ -883,7 +958,7 @@ function CampusPad({
   )
 }
 
-/** Collective city name — no card, big bold white, subtle glow, above roofs. */
+/** Collective city name — yellow, soft glow (−50%), no card plate. */
 function makeCityFlag(label: string) {
   const text = label.trim().toUpperCase()
   const c = document.createElement('canvas')
@@ -894,16 +969,16 @@ function makeCityFlag(label: string) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.font = '900 92px Orbitron, Rajdhani, sans-serif'
-  // Soft bloom layers (no plate / card)
-  ctx.shadowColor = 'rgba(255,255,255,0.85)'
-  ctx.shadowBlur = 28
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'
-  ctx.fillText(text, c.width / 2, c.height / 2)
+  // Yellow bloom layers (glow halved)
+  ctx.shadowColor = 'rgba(250, 204, 21, 0.55)'
   ctx.shadowBlur = 14
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.fillStyle = 'rgba(253, 224, 71, 0.5)'
   ctx.fillText(text, c.width / 2, c.height / 2)
-  ctx.shadowBlur = 4
-  ctx.fillStyle = '#ffffff'
+  ctx.shadowBlur = 7
+  ctx.fillStyle = 'rgba(253, 224, 71, 0.88)'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 2
+  ctx.fillStyle = '#fde047'
   ctx.fillText(text, c.width / 2, c.height / 2)
   ctx.shadowBlur = 0
   const tex = new THREE.CanvasTexture(c)
@@ -929,7 +1004,7 @@ function CityFlag({
   const pulse = useRef(0)
   const mat = useRef<THREE.MeshBasicMaterial>(null)
   useFrame((state) => {
-    pulse.current = 0.82 + Math.sin(state.clock.elapsedTime * 1.1) * 0.1
+    pulse.current = 0.78 + Math.sin(state.clock.elapsedTime * 1.1) * 0.05
     if (mat.current) {
       mat.current.opacity = dim ? 0.4 : pulse.current
     }
@@ -1159,7 +1234,7 @@ function StreetLamps({ dim }: { dim: boolean }) {
             <meshBasicMaterial
               color={l.color}
               transparent
-              opacity={dim ? 0.15 : 0.85}
+              opacity={dim ? 0.1 : 0.42}
             />
           </mesh>
         </group>
@@ -1332,15 +1407,32 @@ export function NightCity({
     return () => clearCampusNav()
   }, [corps, placeLabel])
 
+  // Neon spill origin — focused tower, else hovered
+  const glowSrc = useMemo(() => {
+    const id = selectFocusId || (interactionBlocked ? null : hoverId)
+    if (!id?.startsWith('company:')) return null
+    const cid = Number(id.slice('company:'.length))
+    return corps.find((c) => c.company_id === cid) || null
+  }, [selectFocusId, hoverId, interactionBlocked, corps])
+
+  const spillFor = (x: number, z: number) => {
+    if (!glowSrc) return { glow: 0, color: '#38bdf8' }
+    const d = Math.hypot(x - glowSrc.x, z - glowSrc.z)
+    if (d < 0.05) return { glow: 0, color: glowSrc.accent }
+    // Falloff across nearby blocks
+    const glow = Math.max(0, 1 - d / 4.2)
+    return { glow: glow * glow, color: glowSrc.accent }
+  }
+
   return (
     <group position={[0, CITY_Y, 0]}>
-      <ambientLight intensity={sceneDimmed ? 0.32 : 0.55} color="#e2e8f0" />
+      <ambientLight intensity={sceneDimmed ? 0.28 : 0.42} color="#e2e8f0" />
       <hemisphereLight
-        args={['#f8fafc', '#64748b', sceneDimmed ? 0.22 : 0.45]}
+        args={['#f8fafc', '#64748b', sceneDimmed ? 0.18 : 0.32]}
       />
       <directionalLight
         position={[5, 16, 3]}
-        intensity={sceneDimmed ? 0.55 : 1.05}
+        intensity={sceneDimmed ? 0.45 : 0.75}
         color="#fff7ed"
         castShadow
         shadow-mapSize-width={1024}
@@ -1348,12 +1440,12 @@ export function NightCity({
       />
       <directionalLight
         position={[-6, 5, -4]}
-        intensity={sceneDimmed ? 0.18 : 0.4}
+        intensity={sceneDimmed ? 0.12 : 0.22}
         color="#c4b5fd"
       />
       <pointLight
         position={[0, 3, 0]}
-        intensity={sceneDimmed ? 0.15 : 0.35}
+        intensity={sceneDimmed ? 0.1 : 0.18}
         color="#67e8f9"
         distance={jobsMode && clusters.length > 2 ? 18 : 10}
       />
@@ -1377,24 +1469,38 @@ export function NightCity({
       <Traffic dim={sceneDimmed} />
       <StreetLamps dim={sceneDimmed} />
 
-      {dummies.map((b, i) => (
-        <DummyBuilding key={i} b={b} dim={sceneDimmed} />
-      ))}
+      {dummies.map((b, i) => {
+        const spill = spillFor(b.x, b.z)
+        return (
+          <DummyBuilding
+            key={i}
+            b={b}
+            dim={sceneDimmed}
+            neighborGlow={spill.glow}
+            spillColor={spill.color}
+          />
+        )
+      })}
 
-      {corps.map((t) => (
-        <GlassTower
-          key={`${t.city_key || 'c'}-${t.company_id}`}
-          t={t}
-          cityLabel={t.city_label || cityLabel || placeLabel}
-          windowDays={cityWindowDays}
-          openingsCaptionText={roofCaption ? roofCaption(t.n) : undefined}
-          sceneDimmed={sceneDimmed}
-          onHoverEnter={setHoverId}
-          onHoverLeave={(id) =>
-            setHoverId((cur) => (cur === id ? null : cur))
-          }
-        />
-      ))}
+      {corps.map((t) => {
+        const spill = spillFor(t.x, t.z)
+        return (
+          <GlassTower
+            key={`${t.city_key || 'c'}-${t.company_id}`}
+            t={t}
+            cityLabel={t.city_label || cityLabel || placeLabel}
+            windowDays={cityWindowDays}
+            openingsCaptionText={roofCaption ? roofCaption(t.n) : undefined}
+            sceneDimmed={sceneDimmed}
+            neighborGlow={spill.glow}
+            spillColor={spill.color}
+            onHoverEnter={setHoverId}
+            onHoverLeave={(id) =>
+              setHoverId((cur) => (cur === id ? null : cur))
+            }
+          />
+        )
+      })}
     </group>
   )
 }

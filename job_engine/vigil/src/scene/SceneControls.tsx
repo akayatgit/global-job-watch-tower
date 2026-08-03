@@ -373,7 +373,15 @@ export function SceneControls() {
     }
 
     const st = useVigilStore.getState()
-    if (st.vigilMode && st.gestureMode === 'none' && !st.focusedPanel) {
+    // City focus: keep pinch/rotate pivoting on the top floor (roof), not mid-building
+    if (
+      st.sceneMode === 'city' &&
+      st.cameraFocus?.id?.startsWith('company:') &&
+      !flight?.active
+    ) {
+      c.target.set(st.cameraFocus.x, st.cameraFocus.y, st.cameraFocus.z)
+      c.update()
+    } else if (st.vigilMode && st.gestureMode === 'none' && !st.focusedPanel) {
       const pan = st.canvasPan
       c.target.x = THREE.MathUtils.lerp(c.target.x, pan.x * 0.85, 0.08)
       c.target.y = THREE.MathUtils.lerp(c.target.y, pan.y * 0.85, 0.08)

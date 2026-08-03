@@ -228,6 +228,9 @@ use — they should love opening the app, never fight it.
   the cursor only — floating name/role cards never steal hits. Unfocused towers
   stay ~60% transparent with dull but visible titles; focused tower bigger/bolder.
   City orbit allows near-full tilt (look up/down) + pinch/wheel zoom.
+- **City neon + orbit pivot (2026-08-03):** Glow halved; city-name flags yellow.
+  Towers have inner white neon; lit glow spills to surrounding blocks. Pinch/rotate
+  while focused pivots on the top-floor (roof) center — not the building mid-mass.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
