@@ -5,7 +5,12 @@ import { Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 import { api, openingsCaption } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
-import { wasDragClick } from './pointerGuard'
+import {
+  isMeshInteractionBlocked,
+  onPointerGuardChange,
+  useMeshInteractionBlocked,
+  wasDragClick,
+} from './pointerGuard'
 import { clearCampusNav, setCampusNav } from './campusNav'
 
 /**
@@ -550,7 +555,8 @@ function GlassTower({
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
   const [hot, setHot] = useState(false)
-  const lit = focused || hot
+  const interactionBlocked = useMeshInteractionBlocked()
+  const lit = focused || (hot && !interactionBlocked)
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const banner = useMemo(
@@ -568,6 +574,13 @@ function GlassTower({
   }, [t.hue])
   const warmCol = useMemo(() => new THREE.Color('#fb923c'), [])
 
+  useEffect(() => {
+    if (interactionBlocked && hot) {
+      setHot(false)
+      onHoverLeave(selectId)
+    }
+  }, [interactionBlocked, hot, onHoverLeave, selectId])
+
   useFrame((state) => {
     const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
     if (shell.current) {
@@ -579,6 +592,8 @@ function GlassTower({
 
   const enter = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation()
+    // No hover while button held / orbiting / post-drag release
+    if (isMeshInteractionBlocked()) return
     setHot(true)
     onHoverEnter(selectId)
     useVigilStore.setState({
@@ -594,7 +609,8 @@ function GlassTower({
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    if (wasDragClick()) return
+    // Drag-orbit release must never focus a tower
+    if (wasDragClick() || isMeshInteractionBlocked()) return
     const st = useVigilStore.getState()
     // Focus on the ROOF / top of building
     const roofY = CITY_Y + t.h + 0.15
@@ -1126,7 +1142,15 @@ export function NightCity({
   const cityFilter = useVigilStore((s) => s.cityFilter)
   const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const anyFocused = Boolean(selectFocusId?.startsWith('company:'))
-  const sceneDimmed = anyFocused || Boolean(hoverId)
+  const interactionBlocked = useMeshInteractionBlocked()
+  const sceneDimmed =
+    anyFocused || (Boolean(hoverId) && !interactionBlocked)
+
+  useEffect(() => {
+    return onPointerGuardChange(() => {
+      if (isMeshInteractionBlocked()) setHoverId(null)
+    })
+  }, [])
 
   useEffect(() => {
     let alive = true

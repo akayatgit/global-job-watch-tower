@@ -6,7 +6,11 @@ import * as THREE from 'three'
 import { api } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { NightCity } from './NightCity'
-import { wasDragClick } from './pointerGuard'
+import {
+  isMeshInteractionBlocked,
+  useMeshInteractionBlocked,
+  wasDragClick,
+} from './pointerGuard'
 
 const CITY_GEO: Record<string, { lat: number; lon: number; label: string }> = {
   bengaluru: { lat: 12.97, lon: 77.59, label: 'Bengaluru' },
@@ -141,7 +145,15 @@ function CityMarker({
   const remoteFocused = selectFocusId === remoteSelect
   const [remoteHot, setRemoteHot] = useState(false)
   const [cityHot, setCityHot] = useState(false)
+  const interactionBlocked = useMeshInteractionBlocked()
   const pickGlow = useRef<THREE.Mesh>(null)
+
+  useEffect(() => {
+    if (interactionBlocked) {
+      setCityHot(false)
+      setRemoteHot(false)
+    }
+  }, [interactionBlocked])
 
   const cityTex = useMemo(
     () => makeCityCardTex(geo.label, city.n, 'city', cityFocused),
@@ -241,7 +253,7 @@ function CityMarker({
   const onCityClick = (e: ThreeEvent<MouseEvent>) => {
     if (!interactive) return
     e.stopPropagation()
-    if (wasDragClick()) return
+    if (wasDragClick() || isMeshInteractionBlocked()) return
     const st = useVigilStore.getState()
     if (st.selectFocusId !== citySelect) {
       worldFocus(geoPos.clone().multiplyScalar(1.04), citySelect, 1.35)
@@ -259,7 +271,7 @@ function CityMarker({
   const onRemoteClick = (e: ThreeEvent<MouseEvent>) => {
     if (!interactive) return
     e.stopPropagation()
-    if (wasDragClick()) return
+    if (wasDragClick() || isMeshInteractionBlocked()) return
     const st = useVigilStore.getState()
     if (st.selectFocusId !== remoteSelect) {
       const behind = geoPos.clone().multiplyScalar(0.98)
@@ -296,7 +308,7 @@ function CityMarker({
         <mesh
           onClick={onCityClick}
           onPointerOver={(e) => {
-            if (!interactive) return
+            if (!interactive || isMeshInteractionBlocked()) return
             e.stopPropagation()
             setCityHot(true)
             useVigilStore.setState({
@@ -316,7 +328,7 @@ function CityMarker({
           />
         </mesh>
         {/* Soft glow plate behind focused city */}
-        {(cityFocused || cityHot) && (
+        {(cityFocused || (cityHot && !interactionBlocked)) && (
           <mesh position={[0, 0, -0.01]}>
             <planeGeometry args={[1.15, 0.42]} />
             <meshBasicMaterial
@@ -334,7 +346,7 @@ function CityMarker({
           <mesh
             onClick={onRemoteClick}
             onPointerOver={(e) => {
-              if (!interactive) return
+              if (!interactive || isMeshInteractionBlocked()) return
               e.stopPropagation()
               setRemoteHot(true)
               useVigilStore.setState({
@@ -349,12 +361,14 @@ function CityMarker({
             <meshBasicMaterial
               map={remoteTex}
               transparent
-              opacity={remoteHot || remoteFocused ? 0.98 : 0.78}
+              opacity={
+                remoteFocused || (remoteHot && !interactionBlocked) ? 0.98 : 0.78
+              }
               toneMapped={false}
               depthWrite={false}
             />
           </mesh>
-          {(remoteHot || remoteFocused) && (
+          {(remoteFocused || (remoteHot && !interactionBlocked)) && (
             <mesh position={[0, 0, -0.01]}>
               <planeGeometry args={[0.9, 0.32]} />
               <meshBasicMaterial

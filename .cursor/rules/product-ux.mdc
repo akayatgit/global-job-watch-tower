@@ -220,6 +220,10 @@ use — they should love opening the app, never fight it.
   match — cards are job titles only (not search names), never more cards than
   openings. Collective city name floats above company/role tags as big bold
   white glowing text (no card plate).
+- **City view drag vs pick (2026-08-03):** Press+drag to orbit must not hover or
+  focus buildings; release after a drag is not a pick. Hover/focus only when the
+  mouse button is up and the gesture was not a drag (move cursor slightly after
+  orbit before hover resumes).
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
