@@ -63,8 +63,8 @@ The image prompt must be a **pure visual description**:
 ## Sequence
 1) Right STAGEHAND tool for the question
 2) Invent pure visual prompt (≥{MIN_PROMPT_CHARS} chars) from the facts
-3) craft_punchline_prompt → lens_render_and_courier_send
-4) OK
+3) Optional craft_punchline_prompt (if unsure) → **must** lens_render_and_courier_send
+4) OK — never finish without sending an image
 """
 
 
@@ -95,5 +95,5 @@ def run_director(text: str, *, bot: str, chat_id: str) -> str:
         os.environ['OPENAI_API_KEY'] = config.OPENAI_API_KEY
     agent = build_director()
     session = get_session(bot, chat_id)
-    result = Runner.run_sync(agent, text, session=session, max_turns=14)
+    result = Runner.run_sync(agent, text, session=session, max_turns=20)
     return (result.final_output or '').strip()
