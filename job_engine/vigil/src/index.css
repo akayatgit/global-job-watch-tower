@@ -105,18 +105,20 @@ button, input, select {
   overscroll-behavior: none;
 }
 
-/* Editorial dusk miniature — soft film grain + vignette (city district only) */
-.vigil-canvas--dusk::after {
+/* Editorial daylight miniature — soft vignette only (city district) */
+.vigil-canvas--day::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2;
-  opacity: 0.22;
-  mix-blend-mode: soft-light;
-  background-image:
-    radial-gradient(ellipse at center, transparent 42%, rgba(8, 10, 16, 0.55) 100%),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(180, 195, 215, 0.35) 100%
+  );
 }
 
 /* Floating 3D tags — clean text only, no plates / strokes / boxes */

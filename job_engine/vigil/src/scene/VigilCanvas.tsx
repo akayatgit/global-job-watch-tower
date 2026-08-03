@@ -22,21 +22,21 @@ function SceneBody() {
       {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
-      {nightDistrict && <color attach="background" args={['#0c1018']} />}
-      {nightDistrict && <fog attach="fog" args={['#151c2a', 9, 24]} />}
+      {nightDistrict && <color attach="background" args={['#e8eef5']} />}
+      {nightDistrict && <fog attach="fog" args={['#e8eef5', 14, 32]} />}
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
             nightDistrict
-              ? 0.14
+              ? 0.06
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
                   ? 0.22
                   : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.62 : sceneMode === 'graph' ? 0.72 : 0.5}
-          luminanceSmoothing={0.94}
+          luminanceThreshold={nightDistrict ? 0.85 : sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceSmoothing={0.95}
           mipmapBlur
         />
       </EffectComposer>
@@ -95,7 +95,7 @@ export function VigilCanvas() {
 
   return (
     <div
-      className={`vigil-canvas${nightDistrict ? ' vigil-canvas--dusk' : ''}`}
+      className={`vigil-canvas${nightDistrict ? ' vigil-canvas--day' : ''}`}
       ref={wrap}
     >
       <Canvas

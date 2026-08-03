@@ -15,36 +15,32 @@ cartoon neon, gravity-well surrealism, and commercial template clutter.
 Present a clear **45° top-down isometric miniature 3D** hiring campus of
 `[CITY]` (or a multi-city Jobs skyline). Soft, refined textures with
 **realistic PBR materials**, gentle lifelike lighting and soft contact
-shadows. Atmosphere = **evening dusk dissolving into a deep sea blue-gray /
-deep ink studio void** — immersive weather mood without a weather widget.
+shadows. Atmosphere = **well-lit daylight studio** — soft pale sky, bright
+key sun, calm grey negative space (Aximoris calm + editorial cards).
 
 **Composition (editorial, title-dominant)**
 - Clean, minimal frame. Soft solid / soft-gradient background — not a busy
   starfield HUD.
-- **City name is the first visual focal point**: large, centered, warm white
-  or light blue-white, may lightly overlap the tops of towers. No glass
-  pill, no neon yellow, no corner badges.
-- Auxiliary hiring data lives in a small **lyric information area** — one
-  frosted cream glass card per company (name · large count · quiet caption ·
-  role rows). Do not scatter labels in the four corners.
-- Roads + moving vehicles prove scale (transit/road system presence) without
-  warping into spirals or gravity wells.
-- Surrounding blocks are soft **cinematic silhouettes** that dissolve into
-  fog/vignette at the edges — album-cover dusk, not game neon fabric.
+- **City name is the first visual focal point**: large, centered, soft slate
+  on daylight, may lightly overlap tower tops. No glass pill, no neon, no
+  corner badges.
+- Hiring cards appear **only on hover/focus** — content-sized (width/height
+  hug text + roles; no fixed empty plate). Geometry first.
+- Generous space between towers + rounded pedestal pad (breathing room).
+- Roads + moving vehicles prove scale without HUD noise.
+- Surrounding fabric = soft matte clay daylight blocks, not neon silhouettes.
 
 **Materials & light**
-- Soft studio key from a low warm sun; cool fill; subtle plastic/glass sheen
-  on data towers (clear, not candy).
-- Floor plates read as quiet white slabs inside soft ice-blue glass volumes.
-- Film-soft grain and slight vignette in the atmosphere — nostalgic punch,
-  airiness — never low-res mud or cartoon illustration.
+- Bright daylight key from above; cool fill; soft contact shadows.
+- Floor plates = quiet white slabs inside soft ice glass.
+- Soft vignette only — no heavy film/night grain.
 
 **Palette**
-- Background: Deep Ink / Deep Sea Blue-Gray dusk gradient
-- Title: Warm White or Light Blue-White
-- Cards: Warm off-white / cream glass, slate/navy type, soft status dots
-- Towers: Ice glass + cream floors; accents stay cool blue family only
-- Fabric: Near-black silhouettes with warm rim from the sunset, not rainbow
+- Background: Soft pale blue-gray daylight studio
+- Title: Soft slate (#1e293b)
+- Cards: Cream glass, slate type, soft status dots — dynamic size
+- Towers: Ice glass + white floors; cool blue accents only
+- Fabric: Light grey/white matte clay
 
 **Avoid**
 - Neon cyberpunk HUD, fluorescent yellow role stickers, rainbow towers

@@ -238,11 +238,10 @@ use — they should love opening the app, never fight it.
   white glassmorphic cards (name · big count · caption · role rows with soft dots),
   soft ice-blue towers, no neon yellow/rainbow cyberpunk. Interaction unchanged;
   only visual language + single-card structure.
-- **City Editorial Dusk Miniature (2026-08-03):** Master look in
-  `documents/vigil-city-aesthetic.md` — 45° iso miniature, deep ink / sea
-  blue-gray dusk void, title-dominant city name (warm/light blue-white), cream
-  lyric glass cards with soft-edge dissolve + film grain, soft PBR towers,
-  silhouette fabric. No neon HUD, no corner chrome.
+- **City Editorial Daylight Miniature (2026-08-03):** Master look in
+  `documents/vigil-city-aesthetic.md` — 45° iso, well-lit daylight studio,
+  spaced towers on rounded pedestal, cards only on hover/focus and
+  content-sized (no fixed empty plates), soft matte fabric. No neon HUD.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
