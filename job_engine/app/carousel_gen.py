@@ -25,12 +25,12 @@ TZ = ZoneInfo('Asia/Kolkata')
 W, H = 1080, 1350
 TMP_ROOT = config.BASE_DIR / '.data' / 'carousel_tmp'
 
-# VIGIL-adjacent fire palette (dark stage + orange/cyan)
-ORANGE = (255, 85, 0)
-AMBER = (255, 170, 0)
-CYAN = (80, 220, 255)
+# Bright-white calm palette (Ashok 2026-08-03 — aesthetic, not meme/cyber)
+INK = (36, 40, 48)
+MUTED = (90, 96, 110)
+ACCENT = (40, 110, 180)
 WHITE = (255, 255, 255)
-MUTED = (200, 200, 210)
+PANEL = (255, 255, 255, 200)
 
 
 @dataclass
@@ -89,11 +89,8 @@ def fetch_facts() -> dict:
 
 
 def build_slides(facts: dict) -> list[Slide]:
-    style = (
-        'cinematic dark cyberpunk campus, orange and cyan neon rim light, '
-        'deep black background, high contrast, no text, no letters, no watermark, '
-        'vertical 3:4 composition, powerful hopeful energy for tech graduates'
-    )
+    from app.prompt_dictionary import scene_for_carousel_slide
+
     today = facts['jobs_today']
     total = facts['total_jobs']
     rise = facts['rise_name']
@@ -101,49 +98,29 @@ def build_slides(facts: dict) -> list[Slide]:
     co = facts['company_name']
     co_n = facts['company_n']
 
+    specs = [
+        ('hook', 'Do I still have hope\nin the TECH job market?', 'TECH JOB MARKET MOVEMENT',
+         'Facts from the live tower — not fear.'),
+        ('pulse', 'Live TECH openings', 'Caught by Watch Tower · fresher lens',
+         f'{today:,} today\n{total:,} in the signal window'),
+        ('rising', 'Rising role', 'Where energy is moving right now',
+         f'{rise}\n+{delta} momentum'),
+        ('hirer', 'Hiring pulse', 'Companies opening doors',
+         f'{co}\n{co_n} openings in window'),
+        ('fresher', 'Built for freshers', 'Track A · Internship + Entry signals',
+         f'{facts["companies"]:,} companies\nin the TECH net'),
+        ('cta', 'Facts, not fear.', 'JobMaster.agency · VIGIL · Quanta HR',
+         'Ask Vigil anytime\nSay Carousel for a fresh set'),
+    ]
     return [
         Slide(
-            key='hook',
-            headline='Do I still have hope\nin the TECH job market?',
-            sub='TECH JOB MARKET MOVEMENT',
-            stat='Facts from the live tower — not fear.',
-            bg_prompt=f'{style}, sunrise over neon city skyline, silhouette of young graduate looking up',
-        ),
-        Slide(
-            key='pulse',
-            headline='Live TECH openings',
-            sub='Caught by Watch Tower · fresher lens',
-            stat=f'{today:,} today\n{total:,} in the signal window',
-            bg_prompt=f'{style}, cascading data streams forming a tower of light',
-        ),
-        Slide(
-            key='rising',
-            headline='Rising role',
-            sub='Where energy is moving right now',
-            stat=f'{rise}\n+{delta} momentum',
-            bg_prompt=f'{style}, ascending glass tower with orange fire at the tip',
-        ),
-        Slide(
-            key='hirer',
-            headline='Hiring pulse',
-            sub='Companies opening doors',
-            stat=f'{co}\n{co_n} openings in window',
-            bg_prompt=f'{style}, corporate glass towers with warm window lights at night',
-        ),
-        Slide(
-            key='fresher',
-            headline='Built for freshers',
-            sub='Track A · Internship + Entry signals',
-            stat=f'{facts["companies"]:,} companies\nin the TECH net',
-            bg_prompt=f'{style}, campus of ice-blue glass towers, students walking toward light',
-        ),
-        Slide(
-            key='cta',
-            headline='Facts, not fear.',
-            sub='JobMaster.agency · VIGIL · Quanta HR',
-            stat='Open Telegram · ask the tower\n/carousel anytime',
-            bg_prompt=f'{style}, orange ember core glowing in a dark hall, hopeful close',
-        ),
+            key=k,
+            headline=h,
+            sub=s,
+            stat=st,
+            bg_prompt=scene_for_carousel_slide(slide_key=k, headline=h.replace('\n', ' ')),
+        )
+        for k, h, s, st in specs
     ]
 
 
@@ -190,42 +167,37 @@ def _compose(bg: Image.Image, slide: Slide) -> Image.Image:
     img = bg.copy()
     overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
-    # Bottom-heavy scrim for text
-    for y in range(H // 3, H):
-        a = int(40 + 180 * ((y - H / 3) / (H * 2 / 3)))
-        od.line([(0, y), (W, y)], fill=(5, 3, 2, min(220, a)))
-    # Top brand bar glow
-    od.rectangle([(0, 0), (W, 90)], fill=(5, 3, 2, 160))
+    od.rounded_rectangle([(36, 36), (W - 36, 120)], radius=20, fill=PANEL)
+    od.rounded_rectangle([(36, H - 520), (W - 36, H - 36)], radius=28, fill=PANEL)
     img = Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB')
     draw = ImageDraw.Draw(img)
 
-    brand_f = _font(28, bold=True)
-    head_f = _font(64, bold=True)
-    sub_f = _font(34, bold=False)
-    stat_f = _font(56, bold=True)
-    foot_f = _font(24, bold=False)
+    brand_f = _font(26, bold=True)
+    head_f = _font(52, bold=True)
+    sub_f = _font(30, bold=False)
+    stat_f = _font(44, bold=True)
+    foot_f = _font(22, bold=False)
 
-    draw.text((48, 32), 'TECH JOB MARKET MOVEMENT', font=brand_f, fill=ORANGE)
+    draw.text((56, 58), 'TECH JOB MARKET MOVEMENT', font=brand_f, fill=ACCENT)
 
-    y = 220
-    for line in _wrap(draw, slide.headline, head_f, W - 96):
-        draw.text((48, y), line, font=head_f, fill=WHITE)
-        y += 74
+    y = H - 480
+    for line in _wrap(draw, slide.headline, head_f, W - 120):
+        draw.text((56, y), line, font=head_f, fill=INK)
+        y += 58
+
+    y += 8
+    for line in _wrap(draw, slide.sub, sub_f, W - 120):
+        draw.text((56, y), line, font=sub_f, fill=MUTED)
+        y += 38
 
     y += 16
-    for line in _wrap(draw, slide.sub, sub_f, W - 96):
-        draw.text((48, y), line, font=sub_f, fill=CYAN)
-        y += 44
+    draw.rectangle([(56, y), (200, y + 6)], fill=ACCENT)
+    y += 24
+    for line in _wrap(draw, slide.stat, stat_f, W - 120):
+        draw.text((56, y), line, font=stat_f, fill=INK)
+        y += 52
 
-    y = max(y + 40, 720)
-    # Accent bar
-    draw.rectangle([(48, y), (220, y + 8)], fill=ORANGE)
-    y += 36
-    for line in _wrap(draw, slide.stat, stat_f, W - 96):
-        draw.text((48, y), line, font=stat_f, fill=AMBER)
-        y += 68
-
-    draw.text((48, H - 64), 'JobMaster.agency · VIGIL · Quanta HR', font=foot_f, fill=MUTED)
+    draw.text((56, H - 72), 'JobMaster.agency · VIGIL · Quanta HR · Grok Imagine', font=foot_f, fill=MUTED)
     return img
 
 
@@ -317,12 +289,9 @@ def fetch_topic_jobs(role: str | None, city: str | None, *, limit: int = 40) -> 
 
 
 def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: datetime) -> tuple[list[Slide], str]:
-    style = (
-        'cinematic dark professional stage, orange and cyan accent light, '
-        'deep black background, no text, no letters, vertical 3:4, premium TECH hiring'
-    )
+    from app.prompt_dictionary import scene_for_carousel_slide
+
     date_s = now.strftime('%d %b %Y')
-    # company tally
     counts: dict[str, int] = {}
     for j in jobs:
         name = (j.get('company_name') or j.get('company') or 'Unknown').strip()
@@ -333,49 +302,29 @@ def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: dateti
     if not top_lines:
         top_lines = ['No matching openings in tower yet']
 
+    raw = [
+        ('topic-hook', f'{role}\n{city_label or "India"}', 'TECH JOB MARKET MOVEMENT · Carousel',
+         f'{len(jobs)} openings\nin tower match'),
+        ('date', 'Live snapshot', f'Date · {date_s} IST', 'Tower facts only\nNo invented markets'),
+        ('companies', 'Companies hiring', f'{role} · {city_label or "All cities"}', '\n'.join(top_lines[:5])),
+        ('more', 'More of the list', 'Ranked by openings in match',
+         '\n'.join(more_lines[:5]) if more_lines else '— full list is short today —'),
+        ('pulse', 'What to know', 'Fresher-friendly TECH lens',
+         f'Top hirer\n{ranked[0][0] if ranked else "—"}'),
+        ('cta', 'Facts, not fear.', 'JobMaster.agency · VIGIL · Quanta HR',
+         'Say Carousel + role + city\nfor the next pulse'),
+    ]
     slides = [
         Slide(
-            key='topic-hook',
-            headline=f'{role}\n{city_label or "India"}',
-            sub='TECH JOB MARKET MOVEMENT · Carousel',
-            stat=f'{len(jobs)} openings\nin tower match',
-            bg_prompt=f'{style}, glass data towers in night city',
-        ),
-        Slide(
-            key='date',
-            headline='Live snapshot',
-            sub=f'Date · {date_s} IST',
-            stat='Tower facts only\nNo invented markets',
-            bg_prompt=f'{style}, calendar of light particles',
-        ),
-        Slide(
-            key='companies',
-            headline='Companies hiring',
-            sub=f'{role} · {city_label or "All cities"}',
-            stat='\n'.join(top_lines[:5]),
-            bg_prompt=f'{style}, corporate skyline with warm windows',
-        ),
-        Slide(
-            key='more',
-            headline='More of the list',
-            sub='Ranked by openings in match',
-            stat='\n'.join(more_lines[:5]) if more_lines else '— full list is short today —',
-            bg_prompt=f'{style}, ranked pillars of light',
-        ),
-        Slide(
-            key='pulse',
-            headline='What to know',
-            sub='Fresher-friendly TECH lens',
-            stat=f'Top hirer\n{ranked[0][0] if ranked else "—"}',
-            bg_prompt=f'{style}, graduate silhouette facing glowing campus',
-        ),
-        Slide(
-            key='cta',
-            headline='Facts, not fear.',
-            sub='JobMaster.agency · VIGIL · Quanta HR',
-            stat='Say Carousel + role + city\nfor the next pulse',
-            bg_prompt=f'{style}, orange ember core in dark hall',
-        ),
+            key=k,
+            headline=h,
+            sub=s,
+            stat=st,
+            bg_prompt=scene_for_carousel_slide(
+                slide_key=k, headline=h.replace('\n', ' '), role_hint=role,
+            ),
+        )
+        for k, h, s, st in raw
     ]
     caption = '\n'.join([
         'TECH JOB MARKET MOVEMENT · Carousel',

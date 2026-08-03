@@ -242,12 +242,12 @@ def cmd_image_chat(user_msg: str) -> int:
         return cmd_send_carousel(topic_msg=msg)
 
     sys.path.insert(0, str(ROOT))
-    from app.telegram_meme import compose_meme  # noqa: WPS433
+    from app.telegram_aesthetic import compose_aesthetic_reply  # noqa: WPS433
 
     try:
-        path = compose_meme(msg)
+        path = compose_aesthetic_reply(msg)
     except Exception as e:
-        print(f'meme generate failed: {e}', file=sys.stderr)
+        print(f'aesthetic generate failed: {e}', file=sys.stderr)
         return 1
 
     ok = send_photo(token, chat, path, caption='')
@@ -258,7 +258,7 @@ def cmd_image_chat(user_msg: str) -> int:
     if ok:
         print('IMAGE_SENT')
         return 0
-    print('meme send failed', file=sys.stderr)
+    print('aesthetic send failed', file=sys.stderr)
     return 1
 
 

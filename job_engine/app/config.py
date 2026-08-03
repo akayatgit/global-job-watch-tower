@@ -82,5 +82,5 @@ OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN', '').strip()
 REPLICATE_MODEL = os.getenv(
     'REPLICATE_MODEL',
-    'google/imagen-4-fast:efb61e33cffb69a1725083f675a44793929553f479918d01d6ce6e00efbee0d7',
+    'xai/grok-imagine-image:3032db31147241f86351f0d7ab1ffd5150dcb482bcb873580f15d8cb8970a812',
 ).strip()

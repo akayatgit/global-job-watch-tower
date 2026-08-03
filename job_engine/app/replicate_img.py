@@ -1,4 +1,4 @@
-"""Shared Replicate image generation (default: google/imagen-4-fast)."""
+"""Shared Replicate image generation — default xai/grok-imagine-image."""
 
 from __future__ import annotations
 
@@ -19,24 +19,34 @@ def generate_image(prompt: str, *, aspect_ratio: str = '1:1') -> Image.Image:
 
     client = replicate.Client(api_token=token)
     model = config.REPLICATE_MODEL
-    # imagen-4-fast schema; flux also accepts aspect_ratio
-    inp = {
-        'prompt': prompt,
-        'aspect_ratio': aspect_ratio,
-        'output_format': 'png',
-        'safety_filter_level': 'block_only_high',
-    }
-    # flux-schnell extras (ignored by imagen if unknown? safer to branch)
-    if 'flux' in model.lower():
-        inp['num_outputs'] = 1
-        inp['go_fast'] = True
-        inp.pop('safety_filter_level', None)
+    low = model.lower()
+
+    # grok-imagine-image: prompt + aspect_ratio only
+    if 'grok-imagine' in low:
+        inp = {'prompt': prompt, 'aspect_ratio': aspect_ratio}
+    elif 'imagen' in low:
+        inp = {
+            'prompt': prompt,
+            'aspect_ratio': aspect_ratio,
+            'output_format': 'png',
+            'safety_filter_level': 'block_only_high',
+        }
+    elif 'flux' in low:
+        inp = {
+            'prompt': prompt,
+            'aspect_ratio': aspect_ratio,
+            'output_format': 'png',
+            'num_outputs': 1,
+            'go_fast': True,
+        }
+    else:
+        inp = {'prompt': prompt, 'aspect_ratio': aspect_ratio}
 
     output = client.run(model, input=inp)
     item = output[0] if isinstance(output, list) else output
     if hasattr(item, 'read'):
         data = item.read()
     else:
-        with urllib.request.urlopen(str(item), timeout=120) as resp:
+        with urllib.request.urlopen(str(item), timeout=180) as resp:
             data = resp.read()
     return Image.open(BytesIO(data)).convert('RGB')

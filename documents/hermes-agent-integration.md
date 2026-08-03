@@ -40,12 +40,13 @@ Ashok rule: **Vigil replies on Telegram only through images**. Text essays = fai
 
 | Mode | Trigger | Pipeline |
 |---|---|---|
-| **Carousel** (pro) | Word **Carousel** or `/carousel` | `imagen-4-fast` + Pillow album → `sendMediaGroup` |
-| **Meme chat** (default) | Any other message | `imagen-4-fast` Tanglish meme → `sendPhoto` (empty caption) |
+| **Carousel** (pro) | Word **Carousel** or `/carousel` | Grok Imagine cinematic scenes + Pillow facts → album |
+| **Calm reply** (default) | Any other message | Grok Imagine bright-white aesthetic + helpful panel → `sendPhoto` |
 
-Model: `REPLICATE_MODEL=google/imagen-4-fast:…` in `job_engine/.env`  
-Entry: `job_engine/scripts/telegram_image_chat.py`  
-Enable: `hermes plugins enable vigil-image-only` (already on).
+Model: `REPLICATE_MODEL=xai/grok-imagine-image:…`  
+Prompts: [`job_engine/app/prompt_dictionary.py`](../job_engine/app/prompt_dictionary.py) — reusable cinematic template (Ashok style).  
+Mood: aesthetic · calm · bright white · helpful — **not memes**.  
+Entry: `job_engine/scripts/telegram_image_chat.py` · plugin `vigil-image-only` enabled.
 
 ## Capacity rule (non-negotiable)
 
