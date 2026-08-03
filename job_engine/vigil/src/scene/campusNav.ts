@@ -75,9 +75,9 @@ export function clearCampusNav() {
 }
 
 function focusDist(h: number, roleHint = 1) {
-  // Match NightCity — ~50% more zoom (÷1.5)
+  // Match NightCity — pull back so neighbours stay readable
   const rows = Math.max(1, Math.ceil(Math.max(0, roleHint) / 2))
-  return (2.35 + h * 0.22 + rows * 0.32) / 1.5
+  return 2.85 + h * 0.34 + rows * 0.12
 }
 
 function aimOf(t: CampusTower) {

@@ -74,8 +74,12 @@ const CITY_Y = -1.15
 const CAMPUS = { cx: 0, cz: 0, half: 2.15 }
 const CITY_HALF = 7.0
 const ROAD = [-4.2, -1.4, 1.4, 4.2]
-/** Canvas px → world units — cards hug content, not a fixed plate */
-const CARD_PX_PER_WORLD = 380
+/**
+ * Canvas px → world units. Lower = larger on-screen cards.
+ * Cards render at 2× internal resolution for crisp text.
+ */
+const CARD_PX_PER_WORLD = 260
+const CARD_RES = 2
 
 /** Sector → nightlife accent hues */
 const SECTOR_HUE: Record<string, number> = {
@@ -100,9 +104,9 @@ const ACCENTS = [
 ]
 const ROLE_DOTS = ['#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24']
 const CARD_FONT =
-  'Georgia, "Iowan Old Style", "Times New Roman", "Segoe UI", serif'
+  '"Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif'
 const TITLE_FONT =
-  'system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif'
+  '"Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif'
 
 function hash01(n: number) {
   const x = Math.sin(n * 127.1) * 43758.5453
@@ -195,45 +199,46 @@ function softEdgeDissolve(
   ctx.restore()
 }
 
-/** Warm cream editorial glass — lyric-card face. */
-function paintGlassPlate(
+/** Neon glassmorphism — dark transparent plate, cyan/amber rim, less round. */
+function paintNeonGlassPlate(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  r = 28,
+  r = 14,
 ) {
-  const inset = 5
-  roundRect(ctx, inset + 2, inset + 4, w - inset * 2 - 2, h - inset * 2 - 2, r)
-  ctx.fillStyle = 'rgba(20, 16, 28, 0.14)'
+  const inset = 4
+  // Soft outer glow
+  roundRect(ctx, inset - 1, inset - 1, w - inset * 2 + 2, h - inset * 2 + 2, r + 2)
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.12)'
   ctx.fill()
   roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r)
   const g = ctx.createLinearGradient(0, 0, 0, h)
-  g.addColorStop(0, 'rgba(255, 252, 247, 0.94)')
-  g.addColorStop(0.5, 'rgba(250, 246, 240, 0.9)')
-  g.addColorStop(1, 'rgba(236, 242, 250, 0.84)')
+  g.addColorStop(0, 'rgba(12, 22, 40, 0.42)')
+  g.addColorStop(0.45, 'rgba(8, 14, 28, 0.55)')
+  g.addColorStop(1, 'rgba(20, 10, 28, 0.48)')
   ctx.fillStyle = g
   ctx.fill()
-  roundRect(
-    ctx,
-    inset + 1.5,
-    inset + 1.5,
-    w - inset * 2 - 3,
-    h - inset * 2 - 3,
-    r - 2,
-  )
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)'
-  ctx.lineWidth = 1.25
+  // Top sheen
+  roundRect(ctx, inset + 1, inset + 1, w - inset * 2 - 2, (h - inset * 2) * 0.38, r - 1)
+  const sheen = ctx.createLinearGradient(0, inset, 0, inset + h * 0.4)
+  sheen.addColorStop(0, 'rgba(186, 230, 253, 0.22)')
+  sheen.addColorStop(1, 'rgba(186, 230, 253, 0)')
+  ctx.fillStyle = sheen
+  ctx.fill()
+  // Neon rim
+  roundRect(ctx, inset + 0.5, inset + 0.5, w - inset * 2 - 1, h - inset * 2 - 1, r - 0.5)
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)'
+  ctx.lineWidth = 1.5
   ctx.stroke()
-  roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r)
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+  roundRect(ctx, inset + 2, inset + 2, w - inset * 2 - 4, h - inset * 2 - 4, r - 2)
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)'
   ctx.lineWidth = 1
   ctx.stroke()
-  sprinkleGrain(ctx, w, h, 0.035)
+  sprinkleGrain(ctx, w, h, 0.02)
 }
 
 /**
- * Content-sized glass card — width/height follow text + roles.
- * No fixed plate; no empty padding bands.
+ * Content-sized neon glass card — larger crisp type, 2× canvas for sharpness.
  */
 function makeTowerCard(
   name: string,
@@ -247,7 +252,7 @@ function makeTowerCard(
     (jobs === 1
       ? openingsCaption(days).replace(/^Openings/, 'Opening')
       : openingsCaption(days))
-  const nameLines = wrapName(name, 18)
+  const nameLines = wrapName(name, 16)
   const showRoles = roles.slice(0, 5)
   const num = jobs > 999 ? '999+' : String(jobs)
   const roleLabels = showRoles.map((r) => {
@@ -256,10 +261,10 @@ function makeTowerCard(
   })
 
   const measure = document.createElement('canvas').getContext('2d')!
-  const nameFont = `600 20px ${CARD_FONT}`
-  const numFont = `700 56px ${TITLE_FONT}`
-  const capFont = `500 13px ${TITLE_FONT}`
-  const roleFont = `500 13px ${TITLE_FONT}`
+  const nameFont = `700 28px ${CARD_FONT}`
+  const numFont = `800 72px ${TITLE_FONT}`
+  const capFont = `600 16px ${TITLE_FONT}`
+  const roleFont = `600 16px ${TITLE_FONT}`
   let contentW = 0
   measure.font = nameFont
   for (const ln of nameLines) contentW = Math.max(contentW, measure.measureText(ln).width)
@@ -269,21 +274,21 @@ function makeTowerCard(
   contentW = Math.max(contentW, measure.measureText(caption).width)
   measure.font = roleFont
   for (const ln of roleLabels) {
-    contentW = Math.max(contentW, measure.measureText(ln).width + 22)
+    contentW = Math.max(contentW, measure.measureText(ln).width + 28)
   }
 
-  const padX = 22
-  const padTop = 18
-  const padBot = 16
-  const nameLineH = 24
-  const numH = 58
-  const capH = 18
-  const roleRowH = 28
-  const gapName = 6
+  const padX = 28
+  const padTop = 22
+  const padBot = 18
+  const nameLineH = 32
+  const numH = 74
+  const capH = 22
+  const roleRowH = 32
+  const gapName = 8
   const gapNum = 4
-  const gapRoles = showRoles.length ? 10 : 0
+  const gapRoles = showRoles.length ? 12 : 0
   const W = Math.ceil(
-    Math.min(480, Math.max(168, contentW + padX * 2 + 8)),
+    Math.min(560, Math.max(200, contentW + padX * 2 + 10)),
   )
   const H = Math.ceil(
     padTop +
@@ -298,29 +303,38 @@ function makeTowerCard(
   )
 
   const c = document.createElement('canvas')
-  c.width = W
-  c.height = H
+  c.width = W * CARD_RES
+  c.height = H * CARD_RES
   const ctx = c.getContext('2d')!
+  ctx.scale(CARD_RES, CARD_RES)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.clearRect(0, 0, W, H)
-  paintGlassPlate(ctx, W, H, Math.min(26, Math.floor(H * 0.18)))
+  paintNeonGlassPlate(ctx, W, H, 12)
 
   const cx = W / 2
   let y = padTop
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#3d4a5c'
+  ctx.fillStyle = '#e0f2fe'
   ctx.font = nameFont
+  ctx.shadowColor = 'rgba(56, 189, 248, 0.55)'
+  ctx.shadowBlur = 8
   nameLines.forEach((ln, i) => {
     ctx.fillText(ln, cx, y + nameLineH / 2 + i * nameLineH)
   })
+  ctx.shadowBlur = 0
   y += nameLines.length * nameLineH + gapName
 
-  ctx.fillStyle = '#1a2332'
+  ctx.fillStyle = '#fbbf24'
   ctx.font = numFont
+  ctx.shadowColor = 'rgba(251, 191, 36, 0.45)'
+  ctx.shadowBlur = 10
   ctx.fillText(num, cx, y + numH / 2)
+  ctx.shadowBlur = 0
   y += numH + gapNum
 
-  ctx.fillStyle = '#8a93a3'
+  ctx.fillStyle = 'rgba(186, 230, 253, 0.78)'
   ctx.font = capFont
   ctx.fillText(caption, cx, y + capH / 2)
   y += capH + gapRoles
@@ -331,20 +345,23 @@ function makeTowerCard(
       const ry = y + roleRowH / 2 + i * roleRowH
       const dot = ROLE_DOTS[i % ROLE_DOTS.length]
       ctx.beginPath()
-      ctx.arc(rowLeft + 5, ry, 3.5, 0, Math.PI * 2)
+      ctx.arc(rowLeft + 6, ry, 4, 0, Math.PI * 2)
       ctx.fillStyle = dot
       ctx.fill()
       ctx.font = roleFont
       ctx.textAlign = 'left'
-      ctx.fillStyle = '#4a5568'
-      ctx.fillText(label, rowLeft + 16, ry)
+      ctx.fillStyle = 'rgba(241, 245, 249, 0.92)'
+      ctx.fillText(label, rowLeft + 18, ry)
     })
   }
 
-  softEdgeDissolve(ctx, W, H, 14)
+  softEdgeDissolve(ctx, W, H, 6)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
+  tex.anisotropy = 16
+  tex.minFilter = THREE.LinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.generateMipmaps = false
   return {
     tex,
     worldW: W / CARD_PX_PER_WORLD,
@@ -352,10 +369,10 @@ function makeTowerCard(
   }
 }
 
-/** Camera distance — close enough to read the glass card. */
+/** Camera distance — pull back so focused tower + neighbours stay in frame. */
 function focusDistance(h: number, roleCount = 0) {
-  const roleExtra = Math.min(5, Math.max(0, roleCount)) * 0.1
-  return (2.05 + h * 0.2 + roleExtra) / 1.5
+  const roleExtra = Math.min(5, Math.max(0, roleCount)) * 0.14
+  return 2.85 + h * 0.34 + roleExtra
 }
 
 /** Orbit / focus pivot = center of the top floor (roof), not building mid-mass. */
@@ -621,15 +638,21 @@ function GlassTower({
 }) {
   const selectId = `company:${t.company_id}`
   const focused = useVigilStore((s) => s.selectFocusId === selectId)
+  const anyCompanyFocus = useVigilStore((s) =>
+    Boolean(s.selectFocusId?.startsWith('company:')),
+  )
   const [hot, setHot] = useState(false)
   const interactionBlocked = useMeshInteractionBlocked()
   const lit = focused || (hot && !interactionBlocked)
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const core = useRef<THREE.MeshStandardMaterial>(null)
+  /** Hover/focus full card; while any tower focused, neighbours stay at 30%. */
+  const showCard = lit || anyCompanyFocus
+  const cardOpacity = lit ? 1 : anyCompanyFocus ? 0.3 : 1
   const card = useMemo(
     () =>
-      lit
+      showCard
         ? makeTowerCard(
             t.name,
             t.n,
@@ -638,7 +661,7 @@ function GlassTower({
             openingsCaptionText,
           )
         : null,
-    [t.name, t.n, windowDays, t.roles, lit, openingsCaptionText],
+    [t.name, t.n, windowDays, t.roles, showCard, openingsCaptionText],
   )
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
@@ -856,14 +879,18 @@ function GlassTower({
         />
       )}
 
-      {/* Content-sized card — only while hovered / focused */}
+      {/* Neon glass cards — full on hover/focus; neighbours at 30% while one focused */}
       {card && (
-        <Billboard follow position={[0, t.h + 0.14 + cardH / 2, 0]}>
-          <mesh raycast={() => null} renderOrder={cardOrder}>
+        <Billboard follow position={[0, t.h + 0.18 + cardH / 2, 0]}>
+          <mesh
+            raycast={() => null}
+            renderOrder={cardOrder + (lit ? 20 : 0)}
+          >
             <planeGeometry args={[cardW, cardH]} />
             <meshBasicMaterial
               map={card.tex}
               transparent
+              opacity={cardOpacity}
               depthTest
               depthWrite={false}
               toneMapped={false}
