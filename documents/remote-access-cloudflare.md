@@ -4,6 +4,19 @@
 **Goal:** Open VIGIL from any browser / any machine over HTTPS, with email gate (Ashok only).  
 **Not:** Vercel deploy, Supabase mirror, or public port-forward.
 
+## Live stamp (2026-08-03)
+
+| Field | Value |
+|---|---|
+| Hostname | `https://tower.jobmaster.agency` |
+| Access email | `ashokofficial55@gmail.com` |
+| Tunnel name | `watch-tower` |
+| Tunnel id | `5fe32c62-b99c-4793-90df-e629221650ef` |
+| Origin | `http://127.0.0.1:8001` |
+| Unit | `watch-tower-tunnel.service` (systemd --user, enabled) |
+
+**Before sharing the URL:** finish Access lock (section below) so only Ashok’s email can enter.
+
 ## Architecture
 
 ```
