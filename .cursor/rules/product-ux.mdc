@@ -345,10 +345,8 @@ use — they should love opening the app, never fight it.
   Brand: JobMaster.agency · VIGIL · AI · Quanta HR. Associate path inspired by
   Honorable CM C. Joseph Vijay / TVK 2026 (change is possible). Never commit
   Replicate/Search API keys; `.env` only. Tower = truth behind every slide.
-- **Telegram image-only VIGIL (2026-08-03):** On Telegram, Vigil communicates
-  **only via images** (Replicate `xai/grok-imagine-image`). Mood = aesthetic,
-  descriptive, helpful, calm, **bright white** — **not memes**. Magic word
-  **Carousel** = professional multi-slide album using the same cinematic prompt
-  dictionary (`job_engine/app/prompt_dictionary.py`; add templates over time).
-  **Hard gate:** Hermes plugin `vigil-image-only` skips the LLM
-  (`pre_gateway_dispatch` → image script). No text essays. Ops = Telegram + Cursor.
+- **DIRECTOR stack (2026-08-04):** Telegram = COURIER (Hermes) → DIRECTOR
+  (OpenAI Agents SDK + SQLiteSession) → STAGEHAND facts / LENS Grok Imagine /
+  CAROUSEL WORKSHOP → COURIER sends images. Skit-style TN Pinterest-2026 comics
+  with limited on-image text. `/new` clears DIRECTOR memory. Ollama Hermes does
+  not chat on Telegram. Ops = Telegram + Cursor IDE.

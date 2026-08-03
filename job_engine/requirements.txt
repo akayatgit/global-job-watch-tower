@@ -13,3 +13,5 @@ scrapling[fetchers]
 ollama
 replicate
 Pillow
+openai
+openai-agents

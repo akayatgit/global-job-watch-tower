@@ -650,6 +650,7 @@ START OF EVERY SESSION
 | v0.26 | 2026-08-03 | Akay | **Telegram image-only:** default Tanglish Replicate memes; magic word **Carousel** = pro album (topic role/city). Hermes SOUL + `telegram_image_chat.py`; text replies banned (🔥 only). |
 | v0.27 | 2026-08-03 | Akay | **Hard gate:** plugin `vigil-image-only` skips LLM on all Telegram msgs. Model → `google/imagen-4-fast`. No more text essays. |
 | v0.28 | 2026-08-03 | Akay | **Grok Imagine:** model `xai/grok-imagine-image` + cinematic prompt dictionary (bright white calm). Memes dropped. Same style for chat + Carousel. |
+| v0.29 | 2026-08-04 | Akay | **DIRECTOR live:** OpenAI Agents SDK above Hermes (1A). Layers COURIER/DIRECTOR/STAGEHAND/LENS/CAROUSEL. SQLiteSession memory; `/new` clears. TN Pinterest-2026 skit frames. |
 
 ### Phase 0 progress (living)
 

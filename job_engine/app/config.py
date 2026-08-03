@@ -84,3 +84,13 @@ REPLICATE_MODEL = os.getenv(
     'REPLICATE_MODEL',
     'xai/grok-imagine-image:3032db31147241f86351f0d7ab1ffd5150dcb482bcb873580f15d8cb8970a812',
 ).strip()
+
+# DIRECTOR — OpenAI Agents SDK brain above Hermes (COURIER)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
+OPENAI_BRAIN_MODEL = os.getenv('OPENAI_BRAIN_MODEL', 'gpt-4.1-mini').strip()
+DIRECTOR_SESSION_DB = Path(
+    os.getenv(
+        'DIRECTOR_SESSION_DB',
+        str(BASE_DIR / '.data' / 'director_sessions' / 'director.db'),
+    )
+)

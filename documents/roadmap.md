@@ -7,8 +7,9 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-03 — **Delivery stage opened** |
-| **Stage lock** | **Collects = base complete** → **Map with Students** (now) → **Predict for Government** (next) |
+| **Status as of** | 2026-08-04 — **DIRECTOR layer live** |
+| **Stage lock** | **Collects = base complete** → **Map with Students** (DIRECTOR skit + Carousel) → **Predict for Government** (next) |
+| **Agent stack** | COURIER (Hermes) · DIRECTOR (OpenAI + SQLiteSession) · STAGEHAND · LENS · CAROUSEL WORKSHOP |
 
 ---
 

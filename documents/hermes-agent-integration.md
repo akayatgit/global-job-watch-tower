@@ -31,22 +31,25 @@ Early Telegram replies invented markets (fake “47k jobs”, “AI Infinitive�
 | `/carousel` | TECH JOB MARKET MOVEMENT — generate fiery 6-slide album via Replicate and send to this chat (Gate 1) |
 | `/boards` | Help menu |
 
-### Telegram IMAGE-ONLY mode (2026-08-03) — HARD GATE
+### DIRECTOR stack (2026-08-04) — OpenAI above Hermes
 
-Ashok rule: **Vigil replies on Telegram only through images**. Text essays = failure.
+Named layers:
 
-**Enforcement:** Hermes plugin `~/.hermes/plugins/vigil-image-only/`  
-`pre_gateway_dispatch` → run image script → `{"action":"skip"}` so the **LLM never replies** on Telegram.
+| Layer | Role |
+|---|---|
+| **COURIER** | Hermes Telegram inbox + send |
+| **DIRECTOR** | OpenAI Agents SDK reasoner + skit + tool chooser |
+| **STAGEHAND** | Ultron/Watch Tower fact APIs |
+| **LENS** | Replicate `xai/grok-imagine-image` |
+| **CAROUSEL WORKSHOP** | Multi-slide album workflow |
 
-| Mode | Trigger | Pipeline |
-|---|---|---|
-| **Carousel** (pro) | Word **Carousel** or `/carousel` | Grok Imagine cinematic scenes + Pillow facts → album |
-| **Calm reply** (default) | Any other message | Grok Imagine bright-white aesthetic + helpful panel → `sendPhoto` |
+**Ingress 1A:** plugin `vigil-image-only` → `python -m app.director.router` → `skip` Ollama chat.
 
-Model: `REPLICATE_MODEL=xai/grok-imagine-image:…`  
-Prompts: [`job_engine/app/prompt_dictionary.py`](../job_engine/app/prompt_dictionary.py) — reusable cinematic template (Ashok style).  
-Mood: aesthetic · calm · bright white · helpful — **not memes**.  
-Entry: `job_engine/scripts/telegram_image_chat.py` · plugin `vigil-image-only` enabled.
+**Memory:** OpenAI Agents `SQLiteSession` at `job_engine/.data/director_sessions/director.db`  
+`session_id = {bot}:{chat_id}` · `/new` `/reset` `/clear` wipe · different bot = fresh.
+
+**Style:** TN Pinterest-2026 comic skit · limited on-image text · no Telegram essays.  
+Package: [`job_engine/app/director/`](../job_engine/app/director/).
 
 ## Capacity rule (non-negotiable)
 

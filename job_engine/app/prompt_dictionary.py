@@ -13,12 +13,27 @@ from typing import Any
 
 TEMPLATES: dict[str, dict[str, Any]] = {
     'bright_white_calm': {
-        'label': 'Bright White Calm (default chat + carousel)',
+        'label': 'Bright White Calm (legacy calm atrium)',
         'overlay_color': 'soft charcoal grey on luminous white space',
         'overlay_placement': 'centered',
         'quality_tail': (
             'bright airy whites, soft daylight, minimal clutter, '
             'hopeful professional atmosphere for students and seekers'
+        ),
+    },
+    'tn_pinterest_comic_2026': {
+        'label': 'Tamil Nadu Pinterest 2026 comic skit (DIRECTOR default)',
+        'overlay_color': (
+            'crisp charcoal lettering on a clean cream-white comic caption card, '
+            'Pinterest 2026 editorial layout'
+        ),
+        'overlay_placement': 'in a small lower caption card',
+        'quality_tail': (
+            'Pinterest Style 2026 design trend, editorial comic panel energy, '
+            'Tamil Nadu regional texture (Chennai light, jasmine hints, filter coffee steam, '
+            'pastel + sun-washed coastal tech campus vibes — respectful, creative, never crude), '
+            'limited readable text only, bright white negative space, skit storytelling beat, '
+            'aesthetic helpful hopeful mood'
         ),
     },
 }
@@ -97,7 +112,7 @@ def scene_for_chat(user_msg: str, helpful_line: str, fact_line: str | None = Non
             'hovering quietly above the desk like living data, never garish.'
         ),
         overlay_text=overlay,
-        template_key='bright_white_calm',
+        template_key='tn_pinterest_comic_2026',
     )
 
 
@@ -170,5 +185,5 @@ def scene_for_carousel_slide(
         ),
         action=action_core,
         include_overlay=False,
-        template_key='bright_white_calm',
+        template_key='tn_pinterest_comic_2026',
     )
