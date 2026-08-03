@@ -28,6 +28,7 @@ Early Telegram replies invented markets (fake “47k jobs”, “AI Infinitive�
 | `/watchlist` | Watched companies |
 | `/fresh` | Freshest catches |
 | `/brief` | Daily hiring brief |
+| `/carousel` | TECH JOB MARKET MOVEMENT — generate fiery 6-slide album via Replicate and send to this chat (Gate 1) |
 | `/boards` | Help menu |
 
 Free-form hiring questions without a board match **hard-refuse** and point to
@@ -72,7 +73,9 @@ System crontab 08:00 IST ─► hermes_daily_brief.py ──► documents/briefs
 | `job_engine/app/ai_capacity.py` | Scrape-first mutex |
 | `job_engine/app/hermes_ask.py` | Ask → board shortcut or Hermes |
 | `job_engine/scripts/hermes_daily_brief.py` | Daily brief (HTTP only) |
-| `job_engine/scripts/telegram_watch_tower.py` | Bootstrap + send-brief |
+| `job_engine/scripts/telegram_watch_tower.py` | Bootstrap + send-brief + send-carousel |
+| `job_engine/app/carousel_gen.py` | Replicate + Pillow carousel slides (ephemeral tmp) |
+| `job_engine/scripts/carousel_fire.py` | Generate + Telegram album (`/carousel`) |
 
 ## MCP tools (read-only)
 

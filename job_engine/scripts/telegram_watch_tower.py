@@ -7,8 +7,10 @@ Reads token from ~/.hermes/.env only. Never prints the token.
 from __future__ import annotations
 
 import json
+import mimetypes
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +19,7 @@ from pathlib import Path
 ENV = Path.home() / '.hermes' / '.env'
 STATE = Path.home() / '.hermes' / 'watch_tower_telegram.json'
 BRIEF = Path('/home/user/Documents/documents/briefs/latest.txt')
+ROOT = Path('/home/user/Documents/job_engine')
 
 
 def _load_env() -> dict[str, str]:
@@ -116,6 +119,94 @@ def send_text(token: str, chat_id: str, text: str) -> bool:
     return True
 
 
+def _multipart(fields: dict[str, str], files: list[tuple[str, Path]]) -> tuple[bytes, str]:
+    boundary = f'----wt{uuid.uuid4().hex}'
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.append(f'--{boundary}\r\n'.encode())
+        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        chunks.append(value.encode('utf-8'))
+        chunks.append(b'\r\n')
+    for field_name, path in files:
+        data = path.read_bytes()
+        ctype = mimetypes.guess_type(path.name)[0] or 'application/octet-stream'
+        chunks.append(f'--{boundary}\r\n'.encode())
+        chunks.append(
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{path.name}"\r\n'.encode()
+        )
+        chunks.append(f'Content-Type: {ctype}\r\n\r\n'.encode())
+        chunks.append(data)
+        chunks.append(b'\r\n')
+    chunks.append(f'--{boundary}--\r\n'.encode())
+    return b''.join(chunks), f'multipart/form-data; boundary={boundary}'
+
+
+def send_media_group(token: str, chat_id: str, photos: list[Path], caption: str = '') -> bool:
+    """Send up to 10 photos as an album. Caption on first slide only."""
+    if not photos:
+        print('no photos', file=sys.stderr)
+        return False
+    photos = photos[:10]
+    media = []
+    files: list[tuple[str, Path]] = []
+    for i, path in enumerate(photos):
+        attach = f'photo{i}'
+        item: dict = {'type': 'photo', 'media': f'attach://{attach}'}
+        if i == 0 and caption:
+            item['caption'] = caption[:1024]
+        media.append(item)
+        files.append((attach, path))
+    body, content_type = _multipart(
+        {'chat_id': str(chat_id), 'media': json.dumps(media)},
+        files,
+    )
+    url = f'https://api.telegram.org/bot{token}/sendMediaGroup'
+    req = urllib.request.Request(url, data=body, headers={'Content-Type': content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        err = e.read().decode(errors='replace')
+        print(f'sendMediaGroup HTTP {e.code}: {err[:500]}', file=sys.stderr)
+        return False
+    if not data.get('ok'):
+        print(data, file=sys.stderr)
+        return False
+    return True
+
+
+def cmd_send_carousel() -> int:
+    """Generate fiery carousel from live tower facts and push album to Telegram."""
+    env = _load_env()
+    token = env.get('TELEGRAM_BOT_TOKEN')
+    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    if not token or not chat:
+        print('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_HOME_CHANNEL — run bootstrap first', file=sys.stderr)
+        return 1
+
+    sys.path.insert(0, str(ROOT))
+    from app.carousel_gen import generate_carousel  # noqa: WPS433
+
+    try:
+        paths, caption, run_dir = generate_carousel()
+    except Exception as e:
+        print(f'carousel generate failed: {e}', file=sys.stderr)
+        return 1
+
+    ok = send_media_group(token, chat, paths, caption)
+    # Ephemeral — remove after send attempt
+    try:
+        import shutil
+        shutil.rmtree(run_dir, ignore_errors=True)
+    except Exception:
+        pass
+    if ok:
+        print(f'Carousel sent ({len(paths)} slides) → Telegram')
+        return 0
+    print('carousel send failed', file=sys.stderr)
+    return 1
+
+
 def cmd_bootstrap(wait_s: int = 180) -> int:
     env = _load_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
@@ -171,13 +262,15 @@ def cmd_send_brief() -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ('-h', '--help'):
-        print('Usage: telegram_watch_tower.py bootstrap|send-brief')
+        print('Usage: telegram_watch_tower.py bootstrap|send-brief|send-carousel')
         return 0
     if argv[0] == 'bootstrap':
         wait = int(argv[1]) if len(argv) > 1 else 180
         return cmd_bootstrap(wait)
     if argv[0] == 'send-brief':
         return cmd_send_brief()
+    if argv[0] == 'send-carousel':
+        return cmd_send_carousel()
     print('unknown command', argv[0], file=sys.stderr)
     return 2
 

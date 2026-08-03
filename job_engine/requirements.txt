@@ -11,3 +11,5 @@ croniter
 python-dotenv
 scrapling[fetchers]
 ollama
+replicate
+Pillow

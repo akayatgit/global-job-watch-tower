@@ -7,7 +7,44 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-03 |
+| **Status as of** | 2026-08-03 — **Delivery stage opened** |
+| **Stage lock** | **Collects = base complete** → **Map with Students** (now) → **Predict for Government** (next) |
+
+---
+
+## Delivery stage (Ashok 2026-08-03)
+
+| Stage | Meaning | Status |
+|---|---|---|
+| **1. Collects** | Job Discovery Engine live: dual-track scrape, enrich, VIGIL + Neural Core, fresher lens | **Base set — enough to start delivery** |
+| **2. Map with Students** | **TECH JOB MARKET MOVEMENT** — social carousels + a page students open; one question → facts → visualization; hope + daily knowing | **Current — delivery starts here** |
+| **3. Predict for Government** | 6–12m city/sector/role forecasts + policy-ready economic signals | After the student movement has a real pulse |
+
+Collector keeps running (overnight flywheel). New product work is **delivery**, not more collection chrome.
+
+### Twist lock — Map with Students = Job Movement (Ashok 2026-08-03)
+
+**Metaphor (Master):** Intermission → responsible Master → student movement.  
+**JobMaster:** same beat — create a **Job Movement**, continuously feed students/employment seekers with **fact content**.
+
+Students feel:
+
+- Social **carousels** — one question → tower facts → fire visualization
+- Page anytime: hope? · what should I know today? · understand the TECH job market
+- Brand: **TECH JOB MARKET MOVEMENT** · JobMaster.agency · VIGIL · AI · Quanta HR
+
+**Inspiration / associate path:** Honorable CM **C. Joseph Vijay** · **TVK** — broke the “only DMK/ADMK can rule TN” myth (2026 Assembly: TVK largest party, coalition, sworn CM May 2026). JobMaster follows that path of **proving change is possible**, delivering employment-intelligence content for Tamil Nadu seekers as a **govt associate** voice of hope + facts — not scrape jargon.
+
+Tower = truth engine behind every slide.
+
+### Two gates before full Intelligence → Carousel automation
+
+| # | Feature | Status |
+|---|---|---|
+| 1 | **Carousel fire** — Replicate + Pillow → **Telegram album** via Hermes `/carousel` (no local gallery) | **Done** — smoke sent 6 slides to Telegram |
+| 2 | **Trendjack** — search Tamil Nadu / TECH employment trends (SerpApi Google Trends free tier first; buy SearchAPI if needed) → hook carousels to what’s rising | Queued after #1 |
+
+Then: Intelligence Automation = Job Market Analysis → Carousel that reaches employment seekers at scale.
 
 ---
 
@@ -21,49 +58,44 @@
 
 ---
 
-## ✅ Closed sprint — Graph local-focus
+## 🔥 Current sprint — Gate 2 TN trendjack (next)
 
-| ID | Slice | Status |
-|---|---|---|
-| WM-G1–G5 | Local-focus, spin freeze, clickable cards | Done |
+**Goal:** Rising Tamil Nadu / TECH topics × tower facts → `/carousel` briefs on Telegram.
 
----
-
-## ✅ Closed sprint — Richer City districts (night city of employers)
-
-**Goal:** Fly into a cinematic night city — tallest towers = most hiring; cluster by sector; facade name boards.
-
-| ID | Slice | Status |
-|---|---|---|
-| WM-C1 | Skyline API + height proportional to hiring volume | Done |
-| WM-C2 | Sector districts / street grid clusters | Done |
-| WM-C3 | Night windows + flicker + bloom fog | Done |
-| WM-C4 | Facade name boards (building angle, not floating tags) | Done |
-| WM-C5 | Click tower → jobs; street monument city title | Done |
-| WM-C6 | Polish: white lights, roads, NPC cars, unique towers, neon 4-face boards, breath pins, first-click camera focus | Done |
-| WM-C7 | City LOD cards→geo + Remote twins; focus glow; graph distance fade | Done |
+| Slice | Status |
+|---|---|
+| Replicate + Telegram album (`/carousel`) | **Done** |
+| First fiery TECH hope carousel from live tower numbers | **Done** (smoke 2026-08-03) |
+| Trends client: SerpApi `google_trends` geo≈IN-TN (or IN + TN filter) + daily rising queries | **Next** |
+| Trendjack rule: rising TN/tech topic × tower fact → carousel brief | Queued |
+| Full auto loop (trend → analysis → Replicate → Telegram) | After Gate 2 green |
 
 ---
 
-## 🔥 Current sprint — (pick with Ashok)
+## ✅ Closed — Collect / Tracks / World-model base
 
-Candidates: Competitor Intelligence (`EC-06`), Skills Radar, Domestic/Global, deeper City life (districts / landmarks).
+| ID | Slice | Status |
+|---|---|---|
+| WM-G1–G5 | Graph local-focus, spin freeze, clickable cards | Done |
+| WM-C1–C7 | Night City districts + polish | Done |
+| Collect | Dual-track fresher + signal, enrich, experience chips, remote tunnel | Done (base) |
 
 ---
 
 ## Later backlog (pull when sprint/milestone clear)
 
-### Phase 1 — Tracks
-- [ ] ⭐ Competitor Intelligence (`EC-06`)
+### Still Tracks polish (secondary while Students Map ships)
+- [ ] 🔶 Competitor Intelligence (`EC-06`)
 - [ ] 🔶 Domestic / Global scope (`DE-09`)
 - [ ] 🔶 Employer direct onboard (`DE-07`)
 
-### Phase 2 — Maps (beyond world-model shell)
-- [ ] 🔶 Skills Radar (`EI-05`)
+### Phase 2 — Maps (Students-first)
+- [ ] ⭐ Graduate Demand Map (`SM-1`) — **current**
+- [ ] 🔶 Skills Radar (`EI-05`) — feed Students Map
 - [ ] 🔶 Industry Pulse (`EI-04`)
 - [ ] 🔶 Talent Flow (`EI-02`)
 
-### Phase 3 — Predicts + Economic
+### Phase 3 — Predicts for Government
 - [ ] 🔶 Future Forecast (`EI-01`)
 - [ ] 🔶 Boom Signals (`EC-03`)
 - [ ] 🔷 Recession / Investment / Partnership / Disruption capsules
@@ -76,6 +108,7 @@ Candidates: Competitor Intelligence (`EC-06`), Skills Radar, Domestic/Global, de
 - [x] Singularity Core v1 + Miro/Figma 3D nav + mode split (locked tag)
 - [x] VIGIL shell, Hiring Signals, Watchlist, Cities chips, sector filter
 - [x] Collector + Ollama relevance + Plan B under critical heat
+- [x] **Collects base complete** — delivery stage opened 2026-08-03
 
 ---
 

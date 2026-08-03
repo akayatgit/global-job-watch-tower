@@ -10,7 +10,8 @@
 | **Stakeholders** | Ashok (Vision Owner / Yes–No Authority) · Akay (AI Lead — full build agency) |
 | **North star** | Make the investor-accepted pitch come true — scalable, reliable, secure |
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
-| **First-mover mandate** | **Highest product priority:** start and sustain tower searches so Quanta is among the first to collect fresh job-market insights — coverage before polish |
+| **First-mover mandate** | Collector stays live (coverage never stops). **From 2026-08-03 delivery stage:** product priority shifts to **Map with Students**, then **Predict for Government** — collect base is set enough to start |
+| **Delivery stage lock (2026-08-03)** | **Collects → Map Students → Predict Government.** Agile detail: [`documents/roadmap.md`](roadmap.md) |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
 | **Remote browser access (2026-08-03)** | **Tunnel LIVE:** `https://tower.jobmaster.agency` → ThinkPad `127.0.0.1:8001` (`watch-tower` / `watch-tower-tunnel`). **Access:** intended allow `ashokofficial55@gmail.com` — confirm OTP gate in Incognito before sharing URL (see [`documents/remote-access-cloudflare.md`](remote-access-cloudflare.md)). Not Vercel / not Supabase. |
 | **Remote source + auto-deploy** | **Public GitHub:** [akayatgit/global-job-watch-tower](https://github.com/akayatgit/global-job-watch-tower). Merge/push to `main` triggers a **self-hosted Actions runner on this ThinkPad** → `scripts/deploy_local.sh` (**deploy wins**: pause beat → cancel active searches → pull → migrate → restart → retrigger cancelled roles; LinkedIn job ids prevent duplicates). Secrets (`.env`, `.data`, Chrome profiles) never leave the laptop. |
@@ -506,28 +507,41 @@ Principles: append-friendly facts; derived intelligence tables; never destroy se
 
 ## 11. Roadmap (living — Akay maintains)
 
-### Phase 0 — Foundation truth (current seed)
+> **Stage lock (Ashok 2026-08-03):** We are past “build the collector.”  
+> **Collects = base complete** → **Map with Students (now)** → **Predict for Government (next).**  
+> Day-to-day sprint board: [`documents/roadmap.md`](roadmap.md).
+
+### Phase 0 — Foundation truth — DONE (seed hardened)
 
 - Harden LinkedIn discovery pipeline
 - Admin UX matches product-ux Definition of Done
 - Brand tokens applied to admin shell
 - Honest Tower Overview with real pilot metrics
 
-### Phase 1 — Tracks (P0 intelligence)
+### Phase 1 — Tracks (P0 intelligence) — BASE DONE
 
-- Hiring Signals: openings trend, growing roles, company velocity
-- Company Watchlist + Competitor Intelligence (basic)
-- Domestic / Global scope switch (even if global is subset)
+- Hiring Signals: openings trend, growing roles, company velocity ✅
+- Company Watchlist ✅ · Competitor Intelligence (basic) still open
+- Dual-track fresher + market signal discovery ✅
+- Domestic / Global scope switch (even if global is subset) — later
 
-### Phase 2 — Maps
+### Phase 2 — Maps with Students — **CURRENT DELIVERY** (Job Movement · 2026-08-03)
 
-- Skills Radar (emerging / declining / gaps)
-- Industry Pulse
-- Talent Flow (geo proxies from job locations + later richer data)
+**Metaphor:** *Master* intermission → responsible Master → student movement.  
+**JobMaster** creates a **Job Movement**: continuous fact content for employment seekers.
 
-### Phase 3 — Predicts + Economic layer
+**Product face:** **TECH JOB MARKET MOVEMENT** · JobMaster.agency · VIGIL · AI · Quanta HR.
 
-- Future Forecast (6–12m) with alert UX
+- Social **image carousels** (Replicate): one question → tower facts → fire visualization
+- **Trendjack** Tamil Nadu / TECH rising topics (SearchAPI / SerpApi Trends) into carousel briefs
+- **Our page**: hope? · what should I know today? · understand the TECH job market
+- **Associate path:** inspired by Honorable CM C. Joseph Vijay / TVK 2026 — prove change is possible; deliver employment intelligence for Tamil Nadu seekers as govt associate
+- Tower = truth engine; students never see scrape chrome
+- Gates before full automation: (1) Replicate carousel fire (2) TN trend search — then Intelligence Analysis → Carousel at scale
+
+### Phase 3 — Predicts for Government — NEXT AFTER STUDENTS MAP
+
+- Future Forecast (6–12m) with alert UX — city / sector / role for policymakers
 - Boom / Recession / Disruption signals (transparent methodology)
 - Investment Direction & Partnership Targets (decision views)
 
@@ -539,7 +553,7 @@ Principles: append-friendly facts; derived intelligence tables; never destroy se
 
 ### Phase 5 — Employability engine (seeker)
 
-- Pathways, next-gen titles, personal upskilling loops
+- Pathways, next-gen titles, personal upskilling loops (extends Students Map)
 
 **Rule:** Ship complete slices. No half-tables. Update this roadmap after every accepted milestone.
 
@@ -629,6 +643,10 @@ START OF EVERY SESSION
 | v0.19 | 2026-08-03 | Akay | **Experience filter chips:** Fresher · 1–2 · 3–5 · 6–8 · 9–12 · 13+ on Jobs + every insight widget with sector/city chips. Canonical `experience_band` labels; legacy remap migration; stacks with sector/city (`vigil.experience`). |
 | v0.20 | 2026-08-03 | Akay | **Jobs → City view:** header skyline button opens night-city from Jobs filters; multi-metro → multi building clusters (`/api/ultron/jobs-skyline`). |
 | v0.21 | 2026-08-03 | Akay | **Remote access Option B — tunnel LIVE:** `https://tower.jobmaster.agency` → ThinkPad. Access email intended `ashokofficial55@gmail.com`; confirm Incognito OTP before sharing. Doc: `documents/remote-access-cloudflare.md`. |
+| v0.22 | 2026-08-03 | Akay | **Delivery stage opened:** Collects base complete. Product priority = **Map with Students**, then **Predict for Government**. See `documents/roadmap.md`. |
+| v0.23 | 2026-08-03 | Akay | **Students twist:** Map = **TECH JOB MARKET MOVEMENT** — social carousels (one question → facts → viz) + page for hope / daily knowing / TECH market understanding. JobMaster.agency · VIGIL · AI · Quanta HR. Not admin demand tables first. |
+| v0.24 | 2026-08-03 | Akay | **Master → Job Movement:** continuous fact content for seekers. Two gates before auto: Replicate carousel fire + TN trendjack (SerpApi/SearchAPI). Associate inspiration: CM C. Joseph Vijay / TVK 2026 path. |
+| v0.25 | 2026-08-03 | Akay | **Gate 1 live:** `/carousel` → Replicate flux-schnell + Pillow → Telegram `sendMediaGroup` album (Hermes). No local gallery; Ashok reviews on Telegram. |
 
 ### Phase 0 progress (living)
 
