@@ -258,6 +258,12 @@ use — they should love opening the app, never fight it.
   experience band/years, degrees, certifications, and domain experience.
   These appear as Neural Core graph clusters (experience / degree /
   certification / domain). New scrapes queue enrich; beat backfills pending.
+- **Fresher-primary lens (2026-08-03):** Default insight product is tech
+  freshers / fresh graduates (degrees, certs, courses, cities, companies).
+  Searches: Track A Fresher always uses LinkedIn Internship+Entry (`f_E=1,2`);
+  Track B Market Signal is secondary (no experience filter, thinner) for
+  experienced hiring → economy decode. Never present Market Signal as the
+  main fresher story. Wipe+reseed before trusting post–v0.17 catches.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

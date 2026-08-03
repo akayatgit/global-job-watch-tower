@@ -124,6 +124,9 @@ def experience_band(min_y: float | None, max_y: float | None) -> str | None:
         return None
     lo = min_y if min_y is not None else max_y or 0
     hi = max_y if max_y is not None else min_y or 0
+    # Graduate-relevant windows (0-1, 0-2, ≤2 yrs) stay in 0-1 band
+    if hi <= 2.0 and lo <= 1.0:
+        return '0-1 years'
     mid = (lo + hi) / 2.0
     if mid < 1.0:
         return '0-1 years'
@@ -136,6 +139,18 @@ def experience_band(min_y: float | None, max_y: float | None) -> str | None:
     if mid < 12.0:
         return '8-12 years'
     return '12+ years'
+
+
+FRESHER_TEXT_RE = re.compile(
+    r'(?:'
+    r'\bfreshers?\b|\bfresh\s+graduate\b|\bcampus\s+hire\b|\bcampus\s+recruit\b'
+    r'|\bgraduate\s+trainee\b|\bgraduate\s+engineer\b|\bgraduate\s+hire\b'
+    r'|\bmanagement\s+trainee\b|\banalyst\s+trainee\b'
+    r'|\bno\s+experience\b|\bzero\s+experience\b|\b0\s*(?:years?|yrs?)\b'
+    r'|\bentry[\s-]?level\b'
+    r')',
+    re.I,
+)
 
 
 def _uniq(items: list[str], limit: int = 12) -> list[str]:
@@ -179,8 +194,8 @@ def extract_experience(text: str) -> tuple[float | None, float | None, str | Non
     m = EXP_MIN_RE.search(text)
     if m:
         a = float(m.group('a'))
-        if 0 < a <= 40:
-            return a, None, f'{a:g}+ years'
+        if 0 <= a <= 40:  # allow explicit "0 years"
+            return a, None, f'{a:g}+ years' if a > 0 else '0 years'
     return None, None, None
 
 
@@ -251,6 +266,16 @@ def extract_requirements(
             band = '5-8 years'
         elif sen in ('Director', 'Executive'):
             band = '12+ years'
+    # Fresher / campus / graduate language → 0-1 when years sparse or ≤2
+    if FRESHER_TEXT_RE.search(blob):
+        if band is None or (amax is not None and amax <= 2) or (
+            amin is not None and amax is None and amin <= 1
+        ):
+            band = '0-1 years'
+            if amin is None:
+                amin = 0.0
+            if not label:
+                label = 'Fresher / graduate'
     return JobRequirements(
         experience_min_years=amin,
         experience_max_years=amax,

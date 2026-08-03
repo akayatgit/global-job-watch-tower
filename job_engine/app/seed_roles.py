@@ -1,8 +1,10 @@
-"""Canonical fresher + major role catalogue for Watch Tower India searches.
+"""Dual-track India search catalogue for Watch Tower.
 
-Priority: be first to collect daily 24h market insights across the major
-entry-level / early-career talent map (AI, software, data, cloud, cyber,
-product, business, and classic fresher funnels).
+Track A — Fresher (primary): LinkedIn f_E=1,2 (Internship + Entry level),
+early-career keywords, daily flywheel for graduate employability.
+
+Track B — Market Signal (secondary): no experience filter, thinner pages,
+major tech roles for hiring-signal / economy decode.
 
 Critical sectors (2026-08-02): Tech·AI, Tech·Digital, Manufacturing,
 Healthcare, Green economy, Logistics, Tourism — light coverage outside Tech.
@@ -12,185 +14,217 @@ from __future__ import annotations
 
 from app.sectors import infer_sector
 
-# (display_name, linkedin_keywords)
-# Keywords tuned for LinkedIn search — short, role-shaped phrases.
-FRESHER_MAJOR_ROLES: list[tuple[str, str]] = [
-    # —— Keep / align with existing pilot (also upserted) ——
-    ('AI Product Owner', 'ai product owner'),
-    ('Risks & Controls', 'risk and control'),
+# LinkedIn f_E: 1=Internship, 2=Entry level
+FRESHER_EXPERIENCE_FILTER = '1,2'
+SIGNAL_EXPERIENCE_FILTER = ''  # all levels — economy / mid-senior mix
 
-    # —— AI / GenAI / ML (campus premium 2026) ——
-    ('AI Engineer', 'ai engineer'),
-    ('Machine Learning Engineer', 'machine learning engineer'),
-    ('ML Engineer Fresher', 'ml engineer fresher'),
-    ('Data Scientist', 'data scientist'),
-    ('Junior Data Scientist', 'junior data scientist'),
-    ('GenAI Engineer', 'genai engineer'),
-    ('Generative AI Engineer', 'generative ai engineer'),
-    ('Prompt Engineer', 'prompt engineer'),
-    ('AI/ML Intern', 'ai ml intern'),
-    ('NLP Engineer', 'nlp engineer'),
-    ('Computer Vision Engineer', 'computer vision engineer'),
-    ('LLM Engineer', 'llm engineer'),
-    ('AI Research Intern', 'ai research intern'),
-    ('Applied Scientist', 'applied scientist'),
-    ('MLOps Engineer', 'mlops engineer'),
-    ('AI QA Engineer', 'ai qa'),
-    ('Agentic AI Engineer', 'agentic ai engineer'),
+# Seed row: (display_name, linkedin_keywords, experience_filter, track)
+# track: 'fresher' | 'signal'
 
-    # —— Data ——
-    ('Data Analyst', 'data analyst'),
-    ('Junior Data Analyst', 'junior data analyst'),
-    ('Data Engineer', 'data engineer'),
-    ('Junior Data Engineer', 'junior data engineer'),
-    ('Business Analyst', 'business analyst'),
-    ('BI Analyst', 'business intelligence analyst'),
-    ('Analytics Engineer', 'analytics engineer'),
-    ('SQL Developer', 'sql developer'),
-    ('ETL Developer', 'etl developer'),
-    ('Power BI Developer', 'power bi developer'),
-
-    # —— Software engineering ——
-    ('Software Engineer', 'software engineer'),
-    ('Software Developer', 'software developer'),
+FRESHER_ROLES: list[tuple[str, str]] = [
+    # —— Classic fresher / campus funnels (priority pages) ——
     ('Graduate Software Engineer', 'graduate software engineer'),
     ('Junior Software Developer', 'junior software developer'),
-    ('Backend Developer', 'backend developer'),
-    ('Frontend Developer', 'frontend developer'),
-    ('Full Stack Developer', 'full stack developer'),
-    ('Java Developer', 'java developer'),
-    ('Python Developer', 'python developer'),
-    ('JavaScript Developer', 'javascript developer'),
-    ('React Developer', 'react developer'),
-    ('Node.js Developer', 'nodejs developer'),
-    ('.NET Developer', '.net developer'),
-    ('Android Developer', 'android developer'),
-    ('iOS Developer', 'ios developer'),
-    ('Flutter Developer', 'flutter developer'),
-    ('Golang Developer', 'golang developer'),
-    ('C++ Developer', 'c++ developer'),
+    ('Software Intern', 'software intern'),
+    ('Data Intern', 'data intern'),
+    ('Campus Hire Software', 'campus hire software'),
+    ('Graduate Trainee', 'graduate trainee'),
+    ('Management Trainee', 'management trainee'),
+    ('Analyst Trainee', 'analyst trainee'),
+    ('Helpdesk Analyst', 'helpdesk analyst'),
+    ('Process Associate', 'process associate'),
+    ('IT Support Fresher', 'it support fresher'),
+    ('Technical Support Fresher', 'technical support fresher'),
 
-    # —— QA / SRE / DevOps / Cloud ——
-    ('QA Engineer', 'qa engineer'),
-    ('Software Tester', 'software tester'),
-    ('SDET', 'sdet'),
-    ('Automation Test Engineer', 'automation test engineer'),
-    ('DevOps Engineer', 'devops engineer'),
+    # —— AI / GenAI / ML (early career) ——
+    ('AI Engineer Fresher', 'ai engineer fresher'),
+    ('Junior AI Engineer', 'junior ai engineer'),
+    ('ML Engineer Fresher', 'ml engineer fresher'),
+    ('Junior Machine Learning Engineer', 'junior machine learning engineer'),
+    ('Junior Data Scientist', 'junior data scientist'),
+    ('Data Scientist Fresher', 'data scientist fresher'),
+    ('GenAI Engineer Fresher', 'genai engineer fresher'),
+    ('Junior Prompt Engineer', 'junior prompt engineer'),
+    ('AI/ML Intern', 'ai ml intern'),
+    ('AI Research Intern', 'ai research intern'),
+    ('Junior NLP Engineer', 'junior nlp engineer'),
+    ('Junior Computer Vision Engineer', 'junior computer vision'),
+    ('Junior LLM Engineer', 'junior llm engineer'),
+    ('AI QA Fresher', 'ai qa fresher'),
+    ('Junior Agentic AI Engineer', 'junior agentic ai'),
+
+    # —— Data ——
+    ('Junior Data Analyst', 'junior data analyst'),
+    ('Data Analyst Fresher', 'data analyst fresher'),
+    ('Junior Data Engineer', 'junior data engineer'),
+    ('Junior Business Analyst', 'junior business analyst'),
+    ('Junior BI Analyst', 'junior business intelligence'),
+    ('Junior Analytics Engineer', 'junior analytics engineer'),
+    ('Junior SQL Developer', 'junior sql developer'),
+    ('Junior ETL Developer', 'junior etl developer'),
+    ('Junior Power BI Developer', 'junior power bi'),
+    ('Data Annotation', 'data annotation'),
+    ('AI Trainer Fresher', 'ai trainer fresher'),
+
+    # —— Software engineering ——
+    ('Junior Backend Developer', 'junior backend developer'),
+    ('Junior Frontend Developer', 'junior frontend developer'),
+    ('Junior Full Stack Developer', 'junior full stack developer'),
+    ('Junior Java Developer', 'junior java developer'),
+    ('Junior Python Developer', 'junior python developer'),
+    ('Junior JavaScript Developer', 'junior javascript developer'),
+    ('Junior React Developer', 'junior react developer'),
+    ('Junior Node.js Developer', 'junior nodejs developer'),
+    ('Junior .NET Developer', 'junior .net developer'),
+    ('Junior Android Developer', 'junior android developer'),
+    ('Junior iOS Developer', 'junior ios developer'),
+    ('Junior Flutter Developer', 'junior flutter developer'),
+    ('Junior Golang Developer', 'junior golang developer'),
+    ('Junior C++ Developer', 'junior c++ developer'),
+
+    # —— QA / DevOps / Cloud (early) ——
+    ('Junior QA Engineer', 'junior qa engineer'),
+    ('Software Tester Fresher', 'software tester fresher'),
+    ('Junior SDET', 'junior sdet'),
+    ('Junior Automation Test Engineer', 'junior automation test'),
     ('Junior DevOps Engineer', 'junior devops'),
-    ('Site Reliability Engineer', 'site reliability engineer'),
-    ('Cloud Engineer', 'cloud engineer'),
-    ('AWS Cloud Engineer', 'aws cloud engineer'),
-    ('Azure Engineer', 'azure engineer'),
-    ('Platform Engineer', 'platform engineer'),
-    ('Kubernetes Engineer', 'kubernetes'),
+    ('Junior Cloud Engineer', 'junior cloud engineer'),
+    ('Junior AWS Cloud Engineer', 'junior aws cloud'),
+    ('Junior Azure Engineer', 'junior azure engineer'),
 
     # —— Cybersecurity ——
-    ('Cybersecurity Analyst', 'cybersecurity analyst'),
-    ('Security Analyst', 'security analyst'),
-    ('SOC Analyst', 'soc analyst'),
-    ('Information Security Analyst', 'information security analyst'),
+    ('Junior Cybersecurity Analyst', 'junior cybersecurity analyst'),
+    ('Junior Security Analyst', 'junior security analyst'),
+    ('SOC Analyst Fresher', 'soc analyst fresher'),
+    ('Junior Information Security Analyst', 'junior information security'),
     ('Cyber Security Fresher', 'cyber security fresher'),
-    ('Penetration Tester', 'penetration tester'),
-    ('GRC Analyst', 'grc analyst'),
+    ('Junior GRC Analyst', 'junior grc analyst'),
 
-    # —— Product / Design / UX ——
-    ('Product Manager', 'product manager'),
+    # —— Product / Design (early only) ——
     ('Associate Product Manager', 'associate product manager'),
-    ('Product Analyst', 'product analyst'),
-    ('UI UX Designer', 'ui ux designer'),
-    ('Product Designer', 'product designer'),
-    ('UX Researcher', 'ux researcher'),
-    ('Technical Product Manager', 'technical product manager'),
+    ('Junior Product Analyst', 'junior product analyst'),
+    ('Junior UI UX Designer', 'junior ui ux designer'),
+    ('Junior Product Designer', 'junior product designer'),
+    ('UX Researcher Intern', 'ux researcher intern'),
 
-    # —— Support / IT / Ops fresher funnels ——
-    ('Technical Support Engineer', 'technical support engineer'),
-    ('IT Support', 'it support'),
-    ('Desktop Support Engineer', 'desktop support engineer'),
-    ('System Administrator', 'system administrator'),
-    ('Network Engineer', 'network engineer'),
-    ('Helpdesk Analyst', 'helpdesk analyst'),
-    ('Application Support', 'application support'),
+    # —— Support / IT ——
+    ('Desktop Support Engineer Fresher', 'desktop support fresher'),
+    ('Junior System Administrator', 'junior system administrator'),
+    ('Junior Network Engineer', 'junior network engineer'),
+    ('Application Support Fresher', 'application support fresher'),
 
-    # —— Business / consulting / finance adjacent (freshers) ——
-    ('Management Trainee', 'management trainee'),
-    ('Graduate Trainee', 'graduate trainee'),
-    ('Analyst Trainee', 'analyst trainee'),
-    ('Consultant', 'consultant fresher'),
+    # —— Business / consulting / finance adjacent ——
+    ('Risks & Controls Fresher', 'risk and control fresher'),
+    ('Consultant Fresher', 'consultant fresher'),
     ('Associate Consultant', 'associate consultant'),
-    ('Risk Analyst', 'risk analyst'),
-    ('Compliance Analyst', 'compliance analyst'),
+    ('Junior Risk Analyst', 'junior risk analyst'),
+    ('Junior Compliance Analyst', 'junior compliance analyst'),
     ('Audit Associate', 'audit associate'),
-    ('Financial Analyst', 'financial analyst'),
-    ('Operations Analyst', 'operations analyst'),
-    ('Process Associate', 'process associate'),
+    ('Junior Financial Analyst', 'junior financial analyst'),
+    ('Junior Operations Analyst', 'junior operations analyst'),
     ('HR Fresher', 'hr fresher'),
-    ('Talent Acquisition', 'talent acquisition fresher'),
+    ('Talent Acquisition Fresher', 'talent acquisition fresher'),
     ('Sales Development Representative', 'sales development representative'),
     ('Business Development Associate', 'business development associate'),
-    ('Marketing Analyst', 'marketing analyst'),
+    ('Junior Marketing Analyst', 'junior marketing analyst'),
     ('Digital Marketing Executive', 'digital marketing executive'),
-    ('Content Writer', 'content writer'),
-    ('Technical Writer', 'technical writer'),
+    ('Junior Content Writer', 'junior content writer'),
+    ('Junior Technical Writer', 'junior technical writer'),
 
-    # —— Emerging / adjacent skill labels as searches ——
-    ('RPA Developer', 'rpa developer'),
-    ('Salesforce Developer', 'salesforce developer'),
+    # —— Emerging platforms ——
+    ('Junior RPA Developer', 'junior rpa developer'),
+    ('Junior Salesforce Developer', 'junior salesforce developer'),
     ('SAP Fresher', 'sap fresher'),
-    ('Blockchain Developer', 'blockchain developer'),
-    ('Game Developer', 'game developer'),
-    ('Embedded Engineer', 'embedded engineer'),
-    ('IoT Engineer', 'iot engineer'),
-    ('Data Annotation', 'data annotation'),
-    ('AI Trainer', 'ai trainer'),
-    ('Internship Software', 'software intern'),
-    ('Internship Data', 'data intern'),
-    ('Campus Hire Software', 'campus hire software'),
+    ('Junior Blockchain Developer', 'junior blockchain developer'),
+    ('Junior Game Developer', 'junior game developer'),
+    ('Junior Embedded Engineer', 'junior embedded engineer'),
+    ('Junior IoT Engineer', 'junior iot engineer'),
 ]
 
-# Light everyday coverage for non-tech critical sectors (keep thin on purpose).
+# Market Signal — major tech roles, no f_E (experienced mix for economy decode)
+SIGNAL_ROLES: list[tuple[str, str]] = [
+    ('Software Engineer · Market Signal', 'software engineer'),
+    ('Backend Developer · Market Signal', 'backend developer'),
+    ('Full Stack Developer · Market Signal', 'full stack developer'),
+    ('Data Scientist · Market Signal', 'data scientist'),
+    ('Data Engineer · Market Signal', 'data engineer'),
+    ('Machine Learning Engineer · Market Signal', 'machine learning engineer'),
+    ('AI Engineer · Market Signal', 'ai engineer'),
+    ('MLOps Engineer · Market Signal', 'mlops engineer'),
+    ('Applied Scientist · Market Signal', 'applied scientist'),
+    ('DevOps Engineer · Market Signal', 'devops engineer'),
+    ('Platform Engineer · Market Signal', 'platform engineer'),
+    ('Site Reliability Engineer · Market Signal', 'site reliability engineer'),
+    ('Cloud Engineer · Market Signal', 'cloud engineer'),
+    ('Kubernetes Engineer · Market Signal', 'kubernetes'),
+    ('Product Manager · Market Signal', 'product manager'),
+    ('Technical Product Manager · Market Signal', 'technical product manager'),
+    ('AI Product Owner · Market Signal', 'ai product owner'),
+    ('Penetration Tester · Market Signal', 'penetration tester'),
+    ('Cybersecurity Analyst · Market Signal', 'cybersecurity analyst'),
+    ('Business Analyst · Market Signal', 'business analyst'),
+    ('QA Engineer · Market Signal', 'qa engineer'),
+    ('Java Developer · Market Signal', 'java developer'),
+    ('Python Developer · Market Signal', 'python developer'),
+    ('React Developer · Market Signal', 'react developer'),
+    ('Android Developer · Market Signal', 'android developer'),
+]
+
+# Light everyday coverage for non-tech critical sectors (fresher track + f_E).
 # (display_name, linkedin_keywords, sector_id)
 SECTOR_EXPANSION_ROLES: list[tuple[str, str, str]] = [
-    # Tech · AI (small add — catalogue already AI-heavy)
-    ('AI Solutions Engineer', 'ai solutions engineer', 'tech_ai'),
-    # Tech · Digital
-    ('Digital Transformation Analyst', 'digital transformation analyst', 'tech_digital'),
-    # Manufacturing · Advanced (few)
-    ('Manufacturing Engineer', 'manufacturing engineer', 'manufacturing_advanced'),
-    ('Production Engineer', 'production engineer', 'manufacturing_advanced'),
-    # Healthcare (few)
-    ('Clinical Research Associate', 'clinical research associate', 'healthcare'),
-    ('Healthcare Analyst', 'healthcare analyst', 'healthcare'),
-    # Green economy (few)
-    ('Sustainability Analyst', 'sustainability analyst', 'green_economy'),
-    ('Renewable Energy Engineer', 'renewable energy engineer', 'green_economy'),
-    # Logistics (few)
-    ('Supply Chain Analyst', 'supply chain analyst', 'logistics'),
-    ('Logistics Coordinator', 'logistics coordinator', 'logistics'),
-    # Tourism (few)
-    ('Hotel Operations Executive', 'hotel operations', 'tourism'),
-    ('Travel Consultant', 'travel consultant', 'tourism'),
+    ('Junior AI Solutions Engineer', 'junior ai solutions engineer', 'tech_ai'),
+    ('Junior Digital Transformation Analyst', 'junior digital transformation', 'tech_digital'),
+    ('Junior Manufacturing Engineer', 'junior manufacturing engineer', 'manufacturing_advanced'),
+    ('Junior Production Engineer', 'junior production engineer', 'manufacturing_advanced'),
+    ('Clinical Research Associate Fresher', 'clinical research associate fresher', 'healthcare'),
+    ('Junior Healthcare Analyst', 'junior healthcare analyst', 'healthcare'),
+    ('Junior Sustainability Analyst', 'junior sustainability analyst', 'green_economy'),
+    ('Junior Renewable Energy Engineer', 'junior renewable energy', 'green_economy'),
+    ('Junior Supply Chain Analyst', 'junior supply chain analyst', 'logistics'),
+    ('Logistics Coordinator Fresher', 'logistics coordinator fresher', 'logistics'),
+    ('Hotel Operations Fresher', 'hotel operations fresher', 'tourism'),
+    ('Travel Consultant Fresher', 'travel consultant fresher', 'tourism'),
 ]
 
+# Keywords that get priority page depth on fresher track
+PRIORITY_KEYWORD_NEEDLES = (
+    'intern', 'campus', 'trainee', 'graduate', 'helpdesk', 'associate',
+    'fresher', 'annotation',
+)
 
-def all_seed_roles() -> list[tuple[str, str, str]]:
-    """Flatten catalogue into (name, keywords, sector_id)."""
-    out: list[tuple[str, str, str]] = []
-    for name, keywords in FRESHER_MAJOR_ROLES:
-        out.append((name, keywords, infer_sector(name, keywords)))
-    seen = {kw.lower() for _, kw, _ in out}
+
+def all_seed_roles() -> list[tuple[str, str, str, str, str]]:
+    """Flatten catalogue into (name, keywords, sector_id, experience_filter, track)."""
+    out: list[tuple[str, str, str, str, str]] = []
+    seen: set[str] = set()
+
+    def add(name: str, keywords: str, sector: str, exp: str, track: str) -> None:
+        key = f'{keywords.strip().lower()}|{exp}|{track}'
+        if key in seen:
+            return
+        seen.add(key)
+        out.append((name, keywords, sector, exp, track))
+
+    for name, keywords in FRESHER_ROLES:
+        add(name, keywords, infer_sector(name, keywords), FRESHER_EXPERIENCE_FILTER, 'fresher')
+
     for name, keywords, sector in SECTOR_EXPANSION_ROLES:
-        if keywords.strip().lower() in seen:
-            continue
-        out.append((name, keywords, sector))
-        seen.add(keywords.strip().lower())
+        add(name, keywords, sector, FRESHER_EXPERIENCE_FILTER, 'fresher')
+
+    for name, keywords in SIGNAL_ROLES:
+        add(name, keywords, infer_sector(name, keywords), SIGNAL_EXPERIENCE_FILTER, 'signal')
+
     return out
 
 
-# Default India geo used across the tower pilot
+# Backward-compatible alias used by older imports
+FRESHER_MAJOR_ROLES = [(n, k) for n, k in FRESHER_ROLES]
+
 INDIA_GEO_ID = '102713980'
 INDIA_LABEL = 'India'
 
-# Past-24h searches: few pages usually cover the day; keep dwell human-scale.
 DEFAULT_MAX_PAGES = 5
-PRIORITY_MAX_PAGES = 10  # existing pilot / high-value roles
-SECTOR_LIGHT_MAX_PAGES = 3  # manufacturing / healthcare / green / logistics / tourism
+PRIORITY_MAX_PAGES = 10
+SIGNAL_MAX_PAGES = 3
+SECTOR_LIGHT_MAX_PAGES = 3

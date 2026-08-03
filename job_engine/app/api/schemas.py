@@ -9,6 +9,8 @@ class ConfigIn(BaseModel):
     geo_id: str = '102713980'
     location_label: str | None = None
     sector: str = 'software'
+    experience_filter: str | None = '1,2'
+    track: str = 'fresher'
     enabled: bool = True
     schedule_cron: str = '0 * * * *'
     priority: int = 5

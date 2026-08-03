@@ -327,6 +327,7 @@ def run_scrape(self, scrape_run_id: int):
                 should_continue=should_continue,
                 log=lambda msg: console_log('scraper', msg, run_id=run.id),
                 run_id=run.id,
+                experience_filter=getattr(cfg, 'experience_filter', None),
             )
         except Exception as exc:
             db.rollback()

@@ -609,6 +609,7 @@ START OF EVERY SESSION
 | v0.14 | 2026-08-03 | Akay | Agile roadmap live (`documents/roadmap.md`). Sprint: Graph local-focus + spin freeze + clickable cards. Next milestone: richer City districts. |
 | v0.15 | 2026-08-03 | Akay | Night City districts: cinematic skyline, sector clusters, height=hiring, facade name boards, flickering windows (`/api/ultron/cities/{id}/skyline`) |
 | v0.16 | 2026-08-03 | Akay | **Job requirements enrich (critical):** detail-page scrape for experience years/band, degrees, certifications, domain experience → DB fields + Neural Core graph clusters. New scrapes queue enrich; beat backfills every 10m. |
+| v0.17 | 2026-08-03 | Akay | **Fresher-first clean restart:** dual-track catalogue — Track A Fresher (`f_E=1,2` Intern+Entry + early-career keywords) daily flywheel; Track B Market Signal (no `f_E`, thinner pages) for experienced hiring / economy decode. `SearchConfig.experience_filter` + `track`. Enrich maps fresher/0–2 → `0-1 years`; retries `enrich_failed`. Wipe jobs/companies/runs then reseed before new catches. |
 
 ### Phase 0 progress (living)
 
@@ -619,17 +620,33 @@ START OF EVERY SESSION
 | Tower Overview pods (honest pilot metrics) + Tracks flywheel cue | Done |
 | Harden discovery pipeline / scrape reliability | Done (v0.2) |
 | Hiring Signals (Phase 1) | Done (v0.3) |
-| Once-daily cadence + ~100 fresher/major role catalogue | Done (v0.4) |
+| Once-daily cadence + ~100 fresher/major role catalogue | Done (v0.4) → superseded by dual-track v0.17 |
+| Fresher-first discovery (`f_E` + dual-track) + clean data restart | Done (v0.17) |
 | Company Watchlist (EC-01) | Done (v0.5) |
 | VIGIL air ops shell (hand-first, Ultron bus) | Done (v0.8) |
 | **Milestone freeze** before world-model Neural Core | Done (v0.10-milestone) — recover via tag |
 | Neural Core v0 — living labor-market graph in Three.js | Done (local) — `/api/ultron/world-model` + interactive Three.js graph; click → panels |
 | **Milestone freeze** Singularity Core v1 (nav + tags + brand shape) | Done (v0.13-milestone) — tag `milestone/singularity-core-v1` |
 | Job requirements → experience / degree / cert / domain graph clusters | Done (v0.16) — enrich + world-model; backfill pending |
+| Fresher Track A (`f_E=1,2`) + Market Signal Track B | Done (v0.17) — seed owns catalogue truth |
+
+### Dual-track discovery (v0.17) — fresher primary
+
+**Primary product lens:** tech **fresh graduates** — where openings are, which degrees/certs appear, which cities/companies hire.  
+**Secondary lens:** experienced **Market Signal** searches (no LinkedIn experience filter) for hiring density → economy decode.
+
+| Track | LinkedIn `f_E` | Cadence | Pages | Purpose |
+|---|---|---|---|---|
+| `fresher` | `1,2` (Internship + Entry level) | Daily ~05:00 stagger 14m | 5–10 (priority funnels) | Graduate employability flywheel |
+| `signal` | *(none — all levels)* | Daily ~14:00 stagger 18m | 3 | Experienced / economy signals |
+
+**Rule:** Fresher searches always send LinkedIn Entry + Intern filters. Discovery before enrich — enrich cannot recover jobs never scraped.  
+**Seed:** `app/seed_roles.py` + `scripts/seed_fresher_searches.py` (disables configs not in catalogue).  
+**Clean restart:** stop scrapes → reseed → `POST /reset` (keeps `search_configs`) → optional clear `console_log` / `tower_events` → beat resumes.
 
 ### Cadence policy (v0.4) — how often to run
 
-**Decision: once per day per search** (staggered), with LinkedIn **past 24 hours** filter (`f_TPR=r86400`).
+**Decision: once per day per search** (staggered), with LinkedIn **past 24 hours** filter (`f_TPR=r86400`). Fresher track adds **`f_E=1,2`** (v0.17).
 
 | Question | Answer |
 |---|---|

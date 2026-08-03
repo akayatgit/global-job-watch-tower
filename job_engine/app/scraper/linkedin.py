@@ -94,13 +94,28 @@ def human_delay() -> float:
     return delay
 
 
-def build_search_url(keywords: str, geo_id: str, start: int = 0) -> str:
+def build_search_url(
+    keywords: str,
+    geo_id: str,
+    start: int = 0,
+    experience_filter: str | None = None,
+) -> str:
+    """Build a LinkedIn jobs search URL.
+
+    ``experience_filter`` is LinkedIn ``f_E`` codes, comma-joined:
+    1=Internship, 2=Entry level, 3=Associate, 4=Mid-Senior, 5=Director, 6=Executive.
+    Fresher track uses ``1,2``. Empty/None omits the filter (Market Signal).
+    """
     url = (
         'https://www.linkedin.com/jobs/search/'
         f'?keywords={quote(keywords)}'
         f'&geoId={geo_id}'
         f'&f_TPR={config.TIME_FILTER}'
     )
+    filt = (experience_filter or '').strip()
+    if filt:
+        # LinkedIn expects comma-separated codes URL-encoded (1%2C2)
+        url += f'&f_E={quote(filt, safe="")}'
     if start:
         url += f'&start={start}'
     return url
@@ -151,7 +166,8 @@ def _fetch_with_retries(engine, url: str, label: str, say) -> tuple[object, floa
 
 def scrape_search(keywords: str, geo_id: str, max_pages: int,
                   on_page=None, should_continue=None, log=None,
-                  run_id: int | None = None) -> list[PageResult]:
+                  run_id: int | None = None,
+                  experience_filter: str | None = None) -> list[PageResult]:
     """Scrape a LinkedIn job search, page by page, in one browser session.
 
     ``on_page(PageResult)`` is called after each page so the caller can
@@ -284,7 +300,11 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
     )
 
     mode = 'hidden (cooler)' if get_headless() else 'VISIBLE window'
-    say(f'Opening browser for "{keywords}" (past 24h, up to {max_pages} pages) — {mode}…')
+    exp_note = (
+        f', LinkedIn experience f_E={experience_filter.strip()}'
+        if (experience_filter or '').strip() else ', all experience levels'
+    )
+    say(f'Opening browser for "{keywords}" (past 24h{exp_note}, up to {max_pages} pages) — {mode}…')
     try:
         from app.tower_health import record_event_standalone
         record_event_standalone(
@@ -301,7 +321,11 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
                 say('Stop requested — ending run gracefully.')
                 break
 
-            url = build_search_url(keywords, geo_id, start=page_num * config.PAGE_SIZE)
+            url = build_search_url(
+                keywords, geo_id,
+                start=page_num * config.PAGE_SIZE,
+                experience_filter=experience_filter,
+            )
             logger.info('fetching page %s: %s', page_num + 1, url)
 
             if page_num > 0:

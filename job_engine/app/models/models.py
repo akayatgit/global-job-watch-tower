@@ -47,6 +47,11 @@ class SearchConfig(Base):
     geo_id: Mapped[str] = mapped_column(String(50), default='102713980')
     location_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     sector: Mapped[str] = mapped_column(String(100), default='software')
+    # LinkedIn experience filter f_E values, comma-joined (e.g. "1,2" = Intern+Entry).
+    # Empty/null = no f_E (all seniorities) — used by Market Signal track.
+    experience_filter: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # fresher = graduate flywheel; signal = experienced / economy hiring signals
+    track: Mapped[str] = mapped_column(String(20), default='fresher', index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     schedule_cron: Mapped[str] = mapped_column(String(100), default='0 * * * *')  # hourly
     priority: Mapped[int] = mapped_column(Integer, default=5)

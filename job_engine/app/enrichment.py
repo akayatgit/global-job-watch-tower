@@ -11,7 +11,9 @@ import random
 import time
 from typing import Callable
 
-from sqlalchemy import select
+from datetime import timedelta
+
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app import config
@@ -26,6 +28,9 @@ from app.scraper.session import sync_linkedin_session
 logger = logging.getLogger(__name__)
 
 LogFn = Callable[[str], None]
+
+# Retry enrich_failed after this cool-down (do not forever-skip)
+ENRICH_FAILED_RETRY_AFTER = timedelta(hours=6)
 
 
 def _apply_requirements(job: JobMaster, detail) -> None:
@@ -43,9 +48,19 @@ def _apply_requirements(job: JobMaster, detail) -> None:
 
 
 def pending_requirement_ids(db: Session, limit: int = 20) -> list[int]:
+    """Never-enriched rows, plus enrich_failed old enough to retry."""
+    retry_before = utcnow() - ENRICH_FAILED_RETRY_AFTER
     rows = db.execute(
         select(JobMaster.id)
-        .where(JobMaster.requirements_enriched_at.is_(None))
+        .where(
+            or_(
+                JobMaster.requirements_enriched_at.is_(None),
+                and_(
+                    JobMaster.experience_label == 'enrich_failed',
+                    JobMaster.requirements_enriched_at <= retry_before,
+                ),
+            )
+        )
         .order_by(JobMaster.id.desc())
         .limit(max(1, min(limit, 40)))
     ).scalars().all()
@@ -128,6 +143,10 @@ def enrich_jobs_by_ids(
                 waited = human_delay()
                 say(f'Human wait {waited:.1f}s before next job detail…')
             say(f'Detail {i + 1}/{len(ordered)}: {job.title[:60]}')
+            # Clear prior enrich_failed stamp so a successful retry replaces it
+            if job.experience_label == 'enrich_failed':
+                job.experience_label = None
+                job.requirements_enriched_at = None
             try:
                 response = engine.fetch(url)
                 detail = parse_job_detail(response, card_text=job.raw_text)
