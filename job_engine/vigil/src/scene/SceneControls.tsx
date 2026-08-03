@@ -131,10 +131,12 @@ export function SceneControls() {
     }
   }, [gl])
 
-  // Custom wheel: ease ramp + zoom toward cursor
+  // Custom wheel: ease ramp + zoom toward cursor (graph/core).
+  // City uses OrbitControls zoom so pinch + freer dolly work cleanly.
   useEffect(() => {
     const el = gl.domElement
     const onWheel = (e: WheelEvent) => {
+      if (useVigilStore.getState().sceneMode === 'city') return
       e.preventDefault()
       if (!enabled) return
       const now = performance.now()
@@ -397,16 +399,15 @@ export function SceneControls() {
       enableDamping
       dampingFactor={0.085}
       enablePan
-      enableZoom={false}
+      enableZoom={sceneMode === 'city'}
       enableRotate
       panSpeed={1.0}
-      rotateSpeed={0.75}
+      rotateSpeed={sceneMode === 'city' ? 0.95 : 0.75}
       minDistance={0.25}
-      maxDistance={28}
-      minPolarAngle={0.15}
-      // City stays high-angle; other modes allow a bit more tilt
+      maxDistance={sceneMode === 'city' ? 36 : 28}
+      minPolarAngle={sceneMode === 'city' ? 0.08 : 0.15}
       maxPolarAngle={
-        sceneMode === 'city' ? Math.PI * 0.38 : Math.PI * 0.48
+        sceneMode === 'city' ? Math.PI * 0.92 : Math.PI * 0.48
       }
       mouseButtons={{
         LEFT: THREE.MOUSE.ROTATE,

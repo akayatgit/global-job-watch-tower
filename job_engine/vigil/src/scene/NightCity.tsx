@@ -466,6 +466,7 @@ function EdgeFrame({
   const mats = (
     <meshBasicMaterial color={color} transparent opacity={opacity} />
   )
+  const noRay = () => null
   return (
     <group>
       {/* Vertical corners */}
@@ -475,18 +476,22 @@ function EdgeFrame({
         [w / 2, 0, -d / 2],
         [-w / 2, 0, -d / 2],
       ].map(([x, , z], i) => (
-        <mesh key={`v${i}`} position={[x as number, h / 2, z as number]}>
+        <mesh
+          key={`v${i}`}
+          position={[x as number, h / 2, z as number]}
+          raycast={noRay}
+        >
           <boxGeometry args={[t, h, t]} />
           {mats}
         </mesh>
       ))}
       {/* Top rim */}
-      <mesh position={[0, h, 0]}>
+      <mesh position={[0, h, 0]} raycast={noRay}>
         <boxGeometry args={[w + t, t, d + t]} />
         {mats}
       </mesh>
       {/* Mid belt */}
-      <mesh position={[0, h * 0.55, 0]}>
+      <mesh position={[0, h * 0.55, 0]} raycast={noRay}>
         <boxGeometry args={[w + t * 0.5, t * 0.7, d + t * 0.5]} />
         {mats}
       </mesh>
@@ -501,25 +506,31 @@ function DummyBuilding({
   b: Dummy
   dim: boolean
 }) {
+  const op = dim ? 0.4 : 1
   return (
     <group position={[b.x, 0, b.z]}>
-      <mesh position={[0, b.h / 2, 0]} castShadow receiveShadow>
+      <mesh
+        position={[0, b.h / 2, 0]}
+        castShadow
+        receiveShadow
+        raycast={() => null}
+      >
         <boxGeometry args={[b.w, b.h, b.d]} />
         <meshStandardMaterial
           color={b.tint}
           roughness={0.78}
           metalness={0.08}
           transparent
-          opacity={dim ? 0.35 : 1}
+          opacity={op}
         />
       </mesh>
       {/* Tiny window dots */}
-      <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]}>
+      <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]} raycast={() => null}>
         <planeGeometry args={[b.w * 0.7, b.h * 0.55]} />
         <meshBasicMaterial
           color="#94a3b8"
           transparent
-          opacity={dim ? 0.08 : 0.18}
+          opacity={dim ? 0.12 : 0.18}
         />
       </mesh>
       <EdgeFrame
@@ -527,7 +538,7 @@ function DummyBuilding({
         h={b.h}
         d={b.d}
         color="#94a3b8"
-        opacity={dim ? 0.15 : 0.35}
+        opacity={dim ? 0.25 : 0.35}
       />
     </group>
   )
@@ -584,9 +595,10 @@ function GlassTower({
   useFrame((state) => {
     const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
     if (shell.current) {
-      const base = lit ? 1.05 : dim ? 0.08 : 0.48
-      shell.current.emissiveIntensity = base + breath * (lit ? 0.28 : 0.08)
-      shell.current.opacity = lit ? 0.82 : dim ? 0.12 : 0.5
+      const base = lit ? 1.15 : dim ? 0.28 : 0.48
+      shell.current.emissiveIntensity = base + breath * (lit ? 0.32 : 0.08)
+      // Dimmed ≈ 60% transparent (0.4 opacity) — still readable
+      shell.current.opacity = lit ? 0.85 : dim ? 0.4 : 0.52
     }
   })
 
@@ -636,33 +648,36 @@ function GlassTower({
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
   const bannerH = 0.2 + wrapName(t.name, 11).length * 0.048
-  const bannerW = bannerH * banner.aspect * (lit ? 1.03 : 1)
+  // Focused: bigger bold label; dimmed stays readable (~40% opacity = 60% transparent)
+  const bannerW = bannerH * banner.aspect * (lit ? 1.18 : 1)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
+  const dimOpacity = 0.4
   // Compact role cards under the label — width capped so they stay on screen
-  const roleH = bannerH * 0.26
+  const roleH = bannerH * (lit ? 0.3 : 0.26)
   const roleWMax = bannerW * 0.46
 
   return (
-    <group position={[t.x, 0, t.z]}>
+    <group position={[t.x, 0, t.z]} scale={focused ? 1.12 : lit ? 1.05 : 1}>
+      {/* Hit volume = building body only (labels never steal hover/focus) */}
       <mesh
         position={[0, t.h / 2, 0]}
         onClick={onClick}
         onPointerOver={enter}
         onPointerOut={leave}
       >
-        <boxGeometry args={[t.w * 1.4, t.h, t.d * 1.4]} />
+        <boxGeometry args={[t.w * 1.15, t.h * 1.05, t.d * 1.15]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
       {/* Interior core (warm accent on some towers) */}
-      <mesh position={[0, t.h * 0.45, 0]}>
+      <mesh position={[0, t.h * 0.45, 0]} raycast={() => null}>
         <boxGeometry args={[t.w * 0.55, t.h * 0.75, t.d * 0.55]} />
         <meshStandardMaterial
           color={t.warmCore ? warmCol : '#1e293b'}
           emissive={t.warmCore ? warmCol : glassCol}
-          emissiveIntensity={dim ? 0.03 : lit ? 0.75 : t.warmCore ? 0.55 : 0.2}
+          emissiveIntensity={dim ? 0.18 : lit ? 0.85 : t.warmCore ? 0.55 : 0.2}
           transparent
-          opacity={dim ? 0.1 : 0.85}
+          opacity={dim ? dimOpacity : 0.85}
         />
       </mesh>
 
@@ -671,19 +686,23 @@ function GlassTower({
         const y = 0.1 + (i / floors) * (t.h - 0.15)
         return (
           <group key={i}>
-            <mesh position={[0, y, 0]}>
+            <mesh position={[0, y, 0]} raycast={() => null}>
               <boxGeometry args={[t.w * 0.94, 0.018, t.d * 0.94]} />
               <meshStandardMaterial
                 color="#e2e8f0"
                 roughness={0.55}
                 transparent
-                opacity={dim ? 0.08 : 0.85}
+                opacity={dim ? dimOpacity : 0.85}
               />
             </mesh>
-            {!dim && i % 2 === 0 && (
-              <mesh position={[t.w * 0.15, y + 0.02, 0]}>
+            {i % 2 === 0 && (
+              <mesh position={[t.w * 0.15, y + 0.02, 0]} raycast={() => null}>
                 <boxGeometry args={[0.04, 0.02, t.d * 0.35]} />
-                <meshBasicMaterial color="#64748b" transparent opacity={0.5} />
+                <meshBasicMaterial
+                  color="#64748b"
+                  transparent
+                  opacity={dim ? dimOpacity * 0.7 : 0.5}
+                />
               </mesh>
             )}
           </group>
@@ -691,7 +710,7 @@ function GlassTower({
       })}
 
       {/* Glass facade shell */}
-      <mesh position={[0, t.h / 2, 0]} castShadow>
+      <mesh position={[0, t.h / 2, 0]} castShadow raycast={() => null}>
         <boxGeometry args={[t.w, t.h, t.d]} />
         <meshStandardMaterial
           ref={shell}
@@ -699,7 +718,7 @@ function GlassTower({
           emissive={glassCol}
           emissiveIntensity={0.5}
           transparent
-          opacity={0.52}
+          opacity={dim ? dimOpacity : lit ? 0.72 : 0.52}
           roughness={0.12}
           metalness={0.35}
           depthWrite={false}
@@ -711,12 +730,12 @@ function GlassTower({
         [0, t.h / 2, t.d / 2 + 0.003],
         [0, t.h / 2, -t.d / 2 - 0.003],
       ].map(([x, y, z], i) => (
-        <mesh key={`f${i}`} position={[x, y, z]}>
+        <mesh key={`f${i}`} position={[x, y, z]} raycast={() => null}>
           <planeGeometry args={[t.w * 0.96, t.h * 0.96]} />
           <meshBasicMaterial
             color={t.accent}
             transparent
-            opacity={dim ? 0.03 : lit ? 0.22 : 0.12}
+            opacity={dim ? 0.08 : lit ? 0.28 : 0.12}
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -727,20 +746,20 @@ function GlassTower({
         h={t.h}
         d={t.d}
         color={lit ? t.accent : '#e2e8f0'}
-        opacity={dim ? 0.08 : lit ? 0.95 : 0.55}
+        opacity={dim ? dimOpacity : lit ? 0.95 : 0.55}
       />
 
       {lit && (
         <pointLight
           position={[0, t.h * 0.7, 0]}
           color={t.accent}
-          intensity={focused ? 1.55 : 1.15}
+          intensity={focused ? 1.75 : 1.25}
           distance={2.8}
           decay={2}
         />
       )}
 
-      {/* Roof cluster: name/count + 2-col cyberpunk role cards underneath */}
+      {/* Roof labels — visual only; never receive pointer (building hit owns pick) */}
       <Billboard
         follow
         position={[
@@ -752,20 +771,14 @@ function GlassTower({
           0,
         ]}
       >
-        <group scale={lit ? 1.04 : 1}>
-          <mesh
-            onClick={onClick}
-            onPointerOver={enter}
-            onPointerOut={leave}
-            visible={lit || !dim}
-            renderOrder={cardOrder}
-          >
+        <group scale={lit ? 1.2 : dim ? 0.92 : 1}>
+          <mesh raycast={() => null} renderOrder={cardOrder}>
             <planeGeometry args={[bannerW, bannerH]} />
             <meshBasicMaterial
               map={banner.tex}
               transparent
-              opacity={dim ? 0.18 : 1}
-              depthTest={!lit}
+              opacity={dim ? dimOpacity : 1}
+              depthTest
               depthWrite={false}
               toneMapped={false}
             />
@@ -784,18 +797,15 @@ function GlassTower({
               <mesh
                 key={i}
                 position={[ox, oy, 0.02]}
-                onClick={onClick}
-                onPointerOver={enter}
-                onPointerOut={leave}
-                visible={lit || !dim}
+                raycast={() => null}
                 renderOrder={cardOrder + 1}
               >
                 <planeGeometry args={[rw, rh]} />
                 <meshBasicMaterial
                   map={rt.tex}
                   transparent
-                  opacity={dim ? 0.14 : 1}
-                  depthTest={!lit}
+                  opacity={dim ? dimOpacity : 1}
+                  depthTest
                   depthWrite={false}
                   toneMapped={false}
                 />
@@ -883,20 +893,21 @@ function CityFlag({
   useFrame((state) => {
     pulse.current = 0.82 + Math.sin(state.clock.elapsedTime * 1.1) * 0.1
     if (mat.current) {
-      mat.current.opacity = dim ? 0.28 : pulse.current
+      mat.current.opacity = dim ? 0.4 : pulse.current
     }
   })
   if (!label) return null
   const w = Math.min(3.6, 1.4 + label.length * 0.14)
   return (
     <Billboard position={[x, y, z]} follow>
-      <mesh>
+      <mesh raycast={() => null}>
         <planeGeometry args={[w, w * (160 / 1024)]} />
         <meshBasicMaterial
           ref={mat}
           map={tex}
           transparent
           depthWrite={false}
+          depthTest
           opacity={0.92}
         />
       </mesh>

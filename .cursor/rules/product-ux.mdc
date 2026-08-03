@@ -224,6 +224,10 @@ use — they should love opening the app, never fight it.
   focus buildings; release after a drag is not a pick. Hover/focus only when the
   mouse button is up and the gesture was not a drag (move cursor slightly after
   orbit before hover resumes).
+- **City pick = building mesh (2026-08-03):** Hover/focus from the tower body under
+  the cursor only — floating name/role cards never steal hits. Unfocused towers
+  stay ~60% transparent with dull but visible titles; focused tower bigger/bolder.
+  City orbit allows near-full tilt (look up/down) + pinch/wheel zoom.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
