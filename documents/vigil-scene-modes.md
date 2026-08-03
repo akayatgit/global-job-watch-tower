@@ -8,7 +8,7 @@ layered on top of the core.
 |---|---|---|
 | **Core** (default) | GPU particle singularity | **Drag** orbit · **scroll/pinch** enter deep · **right-drag** pan · Esc reset |
 | **Graph** | Obsidian graph + text tags on nodes/edges | Click tagged node → panel; city tag → City mode |
-| **City** | Globe with city tags → company buildings tagged | Click metro → skyline; click building → jobs; empty → globe |
+| **City** | MapLibre India hiring map → metro → companies | Click metro → 3D city; click company → jobs; Esc back |
 
 Top-right icon strip: Core · Graph · City.
 
@@ -30,10 +30,13 @@ to go in and out easily. Never clamp the camera outside the orb.
 - Our twist: globe of India metros first, then procedural district for the
   selected city with corporate density as building height/glow
 
-**City district look (2026-08-03)**
-- Visual bible: `documents/vigil-city-aesthetic.md` — Editorial Dusk Miniature
-- 45° iso, cream lyric cards, title-dominant city name, soft PBR, dusk void
+**City map (2026-08-03)**
+- MapLibre GL JS replaces R3F CityGlobe + NightCity campus
+- OpenFreeMap basemap + 3D building extrusions + hiring overlays
+- Revert point: `git checkout milestone/pre-maplibre-city`
 
 ## Recover
+
+Pre-MapLibre city (globe+campus): `git checkout milestone/pre-maplibre-city`
 
 Pre-rewrite baseline: `git checkout milestone/pre-neural-core-v0`

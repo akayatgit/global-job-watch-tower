@@ -238,10 +238,10 @@ use — they should love opening the app, never fight it.
   white glassmorphic cards (name · big count · caption · role rows with soft dots),
   soft ice-blue towers, no neon yellow/rainbow cyberpunk. Interaction unchanged;
   only visual language + single-card structure.
-- **City Editorial Daylight Miniature (2026-08-03):** Master look in
-  `documents/vigil-city-aesthetic.md` — 45° iso, well-lit daylight studio,
-  spaced towers on rounded pedestal, cards only on hover/focus and
-  content-sized (no fixed empty plates), soft matte fabric. No neon HUD.
+- **City MapLibre (2026-08-03):** City mode is a real MapLibre map (OpenFreeMap
+  + 3D buildings + hiring markers). Replaces R3F globe and campus. Revert:
+  `milestone/pre-maplibre-city`. Hover/focus cream card; click company again
+  opens Jobs. Esc steps back company → India overview.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

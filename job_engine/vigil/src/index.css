@@ -105,20 +105,103 @@ button, input, select {
   overscroll-behavior: none;
 }
 
-/* Editorial daylight miniature — soft vignette only (city district) */
-.vigil-canvas--day::after {
-  content: '';
+/* MapLibre city mode — real map under HUD */
+.vigil-canvas--map {
+  background: #e8eef5;
+}
+
+.city-map-root {
   position: absolute;
   inset: 0;
+  z-index: 1;
+}
+
+.city-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.city-map-canvas .maplibregl-ctrl-bottom-right {
+  bottom: 12px;
+  right: 12px;
+}
+
+.city-map-title {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
   pointer-events: none;
-  z-index: 2;
-  opacity: 0.28;
-  mix-blend-mode: multiply;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 55%,
-    rgba(180, 195, 215, 0.35) 100%
+  font-family: var(--font-hud);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #1e293b;
+  text-shadow: 0 1px 0 #fff, 0 0 18px rgba(255, 255, 255, 0.85);
+}
+
+.city-map-card {
+  position: absolute;
+  top: 110px;
+  right: 18px;
+  z-index: 4;
+  width: min(280px, 42vw);
+  padding: 14px 16px 12px;
+  border-radius: 18px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 252, 247, 0.96),
+    rgba(236, 242, 250, 0.92)
   );
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+  pointer-events: none;
+}
+
+.city-map-card-name {
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: #3d4a5c;
+  line-height: 1.25;
+}
+
+.city-map-card-n {
+  margin-top: 4px;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.city-map-card-cap {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: #8a93a3;
+}
+
+.city-map-card-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #4a5568;
+}
+
+.city-map-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex: 0 0 auto;
+}
+
+.city-map-card-hint {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: #94a3b8;
 }
 
 /* Floating 3D tags — clean text only, no plates / strokes / boxes */

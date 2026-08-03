@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { api, WINDOW_FALLBACK, chipLabel } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { IconBrowser, IconTrain, IconVigil } from './ModuleIcons'
-import { stepCampusFocus } from '../scene/campusNav'
-
 function chipTone(level?: string) {
   if (level === 'red' || level === 'blocked') return 'fail'
   if (level === 'orange' || level === 'planb' || level === 'warn') return 'warn'
@@ -124,8 +122,8 @@ export function StatusHud() {
               <button
                 type="button"
                 className={`hud-icon-btn ${sceneMode === 'city' ? 'on' : ''}`}
-                title="City — globe, then enter a metro"
-                aria-label="City globe"
+                title="City — India hiring map"
+                aria-label="City map"
                 aria-pressed={sceneMode === 'city'}
                 onClick={() => setSceneMode('city')}
               >
@@ -138,60 +136,14 @@ export function StatusHud() {
                 <>
                   <button
                     type="button"
-                    className="hud-icon-btn city-rank-btn"
-                    title="Focus next higher openings"
-                    aria-label="Next higher openings"
-                    onClick={() => stepCampusFocus('higher')}
-                  >
-                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
-                      <path
-                        d="M12 6l6 8H6l6-8z"
-                        fill="currentColor"
-                      />
-                      <path
-                        d="M7 18h10"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="hud-icon-btn city-rank-btn"
-                    title="Focus next lower openings"
-                    aria-label="Next lower openings"
-                    onClick={() => stepCampusFocus('lower')}
-                  >
-                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
-                      <path
-                        d="M7 6h10"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M12 18l6-8H6l6 8z"
-                        fill="currentColor"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
                     className="hud-icon-btn city-exit-btn"
-                    title={
-                      cityFocus === '__jobs__'
-                        ? 'Leave city view — back to globe'
-                        : 'Leave campus — back to globe'
-                    }
-                    aria-label="Leave campus"
+                    title="Back to India map"
+                    aria-label="Back to India map"
                     onClick={() => {
                       setCityFocus(null)
                       useVigilStore.getState().clearCameraFocus()
-                      useVigilStore.getState().resetView()
-                      useVigilStore.getState().setStatus('CITY · GLOBE')
+                      useVigilStore.getState().setSelectFocusId(null)
+                      useVigilStore.getState().setStatus('MAP · India hiring · click a city')
                     }}
                   >
                     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>

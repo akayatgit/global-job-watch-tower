@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { EnergyCore } from './EnergyCore'
 import { NeuralCore } from './NeuralCore'
-import { CityGlobe } from './CityGlobe'
+import { CityMap } from './CityMap'
 import { Starfield } from './Starfield'
 import { OrbitNodes } from './OrbitNodes'
 import { SceneControls } from './SceneControls'
@@ -12,31 +12,20 @@ import { useVigilStore } from '../store/vigilStore'
 function SceneBody() {
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const sceneMode = useVigilStore((s) => s.sceneMode)
-  const cityFocus = useVigilStore((s) => s.cityFocus)
-  const nightDistrict = sceneMode === 'city' && Boolean(cityFocus)
   return (
     <>
-      {!nightDistrict && <Starfield />}
-      {!nightDistrict && <EnergyCore />}
+      <Starfield />
+      <EnergyCore />
       {sceneMode === 'graph' && <NeuralCore />}
-      {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
-      {nightDistrict && <color attach="background" args={['#e8eef5']} />}
-      {nightDistrict && <fog attach="fog" args={['#e8eef5', 14, 32]} />}
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
-            nightDistrict
-              ? 0.06
-              : sceneMode === 'core'
-                ? 0.45
-                : sceneMode === 'graph'
-                  ? 0.22
-                  : 0.55
+            sceneMode === 'core' ? 0.45 : sceneMode === 'graph' ? 0.22 : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.85 : sceneMode === 'graph' ? 0.72 : 0.5}
-          luminanceSmoothing={0.95}
+          luminanceThreshold={sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceSmoothing={0.88}
           mipmapBlur
         />
       </EffectComposer>
@@ -47,8 +36,7 @@ function SceneBody() {
 export function VigilCanvas() {
   const wrap = useRef<HTMLDivElement>(null)
   const sceneMode = useVigilStore((s) => s.sceneMode)
-  const cityFocus = useVigilStore((s) => s.cityFocus)
-  const nightDistrict = sceneMode === 'city' && Boolean(cityFocus)
+  const cityMode = sceneMode === 'city'
 
   useEffect(() => {
     const el = wrap.current
@@ -56,8 +44,9 @@ export function VigilCanvas() {
     const st = useVigilStore.getState()
     st.resetView()
 
-    // Only block browser page-zoom; OrbitControls owns the actual dolly
     const onWheel = (e: WheelEvent) => {
+      // MapLibre owns wheel in city mode; R3F owns it otherwise
+      if (useVigilStore.getState().sceneMode === 'city') return
       e.preventDefault()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -65,6 +54,23 @@ export function VigilCanvas() {
       if (s.focusedPanel || s.trainingActive) return
       if (e.key === 'Escape' || e.key === 'Home' || e.key === '0') {
         e.preventDefault()
+        if (s.sceneMode === 'city') {
+          if (s.selectFocusId?.startsWith('company:')) {
+            s.clearCameraFocus()
+            s.setSelectFocusId(null)
+            s.setStatus(
+              s.cityFocus
+                ? `MAP · ${s.cityFocus} · pick a company`
+                : 'MAP · India hiring · click a city',
+            )
+            return
+          }
+          if (s.cityFocus) {
+            s.setCityFocus(null)
+            s.setStatus('MAP · India hiring · click a city')
+            return
+          }
+        }
         s.setGraphFocusId(null)
         s.resetView()
       }
@@ -76,9 +82,9 @@ export function VigilCanvas() {
     const onDbl = () => {
       const s = useVigilStore.getState()
       if (s.focusedPanel || s.trainingActive) return
+      if (s.sceneMode === 'city') return
       s.resetView()
     }
-    // Stop context menu so right-drag pan feels like Figma
     const onCtx = (e: Event) => e.preventDefault()
 
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -95,37 +101,37 @@ export function VigilCanvas() {
 
   return (
     <div
-      className={`vigil-canvas${nightDistrict ? ' vigil-canvas--day' : ''}`}
+      className={`vigil-canvas${cityMode ? ' vigil-canvas--map' : ''}`}
       ref={wrap}
     >
-      <Canvas
-        dpr={[1, 1.5]}
-        camera={{ position: [0, 0.6, 7.2], fov: 45 }}
-        shadows
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-        onPointerMissed={() => {
-          const st = useVigilStore.getState()
-          if (st.sceneMode === 'graph' && st.graphFocusId) {
-            st.setGraphFocusId(null)
-            st.clearCameraFocus()
-            st.setStatus('GRAPH · global view')
-            return
-          }
-          // City campus: empty click may clear tower focus — never leave immersive
-          if (st.sceneMode === 'city' && st.cityFocus) {
-            if (st.selectFocusId?.startsWith('company:')) {
+      {cityMode ? (
+        <CityMap />
+      ) : (
+        <Canvas
+          dpr={[1, 1.5]}
+          camera={{ position: [0, 0.6, 7.2], fov: 45 }}
+          shadows
+          gl={{
+            antialias: true,
+            alpha: false,
+            powerPreference: 'high-performance',
+          }}
+          onPointerMissed={() => {
+            const st = useVigilStore.getState()
+            if (st.sceneMode === 'graph' && st.graphFocusId) {
+              st.setGraphFocusId(null)
               st.clearCameraFocus()
-              st.setStatus('CAMPUS · use exit to return to globe')
+              st.setStatus('GRAPH · global view')
             }
-          }
-        }}
-      >
-        <color attach="background" args={['#050302']} />
-        <ambientLight intensity={0.28} />
-        <pointLight position={[4, 3, 4]} intensity={0.65} color="#ff5500" />
-        <pointLight position={[-3, -2, 2]} intensity={0.3} color="#ffaa00" />
-        <SceneBody />
-      </Canvas>
+          }}
+        >
+          <color attach="background" args={['#050302']} />
+          <ambientLight intensity={0.28} />
+          <pointLight position={[4, 3, 4]} intensity={0.65} color="#ff5500" />
+          <pointLight position={[-3, -2, 2]} intensity={0.3} color="#ffaa00" />
+          <SceneBody />
+        </Canvas>
+      )}
     </div>
   )
 }

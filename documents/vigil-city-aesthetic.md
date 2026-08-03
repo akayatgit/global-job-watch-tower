@@ -1,12 +1,17 @@
-# VIGIL City View — Editorial Dusk Miniature
+# VIGIL City View — MapLibre hiring map
 
-Master look for Jobs → City campus and single-metro districts.
-Interaction stays unchanged; this file is the **visual bible**.
+**Current (2026-08-03):** City mode is MapLibre GL JS — real India geography,
+OpenFreeMap basemap, 3D building extrusions, company overlays from skyline
+APIs. R3F CityGlobe + NightCity are retired from the live path (recover via
+`milestone/pre-maplibre-city`).
 
-Synthesized 2026-08-03 from Ashok’s expert prompt mix (isometric miniature,
-graduation memory poster, infrastructure singularity, weather editorial,
-LEGO editorial) — kept what serves a govt-presentable hiring map; rejected
-cartoon neon, gravity-well surrealism, and commercial template clutter.
+Implementation: `job_engine/vigil/src/scene/CityMap.tsx`
+
+---
+
+## Archive — Editorial miniature notes (pre-MapLibre)
+
+Kept below for history. Not the live renderer.
 
 ---
 
