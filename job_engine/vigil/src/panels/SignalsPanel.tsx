@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
@@ -11,26 +12,37 @@ export function SignalsPanel() {
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const cityFilter = useVigilStore((s) => s.cityFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   useEffect(() => {
     let alive = true
     api
-      .signals(days, sectorFilter, cityFilter)
+      .signals(days, sectorFilter, cityFilter, experienceFilter)
       .then((d) => {
         if (!alive) return
         setData(d)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
         if (d?.city_options?.length) setCityOptions(d.city_options)
+        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [days, sectorFilter, cityFilter, setSectorOptions, setCityOptions])
+  }, [
+    days,
+    sectorFilter,
+    cityFilter,
+    experienceFilter,
+    setSectorOptions,
+    setCityOptions,
+    setExperienceOptions,
+  ])
 
   const s = data?.signals
   const windows = data?.window_options || WINDOW_FALLBACK
@@ -41,6 +53,7 @@ export function SignalsPanel() {
     <PanelShell id="signals">
       <SectorChips actionPrefix="signals-sector" />
       <CityChips actionPrefix="signals-city" />
+      <ExperienceChips actionPrefix="signals-experience" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

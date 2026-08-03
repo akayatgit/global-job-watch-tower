@@ -26,14 +26,18 @@ def roles_in_window(
     mode: str = 'count',
     sector: str | None = None,
     city: str | None = None,
+    experience: str | None = None,
 ) -> dict:
     """Rank roles by windowed job count (default) or jobs-per-active-day."""
+    from app.experience_bands import experience_clause, normalize_experience
+
     if days not in ALLOWED_WINDOWS:
         days = 7
     mode = 'rate' if mode == 'rate' else 'count'
     limit = max(1, min(limit, 300))
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
+    experience = normalize_experience(experience)
 
     _d, recent_start, recent_end, _ps, _pe, by_scraped = _window_bounds(days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
@@ -47,6 +51,9 @@ def roles_in_window(
         join_on = join_on & (JobMaster.sector == sector)
     if city:
         join_on = join_on & (JobMaster.city_key == city)
+    exp = experience_clause(experience)
+    if exp is not None:
+        join_on = join_on & exp
 
     q = (
         select(

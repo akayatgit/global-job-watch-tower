@@ -47,11 +47,15 @@ def compute_city_signals(
     db: Session,
     window_days: int = 7,
     sector: str | None = None,
+    experience: str | None = None,
 ) -> dict:
     """Hiring velocity by city — volume + growth ranking."""
+    from app.experience_bands import experience_options, normalize_experience
+
     if window_days not in ALLOWED_WINDOWS:
         window_days = 7
     sector = normalize_sector(sector)
+    experience = normalize_experience(experience)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
 
@@ -61,11 +65,11 @@ def compute_city_signals(
     for key in keys:
         recent = _count_jobs(
             db, recent_start, recent_end, sector=sector, city=key,
-            by_scraped=by_scraped,
+            experience=experience, by_scraped=by_scraped,
         )
         prior = _count_jobs(
             db, prior_start, prior_end, sector=sector, city=key,
-            by_scraped=by_scraped,
+            experience=experience, by_scraped=by_scraped,
         )
         if recent == 0 and prior == 0 and key not in METRO_CITY_IDS:
             # Skip empty remote/india/other unless they have data
@@ -86,10 +90,12 @@ def compute_city_signals(
     )
 
     recent_total = _count_jobs(
-        db, recent_start, recent_end, sector=sector, by_scraped=by_scraped,
+        db, recent_start, recent_end, sector=sector,
+        experience=experience, by_scraped=by_scraped,
     )
     prior_total = _count_jobs(
-        db, prior_start, prior_end, sector=sector, by_scraped=by_scraped,
+        db, prior_start, prior_end, sector=sector,
+        experience=experience, by_scraped=by_scraped,
     )
     win_label, prior_label = _window_labels(window_days)
     if recent_total == 0 and prior_total == 0:
@@ -118,7 +124,9 @@ def compute_city_signals(
     return {
         'days': window_days,
         'sector': sector or '',
+        'experience': experience or '',
         'city_options': city_options(),
+        'experience_options': experience_options(),
         'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         'recent_total': recent_total,
         'prior_total': prior_total,
@@ -139,14 +147,17 @@ def _city_slice(
     prior_end,
     by_scraped: bool,
     sector: str | None,
+    experience: str | None = None,
 ) -> dict:
+    from app.experience_bands import experience_clause
+
     recent = _count_jobs(
         db, recent_start, recent_end, city=city, sector=sector,
-        by_scraped=by_scraped,
+        experience=experience, by_scraped=by_scraped,
     )
     prior = _count_jobs(
         db, prior_start, prior_end, city=city, sector=sector,
-        by_scraped=by_scraped,
+        experience=experience, by_scraped=by_scraped,
     )
     delta = recent - prior
     if prior <= 0:
@@ -172,6 +183,9 @@ def _city_slice(
     )
     if sector:
         role_q = role_q.where(JobMaster.sector == sector)
+    exp = experience_clause(experience)
+    if exp is not None:
+        role_q = role_q.where(exp)
     roles = [
         {'search_id': sid, 'name': name, 'n': int(n)}
         for sid, name, n in db.execute(role_q).all()
@@ -194,6 +208,8 @@ def _city_slice(
     )
     if sector:
         co_q = co_q.where(JobMaster.sector == sector)
+    if exp is not None:
+        co_q = co_q.where(exp)
     companies = [
         {'company_id': cid, 'name': name, 'n': int(n)}
         for cid, name, n in db.execute(co_q).all()
@@ -217,8 +233,11 @@ def compare_cities(
     city_b: str,
     window_days: int = 7,
     sector: str | None = None,
+    experience: str | None = None,
 ) -> dict:
     """Side-by-side hiring snapshot for two cities."""
+    from app.experience_bands import experience_options, normalize_experience
+
     if window_days not in ALLOWED_WINDOWS:
         window_days = 7
     a = normalize_city_filter(city_a)
@@ -228,6 +247,7 @@ def compare_cities(
             'error': 'Pick two cities to compare',
             'days': window_days,
             'city_options': city_options(),
+            'experience_options': experience_options(),
             'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         }
     if a == b:
@@ -237,19 +257,21 @@ def compare_cities(
             'a': a,
             'b': b,
             'city_options': city_options(),
+            'experience_options': experience_options(),
             'window_options': [{'days': d, 'label': label} for d, label in WINDOW_OPTIONS],
         }
     sector = normalize_sector(sector)
+    experience = normalize_experience(experience)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
 
     left = _city_slice(
         db, a, recent_start, recent_end, prior_start, prior_end,
-        by_scraped, sector,
+        by_scraped, sector, experience,
     )
     right = _city_slice(
         db, b, recent_start, recent_end, prior_start, prior_end,
-        by_scraped, sector,
+        by_scraped, sector, experience,
     )
     leader = None
     if left['recent'] > right['recent']:

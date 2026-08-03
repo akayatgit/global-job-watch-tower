@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
@@ -10,8 +11,10 @@ export function RoleHirePanel() {
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const cityFilter = useVigilStore((s) => s.cityFilter)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setCityFilter = useVigilStore((s) => s.setCityFilter)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const role =
     insightFocus?.kind === 'role'
       ? insightFocus
@@ -31,12 +34,19 @@ export function RoleHirePanel() {
     }
     let alive = true
     api
-      .roleCompanies(role.searchId, days, cityFilter, sectorFilter)
+      .roleCompanies(
+        role.searchId,
+        days,
+        cityFilter,
+        sectorFilter,
+        experienceFilter,
+      )
       .then((d) => {
         if (!alive) return
         setData(d)
         setError(null)
         if (d?.city_options?.length) setCityOptions(d.city_options)
+        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
       })
       .catch((e: Error) => {
         if (!alive) return
@@ -46,7 +56,15 @@ export function RoleHirePanel() {
     return () => {
       alive = false
     }
-  }, [role?.searchId, days, cityFilter, sectorFilter, setCityOptions])
+  }, [
+    role?.searchId,
+    days,
+    cityFilter,
+    sectorFilter,
+    experienceFilter,
+    setCityOptions,
+    setExperienceOptions,
+  ])
 
   const companies = data?.companies || []
   const cities = data?.cities || []
@@ -64,6 +82,7 @@ export function RoleHirePanel() {
             <div className="muted">{companies.length} companies · sorted max → min</div>
           </div>
           <CityChips actionPrefix="role-hire-city" />
+          <ExperienceChips actionPrefix="role-hire-experience" />
           <div className="chip-row wrap">
             {windows.map((w: { days: number; label: string }) => (
               <button

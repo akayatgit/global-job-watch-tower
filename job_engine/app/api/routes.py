@@ -123,6 +123,7 @@ def list_jobs(
     offset: int = 0,
     sector: str | None = None,
     city: str | None = None,
+    experience: str | None = None,
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
@@ -131,10 +132,12 @@ def list_jobs(
     db: Session = Depends(get_db),
 ):
     from app.cities import normalize_city_filter
+    from app.experience_bands import experience_clause, normalize_experience
     from app.sectors import normalize_sector
 
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
+    experience = normalize_experience(experience)
     query = (
         select(JobMaster, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
@@ -146,6 +149,9 @@ def list_jobs(
         query = query.where(JobMaster.sector == sector)
     if city:
         query = query.where(JobMaster.city_key == city)
+    exp = experience_clause(experience)
+    if exp is not None:
+        query = query.where(exp)
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -169,6 +175,7 @@ def list_jobs(
             location=job.location,
             city_key=job.city_key,
             sector=job.sector,
+            experience_band=job.experience_band,
             job_url=job.job_url,
             posted_date=job.posted_date,
             scraped_at=job.scraped_at,

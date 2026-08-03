@@ -32,6 +32,9 @@ export type SectorOption = { id: string; label: string; industry?: string }
 /** City chip id; empty string = all cities */
 export type CityOption = { id: string; label: string }
 
+/** Experience chip id; empty string = all experience */
+export type ExperienceOption = { id: string; label: string }
+
 function readStoredSector(): string {
   try {
     const raw = localStorage.getItem('vigil.sector')
@@ -45,6 +48,16 @@ function readStoredSector(): string {
 function readStoredCity(): string {
   try {
     const raw = localStorage.getItem('vigil.city')
+    if (raw == null) return ''
+    return raw
+  } catch {
+    return ''
+  }
+}
+
+function readStoredExperience(): string {
+  try {
+    const raw = localStorage.getItem('vigil.experience')
     if (raw == null) return ''
     return raw
   } catch {
@@ -67,6 +80,7 @@ function readStoredCityWindow(): number {
 
 const DEFAULT_SECTOR_FAVS = ['tech_ai', 'tech_digital']
 const DEFAULT_CITY_FAVS = ['bengaluru', 'chennai', 'kerala']
+const DEFAULT_EXPERIENCE_FAVS = ['fresher', '1-2', '3-5']
 
 function readStoredFavs(key: string, fallback: string[]): string[] {
   try {
@@ -496,12 +510,20 @@ type VigilStore = {
   setCityFilter: (id: string) => void
   cityOptions: CityOption[]
   setCityOptions: (opts: CityOption[]) => void
+  /** Global experience filter (persisted). '' = all experience */
+  experienceFilter: string
+  setExperienceFilter: (id: string) => void
+  experienceOptions: ExperienceOption[]
+  setExperienceOptions: (opts: ExperienceOption[]) => void
   /** Favourite sector ids (persisted) — shown before Show more */
   sectorFavorites: string[]
   toggleSectorFavorite: (id: string) => void
   /** Favourite city ids (persisted) — shown before Show more */
   cityFavorites: string[]
   toggleCityFavorite: (id: string) => void
+  /** Favourite experience ids (persisted) — shown before Show more */
+  experienceFavorites: string[]
+  toggleExperienceFavorite: (id: string) => void
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (
     companyId: number,
@@ -821,6 +843,25 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   },
   cityOptions: [],
   setCityOptions: (opts) => set({ cityOptions: opts }),
+  experienceFilter: readStoredExperience(),
+  setExperienceFilter: (id) => {
+    const next = id || ''
+    try {
+      localStorage.setItem('vigil.experience', next)
+    } catch {
+      /* ignore */
+    }
+    const opts = get().experienceOptions
+    const label =
+      opts.find((o) => (o.id || '') === next)?.label ||
+      (next ? next : 'All experience')
+    set({
+      experienceFilter: next,
+      statusLine: `EXPERIENCE · ${label.toUpperCase()}`,
+    })
+  },
+  experienceOptions: [],
+  setExperienceOptions: (opts) => set({ experienceOptions: opts }),
   sectorFavorites: readStoredFavs('vigil.sectorFavs', DEFAULT_SECTOR_FAVS),
   toggleSectorFavorite: (id) => {
     if (!id) return
@@ -849,6 +890,24 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: next.includes(id)
         ? `FAVOURITE CITY · ${label.toUpperCase()}`
         : `UNFAVOURITE CITY · ${label.toUpperCase()}`,
+    })
+  },
+  experienceFavorites: readStoredFavs(
+    'vigil.experienceFavs',
+    DEFAULT_EXPERIENCE_FAVS,
+  ),
+  toggleExperienceFavorite: (id) => {
+    if (!id) return
+    const cur = get().experienceFavorites
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistFavs('vigil.experienceFavs', next)
+    const label =
+      get().experienceOptions.find((o) => o.id === id)?.label || id
+    set({
+      experienceFavorites: next,
+      statusLine: next.includes(id)
+        ? `FAVOURITE EXPERIENCE · ${label.toUpperCase()}`
+        : `UNFAVOURITE EXPERIENCE · ${label.toUpperCase()}`,
     })
   },
   openPanel: (id) => {

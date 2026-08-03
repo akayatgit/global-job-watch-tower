@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
@@ -11,24 +12,27 @@ export function WatchlistPanel() {
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const cityFilter = useVigilStore((s) => s.cityFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const setStatus = useVigilStore((s) => s.setStatus)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
 
   const reload = () =>
     api
-      .watchlist(days, '', sectorFilter, cityFilter)
+      .watchlist(days, '', sectorFilter, cityFilter, experienceFilter)
       .then((d) => {
         setData(d)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
         if (d?.city_options?.length) setCityOptions(d.city_options)
+        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
       })
       .catch(() => {})
 
   useEffect(() => {
     reload()
-  }, [days, sectorFilter, cityFilter])
+  }, [days, sectorFilter, cityFilter, experienceFilter])
 
   const windows = data?.window_options || WINDOW_FALLBACK
 
@@ -36,6 +40,7 @@ export function WatchlistPanel() {
     <PanelShell id="watchlist">
       <SectorChips actionPrefix="watch-sector" />
       <CityChips actionPrefix="watch-city" />
+      <ExperienceChips actionPrefix="watch-experience" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

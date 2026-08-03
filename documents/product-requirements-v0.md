@@ -611,6 +611,7 @@ START OF EVERY SESSION
 | v0.16 | 2026-08-03 | Akay | **Job requirements enrich (critical):** detail-page scrape for experience years/band, degrees, certifications, domain experience → DB fields + Neural Core graph clusters. New scrapes queue enrich; beat backfills every 10m. |
 | v0.17 | 2026-08-03 | Akay | **Fresher-first clean restart:** dual-track catalogue — Track A Fresher (`f_E=1,2` Intern+Entry + early-career keywords) daily flywheel; Track B Market Signal (no `f_E`, thinner pages) for experienced hiring / economy decode. `SearchConfig.experience_filter` + `track`. Enrich maps fresher/0–2 → `0-1 years`; retries `enrich_failed`. Wipe jobs/companies/runs then reseed before new catches. |
 | v0.18 | 2026-08-03 | Akay | **Company profile + real posted dates:** company record stores logo, tagline, casual punchline, followers, employee size (job-card + company-page enrich). Relative LinkedIn times (“2h ago”) → `posted_date`; detail enrich backfills when cards omit `<time datetime>`. Caught time remains `scraped_at`. |
+| v0.19 | 2026-08-03 | Akay | **Experience filter chips:** Fresher · 1–2 · 3–5 · 6–8 · 9–12 · 13+ on Jobs + every insight widget with sector/city chips. Canonical `experience_band` labels; legacy remap migration; stacks with sector/city (`vigil.experience`). |
 
 ### Phase 0 progress (living)
 
@@ -632,6 +633,7 @@ START OF EVERY SESSION
 | Fresher Track A (`f_E=1,2`) + Market Signal Track B | Done (v0.17) — seed owns catalogue truth |
 | Company logo / punchline / followers / size on company record | Done (v0.18) — enrich + `/api/ultron/companies/{id}` |
 | Posted date from LinkedIn (not only caught time) | Done (v0.18) — relative parse + detail backfill |
+| Experience band chips (Fresher … 13+) on hiring widgets | Done (v0.19) — filter + job-card meta |
 
 ### Dual-track discovery (v0.17) — fresher primary
 

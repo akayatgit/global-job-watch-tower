@@ -112,9 +112,12 @@ def _count_jobs(db: Session, start: date | datetime, end: date | datetime,
                 company_id: int | None = None,
                 sector: str | None = None,
                 city: str | None = None,
+                experience: str | None = None,
                 *,
                 by_scraped: bool = False) -> int:
     """Count jobs in [start, end). Uses posted_date or scraped_at."""
+    from app.experience_bands import experience_clause
+
     if by_scraped:
         q = select(func.count(JobMaster.id)).where(
             JobMaster.scraped_at >= start,
@@ -133,6 +136,9 @@ def _count_jobs(db: Session, start: date | datetime, end: date | datetime,
         q = q.where(JobMaster.sector == sector)
     if city:
         q = q.where(JobMaster.city_key == city)
+    exp = experience_clause(experience)
+    if exp is not None:
+        q = q.where(exp)
     return db.execute(q).scalar() or 0
 
 
@@ -170,18 +176,22 @@ def compute_hiring_signals(
     window_days: int = 7,
     sector: str | None = None,
     city: str | None = None,
+    experience: str | None = None,
 ) -> HiringSignals:
+    from app.experience_bands import normalize_experience
+
+    experience = normalize_experience(experience)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
     today = date.today()
 
     recent_total = _count_jobs(
         db, recent_start, recent_end, sector=sector, city=city,
-        by_scraped=by_scraped,
+        experience=experience, by_scraped=by_scraped,
     )
     prior_total = _count_jobs(
         db, prior_start, prior_end, sector=sector, city=city,
-        by_scraped=by_scraped,
+        experience=experience, by_scraped=by_scraped,
     )
 
     # Daily series spanning recent window (for sparkline)
@@ -201,6 +211,10 @@ def compute_hiring_signals(
             dq = dq.where(JobMaster.sector == sector)
         if city:
             dq = dq.where(JobMaster.city_key == city)
+        from app.experience_bands import experience_clause
+        exp_c = experience_clause(experience)
+        if exp_c is not None:
+            dq = dq.where(exp_c)
         daily_map = dict(db.execute(dq).all())
         daily = [
             DayPoint(day=recent_start + timedelta(days=i),
@@ -220,11 +234,13 @@ def compute_hiring_signals(
             keywords=cfg.keywords,
             recent=_count_jobs(
                 db, recent_start, recent_end, search_id=cfg.id,
-                sector=sector, city=city, by_scraped=by_scraped,
+                sector=sector, city=city, experience=experience,
+                by_scraped=by_scraped,
             ),
             prior=_count_jobs(
                 db, prior_start, prior_end, search_id=cfg.id,
-                sector=sector, city=city, by_scraped=by_scraped,
+                sector=sector, city=city, experience=experience,
+                by_scraped=by_scraped,
             ),
         ))
     growing_roles = sorted(
@@ -254,12 +270,17 @@ def compute_hiring_signals(
         co_q = co_q.where(JobMaster.sector == sector)
     if city:
         co_q = co_q.where(JobMaster.city_key == city)
+    from app.experience_bands import experience_clause as _exp_clause
+    _exp = _exp_clause(experience)
+    if _exp is not None:
+        co_q = co_q.where(_exp)
     recent_by_co = db.execute(co_q).all()
     fastest: list[CompanySignal] = []
     for cid, name, watched, recent_n in recent_by_co:
         prior_n = _count_jobs(
             db, prior_start, prior_end, company_id=cid,
-            sector=sector, city=city, by_scraped=by_scraped,
+            sector=sector, city=city, experience=experience,
+            by_scraped=by_scraped,
         )
         fastest.append(CompanySignal(
             company_id=cid, name=name, recent=recent_n, prior=prior_n,
@@ -364,8 +385,12 @@ def companies_for_role(
     limit: int = 40,
     city: str | None = None,
     sector: str | None = None,
+    experience: str | None = None,
 ) -> tuple[str, list[CompanySignal]]:
     """Companies hiring for a search role, ranked max → min in the window."""
+    from app.experience_bands import experience_clause, normalize_experience
+
+    experience = normalize_experience(experience)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
     cfg = db.get(SearchConfig, search_id)
@@ -390,13 +415,17 @@ def companies_for_role(
         q = q.where(JobMaster.city_key == city)
     if sector:
         q = q.where(JobMaster.sector == sector)
+    exp = experience_clause(experience)
+    if exp is not None:
+        q = q.where(exp)
     rows = db.execute(q).all()
     out: list[CompanySignal] = []
     for cid, name, watched, recent_n in rows:
         prior_n = _count_jobs(
             db, prior_start, prior_end,
             search_id=search_id, company_id=cid,
-            city=city, sector=sector, by_scraped=by_scraped,
+            city=city, sector=sector, experience=experience,
+            by_scraped=by_scraped,
         )
         out.append(CompanySignal(
             company_id=cid, name=name, recent=recent_n, prior=prior_n,
@@ -410,10 +439,13 @@ def cities_for_role(
     search_id: int,
     window_days: int = 7,
     sector: str | None = None,
+    experience: str | None = None,
 ) -> list[dict]:
     """City breakdown for a role in the window — max → min."""
     from app.cities import city_label
+    from app.experience_bands import experience_clause, normalize_experience
 
+    experience = normalize_experience(experience)
     (window_days, recent_start, recent_end, _ps, _pe,
      by_scraped) = _window_bounds(window_days)
     time_col = JobMaster.scraped_at if by_scraped else JobMaster.posted_date
@@ -430,6 +462,9 @@ def cities_for_role(
     )
     if sector:
         q = q.where(JobMaster.sector == sector)
+    exp = experience_clause(experience)
+    if exp is not None:
+        q = q.where(exp)
     rows = db.execute(q).all()
     return [
         {
@@ -447,8 +482,12 @@ def watchlist_rows(
     q: str = '',
     sector: str | None = None,
     city: str | None = None,
+    experience: str | None = None,
 ) -> list[CompanySignal]:
-    """Watched companies with velocity; optional name / sector / city filter."""
+    """Watched companies with velocity; optional name / sector / city / experience."""
+    from app.experience_bands import normalize_experience
+
+    experience = normalize_experience(experience)
     ensure_starter_watchlist(db)
     (window_days, recent_start, recent_end, prior_start, prior_end,
      by_scraped) = _window_bounds(window_days)
@@ -463,11 +502,13 @@ def watchlist_rows(
     for company in companies:
         recent = _count_jobs(
             db, recent_start, recent_end, company_id=company.id,
-            sector=sector, city=city, by_scraped=by_scraped,
+            sector=sector, city=city, experience=experience,
+            by_scraped=by_scraped,
         )
         prior = _count_jobs(
             db, prior_start, prior_end, company_id=company.id,
-            sector=sector, city=city, by_scraped=by_scraped,
+            sector=sector, city=city, experience=experience,
+            by_scraped=by_scraped,
         )
         rows.append(CompanySignal(
             company_id=company.id,

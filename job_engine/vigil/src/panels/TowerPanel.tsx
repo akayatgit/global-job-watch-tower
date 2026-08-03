@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
@@ -10,8 +11,10 @@ export function TowerPanel() {
   const [data, setData] = useState<any>(null)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const cityFilter = useVigilStore((s) => s.cityFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRankList = useVigilStore((s) => s.openRankList)
@@ -22,12 +25,13 @@ export function TowerPanel() {
     let alive = true
     const load = () =>
       api
-        .tower(sectorFilter, cityFilter)
+        .tower(sectorFilter, cityFilter, experienceFilter)
         .then((d) => {
           if (!alive) return
           setData(d)
           if (d?.sector_options?.length) setSectorOptions(d.sector_options)
           if (d?.city_options?.length) setCityOptions(d.city_options)
+          if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
         })
         .catch(() => {})
     load()
@@ -36,7 +40,14 @@ export function TowerPanel() {
       alive = false
       clearInterval(id)
     }
-  }, [sectorFilter, cityFilter, setSectorOptions, setCityOptions])
+  }, [
+    sectorFilter,
+    cityFilter,
+    experienceFilter,
+    setSectorOptions,
+    setCityOptions,
+    setExperienceOptions,
+  ])
 
   const stats = data?.stats
   const top = data?.top_companies || []
@@ -49,6 +60,7 @@ export function TowerPanel() {
     <PanelShell id="tower">
       <SectorChips actionPrefix="tower-sector" />
       <CityChips actionPrefix="tower-city" />
+      <ExperienceChips actionPrefix="tower-experience" />
       {!data ? (
         <div className="empty">Syncing tower insights…</div>
       ) : (
@@ -202,10 +214,13 @@ export function TowerPanel() {
                     )}
                     {' · '}
                     {j.location || '—'}
+                    {j.experience_band
+                      ? ` · ${String(j.experience_band).replace(/\s*years?$/i, '').replace(/^0-1$/, 'Fresher')}`
+                      : ''}
                   </div>
                 </div>
-                <div className="meta" title={j.scraped_at}>
-                  {relTime(j.scraped_at)}
+                <div className="meta" title={j.posted_date || j.scraped_at}>
+                  {relTime(j.posted_date || j.scraped_at)}
                 </div>
               </div>
             ))}

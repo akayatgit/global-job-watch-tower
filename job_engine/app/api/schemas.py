@@ -56,6 +56,7 @@ class JobOut(BaseModel):
     location: str | None
     city_key: str | None = None
     sector: str
+    experience_band: str | None = None
     job_url: str
     posted_date: date | None
     scraped_at: datetime

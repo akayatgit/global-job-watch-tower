@@ -120,25 +120,26 @@ class JobRequirements:
 
 
 def experience_band(min_y: float | None, max_y: float | None) -> str | None:
+    """Map year range → chip bands: Fresher · 1-2 · 3-5 · 6-8 · 9-12 · 13+."""
     if min_y is None and max_y is None:
         return None
     lo = min_y if min_y is not None else max_y or 0
     hi = max_y if max_y is not None else min_y or 0
-    # Graduate-relevant windows (0-1, 0-2, ≤2 yrs) stay in 0-1 band
+    # Graduate / early windows (0–1, 0–2, ≤2) → Fresher
     if hi <= 2.0 and lo <= 1.0:
-        return '0-1 years'
+        return 'Fresher'
     mid = (lo + hi) / 2.0
     if mid < 1.0:
-        return '0-1 years'
-    if mid < 3.0:
-        return '1-3 years'
-    if mid < 5.0:
+        return 'Fresher'
+    if mid < 2.5:
+        return '1-2 years'
+    if mid < 5.5:
         return '3-5 years'
-    if mid < 8.0:
-        return '5-8 years'
-    if mid < 12.0:
-        return '8-12 years'
-    return '12+ years'
+    if mid < 8.5:
+        return '6-8 years'
+    if mid < 12.5:
+        return '9-12 years'
+    return '13+ years'
 
 
 FRESHER_TEXT_RE = re.compile(
@@ -257,21 +258,21 @@ def extract_requirements(
     sen = normalize_seniority(seniority)
     if band is None and sen:
         if sen in ('Internship', 'Entry level'):
-            band = '0-1 years'
+            band = 'Fresher'
             if amin is None:
                 amin, label = 0, sen
         elif sen == 'Associate':
-            band = '1-3 years'
+            band = '1-2 years'
         elif sen in ('Mid-Senior level', 'Senior'):
-            band = '5-8 years'
+            band = '6-8 years'
         elif sen in ('Director', 'Executive'):
-            band = '12+ years'
-    # Fresher / campus / graduate language → 0-1 when years sparse or ≤2
+            band = '13+ years'
+    # Fresher / campus / graduate language → Fresher when years sparse or ≤2
     if FRESHER_TEXT_RE.search(blob):
         if band is None or (amax is not None and amax <= 2) or (
             amin is not None and amax is None and amin <= 1
         ):
-            band = '0-1 years'
+            band = 'Fresher'
             if amin is None:
                 amin = 0.0
             if not label:

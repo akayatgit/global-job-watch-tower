@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
@@ -10,8 +11,10 @@ export function RankListPanel() {
   const rankFocus = useVigilStore((s) => s.rankFocus)
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const cityFilter = useVigilStore((s) => s.cityFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const [days, setDays] = useState(7)
@@ -32,8 +35,8 @@ export function RankListPanel() {
     let alive = true
     const load =
       rankFocus.kind === 'companies'
-        ? api.topCompanies(days, 100, sectorFilter, cityFilter)
-        : api.rolesRank(200, days, mode, sectorFilter, cityFilter)
+        ? api.topCompanies(days, 100, sectorFilter, cityFilter, experienceFilter)
+        : api.rolesRank(200, days, mode, sectorFilter, cityFilter, experienceFilter)
     load
       .then((d) => {
         if (!alive) return
@@ -41,6 +44,7 @@ export function RankListPanel() {
         setError(null)
         if (d?.sector_options?.length) setSectorOptions(d.sector_options)
         if (d?.city_options?.length) setCityOptions(d.city_options)
+        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
       })
       .catch((e: Error) => {
         if (!alive) return
@@ -50,7 +54,17 @@ export function RankListPanel() {
     return () => {
       alive = false
     }
-  }, [rankFocus, days, mode, sectorFilter, cityFilter, setSectorOptions, setCityOptions])
+  }, [
+    rankFocus,
+    days,
+    mode,
+    sectorFilter,
+    cityFilter,
+    experienceFilter,
+    setSectorOptions,
+    setCityOptions,
+    setExperienceOptions,
+  ])
 
   if (!rankFocus) {
     return (
@@ -92,6 +106,7 @@ export function RankListPanel() {
       </div>
       <SectorChips actionPrefix="rank-sector" />
       <CityChips actionPrefix="rank-city" />
+      <ExperienceChips actionPrefix="rank-experience" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button

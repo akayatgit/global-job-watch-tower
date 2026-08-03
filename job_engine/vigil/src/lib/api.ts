@@ -22,6 +22,7 @@ export type JobsQuery = {
   title?: string
   sector?: string
   city?: string
+  experience?: string
 }
 
 function appendSector(p: URLSearchParams, sector?: string) {
@@ -30,6 +31,10 @@ function appendSector(p: URLSearchParams, sector?: string) {
 
 function appendCity(p: URLSearchParams, city?: string) {
   if (city) p.set('city', city)
+}
+
+function appendExperience(p: URLSearchParams, experience?: string) {
+  if (experience) p.set('experience', experience)
 }
 
 function jobsUrl(q: JobsQuery = {}) {
@@ -41,46 +46,64 @@ function jobsUrl(q: JobsQuery = {}) {
   if (q.title) p.set('title', q.title)
   appendSector(p, q.sector)
   appendCity(p, q.city)
+  appendExperience(p, q.experience)
   return `/api/jobs?${p}`
 }
 
 export const api = {
   status: () => getJson<any>('/api/ultron/status'),
-  tower: (sector = '', city = '') => {
+  tower: (sector = '', city = '', experience = '') => {
     const p = new URLSearchParams()
     appendSector(p, sector)
     appendCity(p, city)
+    appendExperience(p, experience)
     const qs = p.toString()
     return getJson<any>(`/api/ultron/tower${qs ? `?${qs}` : ''}`)
   },
-  signals: (days = 7, sector = '', city = '') => {
+  signals: (days = 7, sector = '', city = '', experience = '') => {
     const p = new URLSearchParams({ days: String(days) })
     appendSector(p, sector)
     appendCity(p, city)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/signals?${p}`)
   },
-  watchlist: (days = 7, q = '', sector = '', city = '') => {
+  watchlist: (days = 7, q = '', sector = '', city = '', experience = '') => {
     const p = new URLSearchParams({
       days: String(days),
       q,
     })
     appendSector(p, sector)
     appendCity(p, city)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/watchlist?${p}`)
   },
-  roleCompanies: (searchId: number, days = 7, city = '', sector = '') => {
+  roleCompanies: (
+    searchId: number,
+    days = 7,
+    city = '',
+    sector = '',
+    experience = '',
+  ) => {
     const p = new URLSearchParams({ days: String(days) })
     appendCity(p, city)
     appendSector(p, sector)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/roles/${searchId}/companies?${p}`)
   },
-  topCompanies: (days = 7, limit = 80, sector = '', city = '') => {
+  topCompanies: (
+    days = 7,
+    limit = 80,
+    sector = '',
+    city = '',
+    experience = '',
+  ) => {
     const p = new URLSearchParams({
       days: String(days),
       limit: String(limit),
     })
     appendSector(p, sector)
     appendCity(p, city)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/top-companies?${p}`)
   },
   rolesRank: (
@@ -89,6 +112,7 @@ export const api = {
     mode: 'count' | 'rate' = 'count',
     sector = '',
     city = '',
+    experience = '',
   ) => {
     const p = new URLSearchParams({
       limit: String(limit),
@@ -97,11 +121,13 @@ export const api = {
     })
     appendSector(p, sector)
     appendCity(p, city)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/roles-rank?${p}`)
   },
-  citySignals: (days = 7, sector = '') => {
+  citySignals: (days = 7, sector = '', experience = '') => {
     const p = new URLSearchParams({ days: String(days) })
     appendSector(p, sector)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/cities?${p}`)
   },
   citySkyline: (city: string, days = 7, limit = 28) => {
@@ -114,13 +140,20 @@ export const api = {
     )
   },
 
-  cityCompare: (a: string, b: string, days = 7, sector = '') => {
+  cityCompare: (
+    a: string,
+    b: string,
+    days = 7,
+    sector = '',
+    experience = '',
+  ) => {
     const p = new URLSearchParams({
       a,
       b,
       days: String(days),
     })
     appendSector(p, sector)
+    appendExperience(p, experience)
     return getJson<any>(`/api/ultron/cities/compare?${p}`)
   },
   sectors: () => getJson<any>('/api/ultron/sectors'),

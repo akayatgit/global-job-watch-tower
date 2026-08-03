@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CityChips } from '../components/CityChips'
+import { ExperienceChips } from '../components/ExperienceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
 import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
@@ -13,8 +14,10 @@ export function CitiesPanel() {
   const [pickA, setPickA] = useState('bengaluru')
   const [pickB, setPickB] = useState('hyderabad')
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const setCityFilter = useVigilStore((s) => s.setCityFilter)
   const setCityOptions = useVigilStore((s) => s.setCityOptions)
+  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
   const openPanel = useVigilStore((s) => s.openPanel)
   const openRoleHire = useVigilStore((s) => s.openRoleHire)
   const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
@@ -22,17 +25,18 @@ export function CitiesPanel() {
   useEffect(() => {
     let alive = true
     api
-      .citySignals(days, sectorFilter)
+      .citySignals(days, sectorFilter, experienceFilter)
       .then((d) => {
         if (!alive) return
         setData(d)
         if (d?.city_options?.length) setCityOptions(d.city_options)
+        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [days, sectorFilter, setCityOptions])
+  }, [days, sectorFilter, experienceFilter, setCityOptions, setExperienceOptions])
 
   useEffect(() => {
     if (!pickA || !pickB || pickA === pickB) {
@@ -41,13 +45,13 @@ export function CitiesPanel() {
     }
     let alive = true
     api
-      .cityCompare(pickA, pickB, days, sectorFilter)
+      .cityCompare(pickA, pickB, days, sectorFilter, experienceFilter)
       .then((d) => alive && setCompare(d))
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [pickA, pickB, days, sectorFilter])
+  }, [pickA, pickB, days, sectorFilter, experienceFilter])
 
   const windows = data?.window_options || WINDOW_FALLBACK
   const cities = data?.cities || []
@@ -55,6 +59,7 @@ export function CitiesPanel() {
   return (
     <PanelShell id="cities">
       <SectorChips actionPrefix="cities-sector" />
+      <ExperienceChips actionPrefix="cities-experience" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button
