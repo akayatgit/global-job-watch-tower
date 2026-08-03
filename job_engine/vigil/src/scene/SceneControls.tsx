@@ -206,8 +206,8 @@ export function SceneControls() {
       fromDist,
       toDist: dist,
       t: 0,
-      // Slightly slower campus glide — less cut/jump
-      speed: citySlide ? 0.62 : 1.15,
+      // Campus glide — smooth handoff, ~2× prior campus pace
+      speed: citySlide ? 1.24 : 1.15,
       citySlide,
       endFocusId: citySlide && f.id.startsWith('company:') ? f.id : null,
     }

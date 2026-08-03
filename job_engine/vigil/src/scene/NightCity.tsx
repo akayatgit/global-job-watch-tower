@@ -647,9 +647,11 @@ function GlassTower({
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const core = useRef<THREE.MeshStandardMaterial>(null)
-  /** Hover/focus full card; while any tower focused, neighbours stay at 30%. */
+  /** Hover/focus full card; neighbours while one focused: 25% size + 25% of prior opacity. */
   const showCard = lit || anyCompanyFocus
-  const cardOpacity = lit ? 1 : anyCompanyFocus ? 0.3 : 1
+  const neighbourCard = anyCompanyFocus && !lit
+  const cardOpacity = lit ? 1 : neighbourCard ? 0.075 : 1
+  const cardScale = neighbourCard ? 0.25 : 1
   const card = useMemo(
     () =>
       showCard
@@ -879,12 +881,16 @@ function GlassTower({
         />
       )}
 
-      {/* Neon glass cards — full on hover/focus; neighbours at 30% while one focused */}
+      {/* Neon glass cards — full on hover/focus; neighbours 25% size / ~7.5% opacity */}
       {card && (
-        <Billboard follow position={[0, t.h + 0.18 + cardH / 2, 0]}>
+        <Billboard
+          follow
+          position={[0, t.h + 0.18 + (cardH * cardScale) / 2, 0]}
+        >
           <mesh
             raycast={() => null}
             renderOrder={cardOrder + (lit ? 20 : 0)}
+            scale={cardScale}
           >
             <planeGeometry args={[cardW, cardH]} />
             <meshBasicMaterial
