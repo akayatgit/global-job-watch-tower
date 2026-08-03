@@ -7,6 +7,7 @@ PNGs under job_engine/.data/carousel_tmp/ for Telegram upload only.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import urllib.parse
 import urllib.request
@@ -265,22 +266,177 @@ def build_caption(facts: dict) -> str:
         '',
         'by JobMaster.agency · power of VIGIL · AI · Quanta HR',
         f'Tower facts · {now}',
-        'Reply /carousel for a fresh set',
+        'Say Carousel + role + city for a focused set',
     ]
     if facts.get('headline24'):
         lines.insert(3, facts['headline24'][:180])
     return '\n'.join(lines)
 
 
-def generate_carousel(*, clean: bool = True) -> tuple[list[Path], str, Path]:
+_CITY_ALIASES = {
+    'bangalore': 'bengaluru',
+    'bengaluru': 'bengaluru',
+    'blr': 'bengaluru',
+    'chennai': 'chennai',
+    'madras': 'chennai',
+    'hyderabad': 'hyderabad',
+    'hyd': 'hyderabad',
+    'pune': 'pune',
+    'mumbai': 'mumbai',
+    'delhi': 'delhi',
+    'gurugram': 'gurugram',
+    'gurgaon': 'gurugram',
+    'noida': 'noida',
+    'kerala': 'kerala',
+    'kochi': 'kerala',
+    'remote': 'remote',
+}
+
+
+def parse_topic(msg: str) -> dict:
+    """Best-effort role + city from a Carousel request."""
+    text = (msg or '').strip()
+    low = text.lower()
+    city = None
+    city_label = None
+    for alias, key in _CITY_ALIASES.items():
+        if re.search(rf'\b{re.escape(alias)}\b', low):
+            city = key
+            city_label = alias.title() if alias != 'blr' else 'Bengaluru'
+            if key == 'bengaluru':
+                city_label = 'Bengaluru'
+            break
+
+    role = None
+    m = re.search(
+        r'carousel\s+(?:of|for|on)?\s*(.+?)(?:\s+for\s+today|\s+in\s+|\s+with\s+|$)',
+        low, re.I,
+    )
+    if m:
+        role = m.group(1).strip(' .')
+    if not role:
+        m2 = re.search(r'\b(?:of|for)\s+([a-z0-9 /+&-]{3,40})\s+(?:in|at|for)\b', low)
+        if m2:
+            role = m2.group(1).strip()
+    if role:
+        for alias in _CITY_ALIASES:
+            role = re.sub(rf'\b{re.escape(alias)}\b', '', role, flags=re.I).strip()
+        role = re.sub(r'\b(today|date|list|companies|openings|jobs)\b', '', role, flags=re.I)
+        role = re.sub(r'\s+', ' ', role).strip(' -')
+    if not role or len(role) < 3:
+        role = 'Data Analyst' if 'analyst' in low else None
+
+    return {'role': role, 'city': city, 'city_label': city_label or (city or '').title()}
+
+
+def fetch_topic_jobs(role: str | None, city: str | None, *, limit: int = 40) -> list[dict]:
+    params: dict = {'limit': limit}
+    if role:
+        params['title'] = role
+    if city:
+        params['city'] = city
+    data = _get('/api/jobs', params)
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: datetime) -> tuple[list[Slide], str]:
+    style = (
+        'cinematic dark professional stage, orange and cyan accent light, '
+        'deep black background, no text, no letters, vertical 3:4, premium TECH hiring'
+    )
+    date_s = now.strftime('%d %b %Y')
+    # company tally
+    counts: dict[str, int] = {}
+    for j in jobs:
+        name = (j.get('company_name') or j.get('company') or 'Unknown').strip()
+        counts[name] = counts.get(name, 0) + 1
+    ranked = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    top_lines = [f'{n} — {c}' for n, c in ranked[:6]]
+    more_lines = [f'{n} — {c}' for n, c in ranked[6:12]]
+    if not top_lines:
+        top_lines = ['No matching openings in tower yet']
+
+    slides = [
+        Slide(
+            key='topic-hook',
+            headline=f'{role}\n{city_label or "India"}',
+            sub='TECH JOB MARKET MOVEMENT · Carousel',
+            stat=f'{len(jobs)} openings\nin tower match',
+            bg_prompt=f'{style}, glass data towers in night city',
+        ),
+        Slide(
+            key='date',
+            headline='Live snapshot',
+            sub=f'Date · {date_s} IST',
+            stat='Tower facts only\nNo invented markets',
+            bg_prompt=f'{style}, calendar of light particles',
+        ),
+        Slide(
+            key='companies',
+            headline='Companies hiring',
+            sub=f'{role} · {city_label or "All cities"}',
+            stat='\n'.join(top_lines[:5]),
+            bg_prompt=f'{style}, corporate skyline with warm windows',
+        ),
+        Slide(
+            key='more',
+            headline='More of the list',
+            sub='Ranked by openings in match',
+            stat='\n'.join(more_lines[:5]) if more_lines else '— full list is short today —',
+            bg_prompt=f'{style}, ranked pillars of light',
+        ),
+        Slide(
+            key='pulse',
+            headline='What to know',
+            sub='Fresher-friendly TECH lens',
+            stat=f'Top hirer\n{ranked[0][0] if ranked else "—"}',
+            bg_prompt=f'{style}, graduate silhouette facing glowing campus',
+        ),
+        Slide(
+            key='cta',
+            headline='Facts, not fear.',
+            sub='JobMaster.agency · VIGIL · Quanta HR',
+            stat='Say Carousel + role + city\nfor the next pulse',
+            bg_prompt=f'{style}, orange ember core in dark hall',
+        ),
+    ]
+    caption = '\n'.join([
+        'TECH JOB MARKET MOVEMENT · Carousel',
+        f'{role} · {city_label or "India"} · {date_s}',
+        f'{len(jobs)} openings matched in tower',
+        f'Top: {ranked[0][0]} ({ranked[0][1]})' if ranked else 'No matches yet',
+        '',
+        'by JobMaster.agency · VIGIL · Quanta HR',
+        'Tower facts only',
+    ])
+    return slides, caption
+
+
+def generate_carousel(
+    *,
+    clean: bool = True,
+    topic_msg: str | None = None,
+) -> tuple[list[Path], str, Path]:
     """Return (slide_paths, caption, run_dir). Caller sends then may delete run_dir."""
-    facts = fetch_facts()
-    slides = build_slides(facts)
-    caption = build_caption(facts)
+    now = datetime.now(TZ)
+    topic = parse_topic(topic_msg or '') if topic_msg else {}
+    if topic.get('role'):
+        jobs = fetch_topic_jobs(topic.get('role'), topic.get('city'))
+        slides, caption = build_topic_slides(
+            topic['role'].title(),
+            topic.get('city_label') or '',
+            jobs,
+            now,
+        )
+    else:
+        facts = fetch_facts()
+        slides = build_slides(facts)
+        caption = build_caption(facts)
 
     run_dir = TMP_ROOT / datetime.now(TZ).strftime('%Y%m%d-%H%M%S')
     if clean and TMP_ROOT.exists():
-        # Keep only last 2 runs max — ephemeral
         for old in sorted(TMP_ROOT.iterdir(), reverse=True)[1:]:
             if old.is_dir():
                 shutil.rmtree(old, ignore_errors=True)

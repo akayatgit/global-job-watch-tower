@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import sys
 import time
 import uuid
@@ -141,6 +142,27 @@ def _multipart(fields: dict[str, str], files: list[tuple[str, Path]]) -> tuple[b
     return b''.join(chunks), f'multipart/form-data; boundary={boundary}'
 
 
+def send_photo(token: str, chat_id: str, photo: Path, caption: str = '') -> bool:
+    """Send one photo. Caption optional — image-only chat uses empty caption."""
+    fields = {'chat_id': str(chat_id)}
+    if caption:
+        fields['caption'] = caption[:1024]
+    body, content_type = _multipart(fields, [('photo', photo)])
+    url = f'https://api.telegram.org/bot{token}/sendPhoto'
+    req = urllib.request.Request(url, data=body, headers={'Content-Type': content_type})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        err = e.read().decode(errors='replace')
+        print(f'sendPhoto HTTP {e.code}: {err[:500]}', file=sys.stderr)
+        return False
+    if not data.get('ok'):
+        print(data, file=sys.stderr)
+        return False
+    return True
+
+
 def send_media_group(token: str, chat_id: str, photos: list[Path], caption: str = '') -> bool:
     """Send up to 10 photos as an album. Caption on first slide only."""
     if not photos:
@@ -175,7 +197,7 @@ def send_media_group(token: str, chat_id: str, photos: list[Path], caption: str 
     return True
 
 
-def cmd_send_carousel() -> int:
+def cmd_send_carousel(topic_msg: str | None = None) -> int:
     """Generate fiery carousel from live tower facts and push album to Telegram."""
     env = _load_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
@@ -188,13 +210,12 @@ def cmd_send_carousel() -> int:
     from app.carousel_gen import generate_carousel  # noqa: WPS433
 
     try:
-        paths, caption, run_dir = generate_carousel()
+        paths, caption, run_dir = generate_carousel(topic_msg=topic_msg)
     except Exception as e:
         print(f'carousel generate failed: {e}', file=sys.stderr)
         return 1
 
     ok = send_media_group(token, chat, paths, caption)
-    # Ephemeral — remove after send attempt
     try:
         import shutil
         shutil.rmtree(run_dir, ignore_errors=True)
@@ -204,6 +225,40 @@ def cmd_send_carousel() -> int:
         print(f'Carousel sent ({len(paths)} slides) → Telegram')
         return 0
     print('carousel send failed', file=sys.stderr)
+    return 1
+
+
+def cmd_image_chat(user_msg: str) -> int:
+    """Telegram image-only chat: Carousel word → pro album; else Tanglish meme photo."""
+    env = _load_env()
+    token = env.get('TELEGRAM_BOT_TOKEN')
+    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    if not token or not chat:
+        print('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_HOME_CHANNEL', file=sys.stderr)
+        return 1
+
+    msg = (user_msg or '').strip()
+    if re.search(r'\bcarousel\b', msg, re.I):
+        return cmd_send_carousel(topic_msg=msg)
+
+    sys.path.insert(0, str(ROOT))
+    from app.telegram_meme import compose_meme  # noqa: WPS433
+
+    try:
+        path = compose_meme(msg)
+    except Exception as e:
+        print(f'meme generate failed: {e}', file=sys.stderr)
+        return 1
+
+    ok = send_photo(token, chat, path, caption='')
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    if ok:
+        print('IMAGE_SENT')
+        return 0
+    print('meme send failed', file=sys.stderr)
     return 1
 
 
@@ -262,7 +317,7 @@ def cmd_send_brief() -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ('-h', '--help'):
-        print('Usage: telegram_watch_tower.py bootstrap|send-brief|send-carousel')
+        print('Usage: telegram_watch_tower.py bootstrap|send-brief|send-carousel|image-chat <msg>')
         return 0
     if argv[0] == 'bootstrap':
         wait = int(argv[1]) if len(argv) > 1 else 180
@@ -270,7 +325,16 @@ def main(argv: list[str]) -> int:
     if argv[0] == 'send-brief':
         return cmd_send_brief()
     if argv[0] == 'send-carousel':
-        return cmd_send_carousel()
+        topic = ' '.join(argv[1:]).strip() or None
+        return cmd_send_carousel(topic_msg=topic)
+    if argv[0] == 'image-chat':
+        msg = ' '.join(argv[1:]).strip()
+        if not msg and not sys.stdin.isatty():
+            msg = sys.stdin.read().strip()
+        if not msg:
+            print('image-chat needs a message', file=sys.stderr)
+            return 2
+        return cmd_image_chat(msg)
     print('unknown command', argv[0], file=sys.stderr)
     return 2
 

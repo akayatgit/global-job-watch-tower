@@ -647,6 +647,7 @@ START OF EVERY SESSION
 | v0.23 | 2026-08-03 | Akay | **Students twist:** Map = **TECH JOB MARKET MOVEMENT** — social carousels (one question → facts → viz) + page for hope / daily knowing / TECH market understanding. JobMaster.agency · VIGIL · AI · Quanta HR. Not admin demand tables first. |
 | v0.24 | 2026-08-03 | Akay | **Master → Job Movement:** continuous fact content for seekers. Two gates before auto: Replicate carousel fire + TN trendjack (SerpApi/SearchAPI). Associate inspiration: CM C. Joseph Vijay / TVK 2026 path. |
 | v0.25 | 2026-08-03 | Akay | **Gate 1 live:** `/carousel` → Replicate flux-schnell + Pillow → Telegram `sendMediaGroup` album (Hermes). No local gallery; Ashok reviews on Telegram. |
+| v0.26 | 2026-08-03 | Akay | **Telegram image-only:** default Tanglish Replicate memes; magic word **Carousel** = pro album (topic role/city). Hermes SOUL + `telegram_image_chat.py`; text replies banned (🔥 only). |
 
 ### Phase 0 progress (living)
 
