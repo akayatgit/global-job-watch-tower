@@ -216,6 +216,10 @@ use — they should love opening the app, never fight it.
   campus from the current Jobs filters. Multiple metros → multiple building
   clusters (labelled pads). One metro → single campus. Exit via campus leave
   control back to globe.
+- **City roof honesty (2026-08-03):** Building opening count and role cards must
+  match — cards are job titles only (not search names), never more cards than
+  openings. Collective city name floats above company/role tags as big bold
+  white glowing text (no card plate).
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.
