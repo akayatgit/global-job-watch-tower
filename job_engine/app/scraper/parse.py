@@ -5,11 +5,20 @@ guest/public layout (.base-card).
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 import re
 
 JOB_ID_RE = re.compile(r'(?:jobs/view/|currentJobId=)(\d+)')
 URN_RE = re.compile(r'(\d+)$')
+COMPANY_URL_RE = re.compile(
+    r'(https?://(?:www\.)?linkedin\.com)?/company/([A-Za-z0-9][A-Za-z0-9._\-]*)/?',
+    re.I,
+)
+RELATIVE_POSTED_RE = re.compile(
+    r'(?:reposted\s+)?(?:just\s+now|moments?\s+ago|'
+    r'(\d+)\s*(minute|hour|day|week|month|year)s?\s+ago)',
+    re.I,
+)
 
 
 @dataclass
@@ -21,6 +30,8 @@ class ParsedJob:
     job_url: str
     posted_date: date | None
     raw_text: str
+    company_linkedin_url: str | None = None
+    company_logo_url: str | None = None
 
 
 def _clean(value: str | None) -> str | None:
@@ -46,7 +57,39 @@ def _job_id_from_card(card) -> str | None:
     return None
 
 
+def parse_relative_posted(
+    text: str | None,
+    *,
+    now: datetime | None = None,
+) -> date | None:
+    """Turn LinkedIn '2 hours ago' / '3 days ago' into a calendar date."""
+    if not text:
+        return None
+    now = now or datetime.now(timezone.utc)
+    blob = ' '.join(text.split())
+    m = RELATIVE_POSTED_RE.search(blob)
+    if not m:
+        return None
+    if m.group(1) is None:
+        # just now / moments ago
+        return now.date()
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    delta = {
+        'minute': timedelta(minutes=n),
+        'hour': timedelta(hours=n),
+        'day': timedelta(days=n),
+        'week': timedelta(weeks=n),
+        'month': timedelta(days=30 * n),
+        'year': timedelta(days=365 * n),
+    }.get(unit)
+    if delta is None:
+        return None
+    return (now - delta).date()
+
+
 def _posted_date_from_card(card) -> date | None:
+    # Prefer machine datetime when LinkedIn provides it
     for t in card.css('time'):
         dt = t.attrib.get('datetime')
         if dt:
@@ -54,6 +97,63 @@ def _posted_date_from_card(card) -> date | None:
                 return datetime.strptime(dt[:10], '%Y-%m-%d').date()
             except ValueError:
                 continue
+        # Logged-in cards often only have "2 hours ago" as text
+        rel = parse_relative_posted(' '.join(t.css('::text').getall()))
+        if rel:
+            return rel
+    # Footer / listed-time spans without <time>
+    for sel in (
+        '.job-card-container__listed-time',
+        '.job-card-container__footer-item',
+        'time',
+        '.base-search-card__metadata',
+    ):
+        try:
+            chunks = card.css(f'{sel}::text').getall()
+        except Exception:
+            chunks = []
+        rel = parse_relative_posted(' '.join(chunks))
+        if rel:
+            return rel
+    # Last resort: whole card text (can match "Promoted · 2 days ago")
+    try:
+        rel = parse_relative_posted(' '.join(card.css('::text').getall()))
+    except Exception:
+        rel = None
+    return rel
+
+
+def _company_url_from_card(card) -> str | None:
+    for link in card.css('a'):
+        href = (link.attrib.get('href') or '').split('?')[0]
+        m = COMPANY_URL_RE.search(href)
+        if not m:
+            continue
+        slug = m.group(2).rstrip('/')
+        if slug.lower() in ('jobs', 'search', 'showcase'):
+            continue
+        return f'https://www.linkedin.com/company/{slug}/'
+    return None
+
+
+def _company_logo_from_card(card) -> str | None:
+    for img in card.css('img'):
+        src = img.attrib.get('src') or img.attrib.get('data-delayed-url') or ''
+        if not src or 'data:image' in src:
+            continue
+        alt = (img.attrib.get('alt') or '').lower()
+        cls = ' '.join(img.attrib.get('class', '').split()).lower()
+        if (
+            'logo' in cls
+            or 'entity-image' in cls
+            or 'EntityPhoto' in (img.attrib.get('class') or '')
+            or 'company' in alt
+            or 'media.licdn.com' in src
+        ):
+            # Prefer company logos over ghost/person avatars
+            if 'ghost' in src or 'person' in cls:
+                continue
+            return src.split('?')[0][:800]
     return None
 
 
@@ -120,6 +220,8 @@ def parse_jobs(page) -> list[ParsedJob]:
             job_url=f'https://www.linkedin.com/jobs/view/{job_id}/',
             posted_date=_posted_date_from_card(card),
             raw_text=raw_text[:4000],
+            company_linkedin_url=_company_url_from_card(card),
+            company_logo_url=_company_logo_from_card(card),
         ))
 
     return jobs

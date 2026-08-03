@@ -26,6 +26,11 @@ celery.conf.update(
             'task': 'app.tasks.enrich_pending_requirements',
             'schedule': 600.0,  # every 10 minutes
         },
+        # Backfill company logo / followers / size / punchline
+        'enrich-pending-companies': {
+            'task': 'app.tasks.enrich_pending_companies',
+            'schedule': 900.0,  # every 15 minutes
+        },
     },
 )
 

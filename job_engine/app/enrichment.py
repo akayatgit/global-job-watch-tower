@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.console import console_log
-from app.models import JobMaster
+from app.company_enrichment import apply_job_page_company_bits
+from app.models import Company, JobMaster
 from app.models.models import utcnow
 from app.runtime_settings import get_headless
 from app.scraper.detail import parse_job_detail
@@ -45,6 +46,18 @@ def _apply_requirements(job: JobMaster, detail) -> None:
     job.domains = req.domains or None
     job.description_text = req.description_text
     job.requirements_enriched_at = utcnow()
+    # Fill posted_date when search cards only had "2h ago" / missing <time>
+    if detail.posted_date and not job.posted_date:
+        job.posted_date = detail.posted_date
+
+
+def _apply_company_from_detail(db: Session, job: JobMaster, detail) -> None:
+    if not job.company_id or not detail.company:
+        return
+    company = db.get(Company, job.company_id)
+    if company is None:
+        return
+    apply_job_page_company_bits(company, detail.company)
 
 
 def pending_requirement_ids(db: Session, limit: int = 20) -> list[int]:
@@ -151,11 +164,14 @@ def enrich_jobs_by_ids(
                 response = engine.fetch(url)
                 detail = parse_job_detail(response, card_text=job.raw_text)
                 _apply_requirements(job, detail)
+                _apply_company_from_detail(db, job, detail)
                 db.commit()
                 enriched += 1
                 bits = []
                 if job.experience_band:
                     bits.append(job.experience_band)
+                if job.posted_date:
+                    bits.append(f'posted {job.posted_date}')
                 if job.degrees:
                     bits.append(f'{len(job.degrees)} degree(s)')
                 if job.certifications:

@@ -31,6 +31,18 @@ class Company(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(300), unique=True, index=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    # Profile enrich (logo + size + followers + casual punchline)
+    logo_url: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    tagline: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    punchline: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    about_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    follower_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    employee_count_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    employee_count_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    employee_count_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    profile_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
     watched: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     watched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

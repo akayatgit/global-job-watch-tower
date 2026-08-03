@@ -264,6 +264,11 @@ use — they should love opening the app, never fight it.
   Track B Market Signal is secondary (no experience filter, thinner) for
   experienced hiring → economy decode. Never present Market Signal as the
   main fresher story. Wipe+reseed before trusting post–v0.17 catches.
+- **Company profile on the company record (2026-08-03):** Store logo URL,
+  LinkedIn tagline, casual punchline (why join — fresher tone), follower
+  count, and employee size on each company. Show posted date (when LinkedIn
+  said it went up) separately from caught time (when we scraped) — never
+  pretend catch time is the posting date.
 - **First click focus / second open (2026-08-03):** In Graph, City globe, and
   Night City — first click flies the camera to a drone-isometric close-up and
   emits a focus glow; second click on the same target opens the widget /

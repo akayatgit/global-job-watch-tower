@@ -58,6 +58,11 @@ class CompanySignal:
     recent: int
     prior: int
     watched: bool = False
+    logo_url: str | None = None
+    punchline: str | None = None
+    tagline: str | None = None
+    follower_count: int | None = None
+    employee_count_label: str | None = None
 
     @property
     def delta(self) -> int:
@@ -470,6 +475,11 @@ def watchlist_rows(
             recent=recent,
             prior=prior,
             watched=True,
+            logo_url=company.logo_url,
+            punchline=company.punchline,
+            tagline=company.tagline,
+            follower_count=company.follower_count,
+            employee_count_label=company.employee_count_label,
         ))
     rows.sort(key=lambda c: (c.recent, c.delta), reverse=True)
     return rows
@@ -483,26 +493,28 @@ def company_directory(db: Session, q: str = '', limit: int = 40) -> list[Company
     prior_start = recent_start - timedelta(days=7)
 
     query = (
-        select(
-            Company.id, Company.name, Company.watched,
-            func.count(JobMaster.id).label('n'),
-        )
-        .outerjoin(JobMaster, JobMaster.company_id == Company.id)
-        .group_by(Company.id, Company.name, Company.watched)
-        .order_by(func.count(JobMaster.id).desc(), Company.name.asc())
-        .limit(limit)
+        select(Company)
+        .order_by(Company.name.asc())
+        .limit(limit * 3)
     )
     if q.strip():
         query = query.where(Company.name.ilike(f'%{q.strip()}%'))
 
     rows: list[CompanySignal] = []
-    for cid, name, watched, recent_n in db.execute(query).all():
-        # recent_n here is all-time join count when no date filter — refine:
-        recent = _count_jobs(db, recent_start, recent_end, company_id=cid)
-        prior = _count_jobs(db, prior_start, recent_start, company_id=cid)
+    for company in db.execute(query).scalars().all():
+        recent = _count_jobs(db, recent_start, recent_end, company_id=company.id)
+        prior = _count_jobs(db, prior_start, recent_start, company_id=company.id)
         rows.append(CompanySignal(
-            company_id=cid, name=name, recent=recent, prior=prior,
-            watched=bool(watched),
+            company_id=company.id,
+            name=company.name,
+            recent=recent,
+            prior=prior,
+            watched=bool(company.watched),
+            logo_url=company.logo_url,
+            punchline=company.punchline,
+            tagline=company.tagline,
+            follower_count=company.follower_count,
+            employee_count_label=company.employee_count_label,
         ))
     rows.sort(key=lambda c: (c.recent, c.name.lower()), reverse=True)
-    return rows
+    return rows[:limit]

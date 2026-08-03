@@ -444,6 +444,30 @@ def ultron_watchlist_toggle(company_id: int, db: Session = Depends(get_db)):
     return {'ok': True, 'company_id': company_id, 'watched': watched}
 
 
+@router.get('/api/ultron/companies/{company_id}')
+def ultron_company_profile(company_id: int, db: Session = Depends(get_db)):
+    """Company embedding: logo, punchline, followers, employee size."""
+    company = db.get(Company, company_id)
+    if company is None:
+        return JSONResponse({'ok': False, 'error': 'not found'}, status_code=404)
+    return {
+        'ok': True,
+        'company_id': company.id,
+        'name': company.name,
+        'linkedin_url': company.linkedin_url,
+        'logo_url': company.logo_url,
+        'tagline': company.tagline,
+        'punchline': company.punchline,
+        'about_text': company.about_text,
+        'follower_count': company.follower_count,
+        'employee_count_min': company.employee_count_min,
+        'employee_count_max': company.employee_count_max,
+        'employee_count_label': company.employee_count_label,
+        'watched': bool(company.watched),
+        'profile_enriched_at': _iso(company.profile_enriched_at),
+    }
+
+
 @router.get('/api/ultron/health')
 def ultron_health(db: Session = Depends(get_db)):
     vitals = compute_vitals(db)

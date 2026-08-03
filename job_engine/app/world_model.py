@@ -125,18 +125,33 @@ def compute_world_model(db: Session, window_days: int = 7) -> dict:
 
     # --- Companies ---
     co_rows = db.execute(
-        select(Company.id, Company.name, func.count(JobMaster.id).label('n'))
+        select(
+            Company.id, Company.name, Company.logo_url, Company.punchline,
+            Company.tagline, Company.follower_count, Company.employee_count_label,
+            func.count(JobMaster.id).label('n'),
+        )
         .join(JobMaster, JobMaster.company_id == Company.id)
         .where(time_col >= recent_start, time_col < recent_end)
-        .group_by(Company.id, Company.name)
+        .group_by(
+            Company.id, Company.name, Company.logo_url, Company.punchline,
+            Company.tagline, Company.follower_count, Company.employee_count_label,
+        )
         .order_by(desc('n'))
         .limit(MAX_COMPANIES)
     ).all()
-    for company_id, name, n in co_rows:
+    for (
+        company_id, name, logo_url, punchline, tagline,
+        followers, emp_label, n,
+    ) in co_rows:
         nid = f'company:{company_id}'
         add_node(
             nid, 'company', name or 'Unknown', n,
             company_id=company_id,
+            logo_url=logo_url,
+            punchline=punchline or tagline,
+            tagline=tagline,
+            follower_count=followers,
+            employee_count_label=emp_label,
         )
         add_edge('core', nid, max(1, n // 4), 'employs')
 

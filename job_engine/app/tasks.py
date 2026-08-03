@@ -35,7 +35,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _get_or_create_company(db, name: str | None) -> Company | None:
+def _get_or_create_company(
+    db,
+    name: str | None,
+    *,
+    linkedin_url: str | None = None,
+    logo_url: str | None = None,
+) -> Company | None:
     if not name:
         return None
     key = name.strip()
@@ -43,9 +49,18 @@ def _get_or_create_company(db, name: str | None) -> Company | None:
         select(Company).where(Company.name == key)
     ).scalar_one_or_none()
     if company is None:
-        company = Company(name=key)
+        company = Company(
+            name=key,
+            linkedin_url=linkedin_url,
+            logo_url=logo_url,
+        )
         db.add(company)
         db.flush()
+    else:
+        if linkedin_url and not company.linkedin_url:
+            company.linkedin_url = linkedin_url
+        if logo_url and not company.logo_url:
+            company.logo_url = logo_url
     return company
 
 
@@ -289,7 +304,12 @@ def run_scrape(self, scrape_run_id: int):
                 ).scalar_one_or_none()
                 if exists is not None:
                     continue
-                company = _get_or_create_company(db, job.company)
+                company = _get_or_create_company(
+                    db,
+                    job.company,
+                    linkedin_url=getattr(job, 'company_linkedin_url', None),
+                    logo_url=getattr(job, 'company_logo_url', None),
+                )
                 row = JobMaster(
                     linkedin_job_id=job.linkedin_job_id,
                     title=job.title,
@@ -383,6 +403,34 @@ def run_scrape(self, scrape_run_id: int):
                     f'Run #{run.id}: could not queue enrich — {str(exc)[:160]}',
                     run_id=run.id, level='warn',
                 )
+            # Company logos / followers / punchlines (dedupe ids from new jobs)
+            try:
+                co_ids = db.execute(
+                    select(JobMaster.company_id)
+                    .where(
+                        JobMaster.id.in_(new_job_ids[:80]),
+                        JobMaster.company_id.is_not(None),
+                    )
+                    .distinct()
+                ).scalars().all()
+                co_ids = [int(x) for x in co_ids if x]
+                if co_ids:
+                    enrich_company_profiles.delay(
+                        company_ids=co_ids[:12],
+                        run_id=run.id,
+                    )
+                    console_log(
+                        'worker',
+                        f'Run #{run.id}: queued company profile enrich for '
+                        f'{min(len(co_ids), 12)} company(ies).',
+                        run_id=run.id,
+                    )
+            except Exception as exc:
+                console_log(
+                    'worker',
+                    f'Run #{run.id}: could not queue company enrich — {str(exc)[:160]}',
+                    run_id=run.id, level='warn',
+                )
         return {
             'run_id': run.id,
             'status': final_status,
@@ -425,3 +473,36 @@ def enrich_job_requirements(self, job_ids: list[int] | None = None, run_id: int 
 def enrich_pending_requirements():
     """Beat: backfill jobs still missing requirements (critical employability data)."""
     return enrich_job_requirements(job_ids=None, run_id=None)
+
+
+@celery.task(name='app.tasks.enrich_company_profiles', bind=True, max_retries=1)
+def enrich_company_profiles(self, company_ids: list[int] | None = None, run_id: int | None = None):
+    """Visit LinkedIn company pages for logo / followers / size / punchline."""
+    from app.company_enrichment import enrich_companies_by_ids, pending_company_ids
+
+    with SessionLocal() as db:
+        ids = list(company_ids or [])
+        if not ids:
+            ids = pending_company_ids(db, limit=6)
+        if not ids:
+            return {'enriched': 0, 'note': 'nothing pending'}
+        try:
+            return enrich_companies_by_ids(
+                db, ids, run_id=run_id,
+                log=lambda msg: console_log('company', msg, run_id=run_id),
+            )
+        except Exception as exc:
+            logger.exception('enrich_company_profiles failed')
+            console_log(
+                'company', f'Company enrich FAILED: {str(exc)[:240]}',
+                run_id=run_id, level='error',
+            )
+            if self.request.retries < self.max_retries:
+                raise self.retry(exc=exc, countdown=180)
+            return {'error': str(exc)[:500]}
+
+
+@celery.task(name='app.tasks.enrich_pending_companies')
+def enrich_pending_companies():
+    """Beat: backfill company logos / followers / punchlines (after job scrapes)."""
+    return enrich_company_profiles(company_ids=None, run_id=None)

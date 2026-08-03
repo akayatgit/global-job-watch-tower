@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import re
 
+from app.scraper.company_page import CompanyProfile, company_bits_from_job_page
+from app.scraper.posted import posted_date_from_detail
 from app.scraper.requirements import JobRequirements, extract_requirements
 
 
@@ -14,6 +17,8 @@ class DetailParse:
     seniority: str | None
     employment_type: str | None
     requirements: JobRequirements
+    posted_date: date | None = None
+    company: CompanyProfile | None = None
 
 
 def _clean(value: str | None) -> str | None:
@@ -102,9 +107,13 @@ def parse_job_detail(page, *, card_text: str | None = None) -> DetailParse:
         seniority=seniority,
         card_text=card_text,
     )
+    company = company_bits_from_job_page(page)
+    posted = posted_date_from_detail(page, card_text=card_text)
     return DetailParse(
         description=description,
         seniority=seniority,
         employment_type=employment_type,
         requirements=req,
+        posted_date=posted,
+        company=company,
     )
