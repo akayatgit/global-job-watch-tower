@@ -51,7 +51,8 @@ def _send_image(img, *, meta: str) -> bool:
 
 def _require_approval(kind: str, payload: dict, city: str = '') -> dict | None:
     """Hard gate — returns error dict if rejected, else None."""
-    from app.director.tools_validator import run_validator, send_telegram_text
+    from app.director.tools_validator import run_validator
+    from app.director.tools_courier import send_telegram_text
     result = run_validator(kind, json.dumps(payload), city)
     if result.get('approved'):
         return None

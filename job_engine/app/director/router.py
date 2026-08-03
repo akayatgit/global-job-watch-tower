@@ -83,9 +83,79 @@ def _city_from_text(text: str) -> str:
     return ''
 
 
-def _mtime() -> float:
+def _mtime_image() -> float:
     from app.director.tools_lens import LAST_SEND
     return LAST_SEND.stat().st_mtime if LAST_SEND.exists() else 0.0
+
+
+def _mtime_text() -> float:
+    from app.director.tools_courier import LAST_TEXT_SEND
+    return LAST_TEXT_SEND.stat().st_mtime if LAST_TEXT_SEND.exists() else 0.0
+
+
+def _parse_mode(text: str) -> tuple[str, str]:
+    """Return (mode, payload). Modes: chat | summarize | image."""
+    raw = (text or '').strip()
+    low = raw.lower()
+    if low in {'/summarize', 'summarize'} or low.startswith('/summarize'):
+        rest = raw.split(None, 1)[1].strip() if ' ' in raw.strip() else ''
+        return 'summarize', rest or (
+            'Summarize our brainstormed tower data into a clean final draft. '
+            'Re-check live STAGEHAND if numbers might be stale.'
+        )
+    if low in {'/image', 'image'} or low.startswith('/image'):
+        rest = raw.split(None, 1)[1].strip() if ' ' in raw.strip() else ''
+        return 'image', rest or (
+            'Turn the latest agreed facts from this chat into Telegram fact boards / image. '
+            'Re-fetch STAGEHAND to confirm numbers first.'
+        )
+    return 'chat', raw
+
+
+def _text_fallback(text: str) -> bool:
+    """Last resort text reply from live STAGEHAND — no images."""
+    from app.director.tools_courier import send_telegram_text
+    from app.director.tools_stagehand import _get
+    from app.cities import city_label
+
+    city = _city_from_text(text)
+    if city:
+        tower = _get('/api/ultron/tower', {'city': city})
+        stats = (tower or {}).get('stats') or {}
+        sig = _get('/api/ultron/signals', {'days': 0, 'city': city})
+        s = ((sig or {}).get('signals') or {})
+        roles = (s.get('growing_roles') or [])[:5]
+        cos = (s.get('fastest_companies') or [])[:5]
+        lines = [
+            f"{city_label(city)} · live tower",
+            f"Today {stats.get('jobs_today', '—')} · total {stats.get('total_jobs', '—')} · "
+            f"companies {stats.get('companies', '—')}",
+        ]
+        if roles:
+            lines.append('Top roles: ' + ', '.join(
+                f"{r.get('name')} {r.get('recent') if r.get('recent') is not None else r.get('n')}"
+                for r in roles
+            ))
+        if cos:
+            lines.append('Top companies: ' + ', '.join(
+                f"{c.get('name')} {c.get('recent') if c.get('recent') is not None else c.get('n')}"
+                for c in cos
+            ))
+        lines.append('(text fallback — DIRECTOR missed courier_reply)')
+        return send_telegram_text('\n'.join(lines), max_len=3900, kind='courier_reply')
+
+    tower = _get('/api/ultron/tower')
+    stats = (tower or {}).get('stats') or {}
+    msg = (
+        f"All India · today {stats.get('jobs_today', '—')} · "
+        f"total {stats.get('total_jobs', '—')} · companies {stats.get('companies', '—')}\n"
+        '(text fallback)'
+    )
+    return send_telegram_text(msg, max_len=3900, kind='courier_reply')
+
+
+def _mtime() -> float:
+    return _mtime_image()
 
 
 def _answer_fallback(text: str) -> bool:
@@ -267,18 +337,33 @@ def _answer_fallback(text: str) -> bool:
 
 
 def _attempt(
-    text: str, bot: str, chat: str, *, attempt: int, before: float, trace,
+    text: str, bot: str, chat: str, *, mode: str, attempt: int, before: float, trace,
 ) -> bool:
     from app.director.agent import run_director
+    from app.director.tools_courier import send_telegram_text
 
     try:
         if trace:
-            trace.node('attempt_begin', attempt=attempt)
-        out = run_director(text, bot=bot, chat_id=chat, trace=trace, attempt=attempt)
-        sent = _mtime() > before
-        _log('attempt_done', attempt=attempt, sent=sent, out=(out or '')[:80])
+            trace.node('attempt_begin', attempt=attempt, mode=mode)
+        out = run_director(
+            text, bot=bot, chat_id=chat, mode=mode, trace=trace, attempt=attempt,
+        )
+        if mode == 'image':
+            sent = _mtime_image() > before
+        else:
+            sent = _mtime_text() > before
+            # If agent put the answer in final_output but skipped courier_reply, deliver it
+            if not sent and out:
+                body = re.sub(r'\n*\bOK\b\s*$', '', out.strip(), flags=re.I).strip()
+                if body and body.upper() != 'OK':
+                    if send_telegram_text(body, max_len=3900, kind='courier_reply'):
+                        sent = _mtime_text() > before
+                        if trace:
+                            trace.node('courier_reply_rescue', attempt=attempt, chars=len(body))
+                            trace.hint('Rescued final_output into courier_reply (agent skipped tool)')
+        _log('attempt_done', attempt=attempt, mode=mode, sent=sent, out=(out or '')[:80])
         if trace:
-            trace.node('attempt_result', attempt=attempt, sent=sent, final_output=out)
+            trace.node('attempt_result', attempt=attempt, mode=mode, sent=sent, final_output=out)
         if sent:
             print(out or 'OK')
         return sent
@@ -286,11 +371,12 @@ def _attempt(
         _log(
             'attempt_error',
             attempt=attempt,
+            mode=mode,
             error=str(e)[:400],
             tb=traceback.format_exc()[-800:],
         )
         if trace:
-            trace.node('attempt_error', attempt=attempt, error=str(e), tb=traceback.format_exc()[-1200:])
+            trace.node('attempt_error', attempt=attempt, mode=mode, error=str(e), tb=traceback.format_exc()[-1200:])
         print(f'DIRECTOR failed attempt={attempt}: {e}', file=sys.stderr)
         return False
 
@@ -302,9 +388,8 @@ def main(argv: list[str] | None = None) -> int:
     reload(cfg)
 
     from app.director.sessions import clear_session
-    from app.director.tools_lens import send_simple_frame
+    from app.director.tools_courier import send_telegram_text
     from app.director.trace import clear_current, start_trace
-    from app.prompt_dictionary import fallback_graphic_prompt
 
     p = argparse.ArgumentParser(description='DIRECTOR router')
     p.add_argument('--bot', default='vigil_akay_bot')
@@ -327,70 +412,85 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     key = os.getenv('OPENAI_API_KEY', '')
-    _log('start', bot=bot, chat=chat, text=text[:160], key_len=len(key), key_prefix=key[:7])
+    mode, payload = _parse_mode(text)
+    _log('start', bot=bot, chat=chat, mode=mode, text=text[:160], key_len=len(key), key_prefix=key[:7])
 
     if text.lower().strip() in {'/new', '/reset', '/clear', 'new', 'reset', 'clear'}:
         clear_session(bot, chat)
-        prompt = fallback_graphic_prompt(
-            punchline='Fresh thread',
-            fact_line='Memory cleared',
-            mood='reset',
+        ok = send_telegram_text(
+            'Fresh thread. Memory cleared. Chat in text — /summarize for draft, /image for visuals.',
+            max_len=500,
+            kind='courier_reply',
         )
-        ok = send_simple_frame('', '', prompt)
         _log('session_cleared', ok=ok)
         print('SESSION_CLEARED' if ok else 'CLEAR_SEND_FAILED')
         return 0 if ok else 1
 
     trace = start_trace(bot=bot, chat=chat, text=text)
     try:
-        # Immediate ack so Ashok is never left silent while DIRECTOR/VALIDATOR work
-        from app.director.tools_validator import send_telegram_text
-        send_telegram_text('On it — pulling live tower facts…')
+        if mode == 'summarize':
+            send_telegram_text('Drafting final text…')
+        elif mode == 'image':
+            send_telegram_text('Building visual from agreed facts…')
+        else:
+            send_telegram_text('Looking up live tower facts…')
 
         if len(key) < 20 or key.lower().startswith('ollama'):
             _log('bad_key', key_len=len(key), key_prefix=key[:12])
-            trace.hint('OPENAI key missing/poisoned — answer fallback path')
-            print('OPENAI_API_KEY missing or poisoned — using answer fallback', file=sys.stderr)
+            trace.hint('OPENAI key missing/poisoned — fallback path')
+            print('OPENAI_API_KEY missing or poisoned — using fallback', file=sys.stderr)
             try:
-                ok = _answer_fallback(text)
-                trace.node('answer_fallback', ok=ok, reason='bad_key')
-                trace.finish('fallback' if ok else 'failed', {'kind': 'answer_fallback', 'ok': ok})
-                print('ANSWER_FALLBACK' if ok else 'FALLBACK_FAILED')
+                if mode == 'image':
+                    ok = _answer_fallback(payload)
+                    kind = 'answer_fallback'
+                else:
+                    ok = _text_fallback(payload)
+                    kind = 'text_fallback'
+                trace.node(kind, ok=ok, reason='bad_key')
+                trace.finish('fallback' if ok else 'failed', {'kind': kind, 'ok': ok, 'mode': mode})
+                print('FALLBACK_OK' if ok else 'FALLBACK_FAILED')
                 return 0 if ok else 1
             except Exception as e:
                 trace.finish('failed', {'error': str(e)})
                 print(f'fallback failed: {e}', file=sys.stderr)
                 return 1
 
-        before = _mtime()
-        if _attempt(text, bot, chat, attempt=1, before=before, trace=trace):
-            _log('success', attempt=1)
-            trace.finish('ok', {'kind': 'director', 'attempt': 1, 'trace_id': trace.id})
+        before = _mtime_image() if mode == 'image' else _mtime_text()
+        if _attempt(payload, bot, chat, mode=mode, attempt=1, before=before, trace=trace):
+            _log('success', attempt=1, mode=mode)
+            trace.finish('ok', {'kind': 'director', 'attempt': 1, 'mode': mode, 'trace_id': trace.id})
             print(f'TRACE:{trace.id}', file=sys.stderr)
             return 0
 
-        _log('retrying', reason='no_telegram_send_after_attempt_1')
-        trace.hint('Attempt 1 did not deliver a Telegram image — retrying')
-        before2 = _mtime()
-        if _attempt(text, bot, chat, attempt=2, before=before2, trace=trace):
-            _log('success', attempt=2)
-            trace.finish('ok_retry', {'kind': 'director', 'attempt': 2, 'trace_id': trace.id})
+        _log('retrying', reason='no_delivery_after_attempt_1', mode=mode)
+        trace.hint(f'Attempt 1 did not deliver Telegram {"image" if mode == "image" else "text"} — retrying')
+        before2 = _mtime_image() if mode == 'image' else _mtime_text()
+        if _attempt(payload, bot, chat, mode=mode, attempt=2, before=before2, trace=trace):
+            _log('success', attempt=2, mode=mode)
+            trace.finish('ok_retry', {'kind': 'director', 'attempt': 2, 'mode': mode, 'trace_id': trace.id})
             print(f'TRACE:{trace.id}', file=sys.stderr)
             return 0
 
         try:
-            ok = _answer_fallback(text)
-            _log('answer_fallback', ok=ok)
-            trace.node('answer_fallback', ok=ok, reason='both_attempts_missed_send')
-            trace.hint('Both DIRECTOR attempts missed send — Pillow answer fallback used')
-            trace.finish('fallback' if ok else 'failed', {'kind': 'answer_fallback', 'ok': ok})
-            print('ANSWER_FALLBACK' if ok else 'FALLBACK_FAILED')
+            if mode == 'image':
+                ok = _answer_fallback(payload)
+                kind = 'answer_fallback'
+                hint = 'Both DIRECTOR attempts missed image send — Pillow answer fallback used'
+            else:
+                ok = _text_fallback(payload)
+                kind = 'text_fallback'
+                hint = 'Both DIRECTOR attempts missed text send — STAGEHAND text fallback used'
+            _log(kind, ok=ok, mode=mode)
+            trace.node(kind, ok=ok, reason='both_attempts_missed_send')
+            trace.hint(hint)
+            trace.finish('fallback' if ok else 'failed', {'kind': kind, 'ok': ok, 'mode': mode})
+            print('FALLBACK_OK' if ok else 'FALLBACK_FAILED')
             print(f'TRACE:{trace.id}', file=sys.stderr)
             return 0 if ok else 1
         except Exception as e:
             _log('fallback_error', error=str(e)[:400])
             trace.finish('failed', {'error': str(e)})
-            print(f'ANSWER_FALLBACK failed: {e}', file=sys.stderr)
+            print(f'FALLBACK failed: {e}', file=sys.stderr)
             return 1
     finally:
         clear_current()

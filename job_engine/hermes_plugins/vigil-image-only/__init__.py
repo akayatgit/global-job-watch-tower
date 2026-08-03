@@ -129,4 +129,4 @@ def telegram_to_director(event, gateway=None, session_store=None, **kwargs):
 
 def register(ctx):
     ctx.register_hook("pre_gateway_dispatch", telegram_to_director)
-    logger.info("DIRECTOR gate armed — Telegram → OpenAI DIRECTOR (skip Ollama chat)")
+    logger.info("DIRECTOR gate armed — Telegram text-first (chat /summarize /image)")

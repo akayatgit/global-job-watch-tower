@@ -34,7 +34,8 @@ def _hermes_env() -> dict[str, str]:
 
 def send_image_bytes_prompt(prompt: str, *, city: str = '') -> bool:
     """Render a pure visual prompt after VALIDATOR checks embedded numbers."""
-    from app.director.tools_validator import run_validator, send_telegram_text
+    from app.director.tools_validator import run_validator
+    from app.director.tools_courier import send_telegram_text
     env = _hermes_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
     chat = env.get('TELEGRAM_HOME_CHANNEL')

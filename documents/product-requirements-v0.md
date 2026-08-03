@@ -656,6 +656,7 @@ START OF EVERY SESSION
 | v0.32 | 2026-08-04 | Akay | **Fact authenticity lock:** bangalore→bengaluru filter fix; city-scoped company counts; STAGEHAND city_pulse/ai_jobs; Pillow KPI/pie/bar/list boards for numbers (no Grok freehand charts). |
 | v0.33 | 2026-08-04 | Akay | **DIRECTOR Workflow panel:** full Telegram→OpenAI→tool node traces + loophole hints; `stagehand_fresh_jobs` (no literal “fresh” search); diversified catches with URLs on list boards. |
 | v0.34 | 2026-08-04 | Akay | **VALIDATOR role + Nano Banana 2:** authenticity gate before image/board send with wait acks; Replicate model → `google/nano-banana-2`. |
+| v0.35 | 2026-08-04 | Akay | **Telegram text-first:** default chat text; `/summarize` final draft; `/image` visuals — fix data in text before image work. |
 
 ### Phase 0 progress (living)
 

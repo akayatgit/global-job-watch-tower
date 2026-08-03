@@ -232,5 +232,5 @@ class DirectorRunHooks(RunHooks):
         )
         if output and str(output).strip() not in ('OK', 'ok') and len(str(output).strip()) > 8:
             self.trace.hint(
-                'AGENT LOOPHOLE: final text was not OK — DIRECTOR may have essayed instead of board-only'
+                'AGENT LOOPHOLE: final text was not OK — may have skipped courier_reply / board send'
             )

@@ -15,7 +15,6 @@ from typing import Any
 from agents import function_tool
 
 from app.cities import city_label, normalize_city_filter
-from app.director.tools_lens import _hermes_env
 from app.director.trace import current_trace
 
 BASE = 'http://127.0.0.1:8001'
@@ -41,37 +40,6 @@ def _resolve_city(city: str) -> tuple[str | None, str]:
     if key is None:
         return '__unknown__', raw
     return key, city_label(key)
-
-
-def send_telegram_text(text: str) -> bool:
-    """Short Courier ack (allowed exception to image-only for wait signals)."""
-    env = _hermes_env()
-    token = env.get('TELEGRAM_BOT_TOKEN')
-    chat = env.get('TELEGRAM_HOME_CHANNEL')
-    if not token or not chat:
-        return False
-    msg = (text or '').strip()[:350]
-    if not msg:
-        return False
-    url = f'https://api.telegram.org/bot{token}/sendMessage'
-    body = urllib.parse.urlencode({
-        'chat_id': chat,
-        'text': msg,
-        'disable_web_page_preview': 'true',
-    }).encode()
-    req = urllib.request.Request(
-        url, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded'},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
-        ok = bool(data.get('ok'))
-    except Exception:
-        ok = False
-    tr = current_trace()
-    if tr:
-        tr.node('courier_ack', text=msg, ok=ok)
-    return ok
 
 
 def _tower_stats(city: str = '') -> dict:
@@ -112,7 +80,6 @@ def validate_kpi(payload: dict, city: str = '') -> dict:
         return {'approved': False, 'errors': [truth.get('error') or 'tower fetch failed'], 'truth': truth}
     errors = []
     hero = str(payload.get('hero') or '').strip()
-    # Extract first integer from hero
     m = re.search(r'-?\d+', hero.replace(',', ''))
     hero_n = int(m.group()) if m else None
     label = _norm(str(payload.get('hero_label') or ''))
@@ -124,7 +91,6 @@ def validate_kpi(payload: dict, city: str = '') -> dict:
     elif 'total' in label or 'in city' in label or 'in this city' in label:
         expect = truth['total_jobs']
     else:
-        # default: if city asked, prefer jobs_today match; else total
         expect = truth['jobs_today'] if city else truth['jobs_today']
     if hero_n is None:
         errors.append(f'hero has no number: {hero!r}')
@@ -134,7 +100,6 @@ def validate_kpi(payload: dict, city: str = '') -> dict:
             f'({truth["city_label"]} jobs_today={truth["jobs_today"]} '
             f'total={truth["total_jobs"]} companies={truth["companies"]})'
         )
-    # Optional line checks for "Total in city · N" / "Companies · N"
     for line in payload.get('lines') or []:
         ls = str(line)
         lm = re.search(r'(\d[\d,]*)\s*$', ls.replace(',', ''))
@@ -313,14 +278,6 @@ def run_validator(kind: str, payload_json: str, city: str = '') -> dict:
         if not result.get('approved'):
             tr.hint(f'VALIDATOR rejected {kind_l}: {"; ".join(result.get("errors") or [])[:300]}')
     return result
-
-
-@function_tool
-def courier_ack(message: str = 'Checking live tower facts… hang tight.') -> str:
-    """COURIER wait acknowledgement — short Telegram text while VALIDATOR retries.
-    Use on every reject/retry so Ashok is never left silent. Keep under ~120 chars."""
-    ok = send_telegram_text(message)
-    return json.dumps({'ok': ok, 'acked': message[:120]})
 
 
 @function_tool
