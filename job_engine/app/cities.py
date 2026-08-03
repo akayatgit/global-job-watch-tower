@@ -115,7 +115,12 @@ def city_label(city_id: str | None) -> str:
 
 
 def normalize_city_filter(city: str | None) -> str | None:
-    """Return a valid city id for API filters, or None (= all cities)."""
+    """Return a valid city id for API filters, or None (= all cities).
+
+    Accepts aliases (bangalore→bengaluru, madras→chennai, gurgaon→gurugram).
+    Unknown names return None (do NOT silently drop the filter — callers must
+    treat None as 'all cities' only when the user asked for all).
+    """
     if not city:
         return None
     key = city.strip().lower()
@@ -123,6 +128,19 @@ def normalize_city_filter(city: str | None) -> str | None:
         return None
     if key in VALID_CITY_IDS:
         return key
+    # Alias path — "Bangalore" must never mean "all cities"
+    for city_id, hints in _CITY_HINTS:
+        if key == city_id or key in hints:
+            return city_id
+    if key in ('new delhi', 'delhi ncr') or key == 'delhi' or key.startswith('delhi '):
+        return 'delhi'
+    if any(h in key for h in _REMOTE_HINTS):
+        return 'remote'
+    if key in ('india', 'pan india', 'pan-india'):
+        return 'india'
+    mapped = normalize_city(key)
+    if mapped in VALID_CITY_IDS and mapped != 'other':
+        return mapped
     return None
 
 

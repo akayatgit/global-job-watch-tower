@@ -361,3 +361,8 @@ use — they should love opening the app, never fight it.
   Heat questions use `stagehand_tower_heat` (PC °C), not openings count. Rescue must
   answer the asked metric. Last prompt saved at
   `job_engine/.data/director_frames/last_prompt.txt` for review.
+- **DIRECTOR data authenticity (2026-08-04):** City aliases must resolve
+  (bangalore→bengaluru) — never silent all-India. City questions use
+  `stagehand_city_pulse` / city-scoped signals. Counts, pies, bars, legends, and
+  job lists are **Pillow fact boards** from STAGEHAND numbers — Grok must not
+  freehand statistics. AI role lists use strict title match (Apprentice ≠ AI).

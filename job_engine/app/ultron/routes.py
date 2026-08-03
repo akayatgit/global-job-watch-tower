@@ -207,21 +207,28 @@ def ultron_tower(
     jobs_q = select(func.count(JobMaster.id))
     today_q = select(func.count(JobMaster.id)).where(func.date(JobMaster.scraped_at) == today)
     cfg_q = select(func.count(SearchConfig.id)).where(SearchConfig.enabled.is_(True))
+    # Companies must respect city/sector/experience — never return all-India count for a city
+    companies_q = select(func.count(func.distinct(JobMaster.company_id))).where(
+        JobMaster.company_id.is_not(None)
+    )
     if sector:
         jobs_q = jobs_q.where(JobMaster.sector == sector)
         today_q = today_q.where(JobMaster.sector == sector)
         cfg_q = cfg_q.where(SearchConfig.sector == sector)
+        companies_q = companies_q.where(JobMaster.sector == sector)
     if city:
         jobs_q = jobs_q.where(JobMaster.city_key == city)
         today_q = today_q.where(JobMaster.city_key == city)
+        companies_q = companies_q.where(JobMaster.city_key == city)
     if exp is not None:
         jobs_q = jobs_q.where(exp)
         today_q = today_q.where(exp)
+        companies_q = companies_q.where(exp)
     return {
         'stats': {
             'total_jobs': db.execute(jobs_q).scalar(),
             'jobs_today': db.execute(today_q).scalar(),
-            'companies': db.execute(select(func.count(Company.id))).scalar(),
+            'companies': db.execute(companies_q).scalar(),
             'configs_enabled': db.execute(cfg_q).scalar(),
             'runs_active': db.execute(
                 select(func.count(ScrapeRun.id)).where(

@@ -653,6 +653,7 @@ START OF EVERY SESSION
 | v0.29 | 2026-08-04 | Akay | **DIRECTOR live:** OpenAI Agents SDK above Hermes (1A). Layers COURIER/DIRECTOR/STAGEHAND/LENS/CAROUSEL. SQLiteSession memory; `/new` clears. TN Pinterest-2026 skit frames. |
 | v0.30 | 2026-08-04 | Akay | **Graphic punchline DIRECTOR:** removed fixed cinematic prompts + Pillow text cards. DIRECTOR writes ≥800-char prompts (`MIN_PROMPT_CHARS`); 2D vector poster style; `read_vision_doc` + full vision brief. |
 | v0.31 | 2026-08-04 | Akay | **DIRECTOR = Jarvis:** Telegram = Ashok↔Tower casual visual chat (live market), not student posters/PPT. Tiny punchy data crumbs in-image; Carousel stays separate album path. |
+| v0.32 | 2026-08-04 | Akay | **Fact authenticity lock:** bangalore→bengaluru filter fix; city-scoped company counts; STAGEHAND city_pulse/ai_jobs; Pillow KPI/pie/bar/list boards for numbers (no Grok freehand charts). |
 
 ### Phase 0 progress (living)
 

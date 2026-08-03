@@ -67,85 +67,121 @@ def _looks_like_roles(text: str) -> bool:
     ))
 
 
+def _looks_like_ai(text: str) -> bool:
+    return bool(re.search(r'\b(ai|ml|artificial|machine learning)\b', text or '', re.I))
+
+
+def _city_from_text(text: str) -> str:
+    from app.cities import normalize_city_filter
+    low = (text or '').lower()
+    for alias in (
+        'bengaluru', 'bangalore', 'chennai', 'hyderabad', 'pune', 'mumbai',
+        'delhi', 'gurugram', 'gurgaon', 'noida', 'kerala', 'remote',
+    ):
+        if re.search(rf'\b{re.escape(alias)}\b', low):
+            return normalize_city_filter(alias) or alias
+    return ''
+
+
 def _mtime() -> float:
     from app.director.tools_lens import LAST_SEND
     return LAST_SEND.stat().st_mtime if LAST_SEND.exists() else 0.0
 
 
 def _answer_fallback(text: str) -> bool:
-    """Last resort: answer the asked question with live facts — never generic Still here."""
-    from app.director.tools_lens import send_image_bytes_prompt
-    from app.director.tools_stagehand import _get
-    from app.prompt_dictionary import assert_visual_prompt
+    """Last resort: Pillow fact boards from live STAGEHAND — never Grok freehand numbers."""
+    from app.director.fact_boards import (
+        render_kpi_board, render_list_board, render_pie_board,
+    )
+    from app.director.tools_fact_board import _send_image
+    from app.director.tools_stagehand import _get, _is_ai_title
+    from app.cities import city_label
 
     if _looks_like_heat(text):
         data = _get('/api/ultron/health')
         v = (data or {}).get('vitals') or {}
         c = v.get('heat_c')
         label = v.get('heat_label') or '—'
-        detail = (v.get('heat_detail') or '')[:40]
+        detail = (v.get('heat_detail') or '')[:48]
         deg = f'{round(c)}°C' if isinstance(c, (int, float)) else '—'
-        prompt = (
-            f'Hyper-clean 2D vector illustration, square phone glance. Dark graphite stage with a '
-            f'vertical matte-black heat gauge; warm orange fill rising to show {deg}. '
-            f'Subtle faint grid, one ember accent spark, high contrast, generous negative space, '
-            f'no photorealism, no frosted cards, no atrium, no India hologram, no PowerPoint chrome. '
-            f'Draw bold dual-weight sans typography into the art: hero "Tower heat"; '
-            f'fact crumb "{deg} · {label}". Tiny detail type allowed: "{detail}". '
-            f'Studio-clean lighting, sharp edges, asymmetric but balanced, readable as Telegram thumbnail. '
-            f'Playful ops-buddy Jarvis energy — data-first status glance, not a campaign poster. '
-            f'Expand composition: gauge left-of-center, type right, soft vignette, crisp iconography, '
-            f'one geometric accent only, premium illustration finish, square 1:1.'
+        img = render_kpi_board(
+            title='Tower heat',
+            hero=deg,
+            hero_label=str(label),
+            lines=[detail] if detail else [],
+            footer='ThinkPad vitals · live',
         )
-        return send_image_bytes_prompt(assert_visual_prompt(prompt))
+        return _send_image(img, meta=f'fallback_heat:{deg}')
 
-    if _looks_like_roles(text):
-        sig = _get('/api/ultron/signals', {'days': 0})
-        s = (sig or {}).get('signals') or {}
-        growing = (s.get('growing_roles') or [])[:5]
-        if not growing:
-            tower = _get('/api/ultron/tower')
-            growing = [
-                {'name': r.get('name'), 'n': r.get('n') or r.get('recent') or 0}
-                for r in ((tower or {}).get('per_role') or [])[:5]
-            ]
-        slices = []
-        for r in growing[:5]:
-            name = (r.get('name') or 'Role').strip()
-            n = r.get('delta') if r.get('delta') is not None else r.get('n') or r.get('recent') or 0
-            slices.append(f'{name} {int(n)}')
-        if not slices:
-            slices = ['No fresher pulse yet 0']
-        legend = '; '.join(slices)
-        prompt = (
-            f'A clean modern pie chart graphic of top job roles for freshers in the last 24 hours. '
-            f'Segments in distinct colors (bright blue, orange, green, purple, teal). Each slice '
-            f'labeled with role name and count from live tower data: {legend}. Include a clear '
-            f'legend matching those exact numbers. Minimal title text "Fresher roles · 24h". '
-            f'High-contrast 2D vector, phone-readable, no frosted UI cards, no glass atrium, '
-            f'no India hologram, no PowerPoint title bar clutter. Typography drawn into the chart. '
-            f'Studio-clean lighting, sharp edges, generous negative space around the pie, one thin '
-            f'geometric accent only. Biggest slice visually dominant. Square 1:1. Premium data '
-            f'illustration — witty ops glance, not a marketing poster. Reference legend values '
-            f'exactly; do not invent extra roles or change the counts. Add soft depth and crisp '
-            f'edges so labels stay legible on a phone screen in Telegram.'
+    city = _city_from_text(text)
+
+    if _looks_like_ai(text) and city:
+        jobs = _get('/api/jobs', {'city': city, 'limit': 300})
+        rows = []
+        if isinstance(jobs, list):
+            for j in jobs:
+                if _is_ai_title(j.get('title') or ''):
+                    rows.append({
+                        'title': j.get('title'),
+                        'company': j.get('company') or j.get('company_name'),
+                        'posted_date': str(j.get('posted_date') or ''),
+                    })
+                if len(rows) >= 8:
+                    break
+        img = render_list_board(
+            title=f'AI roles · {city_label(city)}',
+            rows=rows or [{'title': 'No strict AI/ML titles in city yet', 'company': ''}],
+            subtitle=f'{len(rows)} matched (Apprentice excluded)',
+            footer='Tower facts · strict AI title match',
         )
-        return send_image_bytes_prompt(assert_visual_prompt(prompt))
+        return _send_image(img, meta=f'fallback_ai:{city}:{len(rows)}')
+
+    if city and re.search(r'\b(today|jobs?|total|how many|companies)\b', text or '', re.I):
+        tower = _get('/api/ultron/tower', {'city': city})
+        stats = (tower or {}).get('stats') or {}
+        img = render_kpi_board(
+            title=city_label(city),
+            hero=str(stats.get('jobs_today', '—')),
+            hero_label='jobs scraped today in this city',
+            lines=[
+                f"Total in city · {stats.get('total_jobs', '—')}",
+                f"Companies · {stats.get('companies', '—')}",
+            ],
+            footer='City-scoped tower facts',
+        )
+        return _send_image(img, meta=f'fallback_city:{city}')
+
+    if _looks_like_roles(text) or 'pie' in (text or '').lower():
+        params = {'days': 0}
+        if city:
+            params['city'] = city
+        sig = _get('/api/ultron/signals', params)
+        s = (sig or {}).get('signals') or {}
+        growing = (s.get('growing_roles') or [])[:6]
+        slices = []
+        for r in growing:
+            name = (r.get('name') or 'Role').strip()
+            n = r.get('recent') if r.get('recent') is not None else r.get('n') or 0
+            slices.append((name, int(n)))
+        scope = city_label(city) if city else 'All India'
+        img = render_pie_board(
+            title=f'Roles · {scope}',
+            slices=slices or [('No pulse yet', 1)],
+            subtitle='Live signal window · exact counts',
+            footer='Pillow fact board · not freehand',
+        )
+        return _send_image(img, meta=f'fallback_pie:{scope}')
 
     tower = _get('/api/ultron/tower')
     stats = (tower or {}).get('stats') or {}
-    today = stats.get('jobs_today', '—')
-    total = stats.get('total_jobs', '—')
-    prompt = (
-        f'Hyper-clean 2D vector illustration, square. Midnight navy with a neon signal spike mark. '
-        f'High contrast, playful, generous negative space, no frosted cards, no atrium, no hologram, '
-        f'no PowerPoint. Draw typography into the art: hero "Tower pulse"; '
-        f'fact crumb "{today} today · {total} live". Studio lighting, sharp edges, one cyan accent, '
-        f'phone-readable Telegram glance, premium illustration finish, asymmetric balance, '
-        f'data-first Jarvis status — expand with concrete depth, vignette, and icon placement detail '
-        f'so the visual brief stays richly specific for an image model.'
+    img = render_kpi_board(
+        title='Tower pulse',
+        hero=str(stats.get('jobs_today', '—')),
+        hero_label='jobs today · all India',
+        lines=[f"Live index · {stats.get('total_jobs', '—')}"],
+        footer='All-India scope',
     )
-    return send_image_bytes_prompt(assert_visual_prompt(prompt))
+    return _send_image(img, meta='fallback_pulse')
 
 
 def _attempt(text: str, bot: str, chat: str, *, attempt: int, before: float) -> bool:
