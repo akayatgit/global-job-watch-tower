@@ -19,6 +19,7 @@ from app.director.tools_lens import craft_punchline_prompt, lens_render_and_cour
 from app.director.tools_stagehand import (
     stagehand_ai_jobs,
     stagehand_city_pulse,
+    stagehand_fresh_jobs,
     stagehand_hiring_signals,
     stagehand_search_jobs,
     stagehand_tower_heat,
@@ -26,6 +27,7 @@ from app.director.tools_stagehand import (
     stagehand_watchlist,
 )
 from app.director.tools_vision import read_vision_doc
+from app.director.trace import DirectorRunHooks, DirectorTrace
 from app.prompt_dictionary import (
     GRAPHIC_STYLE_BRIEF,
     MIN_PROMPT_CHARS,
@@ -42,35 +44,28 @@ Witty, casual, fun, minimal. Visual discussion of tower + data.
 NEVER invent numbers, temps, companies, or roles.
 
 ## AUTHENTICITY LAWS (non-negotiable)
-1. City questions (Bangalore / Bengaluru / Chennai / …):
-   → **stagehand_city_pulse** (or city-scoped signals/search).
-   → NEVER slap all-India `jobs_today` / `companies` onto a city label.
-2. Any **count, pie, bar, legend, KPI, list of jobs**:
-   → Pull STAGEHAND facts → send with **lens_send_*_board** (Pillow).
-   → Do **NOT** ask Grok/LENS to freehand a chart with numbers.
-3. AI roles asks:
-   → **stagehand_ai_jobs** (strict titles; Apprentice ≠ AI) → **lens_send_list_board**.
-4. Heat / temp → stagehand_tower_heat → fact board or short visual OK.
-5. stagehand_tower_stats = ALL INDIA only. Label it all-India if used.
-6. Final assistant text after tools = exactly: OK
+1. City questions → **stagehand_city_pulse** (aliases ok). Never stamp all-India KPIs on a city.
+2. Counts / pie / bar / legend / KPI / lists → STAGEHAND then **lens_send_*_board** (Pillow).
+   Never ask Grok to freehand statistics.
+3. **"Fresh catches" / latest / newest / top N with links**:
+   → **stagehand_fresh_jobs** (NOT search_jobs with title="fresh" — that is WRONG).
+   → Then **lens_send_list_board** with title, company, posted_date, **job_url** in each row.
+4. AI roles → **stagehand_ai_jobs** → list board (Apprentice ≠ AI).
+5. Heat → stagehand_tower_heat → KPI board.
+6. stagehand_tower_stats = ALL INDIA only.
+7. Final assistant text after tools = exactly: OK
 
 ## Tools
-STAGEHAND: tower_stats, city_pulse, tower_heat, hiring_signals(city=), search_jobs,
+STAGEHAND: tower_stats, city_pulse, fresh_jobs, tower_heat, hiring_signals, search_jobs,
 ai_jobs, watchlist
-FACT BOARDS (trusted numbers): lens_send_kpi_board, lens_send_pie_board,
-lens_send_bar_board, lens_send_list_board
-GROK LENS (mood only — no hard stats): craft_punchline_prompt, lens_render_and_courier_send
-CAROUSEL: run_carousel when Ashok says Carousel
-VISION: read_vision_doc
-
-## When to use Grok vs fact boards
-- Pie / bar / legend / “how many” / city totals / job lists → **fact boards**
-- Casual vibe with no critical numbers → Grok OK (still no fake stats in the prompt)
+FACT BOARDS: lens_send_kpi_board, pie, bar, list
+GROK (mood only): craft_punchline_prompt, lens_render_and_courier_send
+CAROUSEL / VISION: run_carousel, read_vision_doc
 
 ## Brain brief (do not paste into image prompts)
 {GRAPHIC_STYLE_BRIEF}
 Keywords (thinking only): {", ".join(STYLE_INSPIRATION_KEYWORDS)}.
-If using Grok: pure visual prompt ≥ {MIN_PROMPT_CHARS} chars, no policy essay paste.
+Grok prompts ≥ {MIN_PROMPT_CHARS} chars of pure visuals only.
 """
 
 
@@ -85,6 +80,7 @@ def build_director() -> Agent:
         tools=[
             stagehand_tower_stats,
             stagehand_city_pulse,
+            stagehand_fresh_jobs,
             stagehand_tower_heat,
             stagehand_hiring_signals,
             stagehand_search_jobs,
@@ -102,10 +98,25 @@ def build_director() -> Agent:
     )
 
 
-def run_director(text: str, *, bot: str, chat_id: str) -> str:
+def run_director(
+    text: str,
+    *,
+    bot: str,
+    chat_id: str,
+    trace: DirectorTrace | None = None,
+    attempt: int = 1,
+) -> str:
     if config.OPENAI_API_KEY:
         os.environ['OPENAI_API_KEY'] = config.OPENAI_API_KEY
     agent = build_director()
     session = get_session(bot, chat_id)
-    result = Runner.run_sync(agent, text, session=session, max_turns=20)
-    return (result.final_output or '').strip()
+    hooks = DirectorRunHooks(trace, attempt=attempt) if trace else None
+    if trace:
+        trace.node('director_start', attempt=attempt, model=config.OPENAI_BRAIN_MODEL)
+    result = Runner.run_sync(
+        agent, text, session=session, max_turns=20, hooks=hooks,
+    )
+    out = (result.final_output or '').strip()
+    if trace:
+        trace.node('director_finished', attempt=attempt, final_output=out)
+    return out

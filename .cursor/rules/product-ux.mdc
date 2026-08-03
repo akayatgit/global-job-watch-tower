@@ -366,3 +366,8 @@ use — they should love opening the app, never fight it.
   `stagehand_city_pulse` / city-scoped signals. Counts, pies, bars, legends, and
   job lists are **Pillow fact boards** from STAGEHAND numbers — Grok must not
   freehand statistics. AI role lists use strict title match (Apprentice ≠ AI).
+- **DIRECTOR Workflow audit (2026-08-04):** Every Telegram→DIRECTOR run writes a
+  full node trace (message, OpenAI prompts/IO, tool args/results, loophole hints)
+  under `.data/director_traces/`. VIGIL **Workflow** panel lists runs; click one
+  for the full graph. Use this to backtrace bad tool calls (e.g. title="fresh").
+  Fresh catches → `stagehand_fresh_jobs` (never keyword "fresh") + URLs on board.

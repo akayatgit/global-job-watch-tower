@@ -147,8 +147,9 @@ def lens_send_list_board(
     footer: str = '',
 ) -> str:
     """Send a text stat board from EXACT job rows (Pillow).
-    rows_json: [{"title":"...","company":"...","posted_date":"..."}, ...]
-    Use for 'no graph, just text board' asks. Copy STAGEHAND rows verbatim."""
+    rows_json: [{"title":"...","company":"...","posted_date":"...","job_url":"..."}, ...]
+    Include job_url when Ashok asks for links. Copy STAGEHAND rows verbatim — no duplicates
+    of the same company unless STAGEHAND returned them as distinct URLs after diversify."""
     try:
         rows = json.loads(rows_json) if rows_json else []
         if not isinstance(rows, list) or not rows:
@@ -157,6 +158,8 @@ def lens_send_list_board(
             title=title, rows=rows, subtitle=subtitle, footer=footer,
         )
         ok = _send_image(img, meta=f'list:{title}:{len(rows)}')
+        # Also send clickable links as Telegram caption follow-up? Keep image-only for now;
+        # URLs are printed on the board. Trace records meta.
         return json.dumps({'ok': ok, 'kind': 'list_board', 'rows': len(rows)})
     except Exception as e:
         return json.dumps({'ok': False, 'error': str(e)[:240]})

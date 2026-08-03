@@ -11,6 +11,7 @@ import { RankListPanel } from './RankListPanel'
 import { AskPanel } from './AskPanel'
 import { FilterMixPanel } from './FilterMixPanel'
 import { CitiesPanel } from './CitiesPanel'
+import { DirectorTracePanel } from './DirectorTracePanel'
 
 export function PanelHost() {
   return (
@@ -26,6 +27,7 @@ export function PanelHost() {
       <AskPanel />
       <FilterMixPanel />
       <CitiesPanel />
+      <DirectorTracePanel />
       <RoleHirePanel />
       <RankListPanel />
     </div>

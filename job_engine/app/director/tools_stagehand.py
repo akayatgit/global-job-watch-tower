@@ -150,6 +150,63 @@ def stagehand_hiring_signals(days: int = 0, city: str = '') -> str:
 
 
 @function_tool
+def stagehand_fresh_jobs(city: str = '', limit: int = 5) -> str:
+    """STAGEHAND: Newest jobs by scraped_at (freshest catches). Use for 'fresh catches',
+    'latest', 'newest', 'top N with links'. NEVER search title='fresh' — that is wrong.
+    Diversifies companies when possible. Includes job_url for each row.
+    City aliases ok (bangalore→bengaluru). Empty city = all India."""
+    key, label = _resolve_city(city) if (city or '').strip() else (None, 'All cities')
+    if key == '__unknown__':
+        return json.dumps({'ok': False, 'error': f'Unknown city {label!r}'})
+    params: dict = {'limit': min(max(limit * 8, 40), 200)}
+    if key:
+        params['city'] = key
+    jobs = _get('/api/jobs', params)
+    if not isinstance(jobs, list):
+        return json.dumps({'ok': False, 'error': 'bad_response'})
+    # API already orders by scraped_at desc — diversify by title+company, then URL
+    want = min(max(limit, 1), 12)
+    picked: list[dict] = []
+    seen_pair: set[str] = set()
+    seen_url: set[str] = set()
+
+    def row(j: dict) -> dict:
+        return {
+            'title': j.get('title'),
+            'company': (j.get('company') or j.get('company_name') or '').strip(),
+            'city_key': j.get('city_key'),
+            'posted_date': str(j.get('posted_date') or ''),
+            'job_url': j.get('job_url') or '',
+            'scraped_at': str(j.get('scraped_at') or ''),
+        }
+
+    for j in jobs:
+        url = (j.get('job_url') or '').strip()
+        title = (j.get('title') or '').strip()
+        co = (j.get('company') or j.get('company_name') or '').strip()
+        pair = f'{title.lower()}|{co.lower()}'
+        if not title or pair in seen_pair:
+            continue
+        if url and url in seen_url:
+            continue
+        picked.append(row(j))
+        seen_pair.add(pair)
+        if url:
+            seen_url.add(url)
+        if len(picked) >= want:
+            break
+    return json.dumps({
+        'ok': True,
+        'scope': 'city' if key else 'all_india',
+        'city_key': key or 'all',
+        'city_label': label,
+        'note': 'Ordered by freshest scrape; diversified by title+company; includes job_url',
+        'match_count': len(picked),
+        'jobs': picked,
+    }, ensure_ascii=False)
+
+
+@function_tool
 def stagehand_search_jobs(title: str = '', city: str = '', limit: int = 40) -> str:
     """STAGEHAND: Search indexed jobs by title and/or city.
     City aliases normalized (bangalore→bengaluru). Unknown city → error (no silent all-India)."""
@@ -211,6 +268,7 @@ def stagehand_ai_jobs(city: str = 'bengaluru', limit: int = 12) -> str:
             'company': (j.get('company') or j.get('company_name') or '').strip(),
             'city_key': j.get('city_key'),
             'posted_date': str(j.get('posted_date') or ''),
+            'job_url': j.get('job_url') or '',
         })
         if len(ai) >= min(limit, 20):
             break

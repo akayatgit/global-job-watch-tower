@@ -654,6 +654,25 @@ def ultron_training_log_latest():
     return json.loads(path.read_text(encoding='utf-8'))
 
 
+@router.get('/api/ultron/director-traces')
+def ultron_director_traces(limit: int = 40):
+    """List DIRECTOR Telegram workflow traces (newest first) for audit."""
+    from app.director.trace import list_traces
+    rows = list_traces(limit=min(max(limit, 1), 100))
+    return {'traces': rows, 'count': len(rows)}
+
+
+@router.get('/api/ultron/director-traces/{trace_id}')
+def ultron_director_trace(trace_id: str):
+    """Full workflow nodes for one Telegram→DIRECTOR run."""
+    from app.director.trace import get_trace
+    safe = ''.join(c for c in trace_id if c.isalnum() or c in '-_')[:80]
+    data = get_trace(safe)
+    if not data:
+        return JSONResponse({'ok': False, 'error': 'not found'}, status_code=404)
+    return data
+
+
 @router.post('/api/ultron/configs/{config_id}/run')
 def ultron_run_config(config_id: int, db: Session = Depends(get_db)):
     cfg = db.get(SearchConfig, config_id)

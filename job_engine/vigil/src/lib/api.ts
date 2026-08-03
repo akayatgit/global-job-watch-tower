@@ -187,6 +187,9 @@ export const api = {
   dismissAlert: () => postJson<any>('/api/ultron/dismiss-alert'),
   aiCapacity: () => getJson<any>('/api/ultron/ai-capacity'),
   ask: (prompt: string) => postJson<any>('/api/ultron/ask', { prompt }),
+  directorTraces: (limit = 40) =>
+    getJson<{ traces: any[]; count: number }>(`/api/ultron/director-traces?limit=${limit}`),
+  directorTrace: (id: string) => getJson<any>(`/api/ultron/director-traces/${encodeURIComponent(id)}`),
   toggleWatch: (companyId: number) =>
     postJson<any>(`/api/ultron/watchlist/${companyId}/toggle`),
   toggleConfig: (id: number) => postJson<any>(`/api/configs/${id}/toggle`),

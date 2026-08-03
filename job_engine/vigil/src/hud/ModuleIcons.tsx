@@ -66,6 +66,15 @@ export function ModuleIcon({ id }: { id: PanelId | string }) {
           <path d="M4 14h3l2-6 3 10 2-4h6" />
         </svg>
       )
+    case 'director_traces':
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="2" />
+          <circle cx="18" cy="6" r="2" />
+          <circle cx="12" cy="18" r="2" />
+          <path d="M8 6h8M7 8l4 8M17 8l-4 8" />
+        </svg>
+      )
     case 'live':
       return (
         <svg {...common}>
