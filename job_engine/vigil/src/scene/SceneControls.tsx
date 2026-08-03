@@ -100,8 +100,8 @@ export function SceneControls() {
     const c = ref.current
     if (!c) return
     if (sceneMode === 'city') {
-      // Closer high-angle isometric over the campus
-      camera.position.set(2.15, 4.6, 2.15)
+      // Clear 45° top-down isometric miniature over the campus
+      camera.position.set(3.35, 5.35, 3.35)
     } else {
       camera.position.set(0, 0.6, sceneMode === 'graph' ? 7.5 : 7.2)
     }

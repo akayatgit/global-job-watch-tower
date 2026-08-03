@@ -22,21 +22,21 @@ function SceneBody() {
       {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
-      {nightDistrict && <color attach="background" args={['#1c1230']} />}
-      {nightDistrict && <fog attach="fog" args={['#2a1a35', 10, 28]} />}
+      {nightDistrict && <color attach="background" args={['#0c1018']} />}
+      {nightDistrict && <fog attach="fog" args={['#151c2a', 9, 24]} />}
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
             nightDistrict
-              ? 0.22
+              ? 0.14
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
                   ? 0.22
                   : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.55 : sceneMode === 'graph' ? 0.72 : 0.5}
-          luminanceSmoothing={0.92}
+          luminanceThreshold={nightDistrict ? 0.62 : sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceSmoothing={0.94}
           mipmapBlur
         />
       </EffectComposer>
@@ -46,6 +46,9 @@ function SceneBody() {
 
 export function VigilCanvas() {
   const wrap = useRef<HTMLDivElement>(null)
+  const sceneMode = useVigilStore((s) => s.sceneMode)
+  const cityFocus = useVigilStore((s) => s.cityFocus)
+  const nightDistrict = sceneMode === 'city' && Boolean(cityFocus)
 
   useEffect(() => {
     const el = wrap.current
@@ -91,7 +94,10 @@ export function VigilCanvas() {
   }, [])
 
   return (
-    <div className="vigil-canvas" ref={wrap}>
+    <div
+      className={`vigil-canvas${nightDistrict ? ' vigil-canvas--dusk' : ''}`}
+      ref={wrap}
+    >
       <Canvas
         dpr={[1, 1.5]}
         camera={{ position: [0, 0.6, 7.2], fov: 45 }}

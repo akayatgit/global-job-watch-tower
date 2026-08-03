@@ -30,6 +30,10 @@ to go in and out easily. Never clamp the camera outside the orb.
 - Our twist: globe of India metros first, then procedural district for the
   selected city with corporate density as building height/glow
 
+**City district look (2026-08-03)**
+- Visual bible: `documents/vigil-city-aesthetic.md` — Editorial Dusk Miniature
+- 45° iso, cream lyric cards, title-dominant city name, soft PBR, dusk void
+
 ## Recover
 
 Pre-rewrite baseline: `git checkout milestone/pre-neural-core-v0`

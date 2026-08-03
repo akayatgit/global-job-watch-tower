@@ -14,8 +14,9 @@ import {
 import { clearCampusNav, setCampusNav } from './campusNav'
 
 /**
- * Clean-tech glass campus (govt-presentable) — frosted glassmorphic cards,
- * soft ice-blue towers, sunset silhouette fabric. Interaction unchanged.
+ * Editorial Dusk Miniature campus — see documents/vigil-city-aesthetic.md.
+ * 45° iso, cream lyric cards, title-dominant city name, soft PBR, dusk void.
+ * Interaction unchanged.
  */
 
 type RoleHit = { title: string; n: number }
@@ -87,9 +88,12 @@ const SECTOR_HUE: Record<string, number> = {
   tourism: 0.6, // soft periwinkle
 }
 
-const ACCENTS = ['#3b82f6', '#0ea5e9', '#38bdf8', '#60a5fa', '#2563eb']
-const ROLE_DOTS = ['#3b82f6', '#22d3ee', '#34d399', '#64748b', '#94a3b8']
-const CARD_FONT = 'system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif'
+const ACCENTS = ['#5b8def', '#7aa2f7', '#89b4fa', '#74c0fc', '#4c6ef5']
+const ROLE_DOTS = ['#5b8def', '#74c0fc', '#69db7c', '#868e96', '#adb5bd']
+const CARD_FONT =
+  'Georgia, "Iowan Old Style", "Times New Roman", "Segoe UI", serif'
+const TITLE_FONT =
+  'system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif'
 
 function hash01(n: number) {
   const x = Math.sin(n * 127.1) * 43758.5453
@@ -136,35 +140,86 @@ function roundRect(
   ctx.closePath()
 }
 
+/** Soft film grain — album-cover dusk, not noise mud. */
+function sprinkleGrain(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  amount = 0.04,
+) {
+  const n = Math.floor((w * h) / 900)
+  for (let i = 0; i < n; i++) {
+    const x = Math.random() * w
+    const y = Math.random() * h
+    const a = Math.random() * amount
+    ctx.fillStyle = `rgba(255,255,255,${a})`
+    ctx.fillRect(x, y, 1.2, 1.2)
+  }
+}
+
+/** Soft-edge dissolve so cards melt into the dusk (no hard sticker frame). */
+function softEdgeDissolve(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  fade = 18,
+) {
+  ctx.save()
+  ctx.globalCompositeOperation = 'destination-in'
+  const g = ctx.createLinearGradient(0, 0, 0, h)
+  // Keep most of the plate; dissolve only the rim
+  const t = fade / h
+  g.addColorStop(0, 'rgba(0,0,0,0.15)')
+  g.addColorStop(t, '#000')
+  g.addColorStop(1 - t, '#000')
+  g.addColorStop(1, 'rgba(0,0,0,0.15)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, w, h)
+  const gx = ctx.createLinearGradient(0, 0, w, 0)
+  const tx = fade / w
+  gx.addColorStop(0, 'rgba(0,0,0,0.15)')
+  gx.addColorStop(tx, '#000')
+  gx.addColorStop(1 - tx, '#000')
+  gx.addColorStop(1, 'rgba(0,0,0,0.15)')
+  ctx.fillStyle = gx
+  ctx.fillRect(0, 0, w, h)
+  ctx.restore()
+}
+
+/** Warm cream editorial glass — lyric-card face. */
 function paintGlassPlate(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   r = 28,
 ) {
-  const inset = 4
-  // Soft drop for depth (not neon bloom)
-  roundRect(ctx, inset + 3, inset + 5, w - inset * 2 - 2, h - inset * 2 - 2, r)
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.12)'
+  const inset = 5
+  roundRect(ctx, inset + 2, inset + 4, w - inset * 2 - 2, h - inset * 2 - 2, r)
+  ctx.fillStyle = 'rgba(20, 16, 28, 0.14)'
   ctx.fill()
-  // Frosted glass face
   roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r)
   const g = ctx.createLinearGradient(0, 0, 0, h)
-  g.addColorStop(0, 'rgba(255, 255, 255, 0.92)')
-  g.addColorStop(0.45, 'rgba(248, 250, 252, 0.88)')
-  g.addColorStop(1, 'rgba(226, 239, 255, 0.82)')
+  g.addColorStop(0, 'rgba(255, 252, 247, 0.94)')
+  g.addColorStop(0.5, 'rgba(250, 246, 240, 0.9)')
+  g.addColorStop(1, 'rgba(236, 242, 250, 0.84)')
   ctx.fillStyle = g
   ctx.fill()
-  // Inner highlight
-  roundRect(ctx, inset + 1.5, inset + 1.5, w - inset * 2 - 3, h - inset * 2 - 3, r - 2)
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)'
-  ctx.lineWidth = 1.5
-  ctx.stroke()
-  // Soft blue rim
-  roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r)
-  ctx.strokeStyle = 'rgba(59, 130, 246, 0.28)'
+  roundRect(
+    ctx,
+    inset + 1.5,
+    inset + 1.5,
+    w - inset * 2 - 3,
+    h - inset * 2 - 3,
+    r - 2,
+  )
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)'
   ctx.lineWidth = 1.25
   ctx.stroke()
+  roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r)
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+  sprinkleGrain(ctx, w, h, 0.035)
 }
 
 /**
@@ -220,21 +275,22 @@ function makeTowerCard(
   let y = padTop
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#1e3a5f'
-  ctx.font = `700 22px ${CARD_FONT}`
+  // Quiet company line — lyric header, not a HUD shout
+  ctx.fillStyle = '#3d4a5c'
+  ctx.font = `600 20px ${CARD_FONT}`
   nameLines.forEach((ln, i) => {
     ctx.fillText(ln, cx, y + nameLineH / 2 + i * nameLineH)
   })
   y += nameLines.length * nameLineH + gapName
 
   const num = jobs > 999 ? '999+' : String(jobs)
-  ctx.fillStyle = '#0f172a'
-  ctx.font = `800 64px ${CARD_FONT}`
+  ctx.fillStyle = '#1a2332'
+  ctx.font = `700 62px ${TITLE_FONT}`
   ctx.fillText(num, cx, y + numH / 2)
   y += numH + gapNum
 
-  ctx.fillStyle = '#64748b'
-  ctx.font = `600 15px ${CARD_FONT}`
+  ctx.fillStyle = '#8a93a3'
+  ctx.font = `500 14px ${TITLE_FONT}`
   ctx.fillText(caption, cx, y + capH / 2)
   y += capH + gapRoles
 
@@ -246,22 +302,22 @@ function makeTowerCard(
       const ry = y + roleRowH / 2 + i * roleRowH
       const dot = ROLE_DOTS[i % ROLE_DOTS.length]
       ctx.beginPath()
-      ctx.arc(rowLeft + 6, ry, 5, 0, Math.PI * 2)
+      ctx.arc(rowLeft + 6, ry, 4, 0, Math.PI * 2)
       ctx.fillStyle = dot
       ctx.fill()
       let label = (r.title || '').trim()
       if (r.n > 1) label = `${label}  ·  ${r.n}`
-      ctx.font = `600 15px ${CARD_FONT}`
+      ctx.font = `500 14px ${TITLE_FONT}`
       ctx.textAlign = 'left'
-      ctx.fillStyle = '#334155'
-      // Truncate cleanly
+      ctx.fillStyle = '#4a5568'
       while (label.length > 4 && ctx.measureText(label).width > labelMax) {
         label = `${label.slice(0, -2)}…`
       }
-      ctx.fillText(label, rowLeft + 20, ry)
+      ctx.fillText(label, rowLeft + 18, ry)
     })
   }
 
+  softEdgeDissolve(ctx, W, H, 22)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
@@ -472,9 +528,9 @@ function DummyBuilding({
   neighborGlow?: number
   spillColor?: string
 }) {
-  // Cinematic silhouette — soft dusk mass, cool spill only
+  // Soft silhouette fabric — dissolves into dusk fog at distance
   const wash = neighborGlow > 0.08
-  const body = '#121826'
+  const body = '#141a24'
   return (
     <group position={[b.x, 0, b.z]}>
       <mesh
@@ -486,28 +542,28 @@ function DummyBuilding({
         <boxGeometry args={[b.w, b.h, b.d]} />
         <meshStandardMaterial
           color={body}
-          emissive={wash ? spillColor : '#1e293b'}
-          emissiveIntensity={wash ? neighborGlow * 0.14 : 0.02}
-          roughness={0.94}
-          metalness={0.04}
+          emissive={wash ? spillColor : '#1c2433'}
+          emissiveIntensity={wash ? neighborGlow * 0.1 : 0.015}
+          roughness={0.96}
+          metalness={0.03}
           transparent
-          opacity={dim ? 0.5 : 0.92}
+          opacity={dim ? 0.42 : 0.82}
         />
       </mesh>
       <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]} raycast={() => null}>
-        <planeGeometry args={[b.w * 0.5, b.h * 0.35]} />
+        <planeGeometry args={[b.w * 0.48, b.h * 0.32]} />
         <meshBasicMaterial
-          color={wash ? spillColor : '#93c5fd'}
+          color={wash ? spillColor : '#c4a484'}
           transparent
-          opacity={dim ? 0.03 : 0.05 + neighborGlow * 0.12}
+          opacity={dim ? 0.02 : 0.04 + neighborGlow * 0.08}
         />
       </mesh>
       <EdgeFrame
         w={b.w}
         h={b.h}
         d={b.d}
-        color={wash ? spillColor : '#334155'}
-        opacity={dim ? 0.1 : 0.16 + neighborGlow * 0.18}
+        color={wash ? spillColor : '#2a3344'}
+        opacity={dim ? 0.08 : 0.12 + neighborGlow * 0.12}
       />
     </group>
   )
@@ -559,16 +615,16 @@ function GlassTower({
   )
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
-    // Soft ice glass — low saturation for institutional calm
-    c.setHSL(t.hue, 0.42, 0.58)
+    // Soft ice glass — editorial calm, slight plastic sheen via roughness
+    c.setHSL(t.hue, 0.28, 0.62)
     return c
   }, [t.hue])
   const spill = useMemo(
     () => new THREE.Color(spillColor || t.accent),
     [spillColor, t.accent],
   )
-  const whiteCore = useMemo(() => new THREE.Color('#f8fafc'), [])
-  const softBlue = useMemo(() => new THREE.Color('#93c5fd'), [])
+  const whiteCore = useMemo(() => new THREE.Color('#faf8f5'), [])
+  const softBlue = useMemo(() => new THREE.Color('#a8c4e8'), [])
 
   useEffect(() => {
     if (interactionBlocked && hot) {
@@ -663,65 +719,66 @@ function GlassTower({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Soft white core (data tower spine) */}
+      {/* Soft cream core (data tower spine) */}
       <mesh position={[0, t.h * 0.52, 0]} raycast={() => null}>
-        <boxGeometry args={[t.w * 0.28, t.h * 0.72, t.d * 0.28]} />
+        <boxGeometry args={[t.w * 0.26, t.h * 0.7, t.d * 0.26]} />
         <meshStandardMaterial
           ref={core}
           color={whiteCore}
           emissive={whiteCore}
-          emissiveIntensity={lit ? 0.22 : neighborGlow * 0.12}
+          emissiveIntensity={lit ? 0.16 : neighborGlow * 0.08}
           transparent
-          opacity={lit ? 0.78 : Math.max(0.16, neighborGlow * 0.35)}
-          roughness={0.35}
-          metalness={0.08}
+          opacity={lit ? 0.7 : Math.max(0.12, neighborGlow * 0.28)}
+          roughness={0.42}
+          metalness={0.06}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Cool mid shell */}
+      {/* Soft mid shell */}
       <mesh position={[0, t.h * 0.45, 0]} raycast={() => null}>
-        <boxGeometry args={[t.w * 0.55, t.h * 0.75, t.d * 0.55]} />
+        <boxGeometry args={[t.w * 0.52, t.h * 0.74, t.d * 0.52]} />
         <meshStandardMaterial
-          color="#e2e8f0"
+          color="#f3efe8"
           emissive={lit || neighborGlow > 0.08 ? softBlue : glassCol}
           emissiveIntensity={
-            dim ? 0.05 + neighborGlow * 0.1 : lit ? 0.18 : 0.06 + neighborGlow * 0.12
+            dim ? 0.04 + neighborGlow * 0.08 : lit ? 0.12 : 0.05 + neighborGlow * 0.08
           }
           transparent
-          opacity={dim ? dimOpacity : 0.55}
+          opacity={dim ? dimOpacity : 0.48}
+          roughness={0.55}
         />
       </mesh>
 
-      {/* Floor plates — clean white slabs like the inspiration tower */}
+      {/* Floor plates — soft cream slabs (PBR miniature) */}
       {Array.from({ length: floors }).map((_, i) => {
         const y = 0.1 + (i / floors) * (t.h - 0.15)
         return (
           <mesh key={i} position={[0, y, 0]} raycast={() => null}>
-            <boxGeometry args={[t.w * 0.92, 0.014, t.d * 0.92]} />
+            <boxGeometry args={[t.w * 0.9, 0.012, t.d * 0.9]} />
             <meshStandardMaterial
-              color="#f8fafc"
-              roughness={0.45}
-              metalness={0.05}
+              color="#faf6f0"
+              roughness={0.38}
+              metalness={0.08}
               transparent
-              opacity={dim ? dimOpacity : 0.9}
+              opacity={dim ? dimOpacity : 0.88}
             />
           </mesh>
         )
       })}
 
-      {/* Ice glass facade */}
+      {/* Ice glass facade — subtle plastic sheen */}
       <mesh position={[0, t.h / 2, 0]} castShadow raycast={() => null}>
         <boxGeometry args={[t.w, t.h, t.d]} />
         <meshStandardMaterial
           ref={shell}
           color={glassCol}
           emissive={glassCol}
-          emissiveIntensity={0.12}
+          emissiveIntensity={0.08}
           transparent
-          opacity={dim ? dimOpacity : lit ? 0.55 : 0.42}
-          roughness={0.08}
-          metalness={0.22}
+          opacity={dim ? dimOpacity : lit ? 0.48 : 0.38}
+          roughness={0.14}
+          metalness={0.28}
           depthWrite={false}
         />
       </mesh>
@@ -733,44 +790,44 @@ function GlassTower({
       ].map(([x, y, z], i) => (
         <mesh key={`f${i}`} position={[x, y, z]} raycast={() => null}>
           <planeGeometry args={[t.w * 0.96, t.h * 0.96]} />
-          <meshBasicMaterial
-            color="#93c5fd"
-            transparent
-            opacity={
-              dim
-                ? 0.04 + neighborGlow * 0.06
-                : lit
-                  ? 0.12
-                  : 0.06 + neighborGlow * 0.06
-            }
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+        <meshBasicMaterial
+          color="#b8cce4"
+          transparent
+          opacity={
+            dim
+              ? 0.03 + neighborGlow * 0.04
+              : lit
+                ? 0.09
+                : 0.05 + neighborGlow * 0.04
+          }
+          side={THREE.DoubleSide}
+        />
+      </mesh>
       ))}
 
       <EdgeFrame
         w={t.w}
         h={t.h}
         d={t.d}
-        color={lit || neighborGlow > 0.15 ? '#60a5fa' : '#e2e8f0'}
-        opacity={dim ? dimOpacity * 0.7 : lit ? 0.45 : 0.28 + neighborGlow * 0.2}
+        color={lit || neighborGlow > 0.15 ? '#a8c4e8' : '#f0ebe3'}
+        opacity={dim ? dimOpacity * 0.55 : lit ? 0.35 : 0.22 + neighborGlow * 0.14}
       />
 
-      {/* Soft spill — no neon bloom */}
+      {/* Soft studio spill — miniature scale, not neon */}
       {lit && (
         <>
           <pointLight
             position={[0, t.h * 0.85, 0]}
-            color="#ffffff"
-            intensity={focused ? 0.28 : 0.18}
-            distance={2.0}
+            color="#fff8f0"
+            intensity={focused ? 0.22 : 0.14}
+            distance={1.9}
             decay={2}
           />
           <pointLight
             position={[0, t.h * 0.55, 0]}
-            color="#93c5fd"
-            intensity={focused ? 0.35 : 0.24}
-            distance={3.6}
+            color="#b8cce4"
+            intensity={focused ? 0.24 : 0.16}
+            distance={3.2}
             decay={1.8}
           />
         </>
@@ -778,9 +835,9 @@ function GlassTower({
       {!lit && neighborGlow > 0.12 && (
         <pointLight
           position={[0, t.h * 0.5, 0]}
-          color={spillColor || '#93c5fd'}
-          intensity={neighborGlow * 0.16}
-          distance={2.0}
+          color={spillColor || '#b8cce4'}
+          intensity={neighborGlow * 0.1}
+          distance={1.8}
           decay={2}
         />
       )}
@@ -819,39 +876,54 @@ function CampusPad({
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[pad.half * 2.25, pad.half * 2.25]} />
         <meshStandardMaterial
-          color="#0f172a"
-          roughness={0.6}
-          metalness={0.12}
+          color="#161b26"
+          roughness={0.72}
+          metalness={0.08}
           transparent
-          opacity={dim ? 0.5 : 0.92}
+          opacity={dim ? 0.45 : 0.85}
         />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
         <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
         <meshBasicMaterial
-          color="#60a5fa"
+          color="#c4a484"
           transparent
-          opacity={dim ? 0.08 : 0.16}
+          opacity={dim ? 0.05 : 0.1}
         />
       </mesh>
     </group>
   )
 }
 
-/** City name — frosted glass pill, navy type (not neon yellow). */
+/**
+ * Title-dominant city name — warm / light-blue-white, freestanding,
+ * may kiss tower tops. No pill, no corner chrome.
+ */
 function makeCityFlag(label: string) {
   const text = label.trim().toUpperCase()
   const c = document.createElement('canvas')
-  c.width = 1024
-  c.height = 180
+  c.width = 1280
+  c.height = 280
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, c.width, c.height)
-  paintGlassPlate(ctx, c.width, c.height, 40)
+  const cx = c.width / 2
+  const cy = c.height / 2 - 8
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = `800 78px ${CARD_FONT}`
-  ctx.fillStyle = '#0f172a'
-  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.font = `800 112px ${TITLE_FONT}`
+  // Soft dusk bloom — title is the only skyline shout
+  ctx.shadowColor = 'rgba(186, 214, 255, 0.5)'
+  ctx.shadowBlur = 20
+  ctx.fillStyle = 'rgba(232, 242, 255, 0.5)'
+  ctx.fillText(text, cx, cy)
+  ctx.shadowBlur = 8
+  ctx.fillStyle = 'rgba(248, 250, 252, 0.94)'
+  ctx.fillText(text, cx, cy)
+  ctx.shadowBlur = 0
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillText(text, cx, cy)
+  sprinkleGrain(ctx, c.width, c.height, 0.045)
+  softEdgeDissolve(ctx, c.width, c.height, 40)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
@@ -872,27 +944,27 @@ function CityFlag({
   dim: boolean
 }) {
   const tex = useMemo(() => makeCityFlag(label), [label])
-  const pulse = useRef(0)
   const mat = useRef<THREE.MeshBasicMaterial>(null)
   useFrame((state) => {
-    pulse.current = 0.78 + Math.sin(state.clock.elapsedTime * 1.1) * 0.05
     if (mat.current) {
-      mat.current.opacity = dim ? 0.4 : pulse.current
+      mat.current.opacity = dim
+        ? 0.38
+        : 0.88 + Math.sin(state.clock.elapsedTime * 0.7) * 0.04
     }
   })
   if (!label) return null
-  const w = Math.min(3.2, 1.35 + label.length * 0.12)
+  const w = Math.min(4.2, 1.7 + label.length * 0.16)
   return (
     <Billboard position={[x, y, z]} follow>
       <mesh raycast={() => null}>
-        <planeGeometry args={[w, w * (180 / 1024)]} />
+        <planeGeometry args={[w, w * (280 / 1280)]} />
         <meshBasicMaterial
           ref={mat}
           map={tex}
           transparent
           depthWrite={false}
           depthTest
-          opacity={0.94}
+          opacity={0.9}
           toneMapped={false}
         />
       </mesh>
@@ -906,12 +978,12 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    // Warm dusk pavement
-    ctx.fillStyle = '#140a12'
+    // Deep ink pavement — soft album dusk, quiet grid
+    ctx.fillStyle = '#12161f'
     ctx.fillRect(0, 0, 1024, 1024)
-    ctx.strokeStyle = 'rgba(80, 40, 50, 0.35)'
+    ctx.strokeStyle = 'rgba(70, 82, 104, 0.22)'
     ctx.lineWidth = 1
-    for (let i = 0; i < 1024; i += 28) {
+    for (let i = 0; i < 1024; i += 32) {
       ctx.beginPath()
       ctx.moveTo(i, 0)
       ctx.lineTo(i, 1024)
@@ -925,14 +997,14 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     const half = (0.48 / (CITY_HALF * 2)) * 1024
     for (const r of ROAD) {
       const p = toPx(r)
-      ctx.fillStyle = '#08040a'
+      ctx.fillStyle = '#0a0d14'
       ctx.fillRect(p - half, 0, half * 2, 1024)
       ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    // Amber dusk lane marks
-    ctx.strokeStyle = 'rgba(255, 180, 100, 0.35)'
+    // Soft warm lane marks (dusk sun, not neon)
+    ctx.strokeStyle = 'rgba(255, 210, 170, 0.22)'
     ctx.lineWidth = 2
-    ctx.setLineDash([16, 14])
+    ctx.setLineDash([14, 16])
     for (const r of ROAD) {
       const p = toPx(r)
       ctx.beginPath()
@@ -945,7 +1017,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
       ctx.stroke()
     }
     ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(255, 160, 90, 0.28)'
+    ctx.fillStyle = 'rgba(255, 200, 150, 0.14)'
     for (const x of ROAD) {
       for (const z of ROAD) {
         const px = toPx(x)
@@ -955,6 +1027,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
         }
       }
     }
+    sprinkleGrain(ctx, 1024, 1024, 0.03)
     const tex = new THREE.CanvasTexture(c)
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
@@ -968,7 +1041,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
   )
 }
 
-/** Magical sunset sky dome — warm horizon, violet zenith. */
+/** Deep sea blue-gray / ink dusk dome — soft solid studio void + warm horizon. */
 function SunsetSky() {
   const tex = useMemo(() => {
     const c = document.createElement('canvas')
@@ -976,12 +1049,13 @@ function SunsetSky() {
     c.height = 256
     const ctx = c.getContext('2d')!
     const g = ctx.createLinearGradient(0, 0, 0, 256)
-    g.addColorStop(0, '#1a0830') // zenith violet
-    g.addColorStop(0.35, '#3b1248')
-    g.addColorStop(0.55, '#8b2d4a')
-    g.addColorStop(0.72, '#e85d2a')
-    g.addColorStop(0.88, '#ffb15a')
-    g.addColorStop(1, '#ffd9a0') // horizon glow
+    g.addColorStop(0, '#0c1018') // deep ink zenith
+    g.addColorStop(0.28, '#151c2a')
+    g.addColorStop(0.5, '#243044') // deep sea blue-gray
+    g.addColorStop(0.68, '#5a3a42')
+    g.addColorStop(0.82, '#c4784a')
+    g.addColorStop(0.93, '#e8b892')
+    g.addColorStop(1, '#f3dcc4') // soft warm horizon
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 4, 256)
     const t = new THREE.CanvasTexture(c)
@@ -1329,28 +1403,28 @@ export function NightCity({
   return (
     <group position={[0, CITY_Y, 0]}>
       <SunsetSky />
-      {/* Soft cinematic dusk — warm key, cool fill (no neon wash) */}
-      <ambientLight intensity={sceneDimmed ? 0.16 : 0.24} color="#2a2038" />
+      {/* Soft studio dusk — warm low sun, cool fill, gentle shadows */}
+      <ambientLight intensity={sceneDimmed ? 0.2 : 0.3} color="#1e2430" />
       <hemisphereLight
-        args={['#ffc9a0', '#1a1528', sceneDimmed ? 0.32 : 0.48]}
+        args={['#f0d0b0', '#121820', sceneDimmed ? 0.36 : 0.55]}
       />
       <directionalLight
-        position={[8, 3.2, -4]}
-        intensity={sceneDimmed ? 0.45 : 0.72}
-        color="#ffb07a"
+        position={[7.5, 4.2, -3.5]}
+        intensity={sceneDimmed ? 0.4 : 0.65}
+        color="#f0c4a0"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
       <directionalLight
-        position={[-5, 2.5, 6]}
-        intensity={sceneDimmed ? 0.18 : 0.32}
-        color="#93c5fd"
+        position={[-4.5, 3, 5.5]}
+        intensity={sceneDimmed ? 0.2 : 0.34}
+        color="#a8c4e8"
       />
       <pointLight
-        position={[0, 1.2, 0]}
-        intensity={sceneDimmed ? 0.08 : 0.14}
-        color="#fde68a"
+        position={[0, 1.4, 0]}
+        intensity={sceneDimmed ? 0.06 : 0.1}
+        color="#e8d4bc"
         distance={jobsMode && clusters.length > 2 ? 20 : 12}
       />
 
