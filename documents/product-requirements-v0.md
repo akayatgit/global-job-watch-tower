@@ -12,7 +12,7 @@
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
 | **First-mover mandate** | **Highest product priority:** start and sustain tower searches so Quanta is among the first to collect fresh job-market insights — coverage before polish |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
-| **Remote browser access (2026-08-03)** | **LIVE Option B:** Cloudflare Tunnel + Access. Hostname **`https://tower.jobmaster.agency`** → ThinkPad `127.0.0.1:8001`. Tunnel `watch-tower` / unit `watch-tower-tunnel`. Access allow: `ashokofficial55@gmail.com`. Not Vercel / not Supabase. Guide: [`documents/remote-access-cloudflare.md`](remote-access-cloudflare.md). |
+| **Remote browser access (2026-08-03)** | **Tunnel LIVE:** `https://tower.jobmaster.agency` → ThinkPad `127.0.0.1:8001` (`watch-tower` / `watch-tower-tunnel`). **Access:** intended allow `ashokofficial55@gmail.com` — confirm OTP gate in Incognito before sharing URL (see [`documents/remote-access-cloudflare.md`](remote-access-cloudflare.md)). Not Vercel / not Supabase. |
 | **Remote source + auto-deploy** | **Public GitHub:** [akayatgit/global-job-watch-tower](https://github.com/akayatgit/global-job-watch-tower). Merge/push to `main` triggers a **self-hosted Actions runner on this ThinkPad** → `scripts/deploy_local.sh` (**deploy wins**: pause beat → cancel active searches → pull → migrate → restart → retrigger cancelled roles; LinkedIn job ids prevent duplicates). Secrets (`.env`, `.data`, Chrome profiles) never leave the laptop. |
 | **Lid / sleep policy** | **Configured 2026-08-01 for overnight collect:** GNOME lid-close + idle sleep = `nothing`; systemd-logind `HandleLidSwitch=ignore` via `/etc/systemd/logind.conf.d/99-watch-tower-lid.conf`. Lid close should **not** suspend. Keep on charger; allow airflow (laptop may run warm with lid closed). |
 | **Source of truth** | Pitch deck slides + this document (iterate in place; do not fork near-duplicates) |
@@ -57,13 +57,12 @@ Sole-user HTTPS from any machine without moving the brain off the ThinkPad.
 | Piece | Detail |
 |---|---|
 | Choice | **Option B** (not Vercel, not Supabase mirror, not Tailscale-first) |
+| Public URL | **https://tower.jobmaster.agency** |
 | Origin | Still `http://127.0.0.1:8001` — loopback only |
-| Tunnel | `cloudflared` + systemd --user `watch-tower-tunnel` |
-| Lock | Cloudflare Access — Allow email = Ashok only (OTP) |
+| Tunnel | `watch-tower` (`5fe32c62-…`) · systemd --user `watch-tower-tunnel` |
+| Access | Allow email `ashokofficial55@gmail.com` — **verify Incognito OTP** before sharing |
 | Setup | `HOSTNAME=… ACCESS_EMAIL=… bash scripts/cloudflare_tunnel_setup.sh` |
 | Ops doc | [`documents/remote-access-cloudflare.md`](remote-access-cloudflare.md) |
-
-Requires Ashok’s Cloudflare zone hostname + Access email before go-live.
 
 ---
 
@@ -629,7 +628,7 @@ START OF EVERY SESSION
 | v0.18 | 2026-08-03 | Akay | **Company profile + real posted dates:** company record stores logo, tagline, casual punchline, followers, employee size (job-card + company-page enrich). Relative LinkedIn times (“2h ago”) → `posted_date`; detail enrich backfills when cards omit `<time datetime>`. Caught time remains `scraped_at`. |
 | v0.19 | 2026-08-03 | Akay | **Experience filter chips:** Fresher · 1–2 · 3–5 · 6–8 · 9–12 · 13+ on Jobs + every insight widget with sector/city chips. Canonical `experience_band` labels; legacy remap migration; stacks with sector/city (`vigil.experience`). |
 | v0.20 | 2026-08-03 | Akay | **Jobs → City view:** header skyline button opens night-city from Jobs filters; multi-metro → multi building clusters (`/api/ultron/jobs-skyline`). |
-| v0.21 | 2026-08-03 | Akay | **Remote access Option B LIVE:** `https://tower.jobmaster.agency` via Cloudflare Tunnel `watch-tower` → `127.0.0.1:8001`. Access email `ashokofficial55@gmail.com`. Docs: `documents/remote-access-cloudflare.md`. |
+| v0.21 | 2026-08-03 | Akay | **Remote access Option B — tunnel LIVE:** `https://tower.jobmaster.agency` → ThinkPad. Access email intended `ashokofficial55@gmail.com`; confirm Incognito OTP before sharing. Doc: `documents/remote-access-cloudflare.md`. |
 
 ### Phase 0 progress (living)
 

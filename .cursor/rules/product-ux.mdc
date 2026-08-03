@@ -265,8 +265,9 @@ use — they should love opening the app, never fight it.
   day; if no push for >2 days (unpushed commits stacking), alert Ashok.
   Always disclose live-job disturbance before any push ask.
 - **Remote HTTPS (2026-08-03):** Sole-user remote UI via **Cloudflare Tunnel +
-  Access** (Option B). Brain stays on ThinkPad (`127.0.0.1:8001`); never Vercel
-  as runtime; never expose Postgres/Redis. Ops:
+  Access** (Option B). Live URL `https://tower.jobmaster.agency` → ThinkPad
+  `127.0.0.1:8001`. Never Vercel as runtime; never expose Postgres/Redis.
+  Confirm Access OTP in Incognito before sharing. Ops:
   `documents/remote-access-cloudflare.md`.
 - **Neural Core / world model (2026-08-02 / nav 2026-08-03):** Three scene
   modes — **Core** · **Graph** · **City**. Navigation is Miro/Figma-like in
