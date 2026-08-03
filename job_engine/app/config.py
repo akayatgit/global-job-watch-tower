@@ -82,7 +82,7 @@ OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN', '').strip()
 REPLICATE_MODEL = os.getenv(
     'REPLICATE_MODEL',
-    'xai/grok-imagine-image:3032db31147241f86351f0d7ab1ffd5150dcb482bcb873580f15d8cb8970a812',
+    'google/nano-banana-2:d1be8b5fc0931a253d417e12a484ac01ee9ccbc6daffd4792151377d5e5ff55f',
 ).strip()
 
 # DIRECTOR — OpenAI Agents SDK brain above Hermes (COURIER)

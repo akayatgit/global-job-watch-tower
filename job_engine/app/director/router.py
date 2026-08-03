@@ -295,6 +295,10 @@ def main(argv: list[str] | None = None) -> int:
 
     trace = start_trace(bot=bot, chat=chat, text=text)
     try:
+        # Immediate ack so Ashok is never left silent while DIRECTOR/VALIDATOR work
+        from app.director.tools_validator import send_telegram_text
+        send_telegram_text('On it — pulling live tower facts…')
+
         if len(key) < 20 or key.lower().startswith('ollama'):
             _log('bad_key', key_len=len(key), key_prefix=key[:12])
             trace.hint('OPENAI key missing/poisoned — answer fallback path')

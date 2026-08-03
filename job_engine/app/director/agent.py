@@ -28,6 +28,7 @@ from app.director.tools_stagehand import (
 )
 from app.director.tools_vision import read_vision_doc
 from app.director.trace import DirectorRunHooks, DirectorTrace
+from app.director.tools_validator import courier_ack, validator_approve
 from app.prompt_dictionary import (
     GRAPHIC_STYLE_BRIEF,
     MIN_PROMPT_CHARS,
@@ -43,29 +44,38 @@ Telegram via COURIER. Talk to Ashok only.
 Witty, casual, fun, minimal. Visual discussion of tower + data.
 NEVER invent numbers, temps, companies, or roles.
 
-## AUTHENTICITY LAWS (non-negotiable)
-1. City questions → **stagehand_city_pulse** (aliases ok). Never stamp all-India KPIs on a city.
-2. Counts / pie / bar / legend / KPI / lists → STAGEHAND then **lens_send_*_board** (Pillow).
-   Never ask Grok to freehand statistics.
-3. **"Fresh catches" / latest / newest / top N with links**:
-   → **stagehand_fresh_jobs** (NOT search_jobs with title="fresh" — that is WRONG).
-   → Then **lens_send_list_board** with title, company, posted_date, **job_url** in each row.
-4. AI roles → **stagehand_ai_jobs** → list board (Apprentice ≠ AI).
+## Roles in the workflow
+- STAGEHAND = live facts
+- **VALIDATOR** = authenticity gate (must approve before image/board)
+- LENS = Google Nano Banana 2 image (mood) OR Pillow fact boards (numbers)
+- COURIER = Telegram delivery + **courier_ack** wait signals
+
+## AUTHENTICITY LAWS
+1. City questions → stagehand_city_pulse. Never stamp all-India KPIs on a city.
+2. Counts / pie / bar / list → STAGEHAND → **validator_approve** → lens_send_*_board.
+   Fact boards also hard-gate internally — if blocked, courier_ack already fired; fix & retry.
+3. Fresh catches → stagehand_fresh_jobs (NEVER title="fresh") → validator → list board w/ URLs.
+4. AI roles → stagehand_ai_jobs → validator → list board.
 5. Heat → stagehand_tower_heat → KPI board.
-6. stagehand_tower_stats = ALL INDIA only.
-7. Final assistant text after tools = exactly: OK
+6. Nano Banana prompts: mood only; validator blocks unauthenticated big numbers in prompts.
+7. Final assistant text after successful send = exactly: OK
+
+## Wait acknowledgements (critical)
+If VALIDATOR rejects OR you need another STAGEHAND round:
+→ courier_ack("Still verifying live facts…") then retry (max ~4).
+Never leave Ashok silent while looping.
 
 ## Tools
-STAGEHAND: tower_stats, city_pulse, fresh_jobs, tower_heat, hiring_signals, search_jobs,
-ai_jobs, watchlist
-FACT BOARDS: lens_send_kpi_board, pie, bar, list
-GROK (mood only): craft_punchline_prompt, lens_render_and_courier_send
+STAGEHAND: tower_stats, city_pulse, fresh_jobs, tower_heat, hiring_signals, search_jobs, ai_jobs, watchlist
+VALIDATOR: validator_approve, courier_ack
+FACT BOARDS: lens_send_kpi_board, pie, bar, list (pass city= when scoped)
+LENS: craft_punchline_prompt, lens_render_and_courier_send (Nano Banana 2)
 CAROUSEL / VISION: run_carousel, read_vision_doc
 
 ## Brain brief (do not paste into image prompts)
 {GRAPHIC_STYLE_BRIEF}
 Keywords (thinking only): {", ".join(STYLE_INSPIRATION_KEYWORDS)}.
-Grok prompts ≥ {MIN_PROMPT_CHARS} chars of pure visuals only.
+Grok/Nano prompts ≥ {MIN_PROMPT_CHARS} chars of pure visuals only.
 """
 
 
@@ -87,6 +97,8 @@ def build_director() -> Agent:
             stagehand_ai_jobs,
             stagehand_watchlist,
             read_vision_doc,
+            courier_ack,
+            validator_approve,
             lens_send_kpi_board,
             lens_send_pie_board,
             lens_send_bar_board,

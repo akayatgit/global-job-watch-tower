@@ -1,4 +1,4 @@
-"""Shared Replicate image generation — default xai/grok-imagine-image."""
+"""Shared Replicate image generation — default google/nano-banana-2."""
 
 from __future__ import annotations
 
@@ -21,8 +21,21 @@ def generate_image(prompt: str, *, aspect_ratio: str = '1:1') -> Image.Image:
     model = config.REPLICATE_MODEL
     low = model.lower()
 
-    # grok-imagine-image: prompt + aspect_ratio only
-    if 'grok-imagine' in low:
+    if 'nano-banana' in low:
+        # google/nano-banana-2 (Gemini Flash Image) — better text/instruction following
+        ar = aspect_ratio if aspect_ratio in {
+            '1:1', '1:4', '1:8', '2:3', '3:2', '3:4', '4:1', '4:3',
+            '4:5', '5:4', '8:1', '9:16', '16:9', '21:9',
+        } else '1:1'
+        inp = {
+            'prompt': prompt,
+            'aspect_ratio': ar,
+            'output_format': 'png',
+            'resolution': '1K',
+            'google_search': False,
+            'image_search': False,
+        }
+    elif 'grok-imagine' in low:
         inp = {'prompt': prompt, 'aspect_ratio': aspect_ratio}
     elif 'imagen' in low:
         inp = {

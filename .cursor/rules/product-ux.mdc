@@ -371,3 +371,7 @@ use — they should love opening the app, never fight it.
   under `.data/director_traces/`. VIGIL **Workflow** panel lists runs; click one
   for the full graph. Use this to backtrace bad tool calls (e.g. title="fresh").
   Fresh catches → `stagehand_fresh_jobs` (never keyword "fresh") + URLs on board.
+- **VALIDATOR + Nano Banana (2026-08-04):** Before any image/board send, VALIDATOR
+  re-checks proposed numbers/rows against live STAGEHAND. On reject: Telegram wait
+  ack (“Still verifying…”) and retry. Image model = Replicate `google/nano-banana-2`
+  (not Grok Imagine). Immediate “On it…” ack on every Telegram message.

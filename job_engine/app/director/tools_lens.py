@@ -32,14 +32,21 @@ def _hermes_env() -> dict[str, str]:
     return out
 
 
-def send_image_bytes_prompt(prompt: str) -> bool:
-    """Render a pure visual prompt (tiny text designed into the art)."""
+def send_image_bytes_prompt(prompt: str, *, city: str = '') -> bool:
+    """Render a pure visual prompt after VALIDATOR checks embedded numbers."""
+    from app.director.tools_validator import run_validator, send_telegram_text
     env = _hermes_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
     chat = env.get('TELEGRAM_HOME_CHANNEL')
     if not token or not chat:
         return False
     prompt = assert_visual_prompt(prompt)
+    verdict = run_validator('visual_prompt', json.dumps({'prompt': prompt}), city)
+    if not verdict.get('approved'):
+        send_telegram_text(
+            'Still verifying… image prompt had numbers that do not match live tower. Retrying.'
+        )
+        raise ValueError('validator_blocked: ' + '; '.join(verdict.get('errors') or [])[:240])
     TMP.mkdir(parents=True, exist_ok=True)
     LAST_PROMPT.write_text(prompt, encoding='utf-8')
     img = generate_image(prompt, aspect_ratio='1:1')
@@ -57,6 +64,8 @@ def send_image_bytes_prompt(prompt: str) -> bool:
                 'ok': True,
                 'chars': len(prompt),
                 'prompt_file': str(LAST_PROMPT),
+                'model': config.REPLICATE_MODEL,
+                'validated': True,
             }),
             encoding='utf-8',
         )
@@ -86,11 +95,16 @@ def craft_punchline_prompt(prompt: str) -> str:
 
 
 @function_tool
-def lens_render_and_courier_send(prompt: str) -> str:
-    """LENS + COURIER: Render a pure visual prompt with Grok Imagine and send Telegram.
-    Prompt must describe the picture — not copy style-policy text. No Pillow overlays."""
+def lens_render_and_courier_send(prompt: str, city: str = '') -> str:
+    """LENS + COURIER: Render with Google Nano Banana 2 and send Telegram photo.
+    VALIDATOR blocks prompts that embed unauthenticated KPI numbers.
+    Prefer fact boards for any chart/count/list."""
     try:
-        ok = send_image_bytes_prompt(prompt)
+        ok = send_image_bytes_prompt(prompt, city=city)
     except ValueError as e:
         return json.dumps({'ok': False, 'error': str(e), 'min_chars': MIN_PROMPT_CHARS})
-    return json.dumps({'ok': ok, 'delivered': 'telegram_photo' if ok else 'failed'})
+    return json.dumps({
+        'ok': ok,
+        'delivered': 'telegram_photo' if ok else 'failed',
+        'model': config.REPLICATE_MODEL,
+    })
