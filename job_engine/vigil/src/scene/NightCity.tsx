@@ -190,7 +190,7 @@ function wrapRoleLines(
   return out
 }
 
-/** Floating roof text — name + count + caption. Soft neon, no stroke. */
+/** Floating roof text — name + centered count + caption. Soft neon, no stroke. */
 function makeRoofLabel(
   name: string,
   jobs: number,
@@ -203,9 +203,23 @@ function makeRoofLabel(
     (jobs === 1
       ? openingsCaption(days).replace(/^Openings/, 'Opening')
       : openingsCaption(days))
+  const padTop = 28
+  const nameLine = 32
+  const gapAfterName = 18
+  const numSize = 58
+  const gapAfterNum = 14
+  const capSize = 16
+  const padBot = 28
   const c = document.createElement('canvas')
   c.width = 512
-  c.height = 36 + lines.length * 34 + 100
+  c.height =
+    padTop +
+    lines.length * nameLine +
+    gapAfterName +
+    numSize +
+    gapAfterNum +
+    capSize +
+    padBot
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, c.width, c.height)
   ctx.textAlign = 'center'
@@ -213,14 +227,30 @@ function makeRoofLabel(
   const cx = c.width / 2
   ctx.font = '800 26px Orbitron, sans-serif'
   lines.forEach((ln, i) => {
-    neonFill(ctx, ln.toUpperCase(), cx, 28 + i * 30, '#ffffff', '#38bdf8')
+    neonFill(
+      ctx,
+      ln.toUpperCase(),
+      cx,
+      padTop + nameLine / 2 + i * nameLine,
+      '#ffffff',
+      '#38bdf8',
+    )
   })
-  const numY = 36 + lines.length * 32 + 26
+  // Number block centered under the name
+  const numY =
+    padTop + lines.length * nameLine + gapAfterName + numSize / 2
   const num = jobs > 999 ? '999+' : String(jobs)
-  ctx.font = '900 56px Orbitron, sans-serif'
+  ctx.font = '900 58px Orbitron, sans-serif'
   neonFill(ctx, num, cx, numY, '#ffffff', '#f97316')
-  ctx.font = '700 15px Rajdhani, sans-serif'
-  neonFill(ctx, caption, cx, numY + 34, '#e0f2fe', '#22d3ee')
+  ctx.font = '700 16px Rajdhani, sans-serif'
+  neonFill(
+    ctx,
+    caption,
+    cx,
+    numY + numSize / 2 + gapAfterNum + capSize / 2,
+    '#e0f2fe',
+    '#22d3ee',
+  )
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
@@ -312,9 +342,18 @@ function roleGridSlot(
   return [ox, oy]
 }
 
-function focusDistance(h: number) {
-  // Tight drone pull-in on the roof
-  return 0.78 + h * 0.07
+/** Camera distance so name + count + role cards fit with padding. */
+function focusDistance(h: number, roleCount = 0) {
+  const rows = Math.max(1, Math.ceil(Math.max(0, roleCount) / 2))
+  return 2.35 + h * 0.22 + rows * 0.32
+}
+
+/** Aim at the center of the roof label stack (not the bare roof edge). */
+function focusAimY(h: number, bannerH: number, roleCount: number, roleH: number) {
+  const rows = Math.max(0, Math.ceil(roleCount / 2))
+  const stackMid =
+    h + 0.14 + bannerH / 2 + rows * roleH * 0.28
+  return CITY_Y + stackMid
 }
 
 /** Role cards must never outnumber openings on the building. */
@@ -619,13 +658,21 @@ function GlassTower({
     onHoverLeave(selectId)
   }
 
+  const floors = Math.max(4, Math.floor(t.h / 0.22))
+  const bannerH = 0.22 + wrapName(t.name, 11).length * 0.05
+  // Focused: slightly bigger; keep stack inside the frame with camera pull-back
+  const bannerW = bannerH * banner.aspect * (lit ? 1.08 : 1)
+  const cardOrder = lit ? 2000 : dim ? 2 : 20
+  const dimOpacity = 0.4
+  // Compact role cards under the label — width capped so they stay on screen
+  const roleH = bannerH * 0.24
+  const roleWMax = bannerW * 0.44
+
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     // Drag-orbit release must never focus a tower
     if (wasDragClick() || isMeshInteractionBlocked()) return
     const st = useVigilStore.getState()
-    // Focus on the ROOF / top of building
-    const roofY = CITY_Y + t.h + 0.15
     const place = t.city_label || cityLabel
     if (st.selectFocusId === selectId) {
       if (t.city_key) st.setCityFilter(t.city_key)
@@ -634,30 +681,21 @@ function GlassTower({
       return
     }
     st.setSceneSpin(false)
+    // Frame company name + count + all role cards with padding
     st.requestCameraFocus({
       id: selectId,
       x: t.x,
-      y: roofY,
+      y: focusAimY(t.h, bannerH, t.roles.length, roleH),
       z: t.z,
-      distance: focusDistance(t.h),
+      distance: focusDistance(t.h, t.roles.length),
     })
     st.setStatus(
       `FOCUS · ${t.name} · ${t.n} in ${place} · click again to open`,
     )
   }
 
-  const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.2 + wrapName(t.name, 11).length * 0.048
-  // Focused: bigger bold label; dimmed stays readable (~40% opacity = 60% transparent)
-  const bannerW = bannerH * banner.aspect * (lit ? 1.18 : 1)
-  const cardOrder = lit ? 2000 : dim ? 2 : 20
-  const dimOpacity = 0.4
-  // Compact role cards under the label — width capped so they stay on screen
-  const roleH = bannerH * (lit ? 0.3 : 0.26)
-  const roleWMax = bannerW * 0.46
-
   return (
-    <group position={[t.x, 0, t.z]} scale={focused ? 1.12 : lit ? 1.05 : 1}>
+    <group position={[t.x, 0, t.z]} scale={focused ? 1.06 : lit ? 1.03 : 1}>
       {/* Hit volume = building body only (labels never steal hover/focus) */}
       <mesh
         position={[0, t.h / 2, 0]}
@@ -771,7 +809,7 @@ function GlassTower({
           0,
         ]}
       >
-        <group scale={lit ? 1.2 : dim ? 0.92 : 1}>
+        <group scale={lit ? 1.06 : dim ? 0.94 : 1}>
           <mesh raycast={() => null} renderOrder={cardOrder}>
             <planeGeometry args={[bannerW, bannerH]} />
             <meshBasicMaterial

@@ -74,18 +74,22 @@ export function clearCampusNav() {
   cityLabel = ''
 }
 
-function focusDist(h: number) {
-  return 0.78 + h * 0.07
+function focusDist(h: number, roleHint = 1) {
+  // Match NightCity — pull back so name + count + roles stay in frame
+  const rows = Math.max(1, Math.ceil(Math.max(0, roleHint) / 2))
+  return 2.35 + h * 0.22 + rows * 0.32
 }
 
-function roofOf(t: CampusTower) {
-  return { x: t.x, y: CITY_Y + t.h + 0.15, z: t.z }
+function aimOf(t: CampusTower) {
+  // Aim mid label stack (not bare roof) so company name isn't cropped
+  const lift = 0.45 + Math.min(0.35, t.n * 0.04)
+  return { x: t.x, y: CITY_Y + t.h + lift, z: t.z }
 }
 
 function focusTower(t: CampusTower) {
   const st = useVigilStore.getState()
   const selectId = `company:${t.company_id}`
-  const roof = roofOf(t)
+  const aim = aimOf(t)
   st.setSceneSpin(false)
   st.setSelectFocusId(selectId)
   st.setStatus(
@@ -94,10 +98,10 @@ function focusTower(t: CampusTower) {
   // Short smooth glide via city focus flight (constant angle, slight hyperbola)
   st.requestCameraFocus({
     id: selectId,
-    x: roof.x,
-    y: roof.y,
-    z: roof.z,
-    distance: focusDist(t.h),
+    x: aim.x,
+    y: aim.y,
+    z: aim.z,
+    distance: focusDist(t.h, Math.min(5, Math.max(1, t.n))),
   })
 }
 
