@@ -78,3 +78,30 @@ deep ink studio void** — immersive weather mood without a weather widget.
 | Default angle | `SceneControls` city camera ≈ 45° iso |
 
 Update this file whenever the city look shifts again.
+
+---
+
+## Reference: Aximoris Spline City (2026-08-03)
+
+Sources Ashok shared:
+- Live: https://my.spline.design/untitled-1c75a09a7f33d5999b7680c9dc0a7626/
+- Clip: https://x.com/Aximoris/status/1743648652617302478/video/1  
+  (Max / @Aximoris — “simple shapes + cloner → cute isometric 3D city”)
+
+**Why it feels clean + interactive**
+1. **Negative space** — city is a small precious miniature; ~half+ of frame is calm studio void
+2. **Simple massing** — cubes/rects/cloners; readable silhouettes; no mesh spam
+3. **Matte studio light** — soft key + soft shadows; clay/architectural-model calm
+4. **Rounded baseplate** — one clear “object on a pedestal” campus pad
+5. **Scale life** — tiny car / tree / helicopter; motion proves scale without HUD noise
+6. **Labels off by default** — geometry first; data appears on intent (hover/focus)
+7. **Orbit feels free** — drag/zoom is the product; chrome never fights the hand
+
+**Apply to Watch Tower (keep dusk mood + hiring cards)**
+- Stronger pedestal pad + more breathing room around clusters
+- Hide cream lyric cards until hover/focus (title can stay)
+- Softer matte PBR; less emissive wash
+- Optional: one gentle “life” prop (heli/drone loop) for delight at govt demos
+- Never import toy pastel rainbow — keep Editorial Dusk palette
+
+**Do not** embed Spline runtime for production data campus — keep R3F + Postgres live.
