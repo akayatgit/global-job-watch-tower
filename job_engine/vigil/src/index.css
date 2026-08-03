@@ -432,6 +432,51 @@ button, input, select {
   border-color: rgba(253, 230, 138, 0.85);
 }
 
+/* Large side steppers — campus openings prev/next */
+.campus-focus-nav {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+}
+
+.campus-focus-nav-btn {
+  pointer-events: auto;
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  background:
+    linear-gradient(180deg, rgba(12, 28, 48, 0.72), rgba(8, 14, 28, 0.82)),
+    rgba(5, 8, 16, 0.55);
+  color: #7dd3fc;
+  cursor: pointer;
+  box-shadow:
+    0 0 18px rgba(56, 189, 248, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: border-color 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.campus-focus-nav-btn:hover {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.75);
+  box-shadow:
+    0 0 22px rgba(251, 191, 36, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transform: scale(1.06);
+}
+
+.campus-focus-nav-btn:active {
+  transform: scale(0.97);
+}
+
 .city-window-bar {
   display: flex;
   flex-wrap: wrap;

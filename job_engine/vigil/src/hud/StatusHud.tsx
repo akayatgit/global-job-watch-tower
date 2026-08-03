@@ -186,43 +186,41 @@ export function StatusHud() {
                   )}
                 </button>
               ) : null}
-              {sceneMode === 'city' &&
-              cityViewMode === 'campus' &&
-              cityFocus ? (
+              {sceneMode === 'city' && cityViewMode === 'campus' ? (
                 <>
                   <button
                     type="button"
                     className="hud-icon-btn city-rank-btn"
-                    title="Previous building (lower openings)"
+                    title="Previous building · lower openings (←)"
                     aria-label="Previous building"
                     onClick={() => stepCampusFocus('lower')}
                   >
                     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
                       <path
-                        d="M7 6h10"
+                        d="M15 5L8 12l7 7"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="1.6"
+                        strokeWidth="2"
                         strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
-                      <path d="M12 18l6-8H6l6 8z" fill="currentColor" />
                     </svg>
                   </button>
                   <button
                     type="button"
                     className="hud-icon-btn city-rank-btn"
-                    title="Next building (higher openings)"
+                    title="Next building · higher openings (→)"
                     aria-label="Next building"
                     onClick={() => stepCampusFocus('higher')}
                   >
                     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
-                      <path d="M12 6l6 8H6l6-8z" fill="currentColor" />
                       <path
-                        d="M7 18h10"
+                        d="M9 5l7 7-7 7"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="1.6"
+                        strokeWidth="2"
                         strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
                     </svg>
                   </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { VigilCanvas } from './scene/VigilCanvas'
 import { StatusHud } from './hud/StatusHud'
+import { CampusFocusNav } from './hud/CampusFocusNav'
 import { VigilCursor } from './hud/VigilCursor'
 import { FingerOverlay } from './hud/FingerOverlay'
 import { WebcamPip } from './hud/WebcamPip'
@@ -70,6 +71,7 @@ export default function App() {
           <div className="vigil-stage">
             <VigilCanvas />
             <StatusHud />
+            <CampusFocusNav />
             <PanelHost />
           </div>
         </>

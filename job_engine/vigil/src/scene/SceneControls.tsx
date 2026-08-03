@@ -27,6 +27,8 @@ type Flight =
       speed: number
       /** City: constant-angle glide + slight hyperbola */
       citySlide: boolean
+      /** Commit selectFocusId only after glide lands (smooth handoff) */
+      endFocusId: string | null
     }
   | {
       mode: 'path'
@@ -204,8 +206,10 @@ export function SceneControls() {
       fromDist,
       toDist: dist,
       t: 0,
-      speed: citySlide ? 0.9 : 1.15,
+      // Slightly slower campus glide — less cut/jump
+      speed: citySlide ? 0.62 : 1.15,
       citySlide,
+      endFocusId: citySlide && f.id.startsWith('company:') ? f.id : null,
     }
     setFlying(true)
   }, [cameraFocusNonce, camera])
@@ -306,6 +310,13 @@ export function SceneControls() {
       if (flight.t >= 1) {
         flight.active = false
         setFlying(false)
+        // Hand off lit tower only after camera arrives
+        if (flight.endFocusId) {
+          const st = useVigilStore.getState()
+          if (st.selectFocusId !== flight.endFocusId) {
+            useVigilStore.setState({ selectFocusId: flight.endFocusId })
+          }
+        }
       }
       return
     }

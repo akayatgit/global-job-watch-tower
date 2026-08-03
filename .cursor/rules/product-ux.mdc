@@ -244,7 +244,9 @@ use — they should love opening the app, never fight it.
 - **Campus focus cards (2026-08-03):** Building focus zooms out enough to keep
   neighbours; name cards are larger neon glass (less round, transparent).
   While one tower is focused, other cards stay visible at ~30% opacity.
-  Prev/next HUD arrows step building focus by openings.
+  Prev/next: large side arrows + HUD ←/→ + keyboard; step by openings.
+  Camera glides from the lit tower first; previous focus stays lit until the
+  glide lands, then handoff (no cut/jump).
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

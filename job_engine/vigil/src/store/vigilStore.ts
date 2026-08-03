@@ -729,7 +729,15 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   setGraphFocusId: (id) => set({ graphFocusId: id }),
   cameraFocus: null,
   cameraFocusNonce: 0,
-  requestCameraFocus: (f) =>
+  requestCameraFocus: (f) => {
+    const prev = get().selectFocusId
+    // Campus tower→tower: keep old focus lit until camera glide lands
+    const deferSelect =
+      get().sceneMode === 'city' &&
+      get().cityViewMode === 'campus' &&
+      f.id.startsWith('company:') &&
+      Boolean(prev?.startsWith('company:')) &&
+      prev !== f.id
     set({
       cameraFocus: {
         id: f.id,
@@ -740,9 +748,10 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       },
       cameraFocusNonce: get().cameraFocusNonce + 1,
       cameraPath: null,
-      selectFocusId: f.id,
+      selectFocusId: deferSelect ? prev : f.id,
       statusLine: 'FOCUS · click again to open',
-    }),
+    })
+  },
   teleportCamera: (f) =>
     set({
       cameraFocus: {

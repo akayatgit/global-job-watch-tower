@@ -90,11 +90,10 @@ function focusTower(t: CampusTower) {
   const selectId = `company:${t.company_id}`
   const aim = aimOf(t)
   st.setSceneSpin(false)
-  st.setSelectFocusId(selectId)
   st.setStatus(
     `FOCUS · ${t.name} · ${t.n} openings in ${cityLabel || 'campus'} · click again to open`,
   )
-  // Short smooth glide via city focus flight (constant angle, slight hyperbola)
+  // Glide first; selectFocus handoff lands at end of camera move
   st.requestCameraFocus({
     id: selectId,
     x: aim.x,
@@ -111,7 +110,11 @@ function focusTower(t: CampusTower) {
 export function stepCampusFocus(dir: 'higher' | 'lower') {
   if (!ranked.length) return
   const st = useVigilStore.getState()
-  const id = st.selectFocusId
+  // Prefer in-flight destination so rapid ←/→ steps chain correctly
+  const id =
+    st.cameraFocus?.id?.startsWith('company:')
+      ? st.cameraFocus.id
+      : st.selectFocusId
   const curId = id?.startsWith('company:')
     ? Number(id.slice('company:'.length))
     : NaN

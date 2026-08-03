@@ -8,6 +8,7 @@ import { CampusHost } from './CampusHost'
 import { Starfield } from './Starfield'
 import { OrbitNodes } from './OrbitNodes'
 import { SceneControls } from './SceneControls'
+import { stepCampusFocus } from './campusNav'
 import { useVigilStore } from '../store/vigilStore'
 
 function SceneBody() {
@@ -65,6 +66,24 @@ export function VigilCanvas() {
     const onKey = (e: KeyboardEvent) => {
       const s = useVigilStore.getState()
       if (s.focusedPanel || s.trainingActive) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        (e.target as HTMLElement | null)?.isContentEditable
+      ) {
+        return
+      }
+      if (
+        (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+        s.sceneMode === 'city' &&
+        s.cityViewMode === 'campus'
+      ) {
+        e.preventDefault()
+        stepCampusFocus(e.key === 'ArrowRight' ? 'higher' : 'lower')
+        return
+      }
       if (e.key === 'Escape' || e.key === 'Home' || e.key === '0') {
         e.preventDefault()
         if (s.sceneMode === 'city') {
