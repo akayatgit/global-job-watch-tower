@@ -77,10 +77,10 @@ HEAT_COOLDOWN_RETRIES = int(os.getenv('HEAT_COOLDOWN_RETRIES', '3'))
 HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
 OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 
-# Replicate — TECH JOB MARKET MOVEMENT carousel fire (Gate 1)
+# Replicate — Telegram image chat + Carousel (Gate 1)
 # Must include :version hash (bare owner/name returns "No adapter found").
 REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN', '').strip()
 REPLICATE_MODEL = os.getenv(
     'REPLICATE_MODEL',
-    'black-forest-labs/flux-schnell:c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e',
+    'google/imagen-4-fast:efb61e33cffb69a1725083f675a44793929553f479918d01d6ce6e00efbee0d7',
 ).strip()

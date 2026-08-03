@@ -648,6 +648,7 @@ START OF EVERY SESSION
 | v0.24 | 2026-08-03 | Akay | **Master → Job Movement:** continuous fact content for seekers. Two gates before auto: Replicate carousel fire + TN trendjack (SerpApi/SearchAPI). Associate inspiration: CM C. Joseph Vijay / TVK 2026 path. |
 | v0.25 | 2026-08-03 | Akay | **Gate 1 live:** `/carousel` → Replicate flux-schnell + Pillow → Telegram `sendMediaGroup` album (Hermes). No local gallery; Ashok reviews on Telegram. |
 | v0.26 | 2026-08-03 | Akay | **Telegram image-only:** default Tanglish Replicate memes; magic word **Carousel** = pro album (topic role/city). Hermes SOUL + `telegram_image_chat.py`; text replies banned (🔥 only). |
+| v0.27 | 2026-08-03 | Akay | **Hard gate:** plugin `vigil-image-only` skips LLM on all Telegram msgs. Model → `google/imagen-4-fast`. No more text essays. |
 
 ### Phase 0 progress (living)
 

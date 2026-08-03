@@ -178,34 +178,9 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
 
 
 def _generate_bg(prompt: str) -> Image.Image:
-    import replicate
+    from app.replicate_img import generate_image
 
-    token = config.REPLICATE_API_TOKEN
-    if not token:
-        raise RuntimeError('REPLICATE_API_TOKEN missing in job_engine/.env')
-
-    client = replicate.Client(api_token=token)
-    output = client.run(
-        config.REPLICATE_MODEL,
-        input={
-            'prompt': prompt,
-            'aspect_ratio': '3:4',
-            'output_format': 'png',
-            'output_quality': 90,
-            'num_outputs': 1,
-            'go_fast': True,
-        },
-    )
-    # FileOutput list or single
-    item = output[0] if isinstance(output, list) else output
-    if hasattr(item, 'read'):
-        data = item.read()
-    else:
-        url = str(item)
-        with urllib.request.urlopen(url, timeout=120) as resp:
-            data = resp.read()
-    from io import BytesIO
-    img = Image.open(BytesIO(data)).convert('RGB')
+    img = generate_image(prompt, aspect_ratio='3:4')
     if img.size != (W, H):
         img = img.resize((W, H), Image.Resampling.LANCZOS)
     return img

@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import urllib.parse
 import urllib.request
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -102,26 +99,9 @@ def punchlines(user_msg: str) -> tuple[str, str, str]:
 
 
 def _replicate_bg(prompt: str) -> Image.Image:
-    import replicate
+    from app.replicate_img import generate_image
 
-    token = config.REPLICATE_API_TOKEN
-    if not token:
-        raise RuntimeError('REPLICATE_API_TOKEN missing')
-    client = replicate.Client(api_token=token)
-    model = config.REPLICATE_MODEL
-    out = client.run(
-        model,
-        input={
-            'prompt': prompt,
-            'aspect_ratio': '1:1',
-            'output_format': 'png',
-            'num_outputs': 1,
-            'go_fast': True,
-        },
-    )
-    item = out[0] if isinstance(out, list) else out
-    data = item.read() if hasattr(item, 'read') else urllib.request.urlopen(str(item), timeout=120).read()
-    img = Image.open(BytesIO(data)).convert('RGB')
+    img = generate_image(prompt, aspect_ratio='1:1')
     if img.size != (W, H):
         img = img.resize((W, H), Image.Resampling.LANCZOS)
     return img

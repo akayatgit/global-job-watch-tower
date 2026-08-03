@@ -346,7 +346,8 @@ use — they should love opening the app, never fight it.
   Honorable CM C. Joseph Vijay / TVK 2026 (change is possible). Never commit
   Replicate/Search API keys; `.env` only. Tower = truth behind every slide.
 - **Telegram image-only VIGIL (2026-08-03):** On Telegram, Vigil communicates
-  **only via images** (Replicate). Default = goofy **Tanglish** meme photos.
-  Magic word **Carousel** = professional branded multi-slide album (Gate 1
-  template). Hermes must not send markdown job tables; script sends media;
-  assistant text at most `🔥`. Ashok ops surface = Telegram + Cursor IDE.
+  **only via images** (Replicate `google/imagen-4-fast`). Default = goofy
+  **Tanglish** meme photos. Magic word **Carousel** = professional branded
+  multi-slide album. **Hard gate:** Hermes plugin `vigil-image-only` skips the
+  LLM entirely (`pre_gateway_dispatch` → image script). No text essays. Ashok
+  ops surface = Telegram + Cursor IDE.

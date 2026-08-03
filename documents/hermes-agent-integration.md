@@ -31,18 +31,21 @@ Early Telegram replies invented markets (fake “47k jobs”, “AI Infinitive�
 | `/carousel` | TECH JOB MARKET MOVEMENT — generate fiery 6-slide album via Replicate and send to this chat (Gate 1) |
 | `/boards` | Help menu |
 
-### Telegram IMAGE-ONLY mode (2026-08-03)
+### Telegram IMAGE-ONLY mode (2026-08-03) — HARD GATE
 
-Ashok rule: **Vigil replies on Telegram only through images** (no text essays).
+Ashok rule: **Vigil replies on Telegram only through images**. Text essays = failure.
+
+**Enforcement:** Hermes plugin `~/.hermes/plugins/vigil-image-only/`  
+`pre_gateway_dispatch` → run image script → `{"action":"skip"}` so the **LLM never replies** on Telegram.
 
 | Mode | Trigger | Pipeline |
 |---|---|---|
-| **Carousel** (pro) | User says the word **Carousel** (or `/carousel`) | Replicate + Pillow album → `sendMediaGroup` |
-| **Meme chat** (default) | Any other free-form message | Replicate Tanglish meme → `sendPhoto` (empty caption) |
+| **Carousel** (pro) | Word **Carousel** or `/carousel` | `imagen-4-fast` + Pillow album → `sendMediaGroup` |
+| **Meme chat** (default) | Any other message | `imagen-4-fast` Tanglish meme → `sendPhoto` (empty caption) |
 
-Entry script: `job_engine/scripts/telegram_image_chat.py`  
-SOUL: `~/.hermes/SOUL.md` · skill: `~/.hermes/skills/vigil-image-chat/`  
-Hermes final text after send: single `🔥` only. No markdown job tables.
+Model: `REPLICATE_MODEL=google/imagen-4-fast:…` in `job_engine/.env`  
+Entry: `job_engine/scripts/telegram_image_chat.py`  
+Enable: `hermes plugins enable vigil-image-only` (already on).
 
 ## Capacity rule (non-negotiable)
 
