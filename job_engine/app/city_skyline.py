@@ -18,6 +18,27 @@ MAX_JOB_CLUSTERS = 8
 MAX_COS_PER_CLUSTER = 12
 
 
+def _cap_roles(roles: list[dict], job_n: int) -> list[dict]:
+    """Keep role cards honest: never more cards (or summed n) than openings."""
+    if job_n <= 0 or not roles:
+        return []
+    out: list[dict] = []
+    used = 0
+    for r in roles:
+        if len(out) >= min(ROLES_PER_COMPANY, job_n):
+            break
+        if used >= job_n:
+            break
+        rn = max(1, int(r.get('n') or 1))
+        rn = min(rn, job_n - used)
+        title = (r.get('title') or 'Role').strip()
+        if not title:
+            continue
+        out.append({'title': title, 'n': rn})
+        used += rn
+    return out
+
+
 def _window_caption(window_days: int) -> str:
     """Human hook under the openings number (UI copy)."""
     if window_days == 0:
@@ -111,64 +132,31 @@ def compute_city_skyline(
         if cid not in dominant and sector:
             dominant[cid] = sector
 
-    # Role clusters — prefer Watch Tower search (role) names; else job title
-    role_rows = db.execute(
+    # Role cards = distinct job titles only (never search-name + title for
+    # the same opening — that doubled cards when n=1).
+    title_rows = db.execute(
         select(
             JobMaster.company_id,
-            SearchConfig.name,
+            JobMaster.title,
             func.count(JobMaster.id).label('n'),
         )
-        .join(SearchConfig, SearchConfig.id == JobMaster.search_config_id)
         .where(
             time_col >= recent_start, time_col < recent_end,
             JobMaster.city_key == city,
             JobMaster.company_id.in_(ids),
-            JobMaster.search_config_id.is_not(None),
         )
-        .group_by(JobMaster.company_id, SearchConfig.name)
+        .group_by(JobMaster.company_id, JobMaster.title)
         .order_by(JobMaster.company_id, desc('n'))
     ).all()
     roles_by_co: dict[int, list[dict]] = defaultdict(list)
-    for cid, rname, n in role_rows:
+    for cid, title, n in title_rows:
         bag = roles_by_co[cid]
         if len(bag) >= ROLES_PER_COMPANY:
             continue
-        bag.append({'title': (rname or 'Role').strip(), 'n': int(n)})
-
-    # Fill gaps with raw titles when a company has few/no search roles
-    need_ids = [cid for cid in ids if len(roles_by_co[cid]) < ROLES_PER_COMPANY]
-    if need_ids:
-        title_rows = db.execute(
-            select(
-                JobMaster.company_id,
-                JobMaster.title,
-                func.count(JobMaster.id).label('n'),
-            )
-            .where(
-                time_col >= recent_start, time_col < recent_end,
-                JobMaster.city_key == city,
-                JobMaster.company_id.in_(need_ids),
-            )
-            .group_by(JobMaster.company_id, JobMaster.title)
-            .order_by(JobMaster.company_id, desc('n'))
-        ).all()
-        seen_titles: dict[int, set[str]] = defaultdict(set)
-        for cid, _r in roles_by_co.items():
-            for item in _r:
-                seen_titles[cid].add(item['title'].lower())
-        for cid, title, n in title_rows:
-            bag = roles_by_co[cid]
-            if len(bag) >= ROLES_PER_COMPANY:
-                continue
-            t = (title or 'Role').strip()
-            key = t.lower()
-            if key in seen_titles[cid]:
-                continue
-            # Skip if this title already covered by a search role substring
-            if any(key in s or s in key for s in seen_titles[cid]):
-                continue
-            seen_titles[cid].add(key)
-            bag.append({'title': t, 'n': int(n)})
+        t = (title or 'Role').strip()
+        if not t:
+            continue
+        bag.append({'title': t, 'n': int(n)})
 
     companies = []
     by_sector: dict[str, int] = defaultdict(int)
@@ -176,16 +164,18 @@ def compute_city_skyline(
     for cid, name, n in co_rows:
         sid = dominant.get(cid) or 'tech_digital'
         meta = SECTOR_BY_ID.get(sid, {})
+        job_n = int(n)
+        roles = _cap_roles(roles_by_co.get(cid, []), job_n)
         companies.append({
             'company_id': cid,
             'name': name or 'Company',
-            'n': int(n),
+            'n': job_n,
             'sector_id': sid,
             'sector_label': meta.get('label') or sid.replace('_', ' ').title(),
-            'roles': roles_by_co.get(cid, []),
+            'roles': roles,
         })
-        by_sector[sid] += int(n)
-        total_jobs += int(n)
+        by_sector[sid] += job_n
+        total_jobs += job_n
 
     sectors = [
         {
@@ -278,7 +268,8 @@ def compute_jobs_skyline(
         entry['n'] += 1
         if jsector:
             entry['sectors'][jsector] += 1
-        rlabel = (role_name or title or 'Role').strip()
+        # Job title only — search name is how we found it, not a second opening
+        rlabel = (title or role_name or 'Role').strip()
         if rlabel:
             entry['roles'][rlabel] += 1
 
@@ -296,14 +287,18 @@ def compute_jobs_skyline(
             meta = SECTOR_BY_ID.get(sid, {})
             role_items = sorted(
                 entry['roles'].items(), key=lambda x: -x[1],
-            )[:ROLES_PER_COMPANY]
+            )
+            roles = _cap_roles(
+                [{'title': t, 'n': n} for t, n in role_items],
+                entry['n'],
+            )
             companies.append({
                 'company_id': cid,
                 'name': entry['name'],
                 'n': entry['n'],
                 'sector_id': sid,
                 'sector_label': meta.get('label') or sid.replace('_', ' ').title(),
-                'roles': [{'title': t, 'n': n} for t, n in role_items],
+                'roles': roles,
             })
         companies.sort(key=lambda c: -c['n'])
         companies = companies[:MAX_COS_PER_CLUSTER]

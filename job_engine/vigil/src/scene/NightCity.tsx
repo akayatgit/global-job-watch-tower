@@ -186,9 +186,18 @@ function wrapRoleLines(
 }
 
 /** Floating roof text — name + count + caption. Soft neon, no stroke. */
-function makeRoofLabel(name: string, jobs: number, days: number) {
+function makeRoofLabel(
+  name: string,
+  jobs: number,
+  days: number,
+  captionOverride?: string,
+) {
   const lines = wrapName(name, 11)
-  const caption = openingsCaption(days)
+  const caption =
+    captionOverride ||
+    (jobs === 1
+      ? openingsCaption(days).replace(/^Openings/, 'Opening')
+      : openingsCaption(days))
   const c = document.createElement('canvas')
   c.width = 512
   c.height = 36 + lines.length * 34 + 100
@@ -303,6 +312,22 @@ function focusDistance(h: number) {
   return 0.78 + h * 0.07
 }
 
+/** Role cards must never outnumber openings on the building. */
+function capRoles(roles: RoleHit[] | undefined, jobN: number): RoleHit[] {
+  if (!roles?.length || jobN <= 0) return []
+  const out: RoleHit[] = []
+  let used = 0
+  for (const r of roles) {
+    if (out.length >= Math.min(5, jobN) || used >= jobN) break
+    const rn = Math.min(Math.max(1, r.n || 1), jobN - used)
+    const title = (r.title || '').trim()
+    if (!title) continue
+    out.push({ title, n: rn })
+    used += rn
+  }
+  return out
+}
+
 function layoutCorporates(
   companies: SkyCo[],
   maxN: number,
@@ -329,7 +354,7 @@ function layoutCorporates(
       n: c.n,
       sector_id: c.sector_id,
       sector_label: c.sector_label,
-      roles: (c.roles || []).slice(0, 5),
+      roles: capRoles(c.roles, c.n),
       city_key: cityKey,
       city_label: cityLabel,
       x: ox + (col - (cols - 1) / 2) * gap + (hash01(seed) - 0.5) * 0.04,
@@ -507,6 +532,7 @@ function GlassTower({
   t,
   cityLabel,
   windowDays,
+  openingsCaptionText,
   sceneDimmed,
   onHoverEnter,
   onHoverLeave,
@@ -514,6 +540,8 @@ function GlassTower({
   t: Corp
   cityLabel: string
   windowDays: number
+  /** When set (Jobs city view), replaces the hiring-window caption. */
+  openingsCaptionText?: string
   /** True when any tower is focused or hovered — dim non-active ones */
   sceneDimmed: boolean
   onHoverEnter: (id: string) => void
@@ -526,8 +554,8 @@ function GlassTower({
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const banner = useMemo(
-    () => makeRoofLabel(t.name, t.n, windowDays),
-    [t.name, t.n, windowDays],
+    () => makeRoofLabel(t.name, t.n, windowDays, openingsCaptionText),
+    [t.name, t.n, windowDays, openingsCaptionText],
   )
   const roleTex = useMemo(
     () => t.roles.map((r) => makeRoleLabel(r.title, r.n)),
@@ -771,22 +799,6 @@ function CampusPad({
   dim: boolean
   pad?: CampusPadSpec
 }) {
-  const labelTex = useMemo(() => {
-    if (!pad.label) return null
-    const c = document.createElement('canvas')
-    c.width = 512
-    c.height = 96
-    const ctx = c.getContext('2d')!
-    ctx.clearRect(0, 0, c.width, c.height)
-    ctx.font = 'bold 42px "Segoe UI", system-ui, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    neonFill(ctx, pad.label.toUpperCase(), c.width / 2, c.height / 2, '#ffaa00', '#ff5500')
-    const tex = new THREE.CanvasTexture(c)
-    tex.colorSpace = THREE.SRGBColorSpace
-    return tex
-  }, [pad.label])
-
   return (
     <group position={[pad.cx, 0.012, pad.cz]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -803,20 +815,76 @@ function CampusPad({
         <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
         <meshBasicMaterial color="#a78bfa" transparent opacity={dim ? 0.15 : 0.4} />
       </mesh>
-      {labelTex && (
-        <Billboard position={[0, 2.8, 0]} follow>
-          <mesh>
-            <planeGeometry args={[1.6, 0.3]} />
-            <meshBasicMaterial
-              map={labelTex}
-              transparent
-              depthWrite={false}
-              opacity={dim ? 0.35 : 0.95}
-            />
-          </mesh>
-        </Billboard>
-      )}
     </group>
+  )
+}
+
+/** Collective city name — no card, big bold white, subtle glow, above roofs. */
+function makeCityFlag(label: string) {
+  const text = label.trim().toUpperCase()
+  const c = document.createElement('canvas')
+  c.width = 1024
+  c.height = 160
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, c.width, c.height)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = '900 92px Orbitron, Rajdhani, sans-serif'
+  // Soft bloom layers (no plate / card)
+  ctx.shadowColor = 'rgba(255,255,255,0.85)'
+  ctx.shadowBlur = 28
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 14
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 4
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 0
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  return tex
+}
+
+function CityFlag({
+  label,
+  x,
+  y,
+  z,
+  dim,
+}: {
+  label: string
+  x: number
+  y: number
+  z: number
+  dim: boolean
+}) {
+  const tex = useMemo(() => makeCityFlag(label), [label])
+  const pulse = useRef(0)
+  const mat = useRef<THREE.MeshBasicMaterial>(null)
+  useFrame((state) => {
+    pulse.current = 0.82 + Math.sin(state.clock.elapsedTime * 1.1) * 0.1
+    if (mat.current) {
+      mat.current.opacity = dim ? 0.28 : pulse.current
+    }
+  })
+  if (!label) return null
+  const w = Math.min(3.6, 1.4 + label.length * 0.14)
+  return (
+    <Billboard position={[x, y, z]} follow>
+      <mesh>
+        <planeGeometry args={[w, w * (160 / 1024)]} />
+        <meshBasicMaterial
+          ref={mat}
+          map={tex}
+          transparent
+          depthWrite={false}
+          opacity={0.92}
+        />
+      </mesh>
+    </Billboard>
   )
 }
 
@@ -1122,7 +1190,14 @@ export function NightCity({
     if (jobsMode && clusters.length) {
       return layoutJobClusters(clusters)
     }
-    const single = layoutCorporates(companies, maxN)
+    const single = layoutCorporates(
+      companies,
+      maxN,
+      CAMPUS.cx,
+      CAMPUS.cz,
+      cityId,
+      cityLabel,
+    )
     return {
       corps: single,
       pads: [
@@ -1130,11 +1205,11 @@ export function NightCity({
           cx: CAMPUS.cx,
           cz: CAMPUS.cz,
           half: CAMPUS.half,
-          label: '',
+          label: cityLabel || '',
         },
       ] as CampusPadSpec[],
     }
-  }, [jobsMode, clusters, companies, maxN])
+  }, [jobsMode, clusters, companies, maxN, cityId, cityLabel])
 
   const dummies = useMemo(() => layoutDummies(corps, pads), [corps, pads])
   const groundHalf = useMemo(() => {
@@ -1144,6 +1219,24 @@ export function NightCity({
       ...pads.map((p) => Math.abs(p.cx) + p.half + 2.2),
     )
   }, [pads])
+  const flagHeights = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of pads) {
+      const key = `${p.cx}|${p.cz}`
+      let maxH = 1.6
+      for (const t of corps) {
+        if (Math.hypot(t.x - p.cx, t.z - p.cz) <= p.half + 0.6) {
+          maxH = Math.max(maxH, t.h)
+        }
+      }
+      // Above company name + role cards stack
+      map.set(key, maxH + 1.35)
+    }
+    return map
+  }, [pads, corps])
+  const roofCaption = jobsMode
+    ? (n: number) => (n === 1 ? 'Opening' : 'Openings')
+    : undefined
   const placeLabel =
     jobsMode && clusters.length > 1
       ? `${clusters.length} cities`
@@ -1196,6 +1289,18 @@ export function NightCity({
       {pads.map((p) => (
         <CampusPad key={`${p.cx}-${p.cz}-${p.label}`} dim={sceneDimmed} pad={p} />
       ))}
+      {pads.map((p) =>
+        p.label ? (
+          <CityFlag
+            key={`flag-${p.cx}-${p.cz}-${p.label}`}
+            label={p.label}
+            x={p.cx}
+            y={flagHeights.get(`${p.cx}|${p.cz}`) || 3.2}
+            z={p.cz}
+            dim={sceneDimmed}
+          />
+        ) : null,
+      )}
       <Traffic dim={sceneDimmed} />
       <StreetLamps dim={sceneDimmed} />
 
@@ -1209,6 +1314,7 @@ export function NightCity({
           t={t}
           cityLabel={t.city_label || cityLabel || placeLabel}
           windowDays={cityWindowDays}
+          openingsCaptionText={roofCaption ? roofCaption(t.n) : undefined}
           sceneDimmed={sceneDimmed}
           onHoverEnter={setHoverId}
           onHoverLeave={(id) =>
