@@ -8,7 +8,7 @@ layered on top of the core.
 |---|---|---|
 | **Core** (default) | GPU particle singularity | **Drag** orbit · **scroll/pinch** enter deep · **right-drag** pan · Esc reset |
 | **Graph** | Obsidian graph + text tags on nodes/edges | Click tagged node → panel; city tag → City mode |
-| **City** | MapLibre India hiring map → metro → companies | Click metro → 3D city; click company → jobs; Esc back |
+| **City** | MapLibre India map **or** nightlife campus (toggle) | Map: click metro → companies. Campus: towers → jobs. Esc back |
 
 Top-right icon strip: Core · Graph · City.
 

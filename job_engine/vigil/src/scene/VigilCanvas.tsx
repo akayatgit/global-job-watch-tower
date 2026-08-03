@@ -4,6 +4,7 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { EnergyCore } from './EnergyCore'
 import { NeuralCore } from './NeuralCore'
 import { CityMap } from './CityMap'
+import { CampusHost } from './CampusHost'
 import { Starfield } from './Starfield'
 import { OrbitNodes } from './OrbitNodes'
 import { SceneControls } from './SceneControls'
@@ -12,19 +13,28 @@ import { useVigilStore } from '../store/vigilStore'
 function SceneBody() {
   const vigilMode = useVigilStore((s) => s.vigilMode)
   const sceneMode = useVigilStore((s) => s.sceneMode)
+  const cityViewMode = useVigilStore((s) => s.cityViewMode)
+  const campusOn = sceneMode === 'city' && cityViewMode === 'campus'
   return (
     <>
-      <Starfield />
-      <EnergyCore />
+      {!campusOn && <Starfield />}
+      {!campusOn && <EnergyCore />}
       {sceneMode === 'graph' && <NeuralCore />}
+      {campusOn && <CampusHost />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
-            sceneMode === 'core' ? 0.45 : sceneMode === 'graph' ? 0.22 : 0.55
+            campusOn
+              ? 0.55
+              : sceneMode === 'core'
+                ? 0.45
+                : sceneMode === 'graph'
+                  ? 0.22
+                  : 0.55
           }
-          luminanceThreshold={sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceThreshold={campusOn ? 0.35 : sceneMode === 'graph' ? 0.72 : 0.5}
           luminanceSmoothing={0.88}
           mipmapBlur
         />
@@ -36,7 +46,9 @@ function SceneBody() {
 export function VigilCanvas() {
   const wrap = useRef<HTMLDivElement>(null)
   const sceneMode = useVigilStore((s) => s.sceneMode)
-  const cityMode = sceneMode === 'city'
+  const cityViewMode = useVigilStore((s) => s.cityViewMode)
+  const mapOn = sceneMode === 'city' && cityViewMode === 'map'
+  const campusOn = sceneMode === 'city' && cityViewMode === 'campus'
 
   useEffect(() => {
     const el = wrap.current
@@ -45,8 +57,9 @@ export function VigilCanvas() {
     st.resetView()
 
     const onWheel = (e: WheelEvent) => {
-      // MapLibre owns wheel in city mode; R3F owns it otherwise
-      if (useVigilStore.getState().sceneMode === 'city') return
+      // MapLibre owns wheel; campus/core/graph need preventDefault
+      const s = useVigilStore.getState()
+      if (s.sceneMode === 'city' && s.cityViewMode === 'map') return
       e.preventDefault()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -59,15 +72,21 @@ export function VigilCanvas() {
             s.clearCameraFocus()
             s.setSelectFocusId(null)
             s.setStatus(
-              s.cityFocus
-                ? `MAP · ${s.cityFocus} · pick a company`
-                : 'MAP · India hiring · click a city',
+              s.cityViewMode === 'campus'
+                ? 'CAMPUS · pick a tower'
+                : s.cityFocus
+                  ? `MAP · ${s.cityFocus} · pick a company`
+                  : 'MAP · India hiring · click a city',
             )
             return
           }
           if (s.cityFocus) {
             s.setCityFocus(null)
-            s.setStatus('MAP · India hiring · click a city')
+            s.setStatus(
+              s.cityViewMode === 'campus'
+                ? 'CAMPUS · nightlife India clusters'
+                : 'MAP · India hiring · click a city',
+            )
             return
           }
         }
@@ -82,7 +101,7 @@ export function VigilCanvas() {
     const onDbl = () => {
       const s = useVigilStore.getState()
       if (s.focusedPanel || s.trainingActive) return
-      if (s.sceneMode === 'city') return
+      if (s.sceneMode === 'city' && s.cityViewMode === 'map') return
       s.resetView()
     }
     const onCtx = (e: Event) => e.preventDefault()
@@ -101,10 +120,10 @@ export function VigilCanvas() {
 
   return (
     <div
-      className={`vigil-canvas${cityMode ? ' vigil-canvas--map' : ''}`}
+      className={`vigil-canvas${mapOn ? ' vigil-canvas--map' : ''}${campusOn ? ' vigil-canvas--campus' : ''}`}
       ref={wrap}
     >
-      {cityMode ? (
+      {mapOn ? (
         <CityMap />
       ) : (
         <Canvas
@@ -122,6 +141,16 @@ export function VigilCanvas() {
               st.setGraphFocusId(null)
               st.clearCameraFocus()
               st.setStatus('GRAPH · global view')
+              return
+            }
+            if (
+              st.sceneMode === 'city' &&
+              st.cityViewMode === 'campus' &&
+              st.selectFocusId?.startsWith('company:')
+            ) {
+              st.clearCameraFocus()
+              st.setSelectFocusId(null)
+              st.setStatus('CAMPUS · pick a tower')
             }
           }}
         >

@@ -67,6 +67,15 @@ function readStoredExperience(): string {
 
 const CITY_WINDOW_ALLOWED = new Set([0, 1, 2, 4, 7, 14, 30])
 
+function readStoredCityViewMode(): 'map' | 'campus' {
+  try {
+    const raw = localStorage.getItem('vigil.cityView')
+    return raw === 'campus' ? 'campus' : 'map'
+  } catch {
+    return 'map'
+  }
+}
+
 function readStoredCityWindow(): number {
   try {
     const raw = localStorage.getItem('vigil.cityWindow')
@@ -459,10 +468,13 @@ type VigilStore = {
     endFocusId?: string | null
   }) => void
   clearCameraFocus: () => void
-  /** City mode drill-down (city_key); null = globe overview */
+  /** City mode drill-down (city_key); null = India map overview */
   cityFocus: string | null
   setCityFocus: (id: string | null) => void
-  /** Time window for globe + campus skyline (0=24h … 30=month). Persisted. */
+  /** MapLibre India map vs nightlife R3F campus. Persisted. */
+  cityViewMode: 'map' | 'campus'
+  setCityViewMode: (m: 'map' | 'campus') => void
+  /** Time window for map + campus skyline (0=24h … 30=month). Persisted. */
   cityWindowDays: number
   setCityWindowDays: (days: number) => void
   /** Last selected interactive id (for second-click open) */
@@ -666,10 +678,15 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
   triggerBurst: () => set({ coreBurst: performance.now() }),
   sceneMode: 'core',
   setSceneMode: (m) => {
+    const view = get().cityViewMode
+    const cityLabel =
+      view === 'campus'
+        ? 'CAMPUS · nightlife · Map switch for India map'
+        : 'MAP · India hiring · click a city'
     const labels = {
       core: 'CORE · drag/scroll/pinch · Esc reset',
       graph: 'GRAPH · tagged world model',
-      city: 'MAP · India hiring · click a city',
+      city: cityLabel,
     } as const
     set({
       sceneMode: m,
@@ -760,6 +777,29 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     }),
   cityFocus: null,
   setCityFocus: (id) => set({ cityFocus: id }),
+  cityViewMode: readStoredCityViewMode(),
+  setCityViewMode: (m) => {
+    try {
+      localStorage.setItem('vigil.cityView', m)
+    } catch {
+      /* ignore */
+    }
+    set({
+      cityViewMode: m,
+      selectFocusId: null,
+      cameraFocus: null,
+      cameraFocusNonce: get().cameraFocusNonce + 1,
+      viewResetNonce: get().viewResetNonce + 1,
+      statusLine:
+        m === 'campus'
+          ? get().cityFocus
+            ? `CAMPUS · ${get().cityFocus}`
+            : 'CAMPUS · nightlife India clusters'
+          : get().cityFocus
+            ? `MAP · ${get().cityFocus}`
+            : 'MAP · India hiring · click a city',
+    })
+  },
   cityWindowDays: readStoredCityWindow(),
   setCityWindowDays: (days) => {
     const next = CITY_WINDOW_ALLOWED.has(days) ? days : 7

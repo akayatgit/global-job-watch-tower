@@ -20,6 +20,8 @@ export function StatusHud() {
   const setSceneMode = useVigilStore((s) => s.setSceneMode)
   const cityFocus = useVigilStore((s) => s.cityFocus)
   const setCityFocus = useVigilStore((s) => s.setCityFocus)
+  const cityViewMode = useVigilStore((s) => s.cityViewMode)
+  const setCityViewMode = useVigilStore((s) => s.setCityViewMode)
   const cityWindowDays = useVigilStore((s) => s.cityWindowDays)
   const setCityWindowDays = useVigilStore((s) => s.setCityWindowDays)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
@@ -122,8 +124,8 @@ export function StatusHud() {
               <button
                 type="button"
                 className={`hud-icon-btn ${sceneMode === 'city' ? 'on' : ''}`}
-                title="City — India hiring map"
-                aria-label="City map"
+                title="City — MapLibre India / nightlife campus"
+                aria-label="City"
                 aria-pressed={sceneMode === 'city'}
                 onClick={() => setSceneMode('city')}
               >
@@ -132,18 +134,78 @@ export function StatusHud() {
                   <path d="M4 12h16M12 4a14 14 0 0 1 0 16M12 4a14 14 0 0 0 0 16" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
                 </svg>
               </button>
+              {sceneMode === 'city' ? (
+                <button
+                  type="button"
+                  className={`hud-icon-btn city-view-toggle ${cityViewMode === 'campus' ? 'on' : ''}`}
+                  title={
+                    cityViewMode === 'map'
+                      ? 'Switch to nightlife campus'
+                      : 'Switch to India map'
+                  }
+                  aria-label={
+                    cityViewMode === 'map'
+                      ? 'Nightlife campus'
+                      : 'India map'
+                  }
+                  aria-pressed={cityViewMode === 'campus'}
+                  onClick={() =>
+                    setCityViewMode(cityViewMode === 'map' ? 'campus' : 'map')
+                  }
+                >
+                  {cityViewMode === 'map' ? (
+                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
+                      <path
+                        d="M5 19V9l4-2 6 3 4-2v10l-4 2-6-3-4 2z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M9 7v10M15 10v10"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        opacity="0.7"
+                      />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
+                      <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                      <path
+                        d="M5 12h14M12 5c2.2 2.4 2.2 11.6 0 14M12 5c-2.2 2.4-2.2 11.6 0 14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        opacity="0.75"
+                      />
+                    </svg>
+                  )}
+                </button>
+              ) : null}
               {sceneMode === 'city' && cityFocus ? (
                 <>
                   <button
                     type="button"
                     className="hud-icon-btn city-exit-btn"
-                    title="Back to India map"
-                    aria-label="Back to India map"
+                    title={
+                      cityViewMode === 'campus'
+                        ? 'Back to India campus clusters'
+                        : 'Back to India map'
+                    }
+                    aria-label="Back to India overview"
                     onClick={() => {
                       setCityFocus(null)
                       useVigilStore.getState().clearCameraFocus()
                       useVigilStore.getState().setSelectFocusId(null)
-                      useVigilStore.getState().setStatus('MAP · India hiring · click a city')
+                      useVigilStore
+                        .getState()
+                        .setStatus(
+                          cityViewMode === 'campus'
+                            ? 'CAMPUS · nightlife India clusters'
+                            : 'MAP · India hiring · click a city',
+                        )
                     }}
                   >
                     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>

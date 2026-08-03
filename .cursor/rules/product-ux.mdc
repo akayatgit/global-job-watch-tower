@@ -238,10 +238,9 @@ use — they should love opening the app, never fight it.
   white glassmorphic cards (name · big count · caption · role rows with soft dots),
   soft ice-blue towers, no neon yellow/rainbow cyberpunk. Interaction unchanged;
   only visual language + single-card structure.
-- **City MapLibre (2026-08-03):** City mode is a real MapLibre map (OpenFreeMap
-  + 3D buildings + hiring markers). Replaces R3F globe and campus. Revert:
-  `milestone/pre-maplibre-city`. Hover/focus cream card; click company again
-  opens Jobs. Esc steps back company → India overview.
+- **City dual view (2026-08-03):** City mode has MapLibre India map **and**
+  nightlife multi-color R3F campus. HUD toggle switches (`vigil.cityView`).
+  No R3F globe. Revert campus+globe era: `milestone/pre-maplibre-city`.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

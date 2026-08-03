@@ -14,9 +14,8 @@ import {
 import { clearCampusNav, setCampusNav } from './campusNav'
 
 /**
- * Editorial daylight miniature campus — documents/vigil-city-aesthetic.md.
- * 45° iso, content-sized cream cards (hover/focus only), spaced towers, soft PBR.
- * Interaction unchanged.
+ * Nightlife glass campus — multi-color towers, dusk sky, content-sized cards
+ * on hover/focus. Paired with MapLibre India map via cityViewMode switch.
  */
 
 type RoleHit = { title: string; n: number }
@@ -78,20 +77,28 @@ const ROAD = [-4.2, -1.4, 1.4, 4.2]
 /** Canvas px → world units — cards hug content, not a fixed plate */
 const CARD_PX_PER_WORLD = 380
 
-/** Sector → soft cool hues (narrow, institutional — no neon rainbow) */
+/** Sector → nightlife accent hues */
 const SECTOR_HUE: Record<string, number> = {
-  tech_ai: 0.58, // ice blue
-  tech_digital: 0.55, // cyan-blue
-  software: 0.56,
-  manufacturing_advanced: 0.52, // steel blue
-  healthcare: 0.48, // soft teal
-  green_economy: 0.46,
-  logistics: 0.54,
-  tourism: 0.6, // soft periwinkle
+  tech_ai: 0.78, // violet
+  tech_digital: 0.55, // cyan
+  software: 0.58,
+  manufacturing_advanced: 0.08, // amber
+  healthcare: 0.42, // teal
+  green_economy: 0.32,
+  logistics: 0.12, // orange
+  tourism: 0.92, // magenta
 }
 
-const ACCENTS = ['#5b8def', '#7aa2f7', '#89b4fa', '#74c0fc', '#4c6ef5']
-const ROLE_DOTS = ['#5b8def', '#74c0fc', '#69db7c', '#868e96', '#adb5bd']
+const ACCENTS = [
+  '#38bdf8',
+  '#a78bfa',
+  '#fb923c',
+  '#f472b6',
+  '#34d399',
+  '#fbbf24',
+  '#22d3ee',
+]
+const ROLE_DOTS = ['#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24']
 const CARD_FONT =
   'Georgia, "Iowan Old Style", "Times New Roman", "Segoe UI", serif'
 const TITLE_FONT =
@@ -411,7 +418,7 @@ function layoutCorporates(
       seed,
       hue,
       accent: ACCENTS[Math.floor(hash01(seed + 5) * ACCENTS.length)],
-      warmCore: false,
+      warmCore: hash01(seed + 6) > 0.72,
     }
   })
 }
@@ -550,9 +557,9 @@ function DummyBuilding({
   neighborGlow?: number
   spillColor?: string
 }) {
-  // Daylight fabric — soft matte clay blocks (Spline-calm)
+  // Night fabric — dark mass, neon spill from lit towers
   const wash = neighborGlow > 0.08
-  const body = b.tint || '#e8edf3'
+  const body = '#0a0612'
   return (
     <group position={[b.x, 0, b.z]}>
       <mesh
@@ -564,28 +571,28 @@ function DummyBuilding({
         <boxGeometry args={[b.w, b.h, b.d]} />
         <meshStandardMaterial
           color={body}
-          emissive={wash ? spillColor : '#ffffff'}
-          emissiveIntensity={wash ? neighborGlow * 0.06 : 0.02}
-          roughness={0.88}
-          metalness={0.02}
+          emissive={wash ? spillColor : '#1a0a14'}
+          emissiveIntensity={wash ? neighborGlow * 0.28 : 0.04}
+          roughness={0.92}
+          metalness={0.05}
           transparent
-          opacity={dim ? 0.45 : 0.95}
+          opacity={dim ? 0.5 : 0.96}
         />
       </mesh>
       <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]} raycast={() => null}>
         <planeGeometry args={[b.w * 0.48, b.h * 0.32]} />
         <meshBasicMaterial
-          color={wash ? spillColor : '#cbd5e1'}
+          color={wash ? spillColor : '#ffb36b'}
           transparent
-          opacity={dim ? 0.04 : 0.08 + neighborGlow * 0.06}
+          opacity={dim ? 0.04 : 0.06 + neighborGlow * 0.2}
         />
       </mesh>
       <EdgeFrame
         w={b.w}
         h={b.h}
         d={b.d}
-        color={wash ? spillColor : '#94a3b8'}
-        opacity={dim ? 0.1 : 0.18 + neighborGlow * 0.1}
+        color={wash ? spillColor : '#4a2030'}
+        opacity={dim ? 0.12 : 0.22 + neighborGlow * 0.28}
       />
     </group>
   )
@@ -597,17 +604,16 @@ function GlassTower({
   windowDays,
   openingsCaptionText,
   sceneDimmed,
+  neighborGlow = 0,
+  spillColor,
   onHoverEnter,
   onHoverLeave,
 }: {
   t: Corp
   cityLabel: string
   windowDays: number
-  /** When set (Jobs city view), replaces the hiring-window caption. */
   openingsCaptionText?: string
-  /** True when any tower is focused or hovered — dim non-active ones */
   sceneDimmed: boolean
-  /** Kept for call-site compatibility (daylight uses softer dim, not spill) */
   neighborGlow?: number
   spillColor?: string
   onHoverEnter: (id: string) => void
@@ -621,7 +627,6 @@ function GlassTower({
   const dim = sceneDimmed && !lit
   const shell = useRef<THREE.MeshStandardMaterial>(null)
   const core = useRef<THREE.MeshStandardMaterial>(null)
-  // Cards only when hovered / focused — geometry first (Aximoris calm)
   const card = useMemo(
     () =>
       lit
@@ -637,11 +642,15 @@ function GlassTower({
   )
   const glassCol = useMemo(() => {
     const c = new THREE.Color()
-    c.setHSL(t.hue, 0.22, 0.72)
+    c.setHSL(t.hue, 0.72, 0.48)
     return c
   }, [t.hue])
-  const whiteCore = useMemo(() => new THREE.Color('#ffffff'), [])
-  const softBlue = useMemo(() => new THREE.Color('#c5d8f0'), [])
+  const warmCol = useMemo(() => new THREE.Color('#fb923c'), [])
+  const spill = useMemo(
+    () => new THREE.Color(spillColor || t.accent),
+    [spillColor, t.accent],
+  )
+  const whiteCore = useMemo(() => new THREE.Color('#f8fafc'), [])
 
   useEffect(() => {
     if (interactionBlocked && hot) {
@@ -651,19 +660,20 @@ function GlassTower({
   }, [interactionBlocked, hot, onHoverLeave, selectId])
 
   useFrame((state) => {
-    const breath = Math.sin(state.clock.elapsedTime * 1.0 + t.seed) * 0.04
+    const breath = Math.sin(state.clock.elapsedTime * 1.4 + t.seed) * 0.1
+    const spillBoost = neighborGlow * 0.35
     if (shell.current) {
-      shell.current.emissiveIntensity = lit
-        ? 0.08 + breath * 0.03
-        : dim
-          ? 0.02
-          : 0.03
-      shell.current.opacity = lit ? 0.72 : dim ? 0.4 : 0.58
-      shell.current.emissive.copy(lit ? softBlue : glassCol)
+      const base = lit ? 0.58 : dim ? 0.14 + spillBoost : 0.24 + spillBoost
+      shell.current.emissiveIntensity = base + breath * (lit ? 0.16 : 0.04)
+      shell.current.opacity = lit ? 0.85 : dim ? 0.4 : 0.52
+      if (!lit && neighborGlow > 0.05) shell.current.emissive.copy(spill)
+      else if (!lit) shell.current.emissive.copy(glassCol)
+      else shell.current.emissive.copy(glassCol)
     }
     if (core.current) {
-      core.current.emissiveIntensity = lit ? 0.1 + breath * 0.02 : 0.02
-      core.current.opacity = lit ? 0.85 : dim ? 0.35 : 0.55
+      const cBase = lit ? 0.42 : neighborGlow * 0.28
+      core.current.emissiveIntensity = cBase + breath * (lit ? 0.12 : 0.04)
+      core.current.opacity = lit ? 0.9 : Math.max(0.25, neighborGlow * 0.55)
     }
   })
 
@@ -729,31 +739,32 @@ function GlassTower({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Soft white core */}
+      {/* Inner white neon core */}
       <mesh position={[0, t.h * 0.52, 0]} raycast={() => null}>
-        <boxGeometry args={[t.w * 0.26, t.h * 0.7, t.d * 0.26]} />
+        <boxGeometry args={[t.w * 0.32, t.h * 0.72, t.d * 0.32]} />
         <meshStandardMaterial
           ref={core}
           color={whiteCore}
           emissive={whiteCore}
-          emissiveIntensity={lit ? 0.1 : 0.02}
+          emissiveIntensity={lit ? 0.42 : neighborGlow * 0.28}
           transparent
-          opacity={lit ? 0.8 : dim ? 0.35 : 0.55}
-          roughness={0.5}
-          metalness={0.04}
+          opacity={lit ? 0.88 : Math.max(0.2, neighborGlow * 0.5)}
+          roughness={0.2}
+          metalness={0.15}
           depthWrite={false}
         />
       </mesh>
 
       <mesh position={[0, t.h * 0.45, 0]} raycast={() => null}>
-        <boxGeometry args={[t.w * 0.52, t.h * 0.74, t.d * 0.52]} />
+        <boxGeometry args={[t.w * 0.55, t.h * 0.75, t.d * 0.55]} />
         <meshStandardMaterial
-          color="#f4f7fb"
-          emissive={lit ? softBlue : '#ffffff'}
-          emissiveIntensity={lit ? 0.06 : 0.02}
+          color={t.warmCore ? warmCol : '#1e293b'}
+          emissive={lit || neighborGlow > 0.08 ? spill : glassCol}
+          emissiveIntensity={
+            dim ? 0.09 + neighborGlow * 0.2 : lit ? 0.42 : 0.1 + neighborGlow * 0.25
+          }
           transparent
-          opacity={dim ? dimOpacity : 0.55}
-          roughness={0.6}
+          opacity={dim ? dimOpacity : 0.75}
         />
       </mesh>
 
@@ -761,30 +772,29 @@ function GlassTower({
         const y = 0.1 + (i / floors) * (t.h - 0.15)
         return (
           <mesh key={i} position={[0, y, 0]} raycast={() => null}>
-            <boxGeometry args={[t.w * 0.9, 0.012, t.d * 0.9]} />
+            <boxGeometry args={[t.w * 0.94, 0.018, t.d * 0.94]} />
             <meshStandardMaterial
-              color="#ffffff"
-              roughness={0.42}
-              metalness={0.05}
+              color="#e2e8f0"
+              roughness={0.55}
               transparent
-              opacity={dim ? dimOpacity : 0.92}
+              opacity={dim ? dimOpacity : 0.85}
             />
           </mesh>
         )
       })}
 
-      {/* Soft ice glass — daylight matte */}
+      {/* Multi-color glass facade */}
       <mesh position={[0, t.h / 2, 0]} castShadow raycast={() => null}>
         <boxGeometry args={[t.w, t.h, t.d]} />
         <meshStandardMaterial
           ref={shell}
           color={glassCol}
           emissive={glassCol}
-          emissiveIntensity={0.04}
+          emissiveIntensity={0.25}
           transparent
-          opacity={dim ? dimOpacity : lit ? 0.55 : 0.45}
-          roughness={0.22}
-          metalness={0.18}
+          opacity={dim ? dimOpacity : lit ? 0.72 : 0.52}
+          roughness={0.12}
+          metalness={0.35}
           depthWrite={false}
         />
       </mesh>
@@ -796,9 +806,15 @@ function GlassTower({
         <mesh key={`f${i}`} position={[x, y, z]} raycast={() => null}>
           <planeGeometry args={[t.w * 0.96, t.h * 0.96]} />
           <meshBasicMaterial
-            color="#94b8e0"
+            color={t.accent}
             transparent
-            opacity={dim ? 0.04 : lit ? 0.1 : 0.06}
+            opacity={
+              dim
+                ? 0.08 + neighborGlow * 0.1
+                : lit
+                  ? 0.2
+                  : 0.1 + neighborGlow * 0.12
+            }
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -808,16 +824,34 @@ function GlassTower({
         w={t.w}
         h={t.h}
         d={t.d}
-        color={lit ? '#7aa2f7' : '#cbd5e1'}
-        opacity={dim ? 0.2 : lit ? 0.4 : 0.28}
+        color={lit || neighborGlow > 0.15 ? t.accent : '#e2e8f0'}
+        opacity={dim ? dimOpacity : lit ? 0.7 : 0.4 + neighborGlow * 0.35}
       />
 
       {lit && (
+        <>
+          <pointLight
+            position={[0, t.h * 0.85, 0]}
+            color="#ffffff"
+            intensity={focused ? 0.55 : 0.38}
+            distance={2.2}
+            decay={2}
+          />
+          <pointLight
+            position={[0, t.h * 0.55, 0]}
+            color={t.accent}
+            intensity={focused ? 0.9 : 0.62}
+            distance={4.8}
+            decay={1.6}
+          />
+        </>
+      )}
+      {!lit && neighborGlow > 0.12 && (
         <pointLight
-          position={[0, t.h * 0.7, 0]}
-          color="#ffffff"
-          intensity={focused ? 0.18 : 0.12}
-          distance={2.2}
+          position={[0, t.h * 0.5, 0]}
+          color={spillColor || t.accent}
+          intensity={neighborGlow * 0.35}
+          distance={2.4}
           decay={2}
         />
       )}
@@ -848,65 +882,52 @@ function CampusPad({
   dim: boolean
   pad?: CampusPadSpec
 }) {
-  const size = pad.half * 2.4
   return (
-    <group position={[pad.cx, 0.01, pad.cz]}>
-      {/* Rounded pedestal — miniature baseplate */}
+    <group position={[pad.cx, 0.012, pad.cz]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <circleGeometry args={[pad.half * 1.35, 48]} />
+        <planeGeometry args={[pad.half * 2.25, pad.half * 2.25]} />
         <meshStandardMaterial
-          color="#eef2f7"
-          roughness={0.78}
-          metalness={0.04}
+          color="#12080f"
+          roughness={0.55}
+          metalness={0.15}
           transparent
-          opacity={dim ? 0.55 : 0.95}
+          opacity={dim ? 0.55 : 1}
         />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]}>
-        <ringGeometry args={[pad.half * 1.28, pad.half * 1.35, 48]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
+        <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
         <meshBasicMaterial
-          color="#94a3b8"
+          color="#ff6b35"
           transparent
-          opacity={dim ? 0.12 : 0.22}
-        />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.006, 0]} receiveShadow>
-        <planeGeometry args={[size, size]} />
-        <meshStandardMaterial
-          color="#dce3ec"
-          roughness={0.9}
-          transparent
-          opacity={dim ? 0.2 : 0.35}
+          opacity={dim ? 0.12 : 0.28}
         />
       </mesh>
     </group>
   )
 }
 
-/**
- * Title-dominant city name — soft slate on daylight, freestanding.
- */
+/** Yellow neon city name flag */
 function makeCityFlag(label: string) {
   const text = label.trim().toUpperCase()
   const c = document.createElement('canvas')
-  c.width = 1280
-  c.height = 280
+  c.width = 1024
+  c.height = 160
   const ctx = c.getContext('2d')!
   ctx.clearRect(0, 0, c.width, c.height)
-  const cx = c.width / 2
-  const cy = c.height / 2 - 8
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = `800 112px ${TITLE_FONT}`
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.85)'
+  ctx.font = `900 92px ${TITLE_FONT}`
+  ctx.shadowColor = 'rgba(250, 204, 21, 0.55)'
   ctx.shadowBlur = 14
-  ctx.fillStyle = 'rgba(30, 41, 59, 0.35)'
-  ctx.fillText(text, cx, cy)
-  ctx.shadowBlur = 4
-  ctx.fillStyle = '#1e293b'
-  ctx.fillText(text, cx, cy)
+  ctx.fillStyle = 'rgba(253, 224, 71, 0.5)'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 7
+  ctx.fillStyle = 'rgba(253, 224, 71, 0.88)'
+  ctx.fillText(text, c.width / 2, c.height / 2)
+  ctx.shadowBlur = 2
+  ctx.fillStyle = '#fde047'
+  ctx.fillText(text, c.width / 2, c.height / 2)
   ctx.shadowBlur = 0
-  softEdgeDissolve(ctx, c.width, c.height, 40)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
@@ -936,11 +957,11 @@ function CityFlag({
     }
   })
   if (!label) return null
-  const w = Math.min(4.2, 1.7 + label.length * 0.16)
+  const w = Math.min(3.6, 1.4 + label.length * 0.14)
   return (
     <Billboard position={[x, y, z]} follow>
       <mesh raycast={() => null}>
-        <planeGeometry args={[w, w * (280 / 1280)]} />
+        <planeGeometry args={[w, w * (160 / 1024)]} />
         <meshBasicMaterial
           ref={mat}
           map={tex}
@@ -961,12 +982,12 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    // Soft daylight concrete + quiet grid
-    ctx.fillStyle = '#e8edf3'
+    // Warm dusk pavement
+    ctx.fillStyle = '#140a12'
     ctx.fillRect(0, 0, 1024, 1024)
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+    ctx.strokeStyle = 'rgba(80, 40, 50, 0.35)'
     ctx.lineWidth = 1
-    for (let i = 0; i < 1024; i += 32) {
+    for (let i = 0; i < 1024; i += 28) {
       ctx.beginPath()
       ctx.moveTo(i, 0)
       ctx.lineTo(i, 1024)
@@ -980,13 +1001,13 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     const half = (0.48 / (CITY_HALF * 2)) * 1024
     for (const r of ROAD) {
       const p = toPx(r)
-      ctx.fillStyle = '#d1d9e4'
+      ctx.fillStyle = '#08040a'
       ctx.fillRect(p - half, 0, half * 2, 1024)
       ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)'
+    ctx.strokeStyle = 'rgba(255, 180, 100, 0.35)'
     ctx.lineWidth = 2
-    ctx.setLineDash([14, 16])
+    ctx.setLineDash([16, 14])
     for (const r of ROAD) {
       const p = toPx(r)
       ctx.beginPath()
@@ -999,7 +1020,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
       ctx.stroke()
     }
     ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.18)'
+    ctx.fillStyle = 'rgba(255, 160, 90, 0.28)'
     for (const x of ROAD) {
       for (const z of ROAD) {
         const px = toPx(x)
@@ -1022,18 +1043,20 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
   )
 }
 
-/** Soft daylight studio dome — pale sky, gentle horizon. */
-function DaySky() {
+/** Nightlife dusk dome — violet zenith, warm horizon. */
+function NightSky() {
   const tex = useMemo(() => {
     const c = document.createElement('canvas')
     c.width = 4
     c.height = 256
     const ctx = c.getContext('2d')!
     const g = ctx.createLinearGradient(0, 0, 0, 256)
-    g.addColorStop(0, '#dce8f5') // zenith soft blue
-    g.addColorStop(0.45, '#e8eef5')
-    g.addColorStop(0.75, '#f2f5f8')
-    g.addColorStop(1, '#fafbfc') // bright horizon
+    g.addColorStop(0, '#1a0830')
+    g.addColorStop(0.35, '#3b1248')
+    g.addColorStop(0.55, '#8b2d4a')
+    g.addColorStop(0.72, '#e85d2a')
+    g.addColorStop(0.88, '#ffb15a')
+    g.addColorStop(1, '#ffd9a0')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 4, 256)
     const t = new THREE.CanvasTexture(c)
@@ -1384,30 +1407,29 @@ export function NightCity({
 
   return (
     <group position={[0, CITY_Y, 0]}>
-      <DaySky />
-      {/* Well-lit daylight studio */}
-      <ambientLight intensity={sceneDimmed ? 0.55 : 0.78} color="#f0f4f8" />
+      <NightSky />
+      <ambientLight intensity={sceneDimmed ? 0.12 : 0.18} color="#3a2040" />
       <hemisphereLight
-        args={['#ffffff', '#c5d0dc', sceneDimmed ? 0.55 : 0.85]}
+        args={['#ffb07a', '#1a0a20', sceneDimmed ? 0.28 : 0.42]}
       />
       <directionalLight
-        position={[6, 9, 4]}
-        intensity={sceneDimmed ? 0.85 : 1.35}
-        color="#fff7e8"
+        position={[8, 3.2, -4]}
+        intensity={sceneDimmed ? 0.55 : 0.95}
+        color="#ff8a3d"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
       <directionalLight
-        position={[-5, 5, -3]}
-        intensity={sceneDimmed ? 0.25 : 0.4}
-        color="#dbeafe"
+        position={[-5, 2.5, 6]}
+        intensity={sceneDimmed ? 0.15 : 0.28}
+        color="#7c3aed"
       />
       <pointLight
-        position={[0, 2.2, 0]}
-        intensity={sceneDimmed ? 0.08 : 0.14}
-        color="#ffffff"
-        distance={jobsMode && clusters.length > 2 ? 22 : 14}
+        position={[0, 1.2, 0]}
+        intensity={sceneDimmed ? 0.12 : 0.22}
+        color="#ff6b35"
+        distance={jobsMode && clusters.length > 2 ? 20 : 12}
       />
 
       <Ground half={groundHalf} />
