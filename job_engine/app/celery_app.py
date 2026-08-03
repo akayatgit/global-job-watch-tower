@@ -21,6 +21,11 @@ celery.conf.update(
             'task': 'app.tasks.enqueue_due_work',
             'schedule': float(config.BEAT_SCAN_INTERVAL_S),
         },
+        # Backfill experience / degree / cert / domain from job detail pages
+        'enrich-pending-requirements': {
+            'task': 'app.tasks.enrich_pending_requirements',
+            'schedule': 600.0,  # every 10 minutes
+        },
     },
 )
 

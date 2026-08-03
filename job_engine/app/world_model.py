@@ -7,6 +7,8 @@ Edges are real co-occurrence counts (never invented).
 
 from __future__ import annotations
 
+from collections import Counter
+
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -15,12 +17,23 @@ from app.models import Company, JobMaster, SearchConfig
 from app.sectors import SECTOR_BY_ID
 from app.signals import ALLOWED_WINDOWS, WINDOW_OPTIONS, _window_bounds
 
+
+def _slug(label: str) -> str:
+    s = ''.join(ch.lower() if ch.isalnum() else '-' for ch in (label or ''))
+    while '--' in s:
+        s = s.replace('--', '-')
+    return s.strip('-')[:48] or 'unknown'
+
 # Caps keep the Three.js scene readable on the ThinkPad while Ollama runs.
 MAX_SECTORS = 8
 MAX_CITIES = 10
 MAX_COMPANIES = 12
 MAX_ROLES = 10
-MAX_EDGES = 160
+MAX_EXPERIENCE = 8
+MAX_DEGREE = 8
+MAX_CERT = 8
+MAX_DOMAIN = 8
+MAX_EDGES = 220
 RANK_CITIES = {
     'bengaluru', 'hyderabad', 'chennai', 'kerala', 'pune', 'mumbai',
     'delhi', 'gurugram', 'noida', 'ahmedabad', 'kolkata', 'remote',
@@ -223,6 +236,107 @@ def compute_world_model(db: Session, window_days: int = 7) -> dict:
         # Neural hierarchy: company ↔ role so climb is company → role → sector
         add_edge(f'role:{search_id}', f'company:{company_id}', n, 'hiring')
 
+    # --- Requirement clusters (experience / degree / cert / domain) ---
+    # Aggregate from enriched rows only — real extract, never invented.
+    req_rows = db.execute(
+        select(
+            JobMaster.experience_band,
+            JobMaster.degrees,
+            JobMaster.certifications,
+            JobMaster.domains,
+            JobMaster.company_id,
+            JobMaster.search_config_id,
+        )
+        .where(
+            time_col >= recent_start, time_col < recent_end,
+            JobMaster.requirements_enriched_at.is_not(None),
+        )
+        .limit(8000)
+    ).all()
+
+    exp_c: Counter[str] = Counter()
+    deg_c: Counter[str] = Counter()
+    cert_c: Counter[str] = Counter()
+    dom_c: Counter[str] = Counter()
+    exp_co: Counter[tuple[str, int]] = Counter()
+    deg_role: Counter[tuple[str, int]] = Counter()
+    cert_role: Counter[tuple[str, int]] = Counter()
+    dom_co: Counter[tuple[str, int]] = Counter()
+
+    for band, degrees, certs, domains, company_id, search_id in req_rows:
+        if band:
+            exp_c[band] += 1
+            if company_id is not None:
+                exp_co[(band, int(company_id))] += 1
+        for d in degrees or []:
+            if not d:
+                continue
+            deg_c[str(d)] += 1
+            if search_id is not None:
+                deg_role[(str(d), int(search_id))] += 1
+        for c in certs or []:
+            if not c:
+                continue
+            cert_c[str(c)] += 1
+            if search_id is not None:
+                cert_role[(str(c), int(search_id))] += 1
+        for dom in domains or []:
+            if not dom:
+                continue
+            dom_c[str(dom)] += 1
+            if company_id is not None:
+                dom_co[(str(dom), int(company_id))] += 1
+
+    for label, n in exp_c.most_common(MAX_EXPERIENCE):
+        nid = f'experience:{_slug(label)}'
+        add_node(nid, 'experience', label, n)
+        add_edge('core', nid, n, 'requires_exp')
+
+    for label, n in deg_c.most_common(MAX_DEGREE):
+        nid = f'degree:{_slug(label)}'
+        add_node(nid, 'degree', label, n)
+        add_edge('core', nid, n, 'requires_degree')
+
+    for label, n in cert_c.most_common(MAX_CERT):
+        nid = f'cert:{_slug(label)}'
+        add_node(nid, 'certification', label, n)
+        add_edge('core', nid, n, 'requires_cert')
+
+    for label, n in dom_c.most_common(MAX_DOMAIN):
+        nid = f'domain:{_slug(label)}'
+        add_node(nid, 'domain', label, n)
+        add_edge('core', nid, n, 'requires_domain')
+
+    for (band, company_id), n in exp_co.most_common(30):
+        add_edge(
+            f'experience:{_slug(band)}',
+            f'company:{company_id}',
+            n,
+            'exp_at',
+        )
+    for (deg, search_id), n in deg_role.most_common(30):
+        add_edge(
+            f'degree:{_slug(deg)}',
+            f'role:{search_id}',
+            n,
+            'degree_for',
+        )
+    for (cert, search_id), n in cert_role.most_common(30):
+        add_edge(
+            f'cert:{_slug(cert)}',
+            f'role:{search_id}',
+            n,
+            'cert_for',
+        )
+    for (dom, company_id), n in dom_co.most_common(30):
+        add_edge(
+            f'domain:{_slug(dom)}',
+            f'company:{company_id}',
+            n,
+            'domain_at',
+        )
+
+    enriched_n = len(req_rows)
     max_w = max([n['weight'] for n in nodes] + [1])
     window_label = dict(WINDOW_OPTIONS).get(window_days, f'{window_days}d')
 
@@ -235,11 +349,13 @@ def compute_world_model(db: Session, window_days: int = 7) -> dict:
             'nodes': len(nodes),
             'edges': len(edges),
             'max_weight': max_w,
+            'requirements_enriched': enriched_n,
         },
         'nodes': nodes,
         'edges': edges,
         'hint': (
-            'Living world model — nodes and links from real hiring data. '
-            'Click a point to open its insight panel.'
+            'Living world model — sectors, cities, companies, roles, plus '
+            'experience / degree / certification / domain requirement clusters '
+            'from job detail pages.'
         ),
     }

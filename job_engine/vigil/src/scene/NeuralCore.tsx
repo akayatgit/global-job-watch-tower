@@ -43,6 +43,10 @@ const KIND_COLOR: Record<string, string> = {
   city: '#2dd4bf', // teal — not blue, so purple numbers stay readable
   company: '#fbbf24',
   role: '#fb923c',
+  experience: '#a78bfa',
+  degree: '#f472b6',
+  certification: '#34d399',
+  domain: '#38bdf8',
 }
 
 /** Wider clusters so focus hover doesn’t steal neighbors */
@@ -51,6 +55,10 @@ const CLUSTER: Record<string, THREE.Vector3> = {
   role: new THREE.Vector3(0.4, 2.8, -0.6),
   city: new THREE.Vector3(3.4, 0.35, 0.7),
   company: new THREE.Vector3(0.2, -3.0, 0.4),
+  experience: new THREE.Vector3(-2.6, -2.4, -0.5),
+  degree: new THREE.Vector3(2.8, 2.4, 0.5),
+  certification: new THREE.Vector3(-0.8, 3.4, 1.0),
+  domain: new THREE.Vector3(3.2, -2.2, -0.8),
 }
 
 const TIER_FOCUS = 1
@@ -137,6 +145,10 @@ const PARENT_SCORE: Record<string, number> = {
   company_at: 80, // city → company (fallback if no role link)
   company_in: 60, // sector → company (after role)
   hires_in: 90, // sector → city
+  exp_at: 120, // experience → company
+  degree_for: 110, // degree → role
+  cert_for: 110, // cert → role
+  domain_at: 100, // domain → company
 }
 
 function findParentId(nodeId: string, edges: GraphEdge[]): string | null {
@@ -178,6 +190,15 @@ function openInsight(n: GraphNode) {
   }
   if (n.kind === 'role' && n.search_id != null) {
     st.openRoleHire(n.search_id, n.label, 7)
+    return
+  }
+  if (
+    n.kind === 'experience' ||
+    n.kind === 'degree' ||
+    n.kind === 'certification' ||
+    n.kind === 'domain'
+  ) {
+    st.setStatus(`REQUIREMENT · ${n.label} · ${n.weight} jobs in window`)
   }
 }
 

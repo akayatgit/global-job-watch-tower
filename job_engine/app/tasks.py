@@ -251,6 +251,7 @@ def run_scrape(self, scrape_run_id: int):
         found = 0
         inserted = 0
         rejected_total = 0
+        new_job_ids: list[int] = []
 
         def current_status() -> str:
             return db.execute(
@@ -289,7 +290,7 @@ def run_scrape(self, scrape_run_id: int):
                 if exists is not None:
                     continue
                 company = _get_or_create_company(db, job.company)
-                db.add(JobMaster(
+                row = JobMaster(
                     linkedin_job_id=job.linkedin_job_id,
                     title=job.title,
                     company_id=company.id if company else None,
@@ -301,7 +302,10 @@ def run_scrape(self, scrape_run_id: int):
                     raw_text=job.raw_text,
                     search_config_id=cfg.id,
                     scrape_run_id=run.id,
-                ))
+                )
+                db.add(row)
+                db.flush()
+                new_job_ids.append(row.id)
                 inserted += 1
                 page_inserted += 1
             run.jobs_found = found
@@ -359,6 +363,25 @@ def run_scrape(self, scrape_run_id: int):
         console_log('worker', f'Run #{run.id} {final_status}: {run.pages_scraped} page(s), '
                               f'{found} seen, {inserted} stored, {rejected_total} rejected by AI.',
                     run_id=run.id)
+        # Queue detail-page requirements enrich (experience / degrees / certs / domains)
+        if final_status == 'success' and new_job_ids:
+            try:
+                enrich_job_requirements.delay(
+                    job_ids=new_job_ids[:40],
+                    run_id=run.id,
+                )
+                console_log(
+                    'worker',
+                    f'Run #{run.id}: queued requirements enrich for '
+                    f'{min(len(new_job_ids), 40)} new job(s).',
+                    run_id=run.id,
+                )
+            except Exception as exc:
+                console_log(
+                    'worker',
+                    f'Run #{run.id}: could not queue enrich — {str(exc)[:160]}',
+                    run_id=run.id, level='warn',
+                )
         return {
             'run_id': run.id,
             'status': final_status,
@@ -366,4 +389,38 @@ def run_scrape(self, scrape_run_id: int):
             'found': found,
             'inserted': inserted,
             'rejected_by_ai': rejected_total,
+            'enrich_queued': len(new_job_ids[:40]) if final_status == 'success' else 0,
         }
+
+
+@celery.task(name='app.tasks.enrich_job_requirements', bind=True, max_retries=1)
+def enrich_job_requirements(self, job_ids: list[int] | None = None, run_id: int | None = None):
+    """Open LinkedIn job views and store experience / degree / cert / domain."""
+    from app.enrichment import enrich_jobs_by_ids, pending_requirement_ids
+
+    with SessionLocal() as db:
+        ids = list(job_ids or [])
+        if not ids:
+            ids = pending_requirement_ids(db, limit=12)
+        if not ids:
+            return {'enriched': 0, 'note': 'nothing pending'}
+        try:
+            return enrich_jobs_by_ids(
+                db, ids, run_id=run_id,
+                log=lambda msg: console_log('enrich', msg, run_id=run_id),
+            )
+        except Exception as exc:
+            logger.exception('enrich_job_requirements failed')
+            console_log(
+                'enrich', f'Requirements enrich FAILED: {str(exc)[:240]}',
+                run_id=run_id, level='error',
+            )
+            if self.request.retries < self.max_retries:
+                raise self.retry(exc=exc, countdown=120)
+            return {'error': str(exc)[:500]}
+
+
+@celery.task(name='app.tasks.enrich_pending_requirements')
+def enrich_pending_requirements():
+    """Beat: backfill jobs still missing requirements (critical employability data)."""
+    return enrich_job_requirements(job_ids=None, run_id=None)

@@ -5,9 +5,11 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
 )
@@ -92,6 +94,19 @@ class JobMaster(Base):
     posted_date: Mapped[datetime | None] = mapped_column(Date, nullable=True, index=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Detail-page requirements (employability graph clusters)
+    experience_min_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    experience_max_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    experience_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    experience_band: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    seniority_level: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    degrees: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    certifications: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    domains: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    description_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requirements_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
     search_config_id: Mapped[int | None] = mapped_column(ForeignKey('search_configs.id'), nullable=True)
     scrape_run_id: Mapped[int | None] = mapped_column(ForeignKey('scrape_runs.id'), nullable=True)
 
