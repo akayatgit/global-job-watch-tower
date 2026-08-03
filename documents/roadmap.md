@@ -7,7 +7,7 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **DIRECTOR graphic punchlines (v0.30)** |
+| **Status as of** | 2026-08-04 — **DIRECTOR = Ashok’s Jarvis (v0.31)** |
 | **Stage lock** | **Collects = base complete** → **Map with Students** (DIRECTOR skit + Carousel) → **Predict for Government** (next) |
 | **Agent stack** | COURIER (Hermes) · DIRECTOR (OpenAI + SQLiteSession) · STAGEHAND · LENS · CAROUSEL WORKSHOP |
 
