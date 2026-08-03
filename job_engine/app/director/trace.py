@@ -60,7 +60,14 @@ class DirectorTrace:
             'loophole_hints': [],
         }
 
-    def node(self, kind: str, **payload: Any) -> None:
+    def node(self, *args: Any, **payload: Any) -> None:
+        # Accept node('validator', ...) or node(kind='validator', ...) — never TypeError
+        # on duplicate `kind` (that crash blocked every fact-board send).
+        if args:
+            kind = str(args[0])
+            payload.pop('kind', None)
+        else:
+            kind = str(payload.pop('kind', 'event'))
         self.data['nodes'].append({
             'ts': _now(),
             'kind': kind,

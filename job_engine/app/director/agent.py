@@ -54,11 +54,14 @@ NEVER invent numbers, temps, companies, or roles.
 1. City questions → stagehand_city_pulse. Never stamp all-India KPIs on a city.
 2. Counts / pie / bar / list → STAGEHAND → **validator_approve** → lens_send_*_board.
    Fact boards also hard-gate internally — if blocked, courier_ack already fired; fix & retry.
+   Top companies OR top roles with counts → **lens_send_bar_board** (label + value), never list.
+   Job catches with links → **lens_send_list_board** only (title, company, job_url).
 3. Fresh catches → stagehand_fresh_jobs (NEVER title="fresh") → validator → list board w/ URLs.
 4. AI roles → stagehand_ai_jobs → validator → list board.
 5. Heat → stagehand_tower_heat → KPI board.
 6. Nano Banana prompts: mood only; validator blocks unauthenticated big numbers in prompts.
 7. Final assistant text after successful send = exactly: OK
+8. On board tool error: courier_ack + fix args + retry once — NEVER essay the numbers as text.
 
 ## Wait acknowledgements (critical)
 If VALIDATOR rejects OR you need another STAGEHAND round:

@@ -171,19 +171,67 @@ def _answer_fallback(text: str) -> bool:
         return _send_image(img, meta=f'fallback_ai:{city}:{len(rows)}')
 
     if city and re.search(r'\b(today|jobs?|total|how many|companies)\b', text or '', re.I):
-        tower = _get('/api/ultron/tower', {'city': city})
-        stats = (tower or {}).get('stats') or {}
-        img = render_kpi_board(
-            title=city_label(city),
-            hero=str(stats.get('jobs_today', '—')),
-            hero_label='jobs scraped today in this city',
-            lines=[
-                f"Total in city · {stats.get('total_jobs', '—')}",
-                f"Companies · {stats.get('companies', '—')}",
-            ],
-            footer='City-scoped tower facts',
-        )
-        return _send_image(img, meta=f'fallback_city:{city}')
+        # Don't steal "top hiring companies/roles" into a KPI card
+        if not re.search(r'\b(top|hiring|rank(?:ed|ing)?|roles?)\b', text or '', re.I):
+            tower = _get('/api/ultron/tower', {'city': city})
+            stats = (tower or {}).get('stats') or {}
+            img = render_kpi_board(
+                title=city_label(city),
+                hero=str(stats.get('jobs_today', '—')),
+                hero_label='jobs scraped today in this city',
+                lines=[
+                    f"Total in city · {stats.get('total_jobs', '—')}",
+                    f"Companies · {stats.get('companies', '—')}",
+                ],
+                footer='City-scoped tower facts',
+            )
+            return _send_image(img, meta=f'fallback_city:{city}')
+
+    if re.search(r'\b(top|hiring)\b', text or '', re.I) and re.search(
+        r'\b(compan(?:y|ies)|roles?)\b', text or '', re.I,
+    ):
+        from app.director.fact_boards import render_bar_board
+        params = {'days': 0}
+        if city:
+            params['city'] = city
+        sig = _get('/api/ultron/signals', params)
+        s = (sig or {}).get('signals') or {}
+        scope = city_label(city) if city else 'All India'
+        want_roles = bool(re.search(r'\broles?\b', text or '', re.I))
+        want_cos = bool(re.search(r'\bcompan(?:y|ies)\b', text or '', re.I))
+        sent_any = False
+        if want_roles or not want_cos:
+            growing = (s.get('growing_roles') or [])[:10]
+            bars = [
+                ((r.get('name') or 'Role').strip(), int(
+                    r.get('recent') if r.get('recent') is not None else r.get('n') or 0
+                ))
+                for r in growing
+            ]
+            img = render_bar_board(
+                title=f'Top roles · {scope}',
+                bars=bars or [('No pulse yet', 1)],
+                subtitle='Past 24h hiring signals · exact counts',
+                footer='Pillow fact board · fallback',
+            )
+            sent_any = _send_image(img, meta=f'fallback_roles_bar:{scope}') or sent_any
+        if want_cos:
+            fastest = (s.get('fastest_companies') or [])[:10]
+            bars = [
+                ((c.get('name') or 'Company').strip(), int(
+                    c.get('recent') if c.get('recent') is not None else c.get('n') or 0
+                ))
+                for c in fastest
+            ]
+            img = render_bar_board(
+                title=f'Top companies · {scope}',
+                bars=bars or [('No pulse yet', 1)],
+                subtitle='Past 24h hiring signals · exact counts',
+                footer='Pillow fact board · fallback',
+            )
+            sent_any = _send_image(img, meta=f'fallback_cos_bar:{scope}') or sent_any
+        if sent_any:
+            return True
 
     if _looks_like_roles(text) or 'pie' in (text or '').lower():
         params = {'days': 0}

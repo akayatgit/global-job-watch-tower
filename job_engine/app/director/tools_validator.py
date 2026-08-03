@@ -210,17 +210,32 @@ def validate_slices(payload: dict, city: str = '') -> dict:
     if key:
         params['city'] = key
     sig = _get('/api/ultron/signals', params)
-    growing = ((sig.get('signals') or {}).get('growing_roles') or [])
-    truth_map = {
-        _norm(r.get('name') or ''): int(r.get('recent') if r.get('recent') is not None else r.get('n') or 0)
-        for r in growing
-    }
-    # Also allow per_role from tower
+    signals = (sig.get('signals') or {}) if isinstance(sig, dict) else {}
+    growing = signals.get('growing_roles') or []
+    fastest = signals.get('fastest_companies') or []
+    truth_map: dict[str, int] = {}
+    for r in growing:
+        name = _norm(r.get('name') or '')
+        if name:
+            truth_map[name] = int(
+                r.get('recent') if r.get('recent') is not None else r.get('n') or 0
+            )
+    for c in fastest:
+        name = _norm(c.get('name') or '')
+        if name:
+            truth_map[name] = int(
+                c.get('recent') if c.get('recent') is not None else c.get('n') or 0
+            )
+    # Also allow per_role + top_companies from tower
     tower = _get('/api/ultron/tower', {'city': key} if key else {})
     for r in (tower.get('per_role') or []):
         name = _norm(r.get('name') or '')
         if name and name not in truth_map:
             truth_map[name] = int(r.get('n') or r.get('recent') or 0)
+    for c in (tower.get('top_companies') or []):
+        name = _norm(c.get('name') or '')
+        if name and name not in truth_map:
+            truth_map[name] = int(c.get('n') or c.get('recent') or 0)
     errors = []
     for it in items:
         if isinstance(it, dict):
@@ -231,7 +246,7 @@ def validate_slices(payload: dict, city: str = '') -> dict:
         n = int(val)
         t = truth_map.get(_norm(name))
         if t is None:
-            errors.append(f'role not in live signals/tower: {name}')
+            errors.append(f'label not in live signals/tower: {name}')
         elif t != n:
             errors.append(f'{name}: board={n} live={t}')
     return {
@@ -294,7 +309,7 @@ def run_validator(kind: str, payload_json: str, city: str = '') -> dict:
         result = {'approved': False, 'errors': [f'unknown kind {kind}'], 'kind': kind}
     tr = current_trace()
     if tr:
-        tr.node('validator', kind=kind_l, city=city, result=result)
+        tr.node('validator', validate_kind=kind_l, city=city, result=result)
         if not result.get('approved'):
             tr.hint(f'VALIDATOR rejected {kind_l}: {"; ".join(result.get("errors") or [])[:300]}')
     return result
