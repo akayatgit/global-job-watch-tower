@@ -51,8 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     if text.lower().strip() in {'/new', '/reset', '/clear', 'new', 'reset', 'clear'}:
         clear_session(bot, chat)
         prompt = fallback_graphic_prompt(
-            punchline='Fresh skit · let’s begin',
-            fact_line='DIRECTOR memory cleared · JobMaster listening',
+            punchline='Fresh thread',
+            fact_line='Memory cleared',
             mood='reset',
         )
         ok = send_simple_frame('', '', prompt)
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pulse = 'Tower pulse loading'
         prompt = fallback_graphic_prompt(
-            punchline='Vigil is listening',
+            punchline='Still here',
             fact_line=pulse,
             mood='rescue',
         )

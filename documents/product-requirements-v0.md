@@ -652,6 +652,7 @@ START OF EVERY SESSION
 | v0.28 | 2026-08-03 | Akay | **Grok Imagine:** model `xai/grok-imagine-image` + cinematic prompt dictionary (bright white calm). Memes dropped. Same style for chat + Carousel. |
 | v0.29 | 2026-08-04 | Akay | **DIRECTOR live:** OpenAI Agents SDK above Hermes (1A). Layers COURIER/DIRECTOR/STAGEHAND/LENS/CAROUSEL. SQLiteSession memory; `/new` clears. TN Pinterest-2026 skit frames. |
 | v0.30 | 2026-08-04 | Akay | **Graphic punchline DIRECTOR:** removed fixed cinematic prompts + Pillow text cards. DIRECTOR writes ≥800-char prompts (`MIN_PROMPT_CHARS`); 2D vector poster style; `read_vision_doc` + full vision brief. |
+| v0.31 | 2026-08-04 | Akay | **DIRECTOR = Jarvis:** Telegram = Ashok↔Tower casual visual chat (live market), not student posters/PPT. Tiny punchy data crumbs in-image; Carousel stays separate album path. |
 
 ### Phase 0 progress (living)
 

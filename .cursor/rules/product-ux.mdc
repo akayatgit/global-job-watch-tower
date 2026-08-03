@@ -349,9 +349,10 @@ use — they should love opening the app, never fight it.
   (OpenAI Agents SDK + SQLiteSession) → STAGEHAND facts / LENS Grok Imagine /
   CAROUSEL WORKSHOP → COURIER sends images. `/new` clears DIRECTOR memory.
   Ollama Hermes does not chat on Telegram. Ops = Telegram + Cursor IDE.
-- **DIRECTOR graphic punchlines (2026-08-04):** No fixed scene prompt in source.
-  DIRECTOR invents each ≥800-char prompt (`MIN_PROMPT_CHARS` tunable). Style =
-  2D high-contrast vector poster (bright solid bg + faint grid, matte black
-  central silhouette, bold sans typography IN the art). Ban atrium/India-map
-  clones and white UI text cards / Pillow caption overlays. Vision docs via
-  `read_vision_doc`. Punchline skit replies only.
+- **DIRECTOR = Ashok’s Jarvis (2026-08-04):** Telegram Vigil chat is private ops —
+  Ashok talks casually to the Tower (fun, minimal, punchy). NOT a student bot.
+  Soul = real-time Jarvis with live job-market access. Replies = visual discussion
+  of tower/data (tiny on-image crumbs), never PPT/poster/campaign CTAs, never
+  “hope for students” slogans in this chat. No fixed scene paste; ≥800-char
+  invented prompts (`MIN_PROMPT_CHARS`). Ban atrium/India-map clones + white UI
+  cards. Carousel word still = separate album workflow. Vision via `read_vision_doc`.

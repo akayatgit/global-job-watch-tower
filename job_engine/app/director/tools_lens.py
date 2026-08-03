@@ -63,11 +63,10 @@ def send_simple_frame(_line1: str, _line2: str, prompt: str) -> bool:
 
 @function_tool
 def craft_punchline_prompt(prompt: str) -> str:
-    """Validate DIRECTOR's full image prompt before render.
-    prompt MUST be >= MIN_PROMPT_CHARS (default 800) and describe a 2D graphic punchline poster:
-    bright solid bg + grid, matte black central silhouette/concept, bold sans typography IN the art
-    (not UI cards), premium vector marketing look. Include punchline words + any STAGEHAND facts
-    as designed typography. Returns JSON {ok, chars, prompt} or error."""
+    """Validate DIRECTOR's full Jarvis visual-reply prompt before render.
+    prompt MUST be >= MIN_PROMPT_CHARS (default 800). Describe a casual data-visual frame for
+    Ashok (not a student poster / PPT): tiny punchy on-image text + live STAGEHAND fact crumbs
+    drawn into the art. Returns JSON {ok, chars, prompt} or error."""
     try:
         p = assert_prompt_length(prompt)
     except ValueError as e:
@@ -82,8 +81,8 @@ def craft_punchline_prompt(prompt: str) -> str:
 
 @function_tool
 def lens_render_and_courier_send(prompt: str) -> str:
-    """LENS + COURIER: Render the FULL prompt with Grok Imagine and send Telegram photo.
-    Typography must already be inside the prompt — we do NOT overlay white text cards.
+    """LENS + COURIER: Render the FULL Jarvis visual prompt with Grok Imagine and send Telegram.
+    Typography must already be inside the prompt — no Pillow/UI card overlays.
     Call craft_punchline_prompt first if unsure about length."""
     try:
         ok = send_image_bytes_prompt(prompt)

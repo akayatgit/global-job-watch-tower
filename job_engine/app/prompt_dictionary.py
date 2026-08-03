@@ -1,8 +1,7 @@
 """Prompt length + style knobs for DIRECTOR → LENS.
 
-Ashok 2026-08-04: do NOT hardcode fixed scene prompts in source.
-DIRECTOR invents each prompt. We only enforce minimum length and keep
-tunable constants for later (raise/lower based on response quality).
+Ashok 2026-08-04: no fixed scene paste in source. DIRECTOR invents prompts.
+Telegram = Ashok talking to the Tower (Jarvis), NOT student posters/PPT.
 """
 
 from __future__ import annotations
@@ -10,40 +9,38 @@ from __future__ import annotations
 # Tunable — raise/lower later based on response quality
 MIN_PROMPT_CHARS = 800
 
-# Soft style keywords DIRECTOR may weave in (not a fixed scene paste)
+# Soft keywords DIRECTOR may weave (not a fixed scene)
 STYLE_INSPIRATION_KEYWORDS = (
-    'minimalist high-contrast graphic design',
-    'premium marketing aesthetic',
-    'hyper-clean vector graphic',
-    'bold dual-weight sans-serif typography layered on graphic',
-    'perfectly symmetrical matte black silhouette concept',
-    'solid bright background with faint subtle grid',
-    'electric blue OR vivid orange OR neon green OR hot magenta OR sun yellow',
-    'punchline poster / skit beat / Pinterest 2026 editorial',
-    'Tamil Nadu regional energy without stereotype spam',
-    'studio lighting, clean composition, no photo-realistic office atrium',
-    'no white UI cards, no frosted glass panels, no holographic India map cliché',
+    'real-time Jarvis briefing glance',
+    'casual visual conversation about live data',
+    'minimal punchy words only — 2 to 6 words hero max',
+    'data-as-visual: numbers roles companies as graphic beats',
+    'clean high-contrast 2D illustration, not a marketing poster',
+    'not PowerPoint, not carousel ad, not campaign CTA',
+    'bright or dark stage — invent; vary every turn',
+    'tower pulse / signal / heat / hiring motion as metaphor',
+    'fun witty buddy energy with Ashok',
+    'no frosted UI cards, no atrium stock, no India hologram cliché',
 )
 
-# Tunable brief for DIRECTOR + fallbacks — NOT a paste-in Replicate scene.
-# Expand/rewrite later when Ashok judges image quality.
+# Tunable brief — rewrite later when Ashok judges frames
 GRAPHIC_STYLE_BRIEF = (
-    'Create an original 2D graphic design advertising poster in the spirit of '
-    'minimalist high-contrast premium marketing: choose ONE vivid solid background '
-    '(electric blue, vivid orange, neon green, hot magenta, or sun yellow — never '
-    'reuse the same color as the last frame). Add only a faint subtle grid. Place a '
-    'perfectly symmetrical striking silhouette or bold concept mark in solid matte '
-    'black at dead center. Layer bold modern dual-weight sans-serif typography '
-    'directly over that black graphic — the punchline is the hero text, secondary '
-    'fact line smaller underneath. Hyper-clean vector look, studio lighting, '
-    'premium ad aesthetic, simple clean composition, lots of intentional negative '
-    'space. The image must answer as a punchline skit beat for TECH JOB MARKET '
-    'MOVEMENT by JobMaster.agency · Vigil · AI · Quanta HR. Forbidden: photoreal '
-    'glass atriums, holographic India maps, frosted white UI cards, caption boxes, '
-    'rounded glass panels, soft essay serif blocks, recycled office stock looks. '
-    'Invent a fresh black silhouette metaphor each time (ladder, spark, door, wave, '
-    'compass, fist of hope, rising bars as abstract shapes — not charts). Include '
-    'exact punchline words to render as designed type inside the artwork.'
+    'You are rendering a REAL-TIME JARVIS visual reply for Ashok chatting with '
+    'Watch Tower — a casual fun visual discussion of live job-market data, NOT a '
+    'student poster, NOT a PowerPoint slide, NOT a social-media campaign ad. '
+    'Invent a fresh illustrative frame each turn that feels like a smart friend '
+    'showing him what is happening in the tower right now. Minimal on-image text: '
+    'one tiny punchy line (roughly 2–6 words) plus at most one short fact crumb '
+    '(a number, role, or company) — never essays, never hope slogans for students, '
+    'never “Do I still have hope?” energy. Make the DATA the star: openings today, '
+    'rising role, top hirer, heat, next search — shown as graphic conversation, '
+    'diagram-ish motion, icon metaphor, signal pulse, abstract bars-as-shapes, '
+    'city/company marks — whatever fits the beat. Composition can be asymmetric and '
+    'lively; high-contrast; hyper-clean 2D/vector illustration; readable on a phone. '
+    'Vary palette and metaphor every reply. Forbidden: PPT title slides, poster CTAs, '
+    'frosted white caption cards, glass atrium stock, holographic India maps, '
+    'recycled graduate-at-window photos, long serif paragraphs. Typography is drawn '
+    'into the art (no later overlay). Tone: witty, short, powerful, ops-buddy Jarvis.'
 )
 
 
@@ -58,37 +55,36 @@ def assert_prompt_length(prompt: str) -> str:
 
 
 def fallback_graphic_prompt(*, punchline: str, fact_line: str, mood: str = 'reset') -> str:
-    """Long graphic prompt for /new and rescue — still invented structure, not atrium cliché."""
-    colors = {
-        'reset': 'vivid orange',
-        'rescue': 'electric blue',
-        'pulse': 'neon green',
+    """Jarvis fallback for /new and rescue — casual tower pulse, not a poster."""
+    moods = {
+        'reset': (
+            'deep charcoal stage with one electric cyan signal ring',
+            'a small radar sweep mark as the only hero graphic',
+        ),
+        'rescue': (
+            'midnight navy with a warm amber pulse',
+            'an ear-to-tower icon as a single clean mark',
+        ),
+        'pulse': (
+            'ink black with neon green tick marks',
+            'a heartbeat signal becoming a simple rising spike',
+        ),
     }
-    silhouettes = {
-        'reset': 'a blank chalkboard wiped clean transforming into a rising staircase silhouette',
-        'rescue': 'a listening ear merging with a lighthouse beam as one matte black mark',
-        'pulse': 'abstract rising bars becoming a forward-leaning runner silhouette',
-    }
-    bg = colors.get(mood, 'hot magenta')
-    sil = silhouettes.get(mood, silhouettes['rescue'])
-    punch = (punchline or 'JobMaster is listening').strip()[:120]
-    fact = (fact_line or 'Live tower facts').strip()[:140]
+    bg, sil = moods.get(mood, moods['rescue'])
+    punch = (punchline or 'Tower online').strip()[:40]
+    fact = (fact_line or 'live pulse').strip()[:60]
     prompt = (
         f'{GRAPHIC_STYLE_BRIEF} '
-        f'This beat mood is "{mood}". Background: solid {bg} with faint subtle grid. '
-        f'Central matte black graphic: {sil}. '
-        f'Render primary typography exactly as: "{punch}". '
-        f'Render secondary typography exactly as: "{fact}". '
-        f'Brand whisper small at edge: JobMaster.agency · Vigil · Quanta HR. '
-        f'Composition is dead-center symmetrical, hyper-clean vector, premium marketing, '
-        f'studio lighting, no photo realism, no white cards, no glass atrium, no India hologram. '
-        f'The whole poster must feel like a punchline reply from a powerful DIRECTOR who knows '
-        f'the TECH job market movement for Tamil Nadu seekers — hope and truth, not fear. '
-        f'Add one wow detail: a single geometric accent (thin circle or slash) in the same '
-        f'family as the background color but slightly lighter, never cluttering the type. '
-        f'Aspect square social poster. Ultra sharp edges. No mock UI. No watermarks. '
-        f'Leave generous negative space around the black mark so the typography reads instantly '
-        f'on Telegram at phone size. Make it look like a campaign ad, not a dashboard screenshot.'
+        f'Fallback mood "{mood}". Scene: {bg}. Central mark: {sil}. '
+        f'Render tiny hero text exactly: "{punch}". '
+        f'Render one fact crumb exactly: "{fact}". '
+        f'No brand slogan wall. No student CTA. No PPT layout. '
+        f'Feel like Jarvis whispering a status glance to Ashok on Telegram. '
+        f'Square frame, sharp, playful, data-first, generous empty space, '
+        f'one wow geometric accent only. Ultra clean illustration, not a poster campaign. '
+        f'Describe lighting, depth, negative space, and why the metaphor matches the fact. '
+        f'Keep every word on the image short and punchy. Never invent fake job numbers — '
+        f'only render the fact crumb given. This is a private ops chat visual, not public ads.'
     )
     return assert_prompt_length(prompt)
 
@@ -101,51 +97,22 @@ def graphic_carousel_prompt(
     stat: str,
     role_hint: str = '',
 ) -> str:
-    """800+ char graphic prompt with typography baked in — no Pillow overlay."""
-    palette = {
-        'hook': 'electric blue',
-        'pulse': 'neon green',
-        'rising': 'vivid orange',
-        'hirer': 'hot magenta',
-        'fresher': 'sun yellow',
-        'cta': 'electric blue',
-        'topic-hook': 'vivid orange',
-        'date': 'neon green',
-        'companies': 'electric blue',
-        'more': 'hot magenta',
-    }
-    marks = {
-        'hook': 'question-mark dissolving into an open door silhouette',
-        'pulse': 'heartbeat line becoming a city skyline silhouette',
-        'rising': 'arrow formed from abstract steps climbing upward',
-        'hirer': 'handshake reduced to two interlocking geometric shapes',
-        'fresher': 'seed sprout inside a bold geometric shield',
-        'cta': 'compass needle pointing northeast as a single black mark',
-        'topic-hook': 'magnifying glass over a rising path silhouette',
-        'date': 'calendar page folded into a sharp geometric wing',
-        'companies': 'cluster of abstract building stubs as one crest',
-        'more': 'stacked list marks becoming a ladder silhouette',
-    }
-    bg = palette.get(slide_key, 'vivid orange')
-    sil = marks.get(slide_key, 'bold abstract spark silhouette')
-    h = ' · '.join(x.strip() for x in headline.replace('\n', ' · ').split('·') if x.strip())[:160]
-    s = sub.replace('\n', ' · ').strip()[:140]
-    st = stat.replace('\n', ' · ').strip()[:160]
+    """Carousel is the separate student Movement product — still graphic, not PPT chrome."""
+    # Keep carousel usable when Ashok says the magic word; chat path stays Jarvis.
+    h = ' · '.join(x.strip() for x in headline.replace('\n', ' · ').split('·') if x.strip())[:100]
+    s = sub.replace('\n', ' · ').strip()[:80]
+    st = stat.replace('\n', ' · ').strip()[:100]
     role_bit = f' Role focus: {role_hint}.' if role_hint else ''
     prompt = (
         f'{GRAPHIC_STYLE_BRIEF} '
-        f'Carousel slide key "{slide_key}". Solid {bg} background, faint grid. '
-        f'Central matte black concept: {sil}.{role_bit} '
-        f'Render hero typography exactly: "{h}". '
-        f'Render supporting line: "{s}". '
-        f'Render fact block as designed bold type (not a UI card): "{st}". '
-        f'Small edge brand: TECH JOB MARKET MOVEMENT · JobMaster.agency. '
-        f'Vertical 3:4 social poster, dead-center composition, hyper-clean vector, '
-        f'premium marketing, punchline-first, Tamil Nadu creative energy without stereotypes. '
-        f'No white frosted panels, no glass atrium, no holographic maps, no photo-real graduates. '
-        f'Typography must be integral to the graphic — letterforms can intersect the black mark. '
-        f'Studio lighting, sharp edges, campaign-ready, readable on a phone in Telegram albums. '
-        f'Vary silhouette and color from other slides; this slide must feel unique in the set. '
-        f'Negative space generous. One geometric accent only. Ultra premium ad finish.'
+        f'This is a CAROUSEL album frame (key={slide_key}) for when Ashok asks Carousel — '
+        f'still visual-data conversation energy, not a corporate PPT deck.{role_bit} '
+        f'Render short hero: "{h}". Support crumb: "{s}". Fact: "{st}". '
+        f'Vertical 3:4. Invent a unique data metaphor for this slide. '
+        f'No frosted cards, no atrium, no India hologram, no long essays. '
+        f'Keep on-image text tiny and punchy. Make the number/role/company impossible to miss. '
+        f'Describe composition, color, lighting, negative space, and one wow detail so the '
+        f'prompt stays richly specific and longer than eight hundred characters with clear '
+        f'instructions for Grok Imagine to draw typography into the illustration itself.'
     )
     return assert_prompt_length(prompt)

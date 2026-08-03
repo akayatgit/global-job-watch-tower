@@ -48,10 +48,10 @@ Named layers:
 **Memory:** OpenAI Agents `SQLiteSession` at `job_engine/.data/director_sessions/director.db`  
 `session_id = {bot}:{chat_id}` · `/new` `/reset` `/clear` wipe · different bot = fresh.
 
-**Style (2026-08-04):** DIRECTOR invents each image prompt (≥ `MIN_PROMPT_CHARS`=800).
-2D graphic punchline posters — bright solid bg + grid, matte black silhouette,
-bold sans type **in** the art. No fixed cinematic template, no Pillow text cards.
-Vision access: `read_vision_doc` (prd/roadmap/ux/lead/hermes).  
+**Soul (2026-08-04):** DIRECTOR = Ashok’s **Jarvis** for the live job market.
+Casual Telegram chat → visual discussion of tower/data (tiny punchy text in art).
+Not a student bot, not PPT/poster ads. Prompts ≥ `MIN_PROMPT_CHARS`=800, invented
+each turn. `read_vision_doc` for PRD/roadmap/ux/lead/hermes. Carousel = separate.
 Package: [`job_engine/app/director/`](../job_engine/app/director/).
 
 ## Capacity rule (non-negotiable)
