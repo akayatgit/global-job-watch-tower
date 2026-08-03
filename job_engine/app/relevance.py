@@ -336,9 +336,17 @@ def _keyword_filter(jobs: list[ParsedJob], keywords: str,
     return relevant, rejected
 
 
-def filter_relevant(jobs: list[ParsedJob], keywords: str,
-                    run_id: int | None = None) -> tuple[list[ParsedJob], list[ParsedJob]]:
-    """Split jobs into (relevant, rejected) based on title vs searched role."""
+def filter_relevant(
+    jobs: list[ParsedJob],
+    keywords: str,
+    run_id: int | None = None,
+    on_kept=None,
+) -> tuple[list[ParsedJob], list[ParsedJob]]:
+    """Split jobs into (relevant, rejected) based on title vs searched role.
+
+    ``on_kept(kept_jobs)`` is called after each Ollama/keyword batch so the
+    tower can persist kept jobs immediately (not only after all batches).
+    """
     if not jobs:
         return [], []
 
@@ -388,6 +396,11 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
                 )
                 relevant.extend(kw_rel)
                 rejected.extend(kw_rej)
+                if kw_rel and on_kept is not None:
+                    try:
+                        on_kept(kw_rel)
+                    except Exception as exc:
+                        logger.exception('on_kept callback failed: %s', exc)
                 break
 
         titles = [job.title for job in batch]
@@ -415,18 +428,33 @@ def filter_relevant(jobs: list[ParsedJob], keywords: str,
                 )
                 relevant.extend(kw_rel)
                 rejected.extend(kw_rej)
+                if kw_rel and on_kept is not None:
+                    try:
+                        on_kept(kw_rel)
+                    except Exception as exc:
+                        logger.exception('on_kept callback failed: %s', exc)
                 break
 
         kept = [job for job, keep in zip(batch, verdicts) if keep]
         dropped = [job for job, keep in zip(batch, verdicts) if not keep]
         relevant.extend(kept)
         rejected.extend(dropped)
+        if kept and on_kept is not None:
+            try:
+                on_kept(kept)
+            except Exception as exc:
+                logger.exception('on_kept callback failed: %s', exc)
+        kept_preview = ', '.join(j.title[:35] for j in kept[:3])
+        drop_preview = ', '.join(j.title[:35] for j in dropped[:3])
+        extra = ''
+        if kept:
+            extra += f' · kept: {kept_preview}' + ('…' if len(kept) > 3 else '')
+        if dropped:
+            extra += f' · rejected: {drop_preview}' + ('…' if len(dropped) > 3 else '')
         console_log(
             'ai',
             f'Batch {bi}/{len(batches)}: kept {len(kept)}, rejected {len(dropped)}'
-            f' in {time.monotonic() - t0:.0f}s'
-            + (f' ({", ".join(j.title[:35] for j in dropped[:4])}'
-               + ('…' if len(dropped) > 4 else '') + ')' if dropped else ''),
+            f' in {time.monotonic() - t0:.0f}s{extra}',
             run_id=run_id,
         )
         record_event_standalone(

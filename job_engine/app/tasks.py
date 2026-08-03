@@ -288,46 +288,74 @@ def run_scrape(self, scrape_run_id: int):
                 http_status=page_result.http_status,
             ))
             found += len(page_result.jobs)
-
-            # Keep only titles that actually match the searched role.
-            # TODO: later, also store the rejected jobs so we can make use
-            # of that data (adjacent-role analytics, model tuning, etc.)
-            relevant, rejected = filter_relevant(page_result.jobs, cfg.keywords, run_id=run.id)
-            rejected_total += len(rejected)
+            db.commit()  # persist page progress even while AI filter runs
 
             page_inserted = 0
-            for job in relevant:
-                exists = db.execute(
-                    select(JobMaster.id).where(
-                        JobMaster.linkedin_job_id == job.linkedin_job_id
-                    ).limit(1)
-                ).scalar_one_or_none()
-                if exists is not None:
-                    continue
-                company = _get_or_create_company(
-                    db,
-                    job.company,
-                    linkedin_url=getattr(job, 'company_linkedin_url', None),
-                    logo_url=getattr(job, 'company_logo_url', None),
-                )
-                row = JobMaster(
-                    linkedin_job_id=job.linkedin_job_id,
-                    title=job.title,
-                    company_id=company.id if company else None,
-                    location=job.location,
-                    city_key=normalize_city(job.location, job.title),
-                    sector=cfg.sector,
-                    job_url=job.job_url,
-                    posted_date=job.posted_date,
-                    raw_text=job.raw_text,
-                    search_config_id=cfg.id,
-                    scrape_run_id=run.id,
-                )
-                db.add(row)
-                db.flush()
-                new_job_ids.append(row.id)
-                inserted += 1
-                page_inserted += 1
+            already_saved: set[str] = set()
+
+            def persist_kept(kept_jobs):
+                """Write kept jobs to DB immediately after each AI batch."""
+                nonlocal inserted, page_inserted
+                n_new = 0
+                for job in kept_jobs:
+                    if job.linkedin_job_id in already_saved:
+                        continue
+                    exists = db.execute(
+                        select(JobMaster.id).where(
+                            JobMaster.linkedin_job_id == job.linkedin_job_id
+                        ).limit(1)
+                    ).scalar_one_or_none()
+                    if exists is not None:
+                        already_saved.add(job.linkedin_job_id)
+                        continue
+                    company = _get_or_create_company(
+                        db,
+                        job.company,
+                        linkedin_url=getattr(job, 'company_linkedin_url', None),
+                        logo_url=getattr(job, 'company_logo_url', None),
+                    )
+                    row = JobMaster(
+                        linkedin_job_id=job.linkedin_job_id,
+                        title=job.title,
+                        company_id=company.id if company else None,
+                        location=job.location,
+                        city_key=normalize_city(job.location, job.title),
+                        sector=cfg.sector,
+                        job_url=job.job_url,
+                        posted_date=job.posted_date,
+                        raw_text=job.raw_text,
+                        search_config_id=cfg.id,
+                        scrape_run_id=run.id,
+                    )
+                    db.add(row)
+                    db.flush()
+                    new_job_ids.append(row.id)
+                    already_saved.add(job.linkedin_job_id)
+                    inserted += 1
+                    page_inserted += 1
+                    n_new += 1
+                run.jobs_found = found
+                run.jobs_inserted = inserted
+                # If admin cancelled mid-filter, still keep jobs we already judged
+                if current_status() == 'cancelled':
+                    run.status = 'running'
+                db.commit()
+                if n_new:
+                    console_log(
+                        'worker',
+                        f'Run #{run.id}: stored {n_new} job(s) from this AI batch '
+                        f'(page {page_result.page_num} total stored {page_inserted}).',
+                        run_id=run.id,
+                    )
+
+            # Keep only titles that actually match the searched role.
+            # Persist after each batch so the Jobs panel is not empty for 10+ min.
+            relevant, rejected = filter_relevant(
+                page_result.jobs, cfg.keywords, run_id=run.id, on_kept=persist_kept,
+            )
+            rejected_total += len(rejected)
+            # Safety net for any kept rows the callback missed (e.g. keyword path)
+            persist_kept(relevant)
             run.jobs_found = found
             run.jobs_inserted = inserted
             db.commit()
