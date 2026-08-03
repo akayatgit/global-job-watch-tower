@@ -7,6 +7,9 @@
 **/*secret*
 **/*.pem
 **/*.key
+# Cloudflare Tunnel credentials (Option B remote access)
+.cloudflared/
+**/.cloudflared/
 
 # --- Runtime / local data (Watch Tower pilot) ---
 job_engine/.data/
