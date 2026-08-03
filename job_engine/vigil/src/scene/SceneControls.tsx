@@ -29,6 +29,14 @@ type Flight =
       citySlide: boolean
       /** Commit selectFocusId only after glide lands (smooth handoff) */
       endFocusId: string | null
+      /** Campus whip orbit around destination tower */
+      fromYaw?: number
+      toYaw?: number
+      whipSign?: number
+      fromHoriz?: number
+      toHoriz?: number
+      fromYOff?: number
+      toYOff?: number
     }
   | {
       mode: 'path'
@@ -59,13 +67,17 @@ function easeSmooth(t: number) {
   return x * x * (3 - 2 * x)
 }
 
-/** 0 at ends, 1 at mid — soft hyperbolic bulge */
-function hyperBulge(u: number) {
-  const x = u - 0.5
-  const k = 2.4
-  const peak = Math.cosh(0) - Math.cosh(k * 0.5)
-  if (Math.abs(peak) < 1e-6) return Math.sin(u * Math.PI)
-  return (Math.cosh(k * x) - Math.cosh(k * 0.5)) / peak
+/** Whip ease — snappy mid, soft settle on landing */
+function easeWhip(t: number) {
+  const x = THREE.MathUtils.clamp(t, 0, 1)
+  return 1 - Math.pow(1 - x, 1.9)
+}
+
+function shortestYawDelta(from: number, to: number) {
+  let d = to - from
+  while (d > Math.PI) d -= Math.PI * 2
+  while (d < -Math.PI) d += Math.PI * 2
+  return d
 }
 
 /**
@@ -179,13 +191,18 @@ export function SceneControls() {
     if (!c || !f) return
     if (fly.current?.mode === 'path' && fly.current.active) return
     const dist = f.distance
-    const citySlide = useVigilStore.getState().sceneMode === 'city'
+    const citySlide =
+      useVigilStore.getState().sceneMode === 'city' &&
+      useVigilStore.getState().cityViewMode === 'campus'
     const toTarget = new THREE.Vector3(f.x, f.y, f.z)
+    const toHoriz = dist * Math.SQRT1_2 * 0.84 // matches ~0.42 xz isometric
+    const toYOff = dist * 0.95
+    const toYaw = Math.PI / 4
     const toPos = citySlide
       ? new THREE.Vector3(
-          f.x + dist * 0.42,
-          f.y + dist * 0.95,
-          f.z + dist * 0.42,
+          f.x + Math.sin(toYaw) * toHoriz,
+          f.y + toYOff,
+          f.z + Math.cos(toYaw) * toHoriz,
         )
       : new THREE.Vector3(
           f.x + dist * 0.78,
@@ -196,6 +213,13 @@ export function SceneControls() {
     const fromPos = camera.position.clone()
     // Actual distance — rank steps stay steady; first pull-in eases in
     const fromDist = Math.max(0.35, fromPos.distanceTo(fromTarget))
+    const fromOffX = fromPos.x - fromTarget.x
+    const fromOffZ = fromPos.z - fromTarget.z
+    const fromYaw = Math.atan2(fromOffX, fromOffZ)
+    const fromHoriz = Math.max(0.35, Math.hypot(fromOffX, fromOffZ))
+    const fromYOff = fromPos.y - fromTarget.y
+    const yawDelta = shortestYawDelta(fromYaw, toYaw)
+    const whipSign = yawDelta === 0 ? 1 : Math.sign(yawDelta)
     fly.current = {
       mode: 'point',
       active: true,
@@ -206,10 +230,17 @@ export function SceneControls() {
       fromDist,
       toDist: dist,
       t: 0,
-      // Campus glide — smooth handoff, ~2× prior campus pace
-      speed: citySlide ? 1.24 : 1.15,
+      // Campus whip — snappy orbit into next tower
+      speed: citySlide ? 2.15 : 1.15,
       citySlide,
       endFocusId: citySlide && f.id.startsWith('company:') ? f.id : null,
+      fromYaw,
+      toYaw,
+      whipSign,
+      fromHoriz,
+      toHoriz,
+      fromYOff,
+      toYOff,
     }
     setFlying(true)
   }, [cameraFocusNonce, camera])
@@ -281,24 +312,34 @@ export function SceneControls() {
         : flight.t * flight.t * (3 - 2 * flight.t)
 
       if (flight.citySlide) {
-        // Shortest look path + slight hyperbolic bulge (no zoom out/in)
-        tmpLook.current.lerpVectors(flight.fromTarget, flight.toTarget, u)
-        const dx = flight.toTarget.x - flight.fromTarget.x
-        const dz = flight.toTarget.z - flight.fromTarget.z
-        const travel = Math.hypot(dx, dz)
-        const bulge = hyperBulge(u)
-        const amp = Math.min(0.22, travel * 0.1)
-        if (travel > 1e-4) {
-          tmpLook.current.x += (-dz / travel) * amp * bulge * 0.35
-          tmpLook.current.z += (dx / travel) * amp * bulge * 0.35
-        }
-        tmpLook.current.y += amp * bulge
-
-        const dist = THREE.MathUtils.lerp(flight.fromDist, flight.toDist, u)
+        const w = easeWhip(flight.t)
+        // Lock onto the incoming tower early, then whip-orbit around it
+        const lookU = easeSmooth(Math.min(1, flight.t / 0.42))
+        tmpLook.current.lerpVectors(
+          flight.fromTarget,
+          flight.toTarget,
+          lookU,
+        )
+        const fromYaw = flight.fromYaw ?? 0
+        const toYaw = flight.toYaw ?? Math.PI / 4
+        const dYaw = shortestYawDelta(fromYaw, toYaw)
+        const whip =
+          (flight.whipSign ?? 1) * Math.sin(w * Math.PI) * 1.15
+        const yaw = fromYaw + dYaw * w + whip
+        const hR = THREE.MathUtils.lerp(
+          flight.fromHoriz ?? flight.fromDist * 0.6,
+          flight.toHoriz ?? flight.toDist * 0.6,
+          w,
+        )
+        const yOff = THREE.MathUtils.lerp(
+          flight.fromYOff ?? flight.fromDist * 0.9,
+          flight.toYOff ?? flight.toDist * 0.95,
+          w,
+        )
         tmpCam.current.set(
-          tmpLook.current.x + dist * 0.42,
-          tmpLook.current.y + dist * 0.95,
-          tmpLook.current.z + dist * 0.42,
+          tmpLook.current.x + Math.sin(yaw) * hR,
+          tmpLook.current.y + yOff,
+          tmpLook.current.z + Math.cos(yaw) * hR,
         )
         camera.position.copy(tmpCam.current)
         c.target.copy(tmpLook.current)

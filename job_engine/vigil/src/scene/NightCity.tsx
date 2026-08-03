@@ -930,9 +930,20 @@ function CampusPad({
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
         <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
         <meshBasicMaterial
-          color="#ff6b35"
+          color="#c026ff"
           transparent
-          opacity={dim ? 0.12 : 0.28}
+          opacity={dim ? 0.16 : 0.38}
+        />
+      </mesh>
+      {/* Neon rim glow under campus pad */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.006, 0]}>
+        <ringGeometry args={[pad.half * 1.02, pad.half * 1.18, 48]} />
+        <meshBasicMaterial
+          color="#e879f9"
+          transparent
+          opacity={dim ? 0.18 : 0.45}
+          side={THREE.DoubleSide}
+          depthWrite={false}
         />
       </mesh>
     </group>
@@ -1015,10 +1026,10 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    // Warm dusk pavement
-    ctx.fillStyle = '#140a12'
+    // Neon-purple cyberpunk pavement
+    ctx.fillStyle = '#0a0614'
     ctx.fillRect(0, 0, 1024, 1024)
-    ctx.strokeStyle = 'rgba(80, 40, 50, 0.35)'
+    ctx.strokeStyle = 'rgba(120, 40, 180, 0.28)'
     ctx.lineWidth = 1
     for (let i = 0; i < 1024; i += 28) {
       ctx.beginPath()
@@ -1034,11 +1045,11 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     const half = (0.48 / (CITY_HALF * 2)) * 1024
     for (const r of ROAD) {
       const p = toPx(r)
-      ctx.fillStyle = '#08040a'
+      ctx.fillStyle = '#05030c'
       ctx.fillRect(p - half, 0, half * 2, 1024)
       ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    ctx.strokeStyle = 'rgba(255, 180, 100, 0.35)'
+    ctx.strokeStyle = 'rgba(192, 38, 255, 0.55)'
     ctx.lineWidth = 2
     ctx.setLineDash([16, 14])
     for (const r of ROAD) {
@@ -1053,7 +1064,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
       ctx.stroke()
     }
     ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(255, 160, 90, 0.28)'
+    ctx.fillStyle = 'rgba(232, 121, 249, 0.38)'
     for (const x of ROAD) {
       for (const z of ROAD) {
         const px = toPx(x)
@@ -1076,7 +1087,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
   )
 }
 
-/** Nightlife dusk dome — violet zenith, warm horizon. */
+/** Nightlife dome — deep violet zenith, neon-purple cyberpunk horizon glow. */
 function NightSky() {
   const tex = useMemo(() => {
     const c = document.createElement('canvas')
@@ -1084,12 +1095,13 @@ function NightSky() {
     c.height = 256
     const ctx = c.getContext('2d')!
     const g = ctx.createLinearGradient(0, 0, 0, 256)
-    g.addColorStop(0, '#1a0830')
-    g.addColorStop(0.35, '#3b1248')
-    g.addColorStop(0.55, '#8b2d4a')
-    g.addColorStop(0.72, '#e85d2a')
-    g.addColorStop(0.88, '#ffb15a')
-    g.addColorStop(1, '#ffd9a0')
+    g.addColorStop(0, '#050214')
+    g.addColorStop(0.32, '#1a0a3a')
+    g.addColorStop(0.52, '#3b0f6a')
+    g.addColorStop(0.68, '#7c1fd4')
+    g.addColorStop(0.82, '#c026ff')
+    g.addColorStop(0.92, '#e879f9')
+    g.addColorStop(1, '#f0abfc')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 4, 256)
     const t = new THREE.CanvasTexture(c)
@@ -1221,8 +1233,8 @@ function StreetLamps({ dim }: { dim: boolean }) {
     const pts: { x: number; z: number; color: string }[] = []
     for (const r of ROAD) {
       for (let u = -CITY_HALF + 1; u < CITY_HALF; u += 2.2) {
-        pts.push({ x: r + 0.28, z: u, color: '#93c5fd' })
-        pts.push({ x: u, z: r + 0.28, color: '#fdba74' })
+        pts.push({ x: r + 0.28, z: u, color: '#67e8f9' })
+        pts.push({ x: u, z: r + 0.28, color: '#e879f9' })
       }
     }
     return pts.slice(0, 40)
@@ -1441,28 +1453,43 @@ export function NightCity({
   return (
     <group position={[0, CITY_Y, 0]}>
       <NightSky />
-      <ambientLight intensity={sceneDimmed ? 0.12 : 0.18} color="#3a2040" />
+      <ambientLight intensity={sceneDimmed ? 0.14 : 0.2} color="#2a1458" />
       <hemisphereLight
-        args={['#ffb07a', '#1a0a20', sceneDimmed ? 0.28 : 0.42]}
+        args={['#e879f9', '#0a0618', sceneDimmed ? 0.32 : 0.5]}
       />
       <directionalLight
         position={[8, 3.2, -4]}
-        intensity={sceneDimmed ? 0.55 : 0.95}
-        color="#ff8a3d"
+        intensity={sceneDimmed ? 0.45 : 0.78}
+        color="#c026ff"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
       <directionalLight
         position={[-5, 2.5, 6]}
-        intensity={sceneDimmed ? 0.15 : 0.28}
-        color="#7c3aed"
+        intensity={sceneDimmed ? 0.2 : 0.38}
+        color="#67e8f9"
       />
       <pointLight
         position={[0, 1.2, 0]}
-        intensity={sceneDimmed ? 0.12 : 0.22}
-        color="#ff6b35"
-        distance={jobsMode && clusters.length > 2 ? 20 : 12}
+        intensity={sceneDimmed ? 0.22 : 0.42}
+        color="#d946ef"
+        distance={jobsMode && clusters.length > 2 ? 22 : 14}
+      />
+      {/* Horizon neon bloom wash */}
+      <pointLight
+        position={[0, 0.35, -groundHalf * 0.85]}
+        intensity={sceneDimmed ? 0.35 : 0.7}
+        color="#a855f7"
+        distance={groundHalf * 1.8}
+        decay={1.4}
+      />
+      <pointLight
+        position={[0, 0.28, groundHalf * 0.85]}
+        intensity={sceneDimmed ? 0.28 : 0.55}
+        color="#c026ff"
+        distance={groundHalf * 1.6}
+        decay={1.4}
       />
 
       <Ground half={groundHalf} />

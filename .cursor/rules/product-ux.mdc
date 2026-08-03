@@ -245,8 +245,9 @@ use — they should love opening the app, never fight it.
   neighbours; name cards are larger neon glass (less round, transparent).
   While one tower is focused, other cards stay at 25% size and ~7.5% opacity.
   Prev/next: large side arrows + HUD ←/→ + keyboard; step by openings.
-  Camera glides from the lit tower first; previous focus stays lit until the
-  glide lands, then handoff (no cut/jump).
+  Camera whip-orbits into the next tower (faster glide, angle around target);
+  previous focus stays lit until land. Campus floor/horizon = neon purple
+  cyberpunk glow (not orange dusk).
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

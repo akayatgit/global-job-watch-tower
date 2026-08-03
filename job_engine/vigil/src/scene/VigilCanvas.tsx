@@ -28,14 +28,14 @@ function SceneBody() {
         <Bloom
           intensity={
             campusOn
-              ? 0.55
+              ? 0.72
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
                   ? 0.22
                   : 0.55
           }
-          luminanceThreshold={campusOn ? 0.35 : sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceThreshold={campusOn ? 0.28 : sceneMode === 'graph' ? 0.72 : 0.5}
           luminanceSmoothing={0.88}
           mipmapBlur
         />
