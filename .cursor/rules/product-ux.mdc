@@ -347,6 +347,11 @@ use — they should love opening the app, never fight it.
   Replicate/Search API keys; `.env` only. Tower = truth behind every slide.
 - **DIRECTOR stack (2026-08-04):** Telegram = COURIER (Hermes) → DIRECTOR
   (OpenAI Agents SDK + SQLiteSession) → STAGEHAND facts / LENS Grok Imagine /
-  CAROUSEL WORKSHOP → COURIER sends images. Skit-style TN Pinterest-2026 comics
-  with limited on-image text. `/new` clears DIRECTOR memory. Ollama Hermes does
-  not chat on Telegram. Ops = Telegram + Cursor IDE.
+  CAROUSEL WORKSHOP → COURIER sends images. `/new` clears DIRECTOR memory.
+  Ollama Hermes does not chat on Telegram. Ops = Telegram + Cursor IDE.
+- **DIRECTOR graphic punchlines (2026-08-04):** No fixed scene prompt in source.
+  DIRECTOR invents each ≥800-char prompt (`MIN_PROMPT_CHARS` tunable). Style =
+  2D high-contrast vector poster (bright solid bg + faint grid, matte black
+  central silhouette, bold sans typography IN the art). Ban atrium/India-map
+  clones and white UI text cards / Pillow caption overlays. Vision docs via
+  `read_vision_doc`. Punchline skit replies only.

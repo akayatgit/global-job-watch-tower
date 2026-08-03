@@ -48,7 +48,10 @@ Named layers:
 **Memory:** OpenAI Agents `SQLiteSession` at `job_engine/.data/director_sessions/director.db`  
 `session_id = {bot}:{chat_id}` · `/new` `/reset` `/clear` wipe · different bot = fresh.
 
-**Style:** TN Pinterest-2026 comic skit · limited on-image text · no Telegram essays.  
+**Style (2026-08-04):** DIRECTOR invents each image prompt (≥ `MIN_PROMPT_CHARS`=800).
+2D graphic punchline posters — bright solid bg + grid, matte black silhouette,
+bold sans type **in** the art. No fixed cinematic template, no Pillow text cards.
+Vision access: `read_vision_doc` (prd/roadmap/ux/lead/hermes).  
 Package: [`job_engine/app/director/`](../job_engine/app/director/).
 
 ## Capacity rule (non-negotiable)
@@ -90,7 +93,9 @@ System crontab 08:00 IST ─► hermes_daily_brief.py ──► documents/briefs
 | `job_engine/app/hermes_ask.py` | Ask → board shortcut or Hermes |
 | `job_engine/scripts/hermes_daily_brief.py` | Daily brief (HTTP only) |
 | `job_engine/scripts/telegram_watch_tower.py` | Bootstrap + send-brief + send-carousel |
-| `job_engine/app/carousel_gen.py` | Replicate + Pillow carousel slides (ephemeral tmp) |
+| `job_engine/app/carousel_gen.py` | Grok Imagine graphic carousel (text in art; ephemeral tmp) |
+| `job_engine/app/prompt_dictionary.py` | `MIN_PROMPT_CHARS` + `GRAPHIC_STYLE_BRIEF` (tunable; no scene paste) |
+| `job_engine/app/director/` | DIRECTOR agent + STAGEHAND/LENS/CAROUSEL/vision tools |
 | `job_engine/scripts/carousel_fire.py` | Generate + Telegram album (`/carousel`) |
 
 ## MCP tools (read-only)

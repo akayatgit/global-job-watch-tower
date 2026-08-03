@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     from app.director.agent import run_director
     from app.director.sessions import clear_session
     from app.director.tools_lens import send_simple_frame
-    from app.prompt_dictionary import fill_cinematic
+    from app.prompt_dictionary import fallback_graphic_prompt
 
     p = argparse.ArgumentParser(description='DIRECTOR router')
     p.add_argument('--bot', default='vigil_akay_bot')
@@ -50,25 +50,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if text.lower().strip() in {'/new', '/reset', '/clear', 'new', 'reset', 'clear'}:
         clear_session(bot, chat)
-        prompt = fill_cinematic(
-            setting=(
-                'a bright Tamil Nadu morning comic-panel of a clean white courtyard '
-                'with a jasmine creeper and soft Chennai daylight'
-            ),
-            environment=(
-                'Pinterest 2026 editorial comic layout, empty chalkboard wiped clean, '
-                'hopeful pause before a new skit begins'
-            ),
-            lighting='Soft high-key daylight, cream whites, warm sun accents',
-            subjects=(
-                'A young graduate in light clothes smiles gently, holding a blank notebook — '
-                'ready for a fresh story'
-            ),
-            action='They take a calm breath; the skit resets with quiet energy',
-            overlay_text='Fresh skit · let’s begin',
-            template_key='tn_pinterest_comic_2026',
+        prompt = fallback_graphic_prompt(
+            punchline='Fresh skit · let’s begin',
+            fact_line='DIRECTOR memory cleared · JobMaster listening',
+            mood='reset',
         )
-        ok = send_simple_frame('Fresh skit · let’s begin', 'DIRECTOR memory cleared', prompt)
+        ok = send_simple_frame('', '', prompt)
         print('SESSION_CLEARED' if ok else 'CLEAR_SEND_FAILED')
         return 0 if ok else 1
 
@@ -77,7 +64,6 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     from app.director.tools_lens import LAST_SEND
-    from datetime import datetime, timezone
 
     before = LAST_SEND.stat().st_mtime if LAST_SEND.exists() else 0.0
     try:
@@ -85,11 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f'DIRECTOR failed: {e}', file=sys.stderr)
         out = ''
-        # fall through to rescue frame
 
     after = LAST_SEND.stat().st_mtime if LAST_SEND.exists() else 0.0
     if after <= before:
-        # DIRECTOR talked but didn't deliver — rescue one frame
         from app.director.tools_stagehand import _get
         try:
             tower = _get('/api/ultron/tower')
@@ -97,16 +81,12 @@ def main(argv: list[str] | None = None) -> int:
             pulse = f"{stats.get('jobs_today', '—')} openings today"
         except Exception:
             pulse = 'Tower pulse loading'
-        prompt = fill_cinematic(
-            setting='a bright Tamil Nadu comic skit panel in a sunlit Chennai tech café',
-            environment='Pinterest 2026 layout, filter coffee, soft comic energy, hopeful',
-            lighting='High-key soft daylight',
-            subjects='A graduate character leans in with a curious smile',
-            action='They ask the next beat of the job-market skit',
-            overlay_text=f'Vigil here · {pulse}'[:90],
-            template_key='tn_pinterest_comic_2026',
+        prompt = fallback_graphic_prompt(
+            punchline='Vigil is listening',
+            fact_line=pulse,
+            mood='rescue',
         )
-        ok = send_simple_frame('Vigil is listening', pulse, prompt)
+        ok = send_simple_frame('', '', prompt)
         print('RESCUE_FRAME' if ok else 'RESCUE_FAILED')
         return 0 if ok else 1
 

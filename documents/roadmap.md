@@ -7,7 +7,7 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **DIRECTOR layer live** |
+| **Status as of** | 2026-08-04 — **DIRECTOR graphic punchlines (v0.30)** |
 | **Stage lock** | **Collects = base complete** → **Map with Students** (DIRECTOR skit + Carousel) → **Predict for Government** (next) |
 | **Agent stack** | COURIER (Hermes) · DIRECTOR (OpenAI + SQLiteSession) · STAGEHAND · LENS · CAROUSEL WORKSHOP |
 
@@ -42,7 +42,7 @@ Tower = truth engine behind every slide.
 
 | # | Feature | Status |
 |---|---|---|
-| 1 | **Carousel fire** — Replicate + Pillow → **Telegram album** via Hermes `/carousel` (no local gallery) | **Done** — smoke sent 6 slides to Telegram |
+| 1 | **Carousel fire** — Grok Imagine graphic posters → **Telegram album** (no Pillow cards; DIRECTOR-authored style) | **Done** — evolving style under DIRECTOR v0.30 |
 | 2 | **Trendjack** — search Tamil Nadu / TECH employment trends (SerpApi Google Trends free tier first; buy SearchAPI if needed) → hook carousels to what’s rising | Queued after #1 |
 
 Then: Intelligence Automation = Job Market Analysis → Carousel that reaches employment seekers at scale.

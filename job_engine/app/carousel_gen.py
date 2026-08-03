@@ -1,8 +1,4 @@
-"""TECH JOB MARKET MOVEMENT — carousel slide generator (Replicate + Pillow).
-
-Pulls live Ultron facts, paints fiery 1080×1350 slides, writes ephemeral
-PNGs under job_engine/.data/carousel_tmp/ for Telegram upload only.
-"""
+"""TECH JOB MARKET MOVEMENT — carousel (Grok Imagine graphic posters, no Pillow cards)."""
 
 from __future__ import annotations
 
@@ -16,21 +12,12 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from PIL import Image, ImageDraw, ImageFont
-
 from app import config
+from app.prompt_dictionary import graphic_carousel_prompt
 
 BASE = 'http://127.0.0.1:8001'
 TZ = ZoneInfo('Asia/Kolkata')
-W, H = 1080, 1350
 TMP_ROOT = config.BASE_DIR / '.data' / 'carousel_tmp'
-
-# Bright-white calm palette (Ashok 2026-08-03 — aesthetic, not meme/cyber)
-INK = (36, 40, 48)
-MUTED = (90, 96, 110)
-ACCENT = (40, 110, 180)
-WHITE = (255, 255, 255)
-PANEL = (255, 255, 255, 200)
 
 
 @dataclass
@@ -89,8 +76,6 @@ def fetch_facts() -> dict:
 
 
 def build_slides(facts: dict) -> list[Slide]:
-    from app.prompt_dictionary import scene_for_carousel_slide
-
     today = facts['jobs_today']
     total = facts['total_jobs']
     rise = facts['rise_name']
@@ -118,87 +103,12 @@ def build_slides(facts: dict) -> list[Slide]:
             headline=h,
             sub=s,
             stat=st,
-            bg_prompt=scene_for_carousel_slide(slide_key=k, headline=h.replace('\n', ' ')),
+            bg_prompt=graphic_carousel_prompt(
+                slide_key=k, headline=h, sub=s, stat=st,
+            ),
         )
         for k, h, s, st in specs
     ]
-
-
-def _font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    candidates = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-    ]
-    for path in candidates:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size=size)
-    return ImageFont.load_default()
-
-
-def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
-    lines: list[str] = []
-    for paragraph in text.split('\n'):
-        words = paragraph.split()
-        if not words:
-            lines.append('')
-            continue
-        cur = words[0]
-        for w in words[1:]:
-            trial = f'{cur} {w}'
-            if draw.textlength(trial, font=font) <= max_w:
-                cur = trial
-            else:
-                lines.append(cur)
-                cur = w
-        lines.append(cur)
-    return lines
-
-
-def _generate_bg(prompt: str) -> Image.Image:
-    from app.replicate_img import generate_image
-
-    img = generate_image(prompt, aspect_ratio='3:4')
-    if img.size != (W, H):
-        img = img.resize((W, H), Image.Resampling.LANCZOS)
-    return img
-
-
-def _compose(bg: Image.Image, slide: Slide) -> Image.Image:
-    img = bg.copy()
-    overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    od = ImageDraw.Draw(overlay)
-    od.rounded_rectangle([(36, 36), (W - 36, 120)], radius=20, fill=PANEL)
-    od.rounded_rectangle([(36, H - 520), (W - 36, H - 36)], radius=28, fill=PANEL)
-    img = Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB')
-    draw = ImageDraw.Draw(img)
-
-    brand_f = _font(26, bold=True)
-    head_f = _font(52, bold=True)
-    sub_f = _font(30, bold=False)
-    stat_f = _font(44, bold=True)
-    foot_f = _font(22, bold=False)
-
-    draw.text((56, 58), 'TECH JOB MARKET MOVEMENT', font=brand_f, fill=ACCENT)
-
-    y = H - 480
-    for line in _wrap(draw, slide.headline, head_f, W - 120):
-        draw.text((56, y), line, font=head_f, fill=INK)
-        y += 58
-
-    y += 8
-    for line in _wrap(draw, slide.sub, sub_f, W - 120):
-        draw.text((56, y), line, font=sub_f, fill=MUTED)
-        y += 38
-
-    y += 16
-    draw.rectangle([(56, y), (200, y + 6)], fill=ACCENT)
-    y += 24
-    for line in _wrap(draw, slide.stat, stat_f, W - 120):
-        draw.text((56, y), line, font=stat_f, fill=INK)
-        y += 52
-
-    draw.text((56, H - 72), 'JobMaster.agency · VIGIL · Quanta HR · Grok Imagine', font=foot_f, fill=MUTED)
-    return img
 
 
 def build_caption(facts: dict) -> str:
@@ -289,8 +199,6 @@ def fetch_topic_jobs(role: str | None, city: str | None, *, limit: int = 40) -> 
 
 
 def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: datetime) -> tuple[list[Slide], str]:
-    from app.prompt_dictionary import scene_for_carousel_slide
-
     date_s = now.strftime('%d %b %Y')
     counts: dict[str, int] = {}
     for j in jobs:
@@ -320,8 +228,8 @@ def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: dateti
             headline=h,
             sub=s,
             stat=st,
-            bg_prompt=scene_for_carousel_slide(
-                slide_key=k, headline=h.replace('\n', ' '), role_hint=role,
+            bg_prompt=graphic_carousel_prompt(
+                slide_key=k, headline=h, sub=s, stat=st, role_hint=role,
             ),
         )
         for k, h, s, st in raw
@@ -343,7 +251,9 @@ def generate_carousel(
     clean: bool = True,
     topic_msg: str | None = None,
 ) -> tuple[list[Path], str, Path]:
-    """Return (slide_paths, caption, run_dir). Caller sends then may delete run_dir."""
+    """Return (slide_paths, caption, run_dir). Images are pure Grok graphics (text in art)."""
+    from app.replicate_img import generate_image
+
     now = datetime.now(TZ)
     topic = parse_topic(topic_msg or '') if topic_msg else {}
     if topic.get('role'):
@@ -368,10 +278,9 @@ def generate_carousel(
 
     paths: list[Path] = []
     for i, slide in enumerate(slides, start=1):
-        bg = _generate_bg(slide.bg_prompt)
-        composed = _compose(bg, slide)
+        img = generate_image(slide.bg_prompt, aspect_ratio='3:4')
         out = run_dir / f'slide-{i:02d}-{slide.key}.png'
-        composed.save(out, format='PNG', optimize=True)
+        img.save(out, format='PNG', optimize=True)
         paths.append(out)
 
     (run_dir / 'caption.txt').write_text(caption, encoding='utf-8')
