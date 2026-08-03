@@ -458,6 +458,9 @@ export function CityGlobe() {
   const focusLabel =
     focusRow?.label || CITY_GEO[cityFocus || '']?.label || cityFocus || ''
 
+  if (cityFocus === '__jobs__') {
+    return <NightCity mode="jobs" cityId="__jobs__" cityLabel="Jobs" />
+  }
   if (cityFocus) {
     return <NightCity cityId={cityFocus} cityLabel={focusLabel} />
   }

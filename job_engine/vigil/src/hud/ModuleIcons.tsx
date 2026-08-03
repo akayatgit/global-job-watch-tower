@@ -226,3 +226,27 @@ export function IconClose({ size = 14 }: { size?: number }) {
     </svg>
   )
 }
+
+/** Skyline / city-view — buildings silhouette. */
+export function IconCityView({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 20h18" />
+      <path d="M5 20V10l3-1.5V20" />
+      <path d="M10 20V6l4-2v16" />
+      <path d="M16 20v-8l3-1v9" />
+      <path d="M11.5 9v1.5M11.5 12.5V14" />
+      <path d="M6.5 13v1.5" />
+    </svg>
+  )
+}

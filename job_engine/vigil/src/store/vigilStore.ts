@@ -533,6 +533,8 @@ type VigilStore = {
   ) => void
   openRoleJobs: (searchId: number, name: string) => void
   openRankList: (kind: 'companies' | 'roles', days?: number) => void
+  /** Open night-city campus from current Jobs filters (multi-city clusters). */
+  openJobsCityView: () => void
   clearInsightFocus: () => void
   vitals: any | null
   setVitals: (v: any) => void
@@ -1165,6 +1167,13 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
           ? { kind: 'companies', days }
           : { kind: 'roles', days },
       statusLine: title,
+    })
+  },
+  openJobsCityView: () => {
+    set({
+      sceneMode: 'city',
+      cityFocus: '__jobs__',
+      statusLine: 'CITY VIEW · FROM JOBS',
     })
   },
   clearInsightFocus: () => {

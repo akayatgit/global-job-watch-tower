@@ -31,6 +31,9 @@ type Corp = {
   sector_id: string
   sector_label: string
   roles: RoleHit[]
+  /** City key for multi-cluster campus (Jobs → City view) */
+  city_key?: string
+  city_label?: string
   x: number
   z: number
   w: number
@@ -42,6 +45,15 @@ type Corp = {
   accent: string
   warmCore: boolean
 }
+
+type CityCluster = {
+  city: string
+  label: string
+  companies: SkyCo[]
+  stats?: { jobs?: number; companies?: number; max_n?: number }
+}
+
+type CampusPadSpec = { cx: number; cz: number; half: number; label: string }
 
 type Dummy = {
   x: number
@@ -291,15 +303,23 @@ function focusDistance(h: number) {
   return 0.78 + h * 0.07
 }
 
-function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
-  const sorted = [...companies].sort((a, b) => b.n - a.n).slice(0, 16)
+function layoutCorporates(
+  companies: SkyCo[],
+  maxN: number,
+  ox = CAMPUS.cx,
+  oz = CAMPUS.cz,
+  cityKey?: string,
+  cityLabel?: string,
+  maxBuildings = 16,
+): Corp[] {
+  const sorted = [...companies].sort((a, b) => b.n - a.n).slice(0, maxBuildings)
   const cols = Math.ceil(Math.sqrt(sorted.length))
   const gap = 0.52
   return sorted.map((c, i) => {
     const row = Math.floor(i / cols)
     const col = i % cols
     const nRows = Math.ceil(sorted.length / cols)
-    const seed = c.company_id * 13.37
+    const seed = c.company_id * 13.37 + (cityKey ? hash01(cityKey.length * 9.1) * 100 : 0)
     const heat = c.n / Math.max(maxN, 1)
     const baseHue = SECTOR_HUE[c.sector_id] ?? 0.55
     const hue = (baseHue + (hash01(seed) - 0.5) * 0.08 + 1) % 1
@@ -310,8 +330,10 @@ function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
       sector_id: c.sector_id,
       sector_label: c.sector_label,
       roles: (c.roles || []).slice(0, 5),
-      x: CAMPUS.cx + (col - (cols - 1) / 2) * gap + (hash01(seed) - 0.5) * 0.04,
-      z: CAMPUS.cz + (row - (nRows - 1) / 2) * gap + (hash01(seed + 1) - 0.5) * 0.04,
+      city_key: cityKey,
+      city_label: cityLabel,
+      x: ox + (col - (cols - 1) / 2) * gap + (hash01(seed) - 0.5) * 0.04,
+      z: oz + (row - (nRows - 1) / 2) * gap + (hash01(seed + 1) - 0.5) * 0.04,
       w: 0.3 + heat * 0.14 + hash01(seed + 2) * 0.05,
       d: 0.28 + heat * 0.12 + hash01(seed + 3) * 0.05,
       h: 0.95 + heat * 2.8 + hash01(seed + 4) * 0.3,
@@ -324,16 +346,54 @@ function layoutCorporates(companies: SkyCo[], maxN: number): Corp[] {
   })
 }
 
-function layoutDummies(corps: Corp[]): Dummy[] {
+/** Spread city districts along X — one campus pad per city. */
+function layoutJobClusters(clusters: CityCluster[]): {
+  corps: Corp[]
+  pads: CampusPadSpec[]
+  maxN: number
+} {
+  const n = clusters.length
+  const gap = n <= 2 ? 5.4 : n <= 4 ? 4.8 : 4.2
+  const pads: CampusPadSpec[] = []
+  const corps: Corp[] = []
+  let maxN = 1
+  clusters.forEach((cl) => {
+    maxN = Math.max(maxN, cl.stats?.max_n || 1)
+    for (const c of cl.companies || []) maxN = Math.max(maxN, c.n)
+  })
+  clusters.forEach((cl, i) => {
+    const cx = (i - (n - 1) / 2) * gap
+    const cz = 0
+    const half = Math.min(1.7, 1.15 + Math.sqrt((cl.companies || []).length) * 0.18)
+    pads.push({ cx, cz, half, label: cl.label })
+    corps.push(
+      ...layoutCorporates(
+        cl.companies || [],
+        maxN,
+        cx,
+        cz,
+        cl.city,
+        cl.label,
+        10,
+      ),
+    )
+  })
+  return { corps, pads, maxN }
+}
+
+function layoutDummies(corps: Corp[], pads: CampusPadSpec[]): Dummy[] {
   const list: Dummy[] = []
   let i = 0
-  for (let gx = -CITY_HALF; gx <= CITY_HALF; gx += 0.4) {
+  const half = Math.max(CITY_HALF, ...pads.map((p) => Math.abs(p.cx) + p.half + 2.5), 7)
+  for (let gx = -half; gx <= half; gx += 0.4) {
     for (let gz = -CITY_HALF; gz <= CITY_HALF; gz += 0.4) {
       i++
       if (ROAD.some((r) => Math.abs(gx - r) < 0.36 || Math.abs(gz - r) < 0.36)) continue
       if (
-        Math.abs(gx - CAMPUS.cx) < CAMPUS.half + 0.3 &&
-        Math.abs(gz - CAMPUS.cz) < CAMPUS.half + 0.3
+        pads.some(
+          (p) =>
+            Math.abs(gx - p.cx) < p.half + 0.3 && Math.abs(gz - p.cz) < p.half + 0.3,
+        )
       )
         continue
       if (hash01(i * 3.1) < 0.1) continue
@@ -510,7 +570,9 @@ function GlassTower({
     const st = useVigilStore.getState()
     // Focus on the ROOF / top of building
     const roofY = CITY_Y + t.h + 0.15
+    const place = t.city_label || cityLabel
     if (st.selectFocusId === selectId) {
+      if (t.city_key) st.setCityFilter(t.city_key)
       st.openCompanyJobs(t.company_id, t.name, windowDays || 7)
       st.setStatus(`OPEN · ${t.name}`)
       return
@@ -524,7 +586,7 @@ function GlassTower({
       distance: focusDistance(t.h),
     })
     st.setStatus(
-      `FOCUS · ${t.name} · ${t.n} in ${cityLabel} · click again to open`,
+      `FOCUS · ${t.name} · ${t.n} in ${place} · click again to open`,
     )
   }
 
@@ -702,11 +764,33 @@ function GlassTower({
   )
 }
 
-function CampusPad({ dim }: { dim: boolean }) {
+function CampusPad({
+  dim,
+  pad = { cx: CAMPUS.cx, cz: CAMPUS.cz, half: CAMPUS.half, label: '' },
+}: {
+  dim: boolean
+  pad?: CampusPadSpec
+}) {
+  const labelTex = useMemo(() => {
+    if (!pad.label) return null
+    const c = document.createElement('canvas')
+    c.width = 512
+    c.height = 96
+    const ctx = c.getContext('2d')!
+    ctx.clearRect(0, 0, c.width, c.height)
+    ctx.font = 'bold 42px "Segoe UI", system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    neonFill(ctx, pad.label.toUpperCase(), c.width / 2, c.height / 2, '#ffaa00', '#ff5500')
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }, [pad.label])
+
   return (
-    <group position={[CAMPUS.cx, 0.012, CAMPUS.cz]}>
+    <group position={[pad.cx, 0.012, pad.cz]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[CAMPUS.half * 2.25, CAMPUS.half * 2.25]} />
+        <planeGeometry args={[pad.half * 2.25, pad.half * 2.25]} />
         <meshStandardMaterial
           color="#0f172a"
           roughness={0.45}
@@ -716,14 +800,27 @@ function CampusPad({ dim }: { dim: boolean }) {
         />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
-        <planeGeometry args={[CAMPUS.half * 2.35, CAMPUS.half * 2.35]} />
+        <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
         <meshBasicMaterial color="#a78bfa" transparent opacity={dim ? 0.15 : 0.4} />
       </mesh>
+      {labelTex && (
+        <Billboard position={[0, 2.8, 0]} follow>
+          <mesh>
+            <planeGeometry args={[1.6, 0.3]} />
+            <meshBasicMaterial
+              map={labelTex}
+              transparent
+              depthWrite={false}
+              opacity={dim ? 0.35 : 0.95}
+            />
+          </mesh>
+        </Billboard>
+      )}
     </group>
   )
 }
 
-function Ground() {
+function Ground({ half = CITY_HALF }: { half?: number }) {
   const roadTex = useMemo(() => {
     const c = document.createElement('canvas')
     c.width = 1024
@@ -785,7 +882,7 @@ function Ground() {
 
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[CITY_HALF * 2.15, CITY_HALF * 2.15]} />
+      <planeGeometry args={[half * 2.15, Math.max(CITY_HALF, half * 0.55) * 2.15]} />
       <meshStandardMaterial map={roadTex} roughness={0.88} metalness={0.05} />
     </mesh>
   )
@@ -938,50 +1035,121 @@ function StreetLamps({ dim }: { dim: boolean }) {
   )
 }
 
+/** Sentinel cityFocus for Jobs → multi-city campus */
+export const JOBS_CITY_FOCUS = '__jobs__'
+
 export function NightCity({
   cityId,
   cityLabel,
+  mode = 'city',
 }: {
-  cityId: string
-  cityLabel: string
+  cityId?: string
+  cityLabel?: string
+  mode?: 'city' | 'jobs'
 }) {
+  const jobsMode = mode === 'jobs' || cityId === JOBS_CITY_FOCUS
   const [companies, setCompanies] = useState<SkyCo[]>([])
+  const [clusters, setClusters] = useState<CityCluster[]>([])
   const [maxN, setMaxN] = useState(1)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const selectFocusId = useVigilStore((s) => s.selectFocusId)
   const cityWindowDays = useVigilStore((s) => s.cityWindowDays)
+  const sectorFilter = useVigilStore((s) => s.sectorFilter)
+  const cityFilter = useVigilStore((s) => s.cityFilter)
+  const experienceFilter = useVigilStore((s) => s.experienceFilter)
   const anyFocused = Boolean(selectFocusId?.startsWith('company:'))
   const sceneDimmed = anyFocused || Boolean(hoverId)
 
   useEffect(() => {
     let alive = true
-    api
-      .citySkyline(cityId, cityWindowDays, 28)
-      .then((d) => {
-        if (!alive) return
-        setCompanies(d?.companies || [])
-        setMaxN(d?.stats?.max_n || 1)
-        const cap = d?.window_caption || openingsCaption(cityWindowDays)
-        useVigilStore.getState().setStatus(
-          `CAMPUS · ${d?.label || cityLabel} · ${cap}`,
-        )
-      })
-      .catch(() => setCompanies([]))
+    if (jobsMode) {
+      api
+        .jobsSkyline(sectorFilter, cityFilter, experienceFilter, 120)
+        .then((d) => {
+          if (!alive) return
+          const cls: CityCluster[] = d?.clusters || []
+          setClusters(cls)
+          setCompanies([])
+          setMaxN(d?.stats?.max_n || 1)
+          const nCities = d?.stats?.cities ?? cls.length
+          useVigilStore.getState().setStatus(
+            nCities > 1
+              ? `CITY VIEW · ${nCities} CITIES · FROM JOBS`
+              : `CITY VIEW · ${cls[0]?.label || 'CAMPUS'} · FROM JOBS`,
+          )
+        })
+        .catch(() => {
+          if (!alive) return
+          setClusters([])
+        })
+    } else if (cityId) {
+      api
+        .citySkyline(cityId, cityWindowDays, 28)
+        .then((d) => {
+          if (!alive) return
+          setClusters([])
+          setCompanies(d?.companies || [])
+          setMaxN(d?.stats?.max_n || 1)
+          const cap = d?.window_caption || openingsCaption(cityWindowDays)
+          useVigilStore.getState().setStatus(
+            `CAMPUS · ${d?.label || cityLabel || ''} · ${cap}`,
+          )
+        })
+        .catch(() => {
+          if (!alive) return
+          setCompanies([])
+        })
+    }
     return () => {
       alive = false
     }
-  }, [cityId, cityLabel, cityWindowDays])
+  }, [
+    jobsMode,
+    cityId,
+    cityLabel,
+    cityWindowDays,
+    sectorFilter,
+    cityFilter,
+    experienceFilter,
+  ])
 
   // Clear hover when leaving the district or changing focus city
   useEffect(() => {
     setHoverId(null)
-  }, [cityId, selectFocusId])
+  }, [cityId, jobsMode, selectFocusId, sectorFilter, cityFilter, experienceFilter])
 
-  const corps = useMemo(
-    () => layoutCorporates(companies, maxN),
-    [companies, maxN],
-  )
-  const dummies = useMemo(() => layoutDummies(corps), [corps])
+  const { corps, pads } = useMemo(() => {
+    if (jobsMode && clusters.length) {
+      return layoutJobClusters(clusters)
+    }
+    const single = layoutCorporates(companies, maxN)
+    return {
+      corps: single,
+      pads: [
+        {
+          cx: CAMPUS.cx,
+          cz: CAMPUS.cz,
+          half: CAMPUS.half,
+          label: '',
+        },
+      ] as CampusPadSpec[],
+    }
+  }, [jobsMode, clusters, companies, maxN])
+
+  const dummies = useMemo(() => layoutDummies(corps, pads), [corps, pads])
+  const groundHalf = useMemo(() => {
+    if (!pads.length) return CITY_HALF
+    return Math.max(
+      CITY_HALF,
+      ...pads.map((p) => Math.abs(p.cx) + p.half + 2.2),
+    )
+  }, [pads])
+  const placeLabel =
+    jobsMode && clusters.length > 1
+      ? `${clusters.length} cities`
+      : jobsMode
+        ? clusters[0]?.label || 'Jobs'
+        : cityLabel || ''
 
   useEffect(() => {
     setCampusNav(
@@ -993,10 +1161,10 @@ export function NightCity({
         z: t.z,
         h: t.h,
       })),
-      cityLabel,
+      placeLabel,
     )
     return () => clearCampusNav()
-  }, [corps, cityLabel])
+  }, [corps, placeLabel])
 
   return (
     <group position={[0, CITY_Y, 0]}>
@@ -1021,11 +1189,13 @@ export function NightCity({
         position={[0, 3, 0]}
         intensity={sceneDimmed ? 0.15 : 0.35}
         color="#67e8f9"
-        distance={10}
+        distance={jobsMode && clusters.length > 2 ? 18 : 10}
       />
 
-      <Ground />
-      <CampusPad dim={sceneDimmed} />
+      <Ground half={groundHalf} />
+      {pads.map((p) => (
+        <CampusPad key={`${p.cx}-${p.cz}-${p.label}`} dim={sceneDimmed} pad={p} />
+      ))}
       <Traffic dim={sceneDimmed} />
       <StreetLamps dim={sceneDimmed} />
 
@@ -1035,9 +1205,9 @@ export function NightCity({
 
       {corps.map((t) => (
         <GlassTower
-          key={t.company_id}
+          key={`${t.city_key || 'c'}-${t.company_id}`}
           t={t}
-          cityLabel={cityLabel}
+          cityLabel={t.city_label || cityLabel || placeLabel}
           windowDays={cityWindowDays}
           sceneDimmed={sceneDimmed}
           onHoverEnter={setHoverId}

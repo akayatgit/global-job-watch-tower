@@ -5,9 +5,12 @@ import { PINNABLE_PANELS, useVigilStore, type PanelId } from '../store/vigilStor
 export function PanelShell({
   id,
   children,
+  headerActions,
 }: {
   id: PanelId
   children: ReactNode
+  /** Extra icon buttons before Pin / Close (icon-only chrome). */
+  headerActions?: ReactNode
 }) {
   const panel = useVigilStore((s) => s.panels[id])
   const focused = useVigilStore((s) => s.focusedPanel === id)
@@ -139,6 +142,7 @@ export function PanelShell({
           ) : null}
         </h2>
         <div className="ops">
+          {headerActions}
           {pinnable && (
             <button
               type="button"

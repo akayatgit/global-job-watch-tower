@@ -212,6 +212,10 @@ use — they should love opening the app, never fight it.
   `vigil.experience`; favs `vigil.experienceFavs` (default Fresher, 1–2, 3–5).
   Filters `jobs_master.experience_band` (enrich). Job cards show band in meta.
   Never show internal band ids in UI.
+- **Jobs → City view (2026-08-03):** Jobs panel header icon opens night-city
+  campus from the current Jobs filters. Multiple metros → multiple building
+  clusters (labelled pads). One metro → single campus. Exit via campus leave
+  control back to globe.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

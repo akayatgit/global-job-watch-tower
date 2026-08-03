@@ -139,6 +139,14 @@ export const api = {
       `/api/ultron/cities/${encodeURIComponent(city)}/skyline?${p}`,
     )
   },
+  /** Multi-city clusters from the same filters as the Jobs list. */
+  jobsSkyline: (sector = '', city = '', experience = '', limit = 120) => {
+    const p = new URLSearchParams({ limit: String(limit) })
+    appendSector(p, sector)
+    appendCity(p, city)
+    appendExperience(p, experience)
+    return getJson<any>(`/api/ultron/jobs-skyline?${p}`)
+  },
 
   cityCompare: (
     a: string,

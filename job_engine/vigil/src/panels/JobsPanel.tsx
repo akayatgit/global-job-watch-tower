@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CityChips } from '../components/CityChips'
 import { ExperienceChips } from '../components/ExperienceChips'
 import { SectorChips } from '../components/SectorChips'
+import { IconCityView } from '../hud/ModuleIcons'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -26,6 +27,10 @@ export function JobsPanel() {
   const sectorFilter = useVigilStore((s) => s.sectorFilter)
   const cityFilter = useVigilStore((s) => s.cityFilter)
   const experienceFilter = useVigilStore((s) => s.experienceFilter)
+  const openJobsCityView = useVigilStore((s) => s.openJobsCityView)
+  const cityFocus = useVigilStore((s) => s.cityFocus)
+  const sceneMode = useVigilStore((s) => s.sceneMode)
+  const cityViewActive = sceneMode === 'city' && cityFocus === '__jobs__'
 
   useEffect(() => {
     let alive = true
@@ -81,7 +86,21 @@ export function JobsPanel() {
         : null
 
   return (
-    <PanelShell id="jobs">
+    <PanelShell
+      id="jobs"
+      headerActions={
+        <button
+          type="button"
+          className={`icon-ops-btn ${cityViewActive ? 'active' : ''}`}
+          data-gesture-action="jobs-city-view"
+          aria-label="View in city"
+          title="View in city — buildings by metro"
+          onClick={() => openJobsCityView()}
+        >
+          <IconCityView />
+        </button>
+      }
+    >
       <SectorChips actionPrefix="jobs-sector" />
       <CityChips actionPrefix="jobs-city" />
       <ExperienceChips actionPrefix="jobs-experience" />

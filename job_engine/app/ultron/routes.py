@@ -39,7 +39,7 @@ from app.ultron.hub import hub
 from app.ultron.serialize import to_jsonable
 from app.vigil_boards import BOARD_HELP, render_board, resolve_board
 from app.world_model import compute_world_model
-from app.city_skyline import compute_city_skyline
+from app.city_skyline import compute_city_skyline, compute_jobs_skyline
 
 router = APIRouter(tags=['ultron'])
 
@@ -260,6 +260,20 @@ def ultron_tower(
         'signals_teaser': to_jsonable(signals),
         'watched': to_jsonable(watched),
     }
+
+
+@router.get('/api/ultron/jobs-skyline')
+def ultron_jobs_skyline(
+    sector: str | None = None,
+    city: str | None = None,
+    experience: str | None = None,
+    limit: int = 120,
+    db: Session = Depends(get_db),
+):
+    """Multi-city campus from Jobs filters — one building cluster per city."""
+    return compute_jobs_skyline(
+        db, sector=sector, city=city, experience=experience, limit=limit,
+    )
 
 
 @router.get('/api/ultron/cities/{city_id}/skyline')

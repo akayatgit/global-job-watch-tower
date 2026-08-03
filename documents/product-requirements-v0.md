@@ -612,6 +612,7 @@ START OF EVERY SESSION
 | v0.17 | 2026-08-03 | Akay | **Fresher-first clean restart:** dual-track catalogue — Track A Fresher (`f_E=1,2` Intern+Entry + early-career keywords) daily flywheel; Track B Market Signal (no `f_E`, thinner pages) for experienced hiring / economy decode. `SearchConfig.experience_filter` + `track`. Enrich maps fresher/0–2 → `0-1 years`; retries `enrich_failed`. Wipe jobs/companies/runs then reseed before new catches. |
 | v0.18 | 2026-08-03 | Akay | **Company profile + real posted dates:** company record stores logo, tagline, casual punchline, followers, employee size (job-card + company-page enrich). Relative LinkedIn times (“2h ago”) → `posted_date`; detail enrich backfills when cards omit `<time datetime>`. Caught time remains `scraped_at`. |
 | v0.19 | 2026-08-03 | Akay | **Experience filter chips:** Fresher · 1–2 · 3–5 · 6–8 · 9–12 · 13+ on Jobs + every insight widget with sector/city chips. Canonical `experience_band` labels; legacy remap migration; stacks with sector/city (`vigil.experience`). |
+| v0.20 | 2026-08-03 | Akay | **Jobs → City view:** header skyline button opens night-city from Jobs filters; multi-metro → multi building clusters (`/api/ultron/jobs-skyline`). |
 
 ### Phase 0 progress (living)
 

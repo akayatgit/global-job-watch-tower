@@ -181,7 +181,11 @@ export function StatusHud() {
                   <button
                     type="button"
                     className="hud-icon-btn city-exit-btn"
-                    title="Leave campus — back to globe"
+                    title={
+                      cityFocus === '__jobs__'
+                        ? 'Leave city view — back to globe'
+                        : 'Leave campus — back to globe'
+                    }
                     aria-label="Leave campus"
                     onClick={() => {
                       setCityFocus(null)
