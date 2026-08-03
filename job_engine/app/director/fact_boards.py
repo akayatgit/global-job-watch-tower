@@ -170,10 +170,12 @@ def render_list_board(
         draw.text((70, 118), subtitle[:64], font=sub_f, fill=MUTED)
 
     y = 190
+    url_f = _font(18, False)
     for i, row in enumerate((rows or [])[:8], start=1):
         title_s = str(row.get('title') or row.get('name') or '—')[:48]
         co = str(row.get('company') or '')[:40]
         meta = str(row.get('meta') or row.get('posted_date') or '')[:28]
+        url = str(row.get('job_url') or row.get('url') or '').strip()
         draw.text((70, y), f'{i:02d}', font=num_f, fill=CYAN)
         for ln in _wrap(draw, title_s, row_f, W - 220):
             draw.text((140, y), ln, font=row_f, fill=INK)
@@ -181,8 +183,13 @@ def render_list_board(
         detail = ' · '.join(x for x in (co, meta) if x)
         if detail:
             draw.text((140, y), detail[:56], font=co_f, fill=MUTED)
-            y += 30
-        y += 22
+            y += 28
+        if url:
+            # Prefer readable LinkedIn job id tail; full URL on board for audit
+            shown = url if len(url) <= 62 else url[:28] + '…' + url[-28:]
+            draw.text((140, y), shown, font=url_f, fill=CYAN)
+            y += 26
+        y += 18
         if y > H - 140:
             break
 
