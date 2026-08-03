@@ -231,6 +231,9 @@ use — they should love opening the app, never fight it.
 - **City neon + orbit pivot (2026-08-03):** Glow halved; city-name flags yellow.
   Towers have inner white neon; lit glow spills to surrounding blocks. Pinch/rotate
   while focused pivots on the top-floor (roof) center — not the building mid-mass.
+- **City sunset campus (2026-08-03):** District atmosphere = sunset evening cinematic
+  silhouettes (warm horizon, violet zenith, dark fabric blocks). Focus zoom ~50%
+  closer with larger company name / count / role cards for readability.
 - **Insight focus blocks (2026-08-02):** Growing roles / Fastest companies (and
   matching Tower/Cities/Role sections) use coloured section cards + strong
   titles so lists are not a flat wall of rows.

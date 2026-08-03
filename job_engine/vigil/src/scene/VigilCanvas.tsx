@@ -22,20 +22,20 @@ function SceneBody() {
       {sceneMode === 'city' && <CityGlobe />}
       {vigilMode && sceneMode === 'core' && <OrbitNodes />}
       <SceneControls />
-      {nightDistrict && <color attach="background" args={['#c8d2de']} />}
-      {nightDistrict && <fog attach="fog" args={['#c8d2de', 10, 28]} />}
+      {nightDistrict && <color attach="background" args={['#1a0830']} />}
+      {nightDistrict && <fog attach="fog" args={['#3d1830', 8, 26]} />}
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={
             nightDistrict
-              ? 0.7
+              ? 0.55
               : sceneMode === 'core'
                 ? 0.45
                 : sceneMode === 'graph'
                   ? 0.22
                   : 0.55
           }
-          luminanceThreshold={nightDistrict ? 0.42 : sceneMode === 'graph' ? 0.72 : 0.5}
+          luminanceThreshold={nightDistrict ? 0.35 : sceneMode === 'graph' ? 0.72 : 0.5}
           luminanceSmoothing={0.88}
           mipmapBlur
         />

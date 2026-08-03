@@ -203,15 +203,15 @@ function makeRoofLabel(
     (jobs === 1
       ? openingsCaption(days).replace(/^Openings/, 'Opening')
       : openingsCaption(days))
-  const padTop = 28
-  const nameLine = 32
-  const gapAfterName = 18
-  const numSize = 58
-  const gapAfterNum = 14
-  const capSize = 16
-  const padBot = 28
+  const padTop = 32
+  const nameLine = 40
+  const gapAfterName = 16
+  const numSize = 76
+  const gapAfterNum = 12
+  const capSize = 18
+  const padBot = 30
   const c = document.createElement('canvas')
-  c.width = 512
+  c.width = 640
   c.height =
     padTop +
     lines.length * nameLine +
@@ -225,7 +225,7 @@ function makeRoofLabel(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const cx = c.width / 2
-  ctx.font = '800 26px Orbitron, sans-serif'
+  ctx.font = '800 34px Orbitron, sans-serif'
   lines.forEach((ln, i) => {
     neonFill(
       ctx,
@@ -240,9 +240,9 @@ function makeRoofLabel(
   const numY =
     padTop + lines.length * nameLine + gapAfterName + numSize / 2
   const num = jobs > 999 ? '999+' : String(jobs)
-  ctx.font = '900 58px Orbitron, sans-serif'
+  ctx.font = '900 76px Orbitron, sans-serif'
   neonFill(ctx, num, cx, numY, '#ffffff', '#f97316')
-  ctx.font = '700 16px Rajdhani, sans-serif'
+  ctx.font = '700 18px Rajdhani, sans-serif'
   neonFill(
     ctx,
     caption,
@@ -262,11 +262,11 @@ function makeRoofLabel(
  * sized under the openings number (no stroke outlines).
  */
 function makeRoleLabel(title: string, n: number) {
-  const PAD_X = 20
-  const PAD_Y = 14
-  const LINE = 28
-  const FONT = '700 28px Rajdhani, sans-serif' // ~50% of openings 56
-  const innerW = 220
+  const PAD_X = 22
+  const PAD_Y = 16
+  const LINE = 34
+  const FONT = '700 34px Rajdhani, sans-serif'
+  const innerW = 280
   const measure = document.createElement('canvas').getContext('2d')!
   measure.font = FONT
   const lines = wrapRoleLines(measure, title, n, innerW)
@@ -342,10 +342,10 @@ function roleGridSlot(
   return [ox, oy]
 }
 
-/** Camera distance so name + count + role cards fit with padding. */
+/** Camera distance — ~50% more zoom than prior framing (÷1.5). */
 function focusDistance(h: number, roleCount = 0) {
   const rows = Math.max(1, Math.ceil(Math.max(0, roleCount) / 2))
-  return 2.35 + h * 0.22 + rows * 0.32
+  return (2.35 + h * 0.22 + rows * 0.32) / 1.5
 }
 
 /** Orbit / focus pivot = center of the top floor (roof), not building mid-mass. */
@@ -539,15 +539,16 @@ function DummyBuilding({
   b,
   dim,
   neighborGlow = 0,
-  spillColor = '#38bdf8',
+  spillColor = '#fb923c',
 }: {
   b: Dummy
   dim: boolean
   neighborGlow?: number
   spillColor?: string
 }) {
-  const op = dim ? 0.4 : 1
+  // Sunset silhouette — dark mass, warm rim when neon spills
   const wash = neighborGlow > 0.08
+  const body = '#0a0612'
   return (
     <group position={[b.x, 0, b.z]}>
       <mesh
@@ -558,30 +559,30 @@ function DummyBuilding({
       >
         <boxGeometry args={[b.w, b.h, b.d]} />
         <meshStandardMaterial
-          color={b.tint}
-          emissive={wash ? spillColor : '#000000'}
-          emissiveIntensity={wash ? neighborGlow * 0.22 : 0}
-          roughness={0.78}
-          metalness={0.08}
+          color={body}
+          emissive={wash ? spillColor : '#1a0a14'}
+          emissiveIntensity={wash ? neighborGlow * 0.28 : 0.04}
+          roughness={0.92}
+          metalness={0.05}
           transparent
-          opacity={op}
+          opacity={dim ? 0.55 : 0.96}
         />
       </mesh>
-      {/* Tiny window dots — catch neon spill */}
+      {/* Sparse warm window pinpricks */}
       <mesh position={[0, b.h * 0.55, b.d / 2 + 0.002]} raycast={() => null}>
-        <planeGeometry args={[b.w * 0.7, b.h * 0.55]} />
+        <planeGeometry args={[b.w * 0.55, b.h * 0.4]} />
         <meshBasicMaterial
-          color={wash ? spillColor : '#94a3b8'}
+          color={wash ? spillColor : '#ffb36b'}
           transparent
-          opacity={dim ? 0.12 : 0.14 + neighborGlow * 0.2}
+          opacity={dim ? 0.04 : 0.06 + neighborGlow * 0.22}
         />
       </mesh>
       <EdgeFrame
         w={b.w}
         h={b.h}
         d={b.d}
-        color={wash ? spillColor : '#94a3b8'}
-        opacity={dim ? 0.25 : 0.28 + neighborGlow * 0.25}
+        color={wash ? spillColor : '#4a2030'}
+        opacity={dim ? 0.15 : 0.22 + neighborGlow * 0.3}
       />
     </group>
   )
@@ -685,14 +686,13 @@ function GlassTower({
   }
 
   const floors = Math.max(4, Math.floor(t.h / 0.22))
-  const bannerH = 0.22 + wrapName(t.name, 11).length * 0.05
-  // Focused: slightly bigger; keep stack inside the frame with camera pull-back
-  const bannerW = bannerH * banner.aspect * (lit ? 1.08 : 1)
+  const bannerH = 0.34 + wrapName(t.name, 11).length * 0.07
+  // Bigger readable stack; focus camera is closer (~50% more zoom)
+  const bannerW = bannerH * banner.aspect * (lit ? 1.22 : 1.08)
   const cardOrder = lit ? 2000 : dim ? 2 : 20
   const dimOpacity = 0.4
-  // Compact role cards under the label — width capped so they stay on screen
-  const roleH = bannerH * 0.24
-  const roleWMax = bannerW * 0.44
+  const roleH = bannerH * 0.3
+  const roleWMax = bannerW * 0.48
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
@@ -884,7 +884,7 @@ function GlassTower({
           0,
         ]}
       >
-        <group scale={lit ? 1.06 : dim ? 0.94 : 1}>
+        <group scale={lit ? 1.28 : dim ? 0.96 : 1.12}>
           <mesh raycast={() => null} renderOrder={cardOrder}>
             <planeGeometry args={[bannerW, bannerH]} />
             <meshBasicMaterial
@@ -943,16 +943,20 @@ function CampusPad({
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[pad.half * 2.25, pad.half * 2.25]} />
         <meshStandardMaterial
-          color="#0f172a"
-          roughness={0.45}
-          metalness={0.2}
+          color="#12080f"
+          roughness={0.55}
+          metalness={0.15}
           transparent
-          opacity={dim ? 0.5 : 1}
+          opacity={dim ? 0.55 : 1}
         />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]}>
         <planeGeometry args={[pad.half * 2.35, pad.half * 2.35]} />
-        <meshBasicMaterial color="#a78bfa" transparent opacity={dim ? 0.15 : 0.4} />
+        <meshBasicMaterial
+          color="#ff6b35"
+          transparent
+          opacity={dim ? 0.12 : 0.28}
+        />
       </mesh>
     </group>
   )
@@ -1034,9 +1038,10 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     c.width = 1024
     c.height = 1024
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = '#dbe3ec'
+    // Warm dusk pavement
+    ctx.fillStyle = '#140a12'
     ctx.fillRect(0, 0, 1024, 1024)
-    ctx.strokeStyle = 'rgba(100,116,139,0.2)'
+    ctx.strokeStyle = 'rgba(80, 40, 50, 0.35)'
     ctx.lineWidth = 1
     for (let i = 0; i < 1024; i += 28) {
       ctx.beginPath()
@@ -1052,13 +1057,12 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
     const half = (0.48 / (CITY_HALF * 2)) * 1024
     for (const r of ROAD) {
       const p = toPx(r)
-      // Deep navy cyberpunk asphalt
-      ctx.fillStyle = '#0b1220'
+      ctx.fillStyle = '#08040a'
       ctx.fillRect(p - half, 0, half * 2, 1024)
       ctx.fillRect(0, p - half, 1024, half * 2)
     }
-    // Lane marks + crosswalks
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+    // Amber dusk lane marks
+    ctx.strokeStyle = 'rgba(255, 180, 100, 0.35)'
     ctx.lineWidth = 2
     ctx.setLineDash([16, 14])
     for (const r of ROAD) {
@@ -1073,7 +1077,7 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
       ctx.stroke()
     }
     ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'
+    ctx.fillStyle = 'rgba(255, 160, 90, 0.28)'
     for (const x of ROAD) {
       for (const z of ROAD) {
         const px = toPx(x)
@@ -1091,7 +1095,37 @@ function Ground({ half = CITY_HALF }: { half?: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[half * 2.15, Math.max(CITY_HALF, half * 0.55) * 2.15]} />
-      <meshStandardMaterial map={roadTex} roughness={0.88} metalness={0.05} />
+      <meshStandardMaterial map={roadTex} roughness={0.92} metalness={0.04} />
+    </mesh>
+  )
+}
+
+/** Magical sunset sky dome — warm horizon, violet zenith. */
+function SunsetSky() {
+  const tex = useMemo(() => {
+    const c = document.createElement('canvas')
+    c.width = 4
+    c.height = 256
+    const ctx = c.getContext('2d')!
+    const g = ctx.createLinearGradient(0, 0, 0, 256)
+    g.addColorStop(0, '#1a0830') // zenith violet
+    g.addColorStop(0.35, '#3b1248')
+    g.addColorStop(0.55, '#8b2d4a')
+    g.addColorStop(0.72, '#e85d2a')
+    g.addColorStop(0.88, '#ffb15a')
+    g.addColorStop(1, '#ffd9a0') // horizon glow
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, 4, 256)
+    const t = new THREE.CanvasTexture(c)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.magFilter = THREE.LinearFilter
+    t.minFilter = THREE.LinearFilter
+    return t
+  }, [])
+  return (
+    <mesh scale={[-1, 1, 1]} raycast={() => null}>
+      <sphereGeometry args={[42, 32, 24]} />
+      <meshBasicMaterial map={tex} side={THREE.BackSide} depthWrite={false} />
     </mesh>
   )
 }
@@ -1232,9 +1266,9 @@ function StreetLamps({ dim }: { dim: boolean }) {
           <mesh position={[0, 0.45, 0]}>
             <sphereGeometry args={[0.025, 8, 8]} />
             <meshBasicMaterial
-              color={l.color}
+              color={l.color === '#38bdf8' ? '#ffb15a' : '#f472b6'}
               transparent
-              opacity={dim ? 0.1 : 0.42}
+              opacity={dim ? 0.12 : 0.38}
             />
           </mesh>
         </group>
@@ -1426,28 +1460,30 @@ export function NightCity({
 
   return (
     <group position={[0, CITY_Y, 0]}>
-      <ambientLight intensity={sceneDimmed ? 0.28 : 0.42} color="#e2e8f0" />
+      <SunsetSky />
+      {/* Sunset key — low warm sun */}
+      <ambientLight intensity={sceneDimmed ? 0.12 : 0.18} color="#3a2040" />
       <hemisphereLight
-        args={['#f8fafc', '#64748b', sceneDimmed ? 0.18 : 0.32]}
+        args={['#ffb07a', '#1a0a20', sceneDimmed ? 0.28 : 0.42]}
       />
       <directionalLight
-        position={[5, 16, 3]}
-        intensity={sceneDimmed ? 0.45 : 0.75}
-        color="#fff7ed"
+        position={[8, 3.2, -4]}
+        intensity={sceneDimmed ? 0.55 : 0.95}
+        color="#ff8a3d"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
       <directionalLight
-        position={[-6, 5, -4]}
-        intensity={sceneDimmed ? 0.12 : 0.22}
-        color="#c4b5fd"
+        position={[-5, 2.5, 6]}
+        intensity={sceneDimmed ? 0.15 : 0.28}
+        color="#7c3aed"
       />
       <pointLight
-        position={[0, 3, 0]}
-        intensity={sceneDimmed ? 0.1 : 0.18}
-        color="#67e8f9"
-        distance={jobsMode && clusters.length > 2 ? 18 : 10}
+        position={[0, 1.2, 0]}
+        intensity={sceneDimmed ? 0.12 : 0.22}
+        color="#ff6b35"
+        distance={jobsMode && clusters.length > 2 ? 20 : 12}
       />
 
       <Ground half={groundHalf} />
