@@ -1,7 +1,8 @@
 """Prompt length + style knobs for DIRECTOR → LENS.
 
-Ashok 2026-08-04: no fixed scene paste in source. DIRECTOR invents prompts.
-Telegram = Ashok talking to the Tower (Jarvis), NOT student posters/PPT.
+Ashok 2026-08-04:
+- Style brief = DIRECTOR brain only. NEVER paste into Replicate prompts.
+- Replicate prompt = pure visual description + tiny on-image text + live facts.
 """
 
 from __future__ import annotations
@@ -9,38 +10,39 @@ from __future__ import annotations
 # Tunable — raise/lower later based on response quality
 MIN_PROMPT_CHARS = 800
 
-# Soft keywords DIRECTOR may weave (not a fixed scene)
+# Soft keywords for DIRECTOR thinking (not for Replicate paste)
 STYLE_INSPIRATION_KEYWORDS = (
     'real-time Jarvis briefing glance',
     'casual visual conversation about live data',
-    'minimal punchy words only — 2 to 6 words hero max',
-    'data-as-visual: numbers roles companies as graphic beats',
+    'minimal punchy words — 2 to 6 words hero max',
+    'data-as-visual: numbers roles companies heat as graphic beats',
     'clean high-contrast 2D illustration, not a marketing poster',
     'not PowerPoint, not carousel ad, not campaign CTA',
-    'bright or dark stage — invent; vary every turn',
+    'vary palette and metaphor every turn',
     'tower pulse / signal / heat / hiring motion as metaphor',
     'fun witty buddy energy with Ashok',
     'no frosted UI cards, no atrium stock, no India hologram cliché',
 )
 
-# Tunable brief — rewrite later when Ashok judges frames
+# DIRECTOR instructions only — must NEVER appear in Replicate prompts
 GRAPHIC_STYLE_BRIEF = (
-    'You are rendering a REAL-TIME JARVIS visual reply for Ashok chatting with '
-    'Watch Tower — a casual fun visual discussion of live job-market data, NOT a '
-    'student poster, NOT a PowerPoint slide, NOT a social-media campaign ad. '
-    'Invent a fresh illustrative frame each turn that feels like a smart friend '
-    'showing him what is happening in the tower right now. Minimal on-image text: '
-    'one tiny punchy line (roughly 2–6 words) plus at most one short fact crumb '
-    '(a number, role, or company) — never essays, never hope slogans for students, '
-    'never “Do I still have hope?” energy. Make the DATA the star: openings today, '
-    'rising role, top hirer, heat, next search — shown as graphic conversation, '
-    'diagram-ish motion, icon metaphor, signal pulse, abstract bars-as-shapes, '
-    'city/company marks — whatever fits the beat. Composition can be asymmetric and '
-    'lively; high-contrast; hyper-clean 2D/vector illustration; readable on a phone. '
-    'Vary palette and metaphor every reply. Forbidden: PPT title slides, poster CTAs, '
-    'frosted white caption cards, glass atrium stock, holographic India maps, '
-    'recycled graduate-at-window photos, long serif paragraphs. Typography is drawn '
-    'into the art (no later overlay). Tone: witty, short, powerful, ops-buddy Jarvis.'
+    'Private ops Jarvis for Ashok: casual fun visual discussion of live tower data. '
+    'Tiny on-image text (2–6 words + one fact crumb). Data is the star. '
+    'Not student posters, not PPT, not campaign ads. Invent a fresh illustration each turn. '
+    'Translate this brief into a concrete visual scene — never copy this paragraph into the image prompt.'
+)
+
+# Phrases that mean DIRECTOR (or rescue) leaked policy text into the image prompt
+_LEAK_MARKERS = (
+    'real-time jarvis visual reply',
+    'not a student poster',
+    'not a powerpoint',
+    'ashok chatting',
+    'fallback mood',
+    'graphic_style_brief',
+    'never invent fake',
+    'private ops chat visual',
+    'forbidden: ppt',
 )
 
 
@@ -49,44 +51,70 @@ def assert_prompt_length(prompt: str) -> str:
     if len(p) < MIN_PROMPT_CHARS:
         raise ValueError(
             f'Prompt too short ({len(p)} chars). Need >= {MIN_PROMPT_CHARS}. '
-            'Expand with subject, action, composition, color, typography, mood, wow element.'
+            'Expand with concrete visual detail: subject, composition, colors, lighting, '
+            'typography placement, mood — not policy essays.'
         )
     return p
 
 
+def assert_visual_prompt(prompt: str) -> str:
+    """Length + no style-brief / policy leakage into Replicate."""
+    p = assert_prompt_length(prompt)
+    low = p.lower()
+    for m in _LEAK_MARKERS:
+        if m in low:
+            raise ValueError(
+                f'Prompt leaked style-policy text ({m!r}). Rewrite as a pure visual '
+                'description for the image model: scene, colors, shapes, lighting, '
+                'exact short on-image words, live fact crumb.'
+            )
+    return p
+
+
 def fallback_graphic_prompt(*, punchline: str, fact_line: str, mood: str = 'reset') -> str:
-    """Jarvis fallback for /new and rescue — casual tower pulse, not a poster."""
-    moods = {
+    """Pure visual rescue/reset prompt — no DIRECTOR policy brief inside."""
+    scenes = {
         'reset': (
-            'deep charcoal stage with one electric cyan signal ring',
-            'a small radar sweep mark as the only hero graphic',
+            'deep charcoal square, single electric cyan radar ring sweeping once, '
+            'soft vignette, one thin geometric slash accent'
         ),
         'rescue': (
-            'midnight navy with a warm amber pulse',
-            'an ear-to-tower icon as a single clean mark',
+            'midnight navy square, warm amber pulse circle behind a simple ear-and-tower '
+            'icon in matte black, quiet depth, one thin amber arc accent'
+        ),
+        'heat': (
+            'dark graphite square, vertical heat-gauge silhouette in matte black with a '
+            'warm orange fill rising partway, subtle grid, one ember accent spark'
         ),
         'pulse': (
-            'ink black with neon green tick marks',
-            'a heartbeat signal becoming a simple rising spike',
+            'ink black square, neon green signal spike as a single clean mark, '
+            'asymmetric layout, one cyan tick accent'
         ),
     }
-    bg, sil = moods.get(mood, moods['rescue'])
+    scene = scenes.get(mood, scenes['rescue'])
     punch = (punchline or 'Tower online').strip()[:40]
-    fact = (fact_line or 'live pulse').strip()[:60]
+    fact = (fact_line or 'live pulse').strip()[:70]
     prompt = (
-        f'{GRAPHIC_STYLE_BRIEF} '
-        f'Fallback mood "{mood}". Scene: {bg}. Central mark: {sil}. '
-        f'Render tiny hero text exactly: "{punch}". '
-        f'Render one fact crumb exactly: "{fact}". '
-        f'No brand slogan wall. No student CTA. No PPT layout. '
-        f'Feel like Jarvis whispering a status glance to Ashok on Telegram. '
-        f'Square frame, sharp, playful, data-first, generous empty space, '
-        f'one wow geometric accent only. Ultra clean illustration, not a poster campaign. '
-        f'Describe lighting, depth, negative space, and why the metaphor matches the fact. '
-        f'Keep every word on the image short and punchy. Never invent fake job numbers — '
-        f'only render the fact crumb given. This is a private ops chat visual, not public ads.'
+        f'Hyper-clean 2D vector illustration for a phone chat glance. {scene}. '
+        f'High contrast, playful ops-buddy energy, generous negative space, sharp edges, '
+        f'no photorealism, no glass atrium, no frosted white cards, no India hologram, '
+        f'no PowerPoint title bar, no campaign CTA button. '
+        f'Draw bold dual-weight sans-serif typography into the artwork itself: '
+        f'hero line exactly "{punch}" near the central mark; '
+        f'one smaller fact crumb exactly "{fact}" under it. '
+        f'Keep all on-image words tiny and punchy — nothing else written on the image. '
+        f'Studio-clean lighting with soft falloff, slight depth so the central mark reads '
+        f'first, then the number. Composition readable at Telegram thumbnail size. '
+        f'Asymmetric but balanced. Premium illustration finish, not a marketing poster. '
+        f'Describe the metaphor clearly: the graphic should make the fact feel obvious at a '
+        f'glance. Square 1:1 frame. No watermarks, no UI chrome, no long paragraphs, '
+        f'no slogan walls, no brand parade. One wow geometric accent only. '
+        f'Color mood stays consistent with the scene description above; edges crisp; '
+        f'background flat or faintly graded; central icon solid and iconic. '
+        f'The image should feel like a smart friend flashing a status glance — witty, short, '
+        f'data-first — while remaining a concrete visual for an image generator to paint.'
     )
-    return assert_prompt_length(prompt)
+    return assert_visual_prompt(prompt)
 
 
 def graphic_carousel_prompt(
@@ -97,22 +125,19 @@ def graphic_carousel_prompt(
     stat: str,
     role_hint: str = '',
 ) -> str:
-    """Carousel is the separate student Movement product — still graphic, not PPT chrome."""
-    # Keep carousel usable when Ashok says the magic word; chat path stays Jarvis.
     h = ' · '.join(x.strip() for x in headline.replace('\n', ' · ').split('·') if x.strip())[:100]
     s = sub.replace('\n', ' · ').strip()[:80]
     st = stat.replace('\n', ' · ').strip()[:100]
-    role_bit = f' Role focus: {role_hint}.' if role_hint else ''
+    role_bit = f' Role focus cue in the metaphor only: {role_hint}.' if role_hint else ''
     prompt = (
-        f'{GRAPHIC_STYLE_BRIEF} '
-        f'This is a CAROUSEL album frame (key={slide_key}) for when Ashok asks Carousel — '
-        f'still visual-data conversation energy, not a corporate PPT deck.{role_bit} '
-        f'Render short hero: "{h}". Support crumb: "{s}". Fact: "{st}". '
-        f'Vertical 3:4. Invent a unique data metaphor for this slide. '
-        f'No frosted cards, no atrium, no India hologram, no long essays. '
-        f'Keep on-image text tiny and punchy. Make the number/role/company impossible to miss. '
-        f'Describe composition, color, lighting, negative space, and one wow detail so the '
-        f'prompt stays richly specific and longer than eight hundred characters with clear '
-        f'instructions for Grok Imagine to draw typography into the illustration itself.'
+        f'Hyper-clean 2D vector illustration, vertical 3:4 social frame, slide feel "{slide_key}".'
+        f'{role_bit} Invent a unique data metaphor (signal, gauge, path, cluster marks) — '
+        f'not a PowerPoint slide, not a campaign poster. High contrast, lively asymmetric '
+        f'composition, generous negative space, sharp edges, no frosted cards, no atrium stock, '
+        f'no India hologram. Draw typography into the art: hero "{h}"; crumb "{s}"; '
+        f'fact "{st}". Tiny punchy words only. Studio-clean lighting, phone-readable, '
+        f'one geometric accent, premium illustration finish. Expand with concrete color, '
+        f'lighting, depth, and placement detail so the prompt stays richly visual and long '
+        f'enough for a strong Grok Imagine render without any policy-essay language.'
     )
-    return assert_prompt_length(prompt)
+    return assert_visual_prompt(prompt)

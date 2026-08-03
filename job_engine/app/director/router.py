@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -19,6 +20,37 @@ def _default_chat() -> str:
         if ln.startswith('TELEGRAM_HOME_CHANNEL='):
             return ln.split('=', 1)[1].strip()
     return ''
+
+
+def _looks_like_heat(text: str) -> bool:
+    return bool(re.search(
+        r'\b(heat|temp|temperature|warm|hot|cool(?:ing)?|cpu|gpu|thermal)\b',
+        text or '',
+        re.I,
+    ))
+
+
+def _rescue_fact(text: str) -> tuple[str, str, str]:
+    """Return (punchline, fact_line, mood) from live APIs for rescue only."""
+    from app.director.tools_stagehand import _get
+
+    if _looks_like_heat(text):
+        try:
+            data = _get('/api/ultron/health')
+            v = (data or {}).get('vitals') or {}
+            c = v.get('heat_c')
+            label = v.get('heat_label') or '—'
+            detail = v.get('heat_detail') or ''
+            deg = f'{round(c)}°C' if isinstance(c, (int, float)) else '—'
+            return 'Tower heat', f'{deg} · {label}', 'heat'
+        except Exception:
+            return 'Tower heat', 'heat loading', 'heat'
+    try:
+        tower = _get('/api/ultron/tower')
+        stats = (tower or {}).get('stats') or {}
+        return 'Still here', f"{stats.get('jobs_today', '—')} openings today", 'rescue'
+    except Exception:
+        return 'Still here', 'Tower pulse loading', 'rescue'
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,18 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
     after = LAST_SEND.stat().st_mtime if LAST_SEND.exists() else 0.0
     if after <= before:
-        from app.director.tools_stagehand import _get
-        try:
-            tower = _get('/api/ultron/tower')
-            stats = (tower or {}).get('stats') or {}
-            pulse = f"{stats.get('jobs_today', '—')} openings today"
-        except Exception:
-            pulse = 'Tower pulse loading'
-        prompt = fallback_graphic_prompt(
-            punchline='Still here',
-            fact_line=pulse,
-            mood='rescue',
-        )
+        punch, fact, mood = _rescue_fact(text)
+        prompt = fallback_graphic_prompt(punchline=punch, fact_line=fact, mood=mood)
         ok = send_simple_frame('', '', prompt)
         print('RESCUE_FRAME' if ok else 'RESCUE_FAILED')
         return 0 if ok else 1

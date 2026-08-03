@@ -356,3 +356,8 @@ use — they should love opening the app, never fight it.
   “hope for students” slogans in this chat. No fixed scene paste; ≥800-char
   invented prompts (`MIN_PROMPT_CHARS`). Ban atrium/India-map clones + white UI
   cards. Carousel word still = separate album workflow. Vision via `read_vision_doc`.
+- **DIRECTOR prompt hygiene (2026-08-04):** Style brief stays in DIRECTOR brain only —
+  never paste policy text into Replicate. Image prompts = pure visuals + live facts.
+  Heat questions use `stagehand_tower_heat` (PC °C), not openings count. Rescue must
+  answer the asked metric. Last prompt saved at
+  `job_engine/.data/director_frames/last_prompt.txt` for review.

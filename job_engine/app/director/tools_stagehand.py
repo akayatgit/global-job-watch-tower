@@ -25,7 +25,7 @@ def _get(path: str, params: dict | None = None) -> dict | list:
 @function_tool
 def stagehand_tower_stats() -> str:
     """STAGEHAND: Live tower KPIs — total jobs, jobs today, companies, freshest top hirers/roles.
-    Call before stating any opening counts."""
+    Call before stating any opening counts. For PC heat/CPU/GPU temp use stagehand_tower_heat."""
     tower = _get('/api/ultron/tower')
     stats = tower.get('stats') or {}
     top = (tower.get('top_companies') or [])[:5]
@@ -36,6 +36,26 @@ def stagehand_tower_stats() -> str:
         'companies': stats.get('companies'),
         'top_companies': top,
         'jobs_per_role': roles,
+    }, ensure_ascii=False)
+
+
+@function_tool
+def stagehand_tower_heat() -> str:
+    """STAGEHAND: Live ThinkPad / tower heat — CPU°C, GPU°C, heat label (Cool/Warm/Hot/Critical),
+    load, memory, what the tower is doing now (phase). Use for heat / temperature / warm / hot /
+    cooling / Plan B questions. Never invent temperatures."""
+    data = _get('/api/ultron/health')
+    v = (data or {}).get('vitals') or {}
+    return json.dumps({
+        'heat_c': v.get('heat_c'),
+        'heat_label': v.get('heat_label'),
+        'heat_detail': v.get('heat_detail'),
+        'mem_pct': v.get('mem_pct'),
+        'phase_label': v.get('phase_label'),
+        'scrape_running_name': v.get('scrape_running_name'),
+        'ollama_live': v.get('ollama_live'),
+        'filter_mode_policy': v.get('filter_mode_policy'),
+        'next_search_label': v.get('next_search_label'),
     }, ensure_ascii=False)
 
 
