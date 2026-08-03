@@ -255,12 +255,27 @@ export function CityMap() {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
     mapRef.current = map
 
+    const kickResize = () => {
+      map.resize()
+    }
+    const ro = new ResizeObserver(() => kickResize())
+    ro.observe(el)
+
     map.on('load', () => {
       ensureBuildings(map)
       ensureCityLayers(map)
       ensureCompanyLayers(map)
       readyRef.current = true
+      // Container often lays out after first paint — resize or map stays 0-height
+      kickResize()
+      requestAnimationFrame(kickResize)
+      setTimeout(kickResize, 50)
+      setTimeout(kickResize, 250)
       useVigilStore.getState().setStatus('MAP · India hiring · click a city')
+    })
+    map.on('error', (e) => {
+      const msg = (e as { error?: { message?: string } })?.error?.message || 'map error'
+      useVigilStore.getState().setStatus(`MAP · ${msg}`)
     })
 
     const onCityClick = (e: MapLayerMouseEvent) => {
@@ -344,6 +359,7 @@ export function CityMap() {
 
     return () => {
       readyRef.current = false
+      ro.disconnect()
       map.remove()
       mapRef.current = null
     }

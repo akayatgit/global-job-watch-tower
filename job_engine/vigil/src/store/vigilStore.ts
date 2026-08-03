@@ -669,7 +669,7 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
     const labels = {
       core: 'CORE · drag/scroll/pinch · Esc reset',
       graph: 'GRAPH · tagged world model',
-      city: 'CITY · globe → click metro → buildings',
+      city: 'MAP · India hiring · click a city',
     } as const
     set({
       sceneMode: m,
