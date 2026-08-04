@@ -24,16 +24,42 @@ could never be pulled. The ThinkPad was silently stuck 3 pushes behind for
 ~2 days with every deploy failing red in GitHub Actions the whole time, and
 nobody was watching that signal.
 
-**Fix (this change):**
+**Fix, attempt 1 (PR #5 — insufficient on its own):**
 
 1. `documents/briefs/` added to `.gitignore` and untracked — it is
    cron-regenerated output, not source, exactly like `job_engine/.data/`.
-2. `scripts/deploy_local.sh`'s dirty-tree gate now excludes
-   `documents/briefs/` (`git status -- . ':!documents/briefs'`) and discards
-   any drift there before pulling, so this specific class of self-inflicted
-   wedge cannot recur even if some other cron writes into a tracked path.
-3. `scripts/deploy_local.sh` now warns (non-fatal) if the deployed commit
+2. `scripts/deploy_local.sh`'s dirty-tree gate excludes `documents/briefs/`
+   and discards drift there before pulling.
+3. `scripts/deploy_local.sh` warns (non-fatal) if the deployed commit
    doesn't match `$GITHUB_SHA` — catches double-push races.
+
+This PR merged, but the very next two deploy runs (`30890029067`,
+`30890049373`, both 2026-08-04 07:59) **still failed with the identical
+error**. Root cause of *that*: `deploy_local.sh`'s dirty-tree gate runs
+**before** `git fetch`/`reset`, so it always executes the copy of the
+script **already sitting on the ThinkPad's disk** — not the one just
+merged. The old script never gets replaced, because it always dies before
+reaching the `git reset --hard` that would replace it. A fix that only
+lives inside a repo script the deploy check itself gates on **cannot
+self-heal** — this is a hard deadlock, not a one-time incident.
+
+**Fix, attempt 2 (this change — actually breaks the deadlock):**
+
+Added a step **directly in `.github/workflows/deploy-thinkpad.yml`**
+(`git checkout -- documents/briefs`) that runs *before* calling
+`deploy_local.sh`. This works because GitHub evaluates a workflow's step
+list from the `.github/workflows/*.yml` **at the commit that triggered the
+run** (parsed server-side by GitHub, not read off the runner's disk) — so
+the moment this fix merges to `main`, the very next push executes the new
+step regardless of what's stale on the ThinkPad. That clears the dirty
+file, lets `deploy_local.sh`'s (still-stale) dirty check pass once, and the
+subsequent `git reset --hard origin/main` finally pulls the real fix.
+
+**Lesson for future deploy-pipeline changes:** if a fix needs to run
+*before* `deploy_local.sh` can reach its own `git reset --hard`, it must
+live in the workflow YAML (or be applied once by hand directly on the
+ThinkPad) — putting it only inside `scripts/deploy_local.sh` cannot
+self-heal, because that very script is what's stuck.
 
 ## The check — run this after every PR merges to `main`
 
@@ -98,3 +124,9 @@ disagree — treat as **not deployed**.
 5. If deploys are failing for a *systemic* reason (like the briefs incident
    above), fix the root cause in the same PR or a fast follow — don't just
    re-run and move on, or the ThinkPad silently drifts behind again.
+6. If the fix touches anything `deploy_local.sh` checks **before** its own
+   `git reset --hard` (e.g. the dirty-tree gate), a fix that only lives
+   inside that script cannot self-heal — see the two-attempt story above.
+   Put the unblocking step in `.github/workflows/deploy-thinkpad.yml`
+   instead (or ask Ashok to run one command by hand on the ThinkPad), then
+   re-check the *next* run after that PR merges, not the one at merge time.

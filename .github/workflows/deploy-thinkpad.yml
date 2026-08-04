@@ -9,5 +9,16 @@ jobs:
   deploy:
     runs-on: [self-hosted, watch-tower]
     steps:
+      # This step's commands come from the commit that triggered this run
+      # (GitHub evaluates workflow YAML server-side), so it runs even when
+      # scripts/deploy_local.sh on the runner's disk is still the stale,
+      # not-yet-pulled copy. Without this, a dirty cron-regenerated file can
+      # wedge deploy_local.sh's own safety check forever: the check aborts
+      # before the fetch/reset that would ever land its own fix.
+      # See documents/deploy-verification.md (2026-08-02..08-04 incident).
+      - name: Clear known-disposable local drift (cron-regenerated files)
+        run: |
+          cd /home/user/Documents
+          git checkout -- documents/briefs 2>/dev/null || true
       - name: Deploy Watch Tower
         run: bash /home/user/Documents/scripts/deploy_local.sh
