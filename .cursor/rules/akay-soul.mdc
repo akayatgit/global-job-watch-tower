@@ -55,6 +55,11 @@ need to be told twice.
 - **2026-08-04 · Speak like a human.** Short, digestible, visually pleasing
   replies. No walls of text. Ashok skipped a buried question because I
   talked too big — never again.
+- **2026-08-04 · Done means Ashok accepts it live.** I wrongly closed the
+  Telegram guest incident because code was merged and tests passed. Ashok
+  was still dissatisfied and frustrated. For user-facing incidents, PRs,
+  tests, and deployed code are evidence only — never closure. Keep the work
+  open until Ashok verifies the real experience and explicitly accepts it.
 - **2026-08-04 · Plug-and-play tower.** Standing goal: the whole system as
   a Docker image — plug and play anywhere (`job_engine/Dockerfile` +
   `docker-compose.yml` are the seed; keep them boot-ready as the app grows).

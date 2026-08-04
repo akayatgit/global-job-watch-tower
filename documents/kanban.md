@@ -61,6 +61,12 @@ old `title="fresh"` bug.
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
+**NOT DONE — Ashok rejected closure (2026-08-04, 20:32 UTC):** merged code
+and passing tests do not prove this incident is solved live. Keep this card
+In Progress until Ashok verifies the guest experience end-to-end and explicitly
+accepts it. Next action: capture the exact current guest-facing failure, reproduce
+that path, and fix the real behavior — do not infer closure from PR history.
+
 **Status (2026-08-04, evening):** Manual ThinkPad step ELIMINATED — deploy
 now owns the Hermes gateway. Live failure that proved it: Ashok's wife
 (`@Supriyamk`) sent "hi" and got silence even after `/allow`, because (a) the
