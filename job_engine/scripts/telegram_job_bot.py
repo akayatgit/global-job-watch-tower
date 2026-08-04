@@ -188,10 +188,11 @@ class JobMasterTelegramBot:
     def _configure_command_menu(self) -> bool:
         """Remove global commands and expose VIGIL operations only to Ashok."""
         try:
-            self.api.call(
-                'deleteMyCommands',
-                {'scope': json.dumps({'type': 'default'})},
-            )
+            for scope_type in ('default', 'all_private_chats'):
+                self.api.call(
+                    'deleteMyCommands',
+                    {'scope': json.dumps({'type': scope_type})},
+                )
             for chat_id in sorted(self.owner_chat_ids):
                 scope_chat_id: int | str = int(chat_id) if chat_id.lstrip('-').isdigit() else chat_id
                 self.api.call(

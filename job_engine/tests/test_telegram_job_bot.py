@@ -209,12 +209,17 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertTrue(bot._configure_command_menu())
         self.assertEqual(self.api.calls[0][0], 'deleteMyCommands')
         self.assertEqual(json.loads(self.api.calls[0][1]['scope']), {'type': 'default'})
-        self.assertEqual(self.api.calls[1][0], 'setMyCommands')
-        scope = json.loads(self.api.calls[1][1]['scope'])
+        self.assertEqual(self.api.calls[1][0], 'deleteMyCommands')
+        self.assertEqual(
+            json.loads(self.api.calls[1][1]['scope']),
+            {'type': 'all_private_chats'},
+        )
+        self.assertEqual(self.api.calls[2][0], 'setMyCommands')
+        scope = json.loads(self.api.calls[2][1]['scope'])
         self.assertEqual(scope, {'type': 'chat', 'chat_id': 1221647274})
-        commands = json.loads(self.api.calls[1][1]['commands'])
+        commands = json.loads(self.api.calls[2][1]['commands'])
         self.assertIn({'command': 'health', 'description': 'Tower health'}, commands)
-        self.assertEqual(len(self.api.calls), 2)
+        self.assertEqual(len(self.api.calls), 3)
 
     def test_smoke_sends_only_ten_row_grounded_contract(self):
         bot = JobMasterTelegramBot(
