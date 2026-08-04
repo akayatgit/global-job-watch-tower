@@ -232,6 +232,18 @@ ensure_hermes_gateway() {
     log "hermes not set up on this host — skipping gateway step"
     return
   fi
+
+  # Hermes loads plugins from ~/.hermes/plugins/, which was a one-time COPY —
+  # deploys updated the repo but the gateway kept running week-old plugin code
+  # (guest-access incident 2026-08-04: username allowlist never went live).
+  # Sync the copy from the repo on every deploy, before the restart below.
+  local plug_src="$JOB_ENGINE/hermes_plugins/vigil-image-only"
+  local plug_dst="$HOME/.hermes/plugins/vigil-image-only"
+  if [ -d "$plug_src" ] && [ -d "$(dirname "$plug_dst")" ]; then
+    rm -rf "$plug_dst"
+    cp -r "$plug_src" "$plug_dst"
+    log "synced vigil-image-only plugin ($(wc -c < "$plug_src/__init__.py" | tr -d ' ') bytes) into ~/.hermes/plugins/"
+  fi
   if grep -q '^TELEGRAM_ALLOW_ALL_USERS=true$' "$envf"; then
     log "hermes gate already open (allow-all=true; repo allowlist owns access)"
   else
@@ -247,6 +259,27 @@ ensure_hermes_gateway() {
     log "hermes gateway restarted"
   else
     log "WARNING: hermes gateway restart failed — Telegram bot may be running stale plugin/env"
+  fi
+
+  # One-time welcome (2026-08-04): this chat was silently blocked by the stale
+  # plugin while its owner was already on the allowlist — greet once so they
+  # know the door is open. Marker prevents re-sends on later deploys.
+  local marker="$HOME/.hermes/.welcome_1221647274_sent"
+  if [ ! -f "$marker" ]; then
+    local tok
+    tok="$(grep '^TELEGRAM_BOT_TOKEN=' "$envf" | head -1 | cut -d= -f2-)"
+    if [ -n "$tok" ]; then
+      sleep 8  # let the freshly restarted gateway settle first
+      if curl -fsS -o /dev/null --max-time 20 \
+        "https://api.telegram.org/bot${tok}/sendMessage" \
+        --data-urlencode chat_id=1221647274 \
+        --data-urlencode text="Hi! VIGIL here — you are on the allowlist now. Ask me anything about the tech job market: roles, companies, cities. Try: top companies hiring in Chennai"; then
+        touch "$marker"
+        log "one-time welcome sent to previously blocked chat"
+      else
+        log "WARNING: one-time welcome send failed (will retry next deploy)"
+      fi
+    fi
   fi
 }
 ensure_hermes_gateway
