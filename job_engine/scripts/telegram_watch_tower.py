@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import sys
 import time
@@ -201,7 +202,8 @@ def cmd_send_carousel(topic_msg: str | None = None) -> int:
     """Generate fiery carousel from live tower facts and push album to Telegram."""
     env = _load_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
-    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    # DIRECTOR router sets the sender's chat so guests get their album
+    chat = os.environ.get('DIRECTOR_TARGET_CHAT') or env.get('TELEGRAM_HOME_CHANNEL')
     if not token or not chat:
         print('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_HOME_CHANNEL — run bootstrap first', file=sys.stderr)
         return 1

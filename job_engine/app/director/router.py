@@ -441,6 +441,11 @@ def main(argv: list[str] | None = None) -> int:
         print('DIRECTOR: missing --chat / TELEGRAM_HOME_CHANNEL', file=sys.stderr)
         return 2
 
+    # Reply to the SENDER's chat, not always Ashok's home channel — guests
+    # (wife, investors) must receive answers in their own chat. All Telegram
+    # send paths (courier text, fact boards, lens images, carousel) honor this.
+    os.environ['DIRECTOR_TARGET_CHAT'] = chat
+
     key = os.getenv('OPENAI_API_KEY', '')
     mode, payload = _parse_mode(text)
     _log('start', bot=bot, chat=chat, mode=mode, text=text[:160], key_len=len(key), key_prefix=key[:7])

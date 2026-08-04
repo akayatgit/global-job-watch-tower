@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,7 +25,7 @@ TZ = ZoneInfo('Asia/Kolkata')
 def _send_image(img, *, meta: str) -> bool:
     env = _hermes_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
-    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    chat = os.getenv('DIRECTOR_TARGET_CHAT') or env.get('TELEGRAM_HOME_CHANNEL')
     if not token or not chat:
         return False
     TMP.mkdir(parents=True, exist_ok=True)

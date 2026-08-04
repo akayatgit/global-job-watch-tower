@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -38,7 +39,7 @@ def send_image_bytes_prompt(prompt: str, *, city: str = '') -> bool:
     from app.director.tools_courier import send_telegram_text
     env = _hermes_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
-    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    chat = os.getenv('DIRECTOR_TARGET_CHAT') or env.get('TELEGRAM_HOME_CHANNEL')
     if not token or not chat:
         return False
     prompt = assert_visual_prompt(prompt)

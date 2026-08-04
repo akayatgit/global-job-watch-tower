@@ -46,6 +46,7 @@ MAX_TTL_MINUTES = 60.0 * 24 * 14  # two weeks cap — a forgotten guest can't li
 # case-insensitively with or without the leading "@".
 DEFAULT_ALLOWED_USERNAMES = {
     'azr0099',
+    'supriyamk',  # Ashok's wife (2026-08-04)
 }
 
 

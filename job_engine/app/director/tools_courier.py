@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -41,7 +42,8 @@ def send_telegram_text(
     """Send Telegram text. kind=courier_reply marks a successful chat delivery."""
     env = _hermes_env()
     token = env.get('TELEGRAM_BOT_TOKEN')
-    chat = env.get('TELEGRAM_HOME_CHANNEL')
+    # Sender's chat when set by the router (guest support) — home channel otherwise
+    chat = os.getenv('DIRECTOR_TARGET_CHAT') or env.get('TELEGRAM_HOME_CHANNEL')
     if not token or not chat:
         return False
     msg = (text or '').strip()[:max_len]
