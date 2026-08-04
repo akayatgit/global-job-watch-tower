@@ -5,9 +5,9 @@
 | **Method** | Serious agile: one **current sprint** in flight, one **next milestone** queued, backlog below |
 | **Definition of Done** | Slice is complete for its scope (UX laws in `.cursor/rules/product-ux.mdc`), verified, committed locally |
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
-| **Locked recover** | `milestone/eureka-telegram-bot` (Telegram AI bot, 2026-08-04) · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
+| **Locked recover** | `milestone/jobmaster-gate3-v1` (accepted JobMaster baseline, 2026-08-04) · `milestone/eureka-telegram-bot` · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **Gate 3.0 JobMaster recovery in flight** |
+| **Status as of** | 2026-08-04 — **Gate 3.0 JobMaster capability #1 accepted and locked** |
 | **Stage lock** | **Collects = base complete** → **Map with Students** → **Gate 3.0 JobMaster conversation OS** → **Predict for Government** |
 | **Agent stack** | JobMaster Telegram gateway · constrained intent intelligence · Watch Tower capabilities · deterministic fact renderers |
 
@@ -60,7 +60,7 @@ Then: Intelligence Automation = Job Market Analysis → Carousel that reaches em
 
 ---
 
-## 🔥 Current sprint — Gate 3.0 JobMaster capability #1
+## ✅ Locked — Gate 3.0 JobMaster capability #1
 
 **Goal:** one focused information agent for every user. Natural language in;
 verified jobs and grounded market facts out. No Hermes Telegram fallback.
@@ -68,11 +68,11 @@ verified jobs and grounded market facts out. No Hermes Telegram fallback.
 | Slice | Status |
 |---|---|
 | RCA: built-in Hermes handled Supriya's message after plugin interception disappeared | **Confirmed** |
-| Dedicated Telegram ingress; exactly one poller; Hermes gateway off | In PR |
-| Messy-language intent → validated city/role/experience/insight request | In PR |
-| 10 canonical LinkedIn rows + `more` + clean `/new` | In PR |
-| Grounded counts, top companies/roles, city comparisons | In PR |
-| Mock contract suite + live Supriya acceptance | Tests green; deploy acceptance pending |
+| Dedicated Telegram ingress; exactly one poller; Hermes gateway off | **Accepted live** |
+| Messy-language intent → validated city/role/experience/insight request | **Accepted live** |
+| 10 canonical LinkedIn rows + `more` + clean `/new` | **Accepted live** |
+| Grounded counts, top companies/roles, city comparisons | **Accepted live** |
+| Mock contract suite + live Supriya acceptance | **Locked at `2fda2d7`** |
 
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,

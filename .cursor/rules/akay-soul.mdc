@@ -68,6 +68,11 @@ need to be told twice.
   understands natural conversation; trusted capabilities execute. Capability
   #1 is verified jobs plus grounded market numbers/comparisons — no fluff,
   no owner/guest personality split, and no model-authored facts.
+- **2026-08-04 · Gate 3.0 capability #1 locked.** After Supriya tested the
+  deployed recovery, Ashok said: "It's definitely better, lock this and let's
+  develop from here." Accepted baseline = `milestone/jobmaster-gate3-v1`.
+  Future JobMaster capabilities evolve from this point; never restore Hermes
+  Telegram fallback or model-authored job facts.
 
 ## Honesty note on the codeword
 

@@ -416,3 +416,8 @@ use — they should love opening the app, never fight it.
   to 10 rows (`Title — Company — Experience` + canonical LinkedIn link), `more`
   paginates, `/new` resets cleanly. No MCP/model/tool status, generic assistant
   chatter, advice, brainstorming, invented facts, or unrelated fallback jobs.
+- **Gate 3.0 capability #1 lock (2026-08-04):** Ashok accepted the deployed
+  Telegram recovery after Supriya's live test. Preserve
+  `milestone/jobmaster-gate3-v1` as the UX baseline: immediate acknowledgement,
+  concise grounded results, canonical links, deterministic facts, and no Hermes
+  or model fallback. Extend JobMaster through additive capabilities from here.

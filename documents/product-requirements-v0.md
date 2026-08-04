@@ -658,6 +658,7 @@ START OF EVERY SESSION
 | v0.34 | 2026-08-04 | Akay | **VALIDATOR role + Nano Banana 2:** authenticity gate before image/board send with wait acks; Replicate model → `google/nano-banana-2`. |
 | v0.35 | 2026-08-04 | Akay | **Telegram text-first:** default chat text; `/summarize` final draft; `/image` visuals — fix data in text before image work. |
 | v0.36 | 2026-08-04 | Akay | **Gate 3.0 JobMaster:** one uniform, focused customer-support/information agent. Capability #1 = verified LinkedIn jobs plus grounded job-market counts, rankings, trends, and comparisons. AI translates messy language into validated intent; code and Watch Tower own every fact. Dedicated Telegram ingress replaces Hermes gateway fallback; 10 rows + `more` + clean `/new`. Future capability boundary: subscriptions, ATS resume fixing, preparation guides, projects, quizzes, flashcards, news, tutorials, LMS. |
+| v0.37 | 2026-08-04 | Akay | **JobMaster capability #1 accepted:** Supriya validated the deployed experience and Ashok locked it as the baseline at `milestone/jobmaster-gate3-v1` (`2fda2d7`). Future conversational OS capabilities must extend this dedicated-ingress, deterministic-facts architecture without restoring Hermes fallback or model-authored job data. |
 
 ### Phase 0 progress (living)
 

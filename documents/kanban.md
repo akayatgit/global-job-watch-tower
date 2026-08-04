@@ -59,13 +59,16 @@ old `title="fresh"` bug.
 - Consider Pillow-composited exact-text layer if Nano Banana misspells
   numbers on ranked-list slides (data authenticity rule).
 
+## Done
+
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
-**NOT DONE — Ashok rejected closure (2026-08-04, 20:32 UTC):** merged code
-and passing tests do not prove this incident is solved live. Keep this card
-In Progress until Ashok verifies the guest experience end-to-end and explicitly
-accepts it. Next action: capture the exact current guest-facing failure, reproduce
-that path, and fix the real behavior — do not infer closure from PR history.
+**LOCKED — Ashok accepted the live result (2026-08-04, 23:14 UTC):**
+*"It's definitely better, lock this and let's develop from here."* JobMaster
+capability #1 is the new baseline at `main` commit `2fda2d7`, tagged
+`milestone/jobmaster-gate3-v1`. The incident closes only because Ashok verified
+the real Telegram experience after deployment—not because code merged or tests
+passed.
 
 **Gate 3.0 recovery (2026-08-04, 21:10 UTC):** RCA proved Supriya's malformed
 AI/fresher reply and `/new` model banner came from Hermes' built-in Qwen agent;
@@ -73,8 +76,8 @@ the deployed interception hook was no longer in the message path. Recovery PR
 replaces Hermes Telegram ingress with one dedicated JobMaster service. Every
 user gets the same focused capability #1: natural-language intent understanding,
 verified LinkedIn jobs, grounded market numbers/comparisons, `Thinking…`, 10
-rows, `more`, and a clean `/new`. Mock contract suite is green. This card remains
-open until the production result reaches Supriya and Ashok explicitly accepts it.
+rows, `more`, and a clean `/new`. Mock contract suite is green and Ashok accepted
+the production result after Supriya's live test.
 
 **Status (2026-08-04, evening):** Manual ThinkPad step ELIMINATED — deploy
 now owns the Hermes gateway. Live failure that proved it: Ashok's wife
@@ -273,7 +276,7 @@ card #2).
 
 ---
 
-## Done
+## Earlier Done
 
 | Card | PR | Date |
 |---|---|---|
