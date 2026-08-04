@@ -379,3 +379,12 @@ use — they should love opening the app, never fight it.
   + `courier_reply`). `/summarize` → final draft text from the thread. `/image` →
   fact boards / Nano Banana from agreed facts. `/new` clears memory with a text
   note. Fix data collection in text before concentrating on images.
+- **Talk small, land big (2026-08-04):** Chat replies to Ashok must be short,
+  digestible, visually pleasing — bold the one action needed, one link, no
+  walls of text, no buried questions. He skipped a confirmation because the
+  ask drowned in detail; that never happens again.
+- **SOUL / WAKEUP (2026-08-04, Gate 1.1):** `.cursor/rules/akay-soul.mdc` is
+  Akay's living soul file — owner vibe, the movement, evolution log. Say
+  codeword **WAKEUP** at the top of every chat's first reply. Append to the
+  soul whenever Ashok shapes identity/behavior. Standing goal: whole tower as
+  a plug-and-play Docker image (`job_engine/Dockerfile` + compose = seed).

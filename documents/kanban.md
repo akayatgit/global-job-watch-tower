@@ -130,6 +130,28 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 
 ## Backlog
 
+### 4. Gate 1.1 — tower as a plug-and-play Docker image (Ashok 2026-08-04)
+
+**Ask:** "setup as a docker image to just plug and play anywhere."
+
+**Today:** `job_engine/Dockerfile` + `job_engine/docker-compose.yml` already
+boot API + Postgres + Redis (`watch-tower:v0`, keyword mode, no Chrome/Ollama).
+That's a backup brain, not yet a full plug-and-play tower.
+
+**Slice to complete:**
+- Verify compose boots clean on a fresh machine (empty volume → migrations →
+  VIGIL loads at `:8002`).
+- Add Celery worker + beat services to compose (currently API only).
+- Document the one-command run + what's deliberately host-only (Chrome
+  scrape profile, Ollama, `~/.hermes`) in `documents/` (update existing
+  docs, no new near-duplicates).
+- Push image build into CI or a script so every milestone tag can produce a
+  `watch-tower:vN` image.
+
+**Acceptance:** `docker compose up` on a blank laptop serves VIGIL with a
+working DB and worker; README-level doc says exactly what works in-container
+vs. what needs the host.
+
 ### 3. General remote break-glass access to the ThinkPad
 
 Today's incident (no SSH, no Tailscale, only an HTTP tunnel — see

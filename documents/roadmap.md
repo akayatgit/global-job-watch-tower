@@ -43,6 +43,7 @@ Tower = truth engine behind every slide.
 | # | Feature | Status |
 |---|---|---|
 | 1 | **Carousel fire** — Grok Imagine graphic posters → **Telegram album** (no Pillow cards; DIRECTOR-authored style) | **Done** — evolving style under DIRECTOR v0.30 |
+| 1.1 | **Eureka lock (Ashok 2026-08-04)** — Telegram AI bot live + multi-user access, purple orb v10, SOUL/WAKEUP (`.cursor/rules/akay-soul.mdc`), tower as plug-and-play Docker image (seed: `job_engine/Dockerfile` + compose — keep boot-ready) | **Locked** — docker hardening queued (kanban #4) |
 | 2 | **Trendjack** — search Tamil Nadu / TECH employment trends (SerpApi Google Trends free tier first; buy SearchAPI if needed) → hook carousels to what’s rising | Queued after #1 |
 
 Then: Intelligence Automation = Job Market Analysis → Carousel that reaches employment seekers at scale.
