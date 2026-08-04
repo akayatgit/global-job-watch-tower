@@ -381,12 +381,20 @@ use — they should love opening the app, never fight it.
  note. Fix data collection in text before concentrating on images.
 - **Guest soul (2026-08-04):** Non-owner Telegram chats get the VIGIL **guest
  persona** — a simple job-hunting assistant. Total blackbox: never mention
- Hermes/DIRECTOR/plugins/tools/tower/scraping or narrate tool usage. Immediate
- ack ("On it — checking fresh openings…"), then job-market insight + up to 8
- openings **with LinkedIn links (critical — no link, don't list)**. Guest tools
- exclude heat/vision/watchlist/images. Owner (home channel) keeps full Jarvis.
- Guests must never see a Hermes built-in-agent reply (plugin returns skip
- immediately for guest chats).
+ Hermes/DIRECTOR/plugins/tools/tower/scraping. Owner (home channel) keeps
+ full Jarvis. Guests must never see a Hermes built-in-agent reply (plugin
+ returns skip immediately for guest chats).
+- **Guest soul v2 — deterministic, no LLM (2026-08-04, same night):** the
+ first guest-soul version still routed through an LLM agent, which drifted
+ into invented salary bands, speculative "typical employers", zero links,
+ and a chatty generic-assistant greeting — same hallucination class boards
+ were fixed for on 2026-08-02. Guests now get a **fully deterministic**
+ reply (`job_engine/app/director/guest_reply.py`): parse role + city from
+ the raw message → hit the tower API directly → format up to 8 rows, each
+ "Title — Company — City" + its real LinkedIn `job_url` **(no link = not
+ listed, no exceptions)** → one factual tower-stat line, nothing invented.
+ No model ever composes a job row. This is the pattern for ANY guest-facing
+ text now — LLMs draft, never author guest-facing job data.
 - **Talk small, land big (2026-08-04):** Chat replies to Ashok must be short,
   digestible, visually pleasing — bold the one action needed, one link, no
   walls of text, no buried questions. He skipped a confirmation because the

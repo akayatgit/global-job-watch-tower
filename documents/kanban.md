@@ -95,11 +95,22 @@ diagnostics (`scripts/hermes_diagnostics.sh`) in the Actions log.
 the Hermes BUILT-IN agent (skills/platform essay — engine-room talk to a job
 seeker). Fixes: (1) plugin returns skip IMMEDIATELY for guest chats (no
 600s join) so the built-in agent can never win a race; (2) new **guest
-persona** end-to-end (plugin `--persona guest` → router ack "On it —
-checking fresh openings for you…" → `GUEST_INSTRUCTIONS` VIGIL agent):
-simple job-hunting assistant, total blackbox on internals, job lists always
-with LinkedIn links (no link → don't list), guest tools exclude
-heat/vision/watchlist/images. Owner chat unchanged (full Jarvis).
+persona** end-to-end (plugin `--persona guest` → router).
+
+**v2, same night — killed the LLM entirely for guests:** even with the
+guest persona above, the LLM agent still drifted on a follow-up question
+("data science jobs bangalore") — invented salary bands, speculated
+employers ("typically at Google/Amazon/Zoho"), a chatty generic-assistant
+greeting by her first name, and **zero links**. This is the exact
+hallucination class boards were fixed for on 2026-08-02 ("Boards are now
+deterministic text — no LLM rewrite"). Applied the same medicine: guests
+now get `app/director/guest_reply.py` — a pure-Python parse-role/city →
+hit `/api/jobs` + `/api/ultron/tower` directly → format function. Zero LLM
+calls in the guest path. Every row requires a real `job_url` or it is
+dropped; one factual tower-stat line; friendly deterministic greeting for
+"hi"/blank asks. Verified with mocked-network unit tests (extraction,
+dedup, no-link exclusion, empty-match fallback). Owner chat (full Jarvis,
+LLM) unchanged.
 
 Earlier same day: added **`@username` allowlisting** (`/allowuser`,
 `/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
