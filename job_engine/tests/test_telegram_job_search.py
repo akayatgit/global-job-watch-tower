@@ -9,6 +9,7 @@ from app.telegram_job_search import (
     JobMasterEngine,
     _fallback_intent,
     canonical_link,
+    experience_display,
 )
 from app.telegram_sessions import TelegramSessionStore
 
@@ -37,13 +38,13 @@ class FakeAPI:
         self.calls.append((path, params or {}))
         if path == '/api/jobs':
             return self.jobs
-        if path == '/api/ultron/tower':
-            return {'stats': {'jobs_today': 12, 'total_jobs': 345, 'companies': 67}}
-        if path == '/api/ultron/cities/compare':
+        if path == '/api/jobs/insights':
+            total = 80 if (params or {}).get('city') == 'chennai' else 120
             return {
-                'a': {'label': 'Bengaluru', 'recent': 120},
-                'b': {'label': 'Chennai', 'recent': 80},
-                'gap': 40,
+                'total': total,
+                'prior_total': 100,
+                'companies': [{'name': 'Acme', 'n': 9}, {'name': 'Beta', 'n': 7}],
+                'roles': [{'name': 'AI Engineer', 'n': 11}],
             }
         if path == '/api/ultron/top-companies':
             return {'companies': [{'name': 'Acme', 'n': 9}, {'name': 'Beta', 'n': 7}]}
@@ -89,6 +90,7 @@ class TelegramJobSearchTests(unittest.TestCase):
         )
         self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 10)
         self.assertIn('1. Machine Learning Engineer — Company 1 — Fresher', reply)
+        self.assertIn('2. Machine Learning Engineer — Company 2 — Not stated', reply)
         self.assertIn('Reply more for 10 more jobs.', reply)
         self.assertNotIn('mcp__', reply)
         self.assertNotIn('...', reply)
@@ -142,6 +144,8 @@ class TelegramJobSearchTests(unittest.TestCase):
             f"https://www.linkedin.com/jobs/view/{job['linkedin_job_id']}/",
         )
         self.assertEqual(canonical_link({'job_url': 'https://linkedin.com/jobs/view/...'}), '')
+        self.assertEqual(experience_display('1-2'), '1–2 years')
+        self.assertEqual(experience_display('13plus'), '13+ years')
 
     def test_invalid_link_and_non_ai_title_are_excluded(self):
         self.api.jobs = [
@@ -165,11 +169,17 @@ class TelegramJobSearchTests(unittest.TestCase):
         reply = self.engine.handle('How many jobs are there in Bangalore?', '42')
         self.assertEqual(
             reply,
-            'Bengaluru — 12 jobs caught today\n'
-            'Indexed jobs — 345\n'
-            'Companies — 67\n'
+            'Bengaluru — 120 matching jobs in the past 7 days\n'
             'Source — live Watch Tower',
         )
+
+    def test_role_and_fresher_scope_are_preserved_for_numbers(self):
+        self.engine.handle('How many AI fresher jobs are in Bangalore?', '42')
+        path, params = self.api.calls[-1]
+        self.assertEqual(path, '/api/jobs/insights')
+        self.assertEqual(params['city'], 'bengaluru')
+        self.assertEqual(params['role_family'], 'ai_ml')
+        self.assertEqual(params['track'], 'fresher')
 
     def test_grounded_city_comparison(self):
         reply = self.engine.handle('Compare Bangalore vs Chennai jobs for 7 days', '42')

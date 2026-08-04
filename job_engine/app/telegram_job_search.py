@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from app import config
 from app.cities import city_label, normalize_city_filter
+from app.job_role_families import ROLE_PATTERNS, title_matches_role_family
 from app.telegram_sessions import TelegramSessionStore
 
 BASE = 'http://127.0.0.1:8001'
@@ -29,21 +30,6 @@ ALLOWED_WINDOWS = {0, 1, 2, 4, 7, 14, 30}
 LINKEDIN_ID_RE = re.compile(r'/jobs/view/(?:[^/?#]*-)?(\d{6,})(?:[/?#]|$)', re.I)
 MORE_RE = re.compile(r'^\s*(?:more|next|show\s+more|more\s+jobs|next\s+10)\s*[.!?]*\s*$', re.I)
 RESET_RE = re.compile(r'^\s*(?:/new|/reset|/clear|new|reset|clear)\s*$', re.I)
-
-AI_TITLE_RE = re.compile(
-    r'(?i)(?<![a-z])(?:ai/?ml|a\.?i\.?|artificial\s+intelligence|'
-    r'machine\s+learning|\bml\b|llm|genai|generative\s+ai|deep\s+learning|'
-    r'nlp\b|computer\s+vision)(?![a-z])'
-)
-ROLE_PATTERNS = {
-    'ai_ml': AI_TITLE_RE,
-    'data': re.compile(r'(?i)\b(?:data|analytics?|business intelligence|bi developer)\b'),
-    'software': re.compile(r'(?i)\b(?:software|developer|engineer|programmer|full.?stack|backend|frontend)\b'),
-    'cybersecurity': re.compile(r'(?i)\b(?:cyber|security|soc|penetration|infosec)\b'),
-    'cloud_devops': re.compile(r'(?i)\b(?:cloud|devops|sre|site reliability|platform engineer)\b'),
-    'product': re.compile(r'(?i)\b(?:product manager|product owner|product analyst)\b'),
-    'design': re.compile(r'(?i)\b(?:designer|design|ui/?ux|ux|ui)\b'),
-}
 
 CITY_ALIASES = {
     'bengaluru': ('bengaluru', 'bangalore', 'bengalore', 'banglore'),
@@ -88,6 +74,27 @@ def normalize_experience_value(raw: str | None) -> str:
         '13+years': '13plus',
     }
     return aliases.get(key, '')
+
+
+def experience_display(raw: str | None) -> str:
+    value = (raw or '').strip()
+    labels = {
+        'fresher': 'Fresher',
+        '0-1': 'Fresher',
+        '0-1 years': 'Fresher',
+        '1-2': '1–2 years',
+        '1-2 years': '1–2 years',
+        '3-5': '3–5 years',
+        '3-5 years': '3–5 years',
+        '6-8': '6–8 years',
+        '6-8 years': '6–8 years',
+        '9-12': '9–12 years',
+        '9-12 years': '9–12 years',
+        '13plus': '13+ years',
+        '13+': '13+ years',
+        '13+ years': '13+ years',
+    }
+    return labels.get(value.lower(), value or 'Not stated')
 
 
 @dataclass
@@ -293,8 +300,7 @@ def canonical_link(job: dict[str, Any]) -> str:
 def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
     title = str(job.get('title') or '')
     if intent.role_family:
-        pattern = ROLE_PATTERNS.get(intent.role_family)
-        return bool(pattern and pattern.search(re.sub(r'(?i)apprentice', '', title)))
+        return title_matches_role_family(title, intent.role_family)
     if not intent.role_keywords:
         return True
     low = title.lower()
@@ -314,13 +320,13 @@ def _format_jobs(jobs: list[dict[str, Any]], page: int) -> str:
         )
     lines: list[str] = []
     for idx, job in enumerate(picked, start=start + 1):
-        title = re.sub(r'\s+', ' ', str(job.get('title') or '')).strip()
+        title = re.sub(r'\s+', ' ', str(job.get('title') or '')).strip()[:140]
         company = re.sub(
             r'\s+', ' ', str(job.get('company') or 'Company not stated'),
-        ).strip()
+        ).strip()[:80]
         experience = re.sub(
-            r'\s+', ' ', str(job.get('experience_band') or 'Not stated'),
-        ).strip()
+            r'\s+', ' ', experience_display(job.get('experience_band')),
+        ).strip()[:40]
         lines.append(f'{idx}. {title} — {company} — {experience}\n{canonical_link(job)}')
     if start + PAGE_SIZE < len(jobs):
         lines.append('Reply more for 10 more jobs.')
@@ -388,33 +394,36 @@ class JobMasterEngine:
         return _format_jobs(valid, page)
 
     def _insight_reply(self, intent: JobMasterIntent) -> str:
-        params: dict[str, Any] = {'days': intent.window_days}
-        if intent.cities:
-            params['city'] = intent.cities[0]
-        if intent.experience:
+        params: dict[str, Any] = {
+            'days': intent.window_days,
+            'role_family': intent.role_family,
+            'title_terms': ' '.join(intent.role_keywords),
+        }
+        if intent.experience == 'fresher':
+            params['track'] = 'fresher'
+        elif intent.experience:
             params['experience'] = intent.experience
         scope = city_label(intent.cities[0]) if intent.cities else 'All India'
         window = 'past 24 hours' if intent.window_days == 0 else f'past {intent.window_days} days'
 
         if intent.metric == 'compare_cities' and len(intent.cities) >= 2:
-            data = self.api_get('/api/ultron/cities/compare', {
-                'a': intent.cities[0],
-                'b': intent.cities[1],
-                'days': intent.window_days,
-                'experience': intent.experience,
-            })
-            if not isinstance(data, dict) or data.get('error'):
-                return 'I need two supported cities to make that comparison.'
-            a, b = data.get('a') or {}, data.get('b') or {}
+            left = self.api_get('/api/jobs/insights', {**params, 'city': intent.cities[0]})
+            right = self.api_get('/api/jobs/insights', {**params, 'city': intent.cities[1]})
+            if not isinstance(left, dict) or not isinstance(right, dict):
+                return 'I could not read that comparison from live Watch Tower data.'
+            left_n, right_n = int(left.get('total') or 0), int(right.get('total') or 0)
             return (
-                f"{a.get('label')} — {int(a.get('recent') or 0):,} jobs\n"
-                f"{b.get('label')} — {int(b.get('recent') or 0):,} jobs\n"
-                f"Difference — {int(data.get('gap') or 0):,} jobs\n"
+                f"{city_label(intent.cities[0])} — {left_n:,} jobs\n"
+                f"{city_label(intent.cities[1])} — {right_n:,} jobs\n"
+                f"Difference — {abs(left_n - right_n):,} jobs\n"
                 f"Window — {window}"
             )
 
         if intent.metric == 'top_companies':
-            data = self.api_get('/api/ultron/top-companies', {**params, 'limit': 10})
+            data = self.api_get(
+                '/api/jobs/insights',
+                {**params, 'city': intent.cities[0] if intent.cities else ''},
+            )
             companies = (data or {}).get('companies') if isinstance(data, dict) else []
             lines = [
                 f"{i}. {row.get('name')} — {int(row.get('n') or 0):,} jobs"
@@ -425,7 +434,10 @@ class JobMasterEngine:
             )
 
         if intent.metric == 'top_roles':
-            data = self.api_get('/api/ultron/roles-rank', {**params, 'limit': 10})
+            data = self.api_get(
+                '/api/jobs/insights',
+                {**params, 'city': intent.cities[0] if intent.cities else ''},
+            )
             roles = (data or {}).get('roles') if isinstance(data, dict) else []
             lines = [
                 f"{i}. {row.get('name')} — {int(row.get('n') or row.get('count') or 0):,} jobs"
@@ -435,16 +447,23 @@ class JobMasterEngine:
                 f'No role comparison is available for {scope} in the {window}.'
             )
 
-        tower_params: dict[str, Any] = {}
-        if intent.cities:
-            tower_params['city'] = intent.cities[0]
-        if intent.experience:
-            tower_params['experience'] = intent.experience
-        data = self.api_get('/api/ultron/tower', tower_params)
-        stats = (data or {}).get('stats') if isinstance(data, dict) else {}
+        data = self.api_get(
+            '/api/jobs/insights',
+            {**params, 'city': intent.cities[0] if intent.cities else ''},
+        )
+        if not isinstance(data, dict):
+            return 'JobMaster could not read that insight from live Watch Tower data.'
+        total = int(data.get('total') or 0)
+        prior = int(data.get('prior_total') or 0)
+        if intent.metric == 'trend':
+            direction = 'up' if total > prior else 'down' if total < prior else 'flat'
+            return (
+                f'{scope} — {total:,} jobs in the {window}\n'
+                f'Previous matching window — {prior:,}\n'
+                f'Change — {total - prior:+,} ({direction})\n'
+                'Source — live Watch Tower'
+            )
         return (
-            f"{scope} — {int((stats or {}).get('jobs_today') or 0):,} jobs caught today\n"
-            f"Indexed jobs — {int((stats or {}).get('total_jobs') or 0):,}\n"
-            f"Companies — {int((stats or {}).get('companies') or 0):,}\n"
+            f'{scope} — {total:,} matching jobs in the {window}\n'
             'Source — live Watch Tower'
         )
