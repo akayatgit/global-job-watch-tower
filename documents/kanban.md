@@ -40,6 +40,17 @@ counter file `.data/carousel_theme_seed.txt` guarantees the NEXT run uses a
 DIFFERENT theme. All numbers stay verbatim tower facts; prompt guardrails
 (min length, leak markers) still enforced. 36 theme×slide combos verified.
 
+**Bug found live (2026-08-04, Ashok's first test):** sending "Carousel" on
+Telegram returned *"No fresh job openings found with the keyword
+'Carousel'"* — the DIRECTOR LLM treated the word as a job-search keyword.
+Root cause: the "Carousel word = separate album workflow" route lived in the
+OLD entry script (`scripts/telegram_watch_tower.py` `cmd_image_chat`), but the
+plugin now dispatches everything to `app/director/router.py`, which had no
+carousel route. Fixed: deterministic `\bcarousel\b` route in the router
+(before the LLM ever sees it) → ack text → `cmd_send_carousel(topic_msg)` →
+album to Telegram, with trace + failure message. Same loophole class as the
+old `title="fresh"` bug.
+
 **Next slices:**
 - Ashok is sending Pinterest inspiration URLs → tune/replace themes to match
   his taste (themes are data, easy to swap).

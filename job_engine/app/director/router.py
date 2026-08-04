@@ -51,6 +51,36 @@ def _log(event: str, **extra) -> None:
     print(f'DIRECTOR_LOG {event} {json.dumps(extra, ensure_ascii=False)[:400]}', file=sys.stderr)
 
 
+def _is_carousel(text: str) -> bool:
+    """Carousel word = separate album workflow (standing rule). Deterministic —
+    never let the LLM interpret 'Carousel' as a job keyword (2026-08-04 bug:
+    DIRECTOR searched openings with keyword \"Carousel\" and found none)."""
+    return bool(re.search(r'\bcarousel\b', text or '', re.I))
+
+
+def _run_carousel_route(text: str, trace) -> bool:
+    """Generate + send the album directly (bypasses DIRECTOR agent)."""
+    from app.director.tools_courier import send_telegram_text
+
+    send_telegram_text(
+        'Building your carousel album — 6 slides, live tower facts, '
+        'fresh art direction. Give me a couple of minutes…'
+    )
+    sys.path.insert(0, str(_ROOT / 'scripts'))
+    from telegram_watch_tower import cmd_send_carousel  # noqa: WPS433
+
+    rc = cmd_send_carousel(topic_msg=text)
+    ok = rc == 0
+    if trace:
+        trace.node('carousel_route', ok=ok, rc=rc, text=text[:120])
+    if not ok:
+        send_telegram_text(
+            'Carousel build hit a snag — check the Workflow panel. '
+            'Try again in a minute.'
+        )
+    return ok
+
+
 def _looks_like_heat(text: str) -> bool:
     return bool(re.search(
         r'\b(heat|temp|temperature|warm|hot|cool(?:ing)?|cpu|gpu|thermal)\b',
@@ -425,6 +455,17 @@ def main(argv: list[str] | None = None) -> int:
         _log('session_cleared', ok=ok)
         print('SESSION_CLEARED' if ok else 'CLEAR_SEND_FAILED')
         return 0 if ok else 1
+
+    if _is_carousel(text):
+        trace = start_trace(bot=bot, chat=chat, text=text)
+        try:
+            ok = _run_carousel_route(text, trace)
+            _log('carousel_route', ok=ok)
+            trace.finish('ok' if ok else 'failed', {'kind': 'carousel', 'ok': ok})
+            print('CAROUSEL_OK' if ok else 'CAROUSEL_FAILED')
+            return 0 if ok else 1
+        finally:
+            clear_current()
 
     trace = start_trace(bot=bot, chat=chat, text=text)
     try:
