@@ -144,20 +144,44 @@ intercept it. That gate lived entirely outside git, in `~/.hermes/.env`.
    (never blocks Ashok out over a bug in this module).
 4. **Owner-only Telegram commands** (from Ashok's own chat, phone-only, no
    SSH/laptop/Cloudflare needed):
-   - `/allow <telegram_id> [minutes=60] [label]` — grant temporary access;
-     also pings the guest directly so they know to go ahead.
-   - `/revoke <telegram_id>` — remove access immediately.
-   - `/guests` — list active guests + time remaining.
-5. **Getting a guest's numeric Telegram id:** have them message
-   [@userinfobot](https://t.me/userinfobot) once (doesn't touch our bot's
-   state) and read their `Id` back to Ashok over any channel (voice, SMS,
-   in person).
+   - `/allow <telegram_id> [minutes=60] [label]` — grant temporary access by
+     numeric id; also pings the guest directly so they know to go ahead.
+   - `/revoke <telegram_id>` — remove numeric-id access immediately.
+   - `/allowuser <telegram_username>` — grant **permanent** access by
+     `@handle` (with or without the `@`), no numeric id lookup needed.
+   - `/revokeuser <telegram_username>` — remove a granted `@handle`. Handles
+     baked into `DEFAULT_ALLOWED_USERNAMES` (code, git-tracked) can't be
+     revoked this way by design — pull them out of
+     `job_engine/app/telegram_guests.py` and redeploy instead.
+   - `/guests` — list allowed `@usernames` (default + granted) and active
+     numeric-id guests with time remaining.
+5. **Getting a guest's numeric Telegram id (only needed for `/allow`):**
+   have them message [@userinfobot](https://t.me/userinfobot) once (doesn't
+   touch our bot's state) and read their `Id` back to Ashok over any channel
+   (voice, SMS, in person). Skip this entirely if you already know their
+   `@username` — use `/allowuser` instead.
 
-**Example (live investor demo, no ThinkPad access):**
-`/allow 987654321 60 investor demo` → their next message gets a real
-DIRECTOR reply → after 60 minutes it silently stops again → `/guests` shows
-the countdown → `/revoke 987654321` removes access immediately if needed
-sooner.
+**Username allowlist (2026-08-04):** `job_engine/app/telegram_guests.py`
+`DEFAULT_ALLOWED_USERNAMES` is a permanent, code-reviewed, git-tracked set —
+no ThinkPad manual step, effective as soon as the deploy lands (unlike
+numeric guests, which live only in the gitignored, ThinkPad-local
+`telegram_guests.json`). Currently: `@azr0099`. Add a handle there whenever
+Ashok says "allow telegram username @whoever", or use `/allowuser` from
+Telegram for anything ad hoc that doesn't need a code change. Matching reads
+the `username` Telegram attaches to the incoming sender (best-effort lookup
+in `_sender_username()` in the plugin, since the exact Hermes connector
+event shape isn't documented — falls back to "unknown" and the numeric-id
+gate if it can't find one, never blocking the owner).
+
+**Examples:**
+- Ad hoc, live investor demo, no ThinkPad access:
+  `/allow 987654321 60 investor demo` → their next message gets a real
+  DIRECTOR reply → after 60 minutes it silently stops again → `/guests`
+  shows the countdown → `/revoke 987654321` removes access immediately if
+  needed sooner.
+- Known handle, permanent: `/allowuser azr0099` (or bake it into
+  `DEFAULT_ALLOWED_USERNAMES` for a code-reviewed, redeploy-proof grant) →
+  every message from that `@username` gets a real reply, no expiry.
 
 ## Smoke checks
 
