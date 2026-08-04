@@ -61,17 +61,24 @@ old `title="fresh"` bug.
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
-**Status (2026-08-04):** Code done, PR up for review. Extended same-day to
-add **`@username` allowlisting** (`/allowuser`, `/revokeuser`, and a
-permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` set in
-`job_engine/app/telegram_guests.py` — currently `@azr0099`) so Ashok can
-grant access to a known handle directly, without the numeric-id
-`@userinfobot` detour. **One manual ThinkPad step still required before any
-of this is live:** set `TELEGRAM_ALLOW_ALL_USERS=true` in `~/.hermes/.env`
-and run `hermes gateway restart` (or re-run
-`job_engine/scripts/setup_hermes_telegram.sh` / re-bootstrap, which now
-defaults to `true`). Until that flip happens, Hermes still silently drops
-non-Ashok senders before our new allowlist ever sees them.
+**Status (2026-08-04, evening):** Manual ThinkPad step ELIMINATED — deploy
+now owns the Hermes gateway. Live failure that proved it: Ashok's wife
+(`@Supriyamk`) sent "hi" and got silence even after `/allow`, because (a) the
+gateway still had `TELEGRAM_ALLOW_ALL_USERS=false` and dropped her before the
+plugin, (b) the gateway never restarts on deploy so plugin code was stale,
+and (c) every DIRECTOR reply was hardcoded to `TELEGRAM_HOME_CHANNEL` — even
+an allowed guest's answers would have landed in Ashok's chat. All three fixed:
+`scripts/deploy_local.sh` now flips the gate flag + restarts the gateway on
+every deploy; router sets `DIRECTOR_TARGET_CHAT` (sender's chat) and all four
+send paths (courier text, fact boards, lens images, carousel) honor it;
+`@supriyamk` added to `DEFAULT_ALLOWED_USERNAMES` (with `@azr0099`).
+Telegram bots cannot DM first — guests must send one message, then Vigil
+replies in their chat.
+
+Earlier same day: added **`@username` allowlisting** (`/allowuser`,
+`/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
+`job_engine/app/telegram_guests.py`) so Ashok can grant access to a known
+handle directly, without the numeric-id `@userinfobot` detour.
 
 **Problem (2026-08-04):** Ashok tried to demo the Telegram bot (`@vigil_akay_bot`)
 to an investor. Messages from the investor's phone and his wife's phone got

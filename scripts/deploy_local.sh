@@ -216,6 +216,41 @@ alembic upgrade head
 log "restarting api/worker/beat..."
 bash "$JOB_ENGINE/restart_app.sh" | tee -a "$DEPLOY_LOG"
 
+# --- Hermes gateway (Telegram bot) ---------------------------------------
+# 1) The repo-side allowlist (app/telegram_guests.py, enforced in
+#    hermes_plugins/vigil-image-only) owns Telegram access control. Hermes
+#    must let every message through to reach that gate — flip its own
+#    hard-coded gate open. This was a manual ThinkPad step (kanban card #1,
+#    wife/investor demo failure 2026-08-04); now every deploy enforces it.
+# 2) Plugin code ships with this repo but only loads on gateway restart —
+#    so restart the gateway on every deploy, same as api/worker/beat.
+ensure_hermes_gateway() {
+  local envf="$HOME/.hermes/.env"
+  local hermes_bin="$HOME/.local/bin/hermes"
+  [ -x "$hermes_bin" ] || hermes_bin="$(command -v hermes || true)"
+  if [ ! -f "$envf" ] || [ -z "$hermes_bin" ]; then
+    log "hermes not set up on this host — skipping gateway step"
+    return
+  fi
+  if grep -q '^TELEGRAM_ALLOW_ALL_USERS=true$' "$envf"; then
+    log "hermes gate already open (allow-all=true; repo allowlist owns access)"
+  else
+    if grep -q '^TELEGRAM_ALLOW_ALL_USERS=' "$envf"; then
+      sed -i 's/^TELEGRAM_ALLOW_ALL_USERS=.*/TELEGRAM_ALLOW_ALL_USERS=true/' "$envf"
+    else
+      printf '\nTELEGRAM_ALLOW_ALL_USERS=true\n' >> "$envf"
+    fi
+    log "flipped TELEGRAM_ALLOW_ALL_USERS=true in ~/.hermes/.env"
+  fi
+  log "restarting hermes gateway (reload plugin + env)..."
+  if "$hermes_bin" gateway restart >>"$DEPLOY_LOG" 2>&1; then
+    log "hermes gateway restarted"
+  else
+    log "WARNING: hermes gateway restart failed — Telegram bot may be running stale plugin/env"
+  fi
+}
+ensure_hermes_gateway
+
 # Health check
 ok=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
