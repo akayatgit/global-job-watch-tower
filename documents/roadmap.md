@@ -5,7 +5,7 @@
 | **Method** | Serious agile: one **current sprint** in flight, one **next milestone** queued, backlog below |
 | **Definition of Done** | Slice is complete for its scope (UX laws in `.cursor/rules/product-ux.mdc`), verified, committed locally |
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
-| **Locked recover** | `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
+| **Locked recover** | `milestone/eureka-telegram-bot` (Telegram AI bot, 2026-08-04) · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
 | **Status as of** | 2026-08-04 — **DIRECTOR = Ashok’s Jarvis (v0.31)** |
 | **Stage lock** | **Collects = base complete** → **Map with Students** (DIRECTOR skit + Carousel) → **Predict for Government** (next) |
@@ -110,6 +110,10 @@ Then: Intelligence Automation = Job Market Analysis → Carousel that reaches em
 - [x] VIGIL shell, Hiring Signals, Watchlist, Cities chips, sector filter
 - [x] Collector + Ollama relevance + Plan B under critical heat
 - [x] **Collects base complete** — delivery stage opened 2026-08-03
+- [x] **Eureka — Job Telegram AI Bot** (2026-08-04, locked tag
+      `milestone/eureka-telegram-bot`) — COURIER→DIRECTOR→STAGEHAND/LENS/
+      CAROUSEL live on `@vigil_akay_bot`; text-first Jarvis + slash boards +
+      daily brief. See `documents/milestone-eureka-telegram-bot.md`.
 
 ---
 

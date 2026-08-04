@@ -110,6 +110,79 @@ System crontab 08:00 IST ─► hermes_daily_brief.py ──► documents/briefs
 - Home chat linked via channel directory / bootstrap
 - Crontab: brief then `telegram_watch_tower.py send-brief`
 
+### Telegram guest access (2026-08-04)
+
+**Incident:** Ashok tried to demo the bot to an investor from his phone — the
+investor's messages (and his wife's, from a prior test) got zero replies.
+Only Ashok's own linked account worked, and he had no ThinkPad terminal
+access to fix it live. See `documents/kanban.md` card #1 for the full
+incident writeup.
+
+**Root cause:** Hermes' own Telegram connector enforces
+`TELEGRAM_ALLOWED_USERS` **before** any plugin hook runs — a blocked
+sender's message never reaches our code, so no repo-side fix could
+intercept it. That gate lived entirely outside git, in `~/.hermes/.env`.
+
+**Fix — our own allowlist replaces Hermes':**
+
+1. **One-time manual step (ThinkPad terminal, do this once):** set
+   `TELEGRAM_ALLOW_ALL_USERS=true` in `~/.hermes/.env` and restart the
+   gateway (`hermes gateway restart`). `telegram_watch_tower.py bootstrap`
+   now writes this by default for any future re-bootstrap. This is safe —
+   every message now reaches our plugin hook, which enforces its own gate
+   immediately below.
+2. `job_engine/app/telegram_guests.py` — dependency-free (stdlib only) JSON
+   store at `job_engine/.data/telegram_guests.json` (gitignored,
+   ThinkPad-local): `{telegram_id: {expires_at, minutes, label, added_by}}`.
+   The owner (Ashok — `TELEGRAM_ALLOWED_USERS` / `TELEGRAM_HOME_CHANNEL` in
+   `~/.hermes/.env`) is always allowed and can never be revoked.
+3. `job_engine/hermes_plugins/vigil-image-only/__init__.py`
+   (`telegram_to_director`) checks `is_allowed(chat_id)` before dispatching
+   to DIRECTOR. Unauthorised senders are dropped **silently** (matches the
+   existing private-ops posture — the bot doesn't announce itself to
+   randoms). The import is wrapped in a try/except that **fails open**
+   (never blocks Ashok out over a bug in this module).
+4. **Owner-only Telegram commands** (from Ashok's own chat, phone-only, no
+   SSH/laptop/Cloudflare needed):
+   - `/allow <telegram_id> [minutes=60] [label]` — grant temporary access by
+     numeric id; also pings the guest directly so they know to go ahead.
+   - `/revoke <telegram_id>` — remove numeric-id access immediately.
+   - `/allowuser <telegram_username>` — grant **permanent** access by
+     `@handle` (with or without the `@`), no numeric id lookup needed.
+   - `/revokeuser <telegram_username>` — remove a granted `@handle`. Handles
+     baked into `DEFAULT_ALLOWED_USERNAMES` (code, git-tracked) can't be
+     revoked this way by design — pull them out of
+     `job_engine/app/telegram_guests.py` and redeploy instead.
+   - `/guests` — list allowed `@usernames` (default + granted) and active
+     numeric-id guests with time remaining.
+5. **Getting a guest's numeric Telegram id (only needed for `/allow`):**
+   have them message [@userinfobot](https://t.me/userinfobot) once (doesn't
+   touch our bot's state) and read their `Id` back to Ashok over any channel
+   (voice, SMS, in person). Skip this entirely if you already know their
+   `@username` — use `/allowuser` instead.
+
+**Username allowlist (2026-08-04):** `job_engine/app/telegram_guests.py`
+`DEFAULT_ALLOWED_USERNAMES` is a permanent, code-reviewed, git-tracked set —
+no ThinkPad manual step, effective as soon as the deploy lands (unlike
+numeric guests, which live only in the gitignored, ThinkPad-local
+`telegram_guests.json`). Currently: `@azr0099`. Add a handle there whenever
+Ashok says "allow telegram username @whoever", or use `/allowuser` from
+Telegram for anything ad hoc that doesn't need a code change. Matching reads
+the `username` Telegram attaches to the incoming sender (best-effort lookup
+in `_sender_username()` in the plugin, since the exact Hermes connector
+event shape isn't documented — falls back to "unknown" and the numeric-id
+gate if it can't find one, never blocking the owner).
+
+**Examples:**
+- Ad hoc, live investor demo, no ThinkPad access:
+  `/allow 987654321 60 investor demo` → their next message gets a real
+  DIRECTOR reply → after 60 minutes it silently stops again → `/guests`
+  shows the countdown → `/revoke 987654321` removes access immediately if
+  needed sooner.
+- Known handle, permanent: `/allowuser azr0099` (or bake it into
+  `DEFAULT_ALLOWED_USERNAMES` for a code-reviewed, redeploy-proof grant) →
+  every message from that `@username` gets a real reply, no expiry.
+
 ## Smoke checks
 
 ```bash
