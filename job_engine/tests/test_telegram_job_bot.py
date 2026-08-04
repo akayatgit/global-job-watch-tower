@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.telegram_sessions import TelegramSessionStore
@@ -32,6 +33,18 @@ class FailingTelegramAPI(FakeTelegramAPI):
         raise OSError('Telegram unavailable')
 
 
+class FlakyTelegramAPI(FakeTelegramAPI):
+    def __init__(self):
+        super().__init__()
+        self.failed_once = False
+
+    def send(self, chat_id: str, text: str) -> None:
+        if text.startswith('1. AI Engineer') and not self.failed_once:
+            self.failed_once = True
+            raise OSError('temporary send failure')
+        super().send(chat_id, text)
+
+
 class TelegramBotContractTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -52,6 +65,15 @@ class TelegramBotContractTests(unittest.TestCase):
         self.bot.process('1221647274', 'Fresh AI jobs in Bangalore')
         self.assertEqual(self.api.sent[0], ('1221647274', 'Thinking…'))
         self.assertTrue(self.api.sent[1][1].startswith('1. AI Engineer'))
+
+    def test_poll_loop_ack_is_not_duplicated_by_worker(self):
+        acked = self.bot._pre_ack('1221647274', 'Fresh AI jobs in Bangalore')
+        self.assertTrue(acked)
+        self.bot.process('1221647274', 'Fresh AI jobs in Bangalore', acked=acked)
+        self.assertEqual(
+            [text for _chat, text in self.api.sent].count('Thinking…'),
+            1,
+        )
 
     def test_new_has_no_thinking_or_engine_metadata(self):
         self.bot.process('1221647274', '/new')
@@ -95,6 +117,49 @@ class TelegramBotContractTests(unittest.TestCase):
         with self.assertLogs('jobmaster-telegram', level='ERROR'):
             bot._safe_process('42', 'AI jobs Bangalore')
         self.assertEqual(self.engine.calls, [])
+
+    def test_accepted_update_survives_restart_until_completed(self):
+        self.assertTrue(self.sessions.queue_update(101, '42', 'AI jobs Bangalore'))
+        restarted = TelegramSessionStore(self.sessions.path)
+        self.assertEqual(restarted.pending_updates(), [(101, '42', 'AI jobs Bangalore')])
+        restarted.complete_update(101)
+        self.assertEqual(restarted.pending_updates(), [])
+
+    def test_same_chat_updates_execute_in_telegram_order(self):
+        for update_id, text in ((1, '/new'), (2, '/reset'), (3, '/clear')):
+            self.sessions.queue_update(update_id, '42', text)
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            for update_id, chat_id, text in self.sessions.pending_updates():
+                self.bot._enqueue_update(workers, update_id, chat_id, text)
+        self.assertEqual(
+            [text for text, chat_id in self.engine.calls if chat_id == '42'],
+            ['/new', '/reset', '/clear'],
+        )
+
+    def test_failed_reply_retries_without_rerunning_or_reordering(self):
+        api = FlakyTelegramAPI()
+        bot = JobMasterTelegramBot(
+            api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+        )
+        for update_id, text in ((1, 'AI jobs Bangalore'), (2, '/new')):
+            self.sessions.queue_update(update_id, '42', text)
+        with self.assertLogs('jobmaster-telegram', level='ERROR'):
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                for update_id, chat_id, text in self.sessions.pending_updates():
+                    bot._enqueue_update(workers, update_id, chat_id, text)
+        self.assertEqual(self.engine.calls, [('AI jobs Bangalore', '42'), ('/new', '42')])
+        replies = [text for _chat, text in api.sent if text != 'Thinking…']
+        self.assertEqual(
+            replies,
+            [
+                '1. AI Engineer — Acme — Fresher\n'
+                'https://www.linkedin.com/jobs/view/4448000001/',
+                'Search reset. Send a role, city, or job-market question.',
+            ],
+        )
 
 
 if __name__ == '__main__':

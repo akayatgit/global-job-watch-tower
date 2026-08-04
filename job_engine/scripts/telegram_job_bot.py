@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -105,47 +106,190 @@ class JobMasterTelegramBot:
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
         self._chat_locks_guard = threading.Lock()
+        self._queue_guard = threading.Lock()
+        self._chat_queues: dict[str, deque[tuple[int, str, bool]]] = {}
+        self._active_chats: set[str] = set()
         self._query_count = 0
         self._page_count = 0
 
-    def process(self, chat_id: str, text: str) -> None:
+    def process(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        acked: bool = False,
+        update_id: int | None = None,
+    ) -> None:
         with self._chat_locks_guard:
             lock = self._chat_locks.setdefault(str(chat_id), threading.Lock())
         with lock:
-            self._process_locked(str(chat_id), text)
+            self._process_locked(str(chat_id), text, acked=acked, update_id=update_id)
 
-    def _safe_process(self, chat_id: str, text: str) -> None:
+    def _safe_process(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        acked: bool = False,
+        update_id: int | None = None,
+    ) -> bool:
         try:
-            self.process(chat_id, text)
+            self.process(chat_id, text, acked=acked, update_id=update_id)
+            return True
         except Exception as exc:
             LOG.exception('Telegram delivery failed chat=%s', chat_id)
             if self.health_enabled:
                 self._write_health(status='degraded', error=str(exc)[:200])
+            return False
 
-    def _process_locked(self, chat_id: str, text: str) -> None:
+    def _process_queued(
+        self,
+        update_id: int,
+        chat_id: str,
+        text: str,
+        *,
+        acked: bool = False,
+    ) -> bool:
+        prepared = self.sessions.load_update_reply(update_id)
+        if prepared is not None:
+            try:
+                self.api.send(chat_id, prepared)
+            except Exception as exc:
+                LOG.exception('prepared Telegram delivery failed chat=%s', chat_id)
+                if self.health_enabled:
+                    self._write_health(status='degraded', error=str(exc)[:200])
+                return False
+            self.sessions.complete_update(update_id)
+            return True
+        if self._safe_process(chat_id, text, acked=acked, update_id=update_id):
+            self.sessions.complete_update(update_id)
+            return True
+        return False
+
+    def _enqueue_update(
+        self,
+        workers: ThreadPoolExecutor,
+        update_id: int,
+        chat_id: str,
+        text: str,
+        *,
+        acked: bool = False,
+    ) -> None:
+        with self._queue_guard:
+            queue = self._chat_queues.setdefault(chat_id, deque())
+            queue.append((update_id, text, acked))
+            if chat_id in self._active_chats:
+                return
+            self._active_chats.add(chat_id)
+        workers.submit(self._drain_chat, workers, chat_id)
+
+    def _drain_chat(self, workers: ThreadPoolExecutor, chat_id: str) -> None:
+        retry_delay = 1
+        failures = 0
+        while not STOP:
+            with self._queue_guard:
+                queue = self._chat_queues.get(chat_id)
+                if not queue:
+                    self._active_chats.discard(chat_id)
+                    self._chat_queues.pop(chat_id, None)
+                    return
+                update_id, text, acked = queue.popleft()
+            if self._process_queued(update_id, chat_id, text, acked=acked):
+                retry_delay = 1
+                failures = 0
+                continue
+            with self._queue_guard:
+                self._chat_queues.setdefault(chat_id, deque()).appendleft(
+                    (update_id, text, acked)
+                )
+            failures += 1
+            if failures >= 3:
+                with self._queue_guard:
+                    self._active_chats.discard(chat_id)
+                timer = threading.Timer(
+                    60,
+                    self._resume_chat,
+                    args=(workers, chat_id),
+                )
+                timer.daemon = True
+                timer.start()
+                return
+            time.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 30)
+        with self._queue_guard:
+            self._active_chats.discard(chat_id)
+            self._chat_queues.pop(chat_id, None)
+
+    def _resume_chat(self, workers: ThreadPoolExecutor, chat_id: str) -> None:
+        if STOP:
+            return
+        with self._queue_guard:
+            if chat_id in self._active_chats or not self._chat_queues.get(chat_id):
+                return
+            self._active_chats.add(chat_id)
+        try:
+            workers.submit(self._drain_chat, workers, chat_id)
+        except RuntimeError:
+            with self._queue_guard:
+                self._active_chats.discard(chat_id)
+
+    def _pre_ack(self, chat_id: str, text: str) -> bool:
+        clean = (text or '').strip()
+        if not clean or RESET_RE.match(clean) or clean.lower() in {'/start', '/help', 'help'}:
+            return False
+        try:
+            self.api.send(chat_id, 'Thinking…')
+            return True
+        except Exception:
+            LOG.exception('immediate acknowledgement failed chat=%s', chat_id)
+            return False
+
+    def _process_locked(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        acked: bool = False,
+        update_id: int | None = None,
+    ) -> None:
         clean = (text or '').strip()
         if not clean:
             return
         is_reset = bool(RESET_RE.match(clean))
         if clean.lower() in {'/start', '/help', 'help'}:
-            self.api.send(
-                chat_id,
+            reply = (
                 'JobMaster provides verified jobs and live job-market insights. '
-                'Ask naturally in any sentence.',
+                'Ask naturally in any sentence.'
             )
+            if update_id is not None:
+                self.sessions.save_update_reply(update_id, reply)
+            self.api.send(chat_id, reply)
             return
         if not is_reset:
             now = time.monotonic()
             last = self._last_request.get(chat_id, 0.0)
             if now - last < 1.0:
-                self.api.send(chat_id, 'One request at a time.')
+                reply = 'One request at a time.'
+                if update_id is not None:
+                    self.sessions.save_update_reply(update_id, reply)
+                self.api.send(chat_id, reply)
                 return
-            self.api.send(chat_id, 'Thinking…')
+            if not acked:
+                self.api.send(chat_id, 'Thinking…')
         try:
-            reply = self.engine.handle(clean, chat_id)
+            try:
+                reply = self.engine.handle(clean, chat_id, update_id=update_id)
+            except TypeError as exc:
+                if 'update_id' not in str(exc):
+                    raise
+                # Test doubles and legacy capability adapters may not yet
+                # expose the atomic outbox keyword.
+                reply = self.engine.handle(clean, chat_id)
         except Exception:
             LOG.exception('request failed chat=%s text=%r', chat_id, clean[:120])
             reply = 'JobMaster could not reach live Watch Tower data. Try again shortly.'
+        if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+            self.sessions.save_update_reply(update_id, reply)
         self.api.send(chat_id, reply)
         if is_reset:
             self._last_request.pop(chat_id, None)
@@ -174,14 +318,17 @@ class JobMasterTelegramBot:
         if offset_raw.isdigit():
             offset = int(offset_raw)
         else:
-            # First dedicated start: acknowledge old updates without replaying them.
-            pending = self.api.updates(0, timeout=0)
-            offset = max([int(row.get('update_id', -1)) + 1 for row in pending] + [0])
+            # First dedicated start consumes the Bot API queue normally. Hermes
+            # was stopped first, so messages arriving during cutover must not
+            # be drained or silently lost.
+            offset = 0
             self.sessions.set_state('telegram_update_offset', offset)
         self._write_health(status='running', bot=me.get('username', ''))
 
         backoff = 1
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='jobmaster') as workers:
+            for update_id, chat_id, text in self.sessions.pending_updates():
+                self._enqueue_update(workers, update_id, chat_id, text)
             while not STOP:
                 try:
                     updates = self.api.updates(offset)
@@ -190,14 +337,25 @@ class JobMasterTelegramBot:
                     for update in updates:
                         update_id = int(update.get('update_id', -1))
                         offset = max(offset, update_id + 1)
-                        self.sessions.set_state('telegram_update_offset', offset)
                         message = update.get('message') or {}
                         chat = message.get('chat') or {}
-                        if chat.get('type') != 'private' or not chat.get('id'):
-                            continue
-                        text = message.get('text')
-                        if isinstance(text, str):
-                            workers.submit(self._safe_process, str(chat['id']), text)
+                        if chat.get('type') == 'private' and chat.get('id'):
+                            text = message.get('text')
+                            if isinstance(text, str):
+                                chat_id = str(chat['id'])
+                                if self.sessions.queue_update(update_id, chat_id, text):
+                                    acked = self._pre_ack(chat_id, text)
+                                    self._enqueue_update(
+                                        workers,
+                                        update_id,
+                                        chat_id,
+                                        text,
+                                        acked=acked,
+                                    )
+                        # Offset advances only after an accepted private message
+                        # is durable in SQLite (or for an intentionally ignored
+                        # update). A process crash cannot silently lose it.
+                        self.sessions.set_state('telegram_update_offset', offset)
                 except urllib.error.HTTPError as exc:
                     body = exc.read().decode(errors='replace')
                     if exc.code == 409:

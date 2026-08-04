@@ -49,9 +49,18 @@ CITY_ALIASES = {
 
 FILLER = {
     'a', 'an', 'and', 'any', 'are', 'at', 'available', 'for', 'find', 'fresh',
-    'fresher', 'freshers', 'give', 'in', 'is', 'job', 'jobs', 'latest', 'me',
-    'of', 'opening', 'openings', 'please', 'role', 'roles', 'show', 'space',
-    'the', 'today', 'want', 'with',
+    'fresher', 'freshers', 'give', 'how', 'in', 'insight', 'insights', 'is',
+    'job', 'jobs', 'latest', 'many', 'market', 'me', 'of', 'opening', 'openings',
+    'please', 'role', 'roles', 'show', 'space', 'the', 'there', 'today', 'top',
+    'total', 'trend', 'trends', 'want', 'which', 'with', 'compare', 'comparison',
+    'count', 'currently', 'hiring', 'much', 'vs', 'versus', 'company', 'companies',
+}
+FAMILY_WORDS = {
+    'ai', 'ml', 'artificial', 'intelligence', 'machine', 'learning', 'genai',
+    'generative', 'llm', 'nlp', 'data', 'science', 'scientist', 'analyst',
+    'analytics', 'cyber', 'security', 'soc', 'infosec', 'cloud', 'devops', 'sre',
+    'software', 'developer', 'engineer', 'engineering', 'fullstack', 'backend',
+    'frontend', 'product', 'manager', 'owner', 'design', 'designer', 'ui', 'ux',
 }
 
 
@@ -63,15 +72,19 @@ def normalize_experience_value(raw: str | None) -> str:
         '0-1years': 'fresher',
         '1-2': '1-2',
         '1-2years': '1-2',
+        '1-3years': '1-2',
         '3-5': '3-5',
         '3-5years': '3-5',
         '6-8': '6-8',
         '6-8years': '6-8',
+        '5-8years': '6-8',
         '9-12': '9-12',
         '9-12years': '9-12',
+        '8-12years': '9-12',
         '13+': '13plus',
         '13plus': '13plus',
         '13+years': '13plus',
+        '12+years': '13plus',
     }
     return aliases.get(key, '')
 
@@ -144,10 +157,38 @@ def _fallback_intent(text: str) -> JobMasterIntent:
     if re.search(r'\b(?:fresher|freshers|fresh graduate|graduate|entry.?level|intern(?:ship)?)\b', low):
         experience = 'fresher'
     else:
-        for token in ('1-2', '3-5', '6-8', '9-12', '13+'):
-            if token in low:
-                experience = normalize_experience_value(token)
-                break
+        range_match = re.search(
+            r'\b(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?|yrs?)?\b',
+            low,
+        )
+        single_match = re.search(r'\b(\d{1,2})\+?\s*(?:years?|yrs?)\b', low)
+        if range_match:
+            low_years = min(int(range_match.group(1)), int(range_match.group(2)))
+            high_years = max(int(range_match.group(1)), int(range_match.group(2)))
+            if high_years <= 1:
+                experience = 'fresher'
+                years = -1
+            elif low_years <= 1 and high_years <= 3:
+                experience = '1-2'
+                years = -1
+            else:
+                years = high_years
+        elif single_match:
+            years = int(single_match.group(1))
+        else:
+            years = -1
+        if 0 <= years <= 1:
+            experience = 'fresher'
+        elif years == 2:
+            experience = '1-2'
+        elif 3 <= years <= 5:
+            experience = '3-5'
+        elif 6 <= years <= 8:
+            experience = '6-8'
+        elif 9 <= years <= 12:
+            experience = '9-12'
+        elif years >= 13:
+            experience = '13plus'
 
     role_family = ''
     if re.search(
@@ -165,17 +206,18 @@ def _fallback_intent(text: str) -> JobMasterIntent:
         role_family = 'software'
 
     insight = bool(re.search(
-        r'\b(?:how many|count|compare|comparison|versus|vs\.?|top compan|top role|'
-        r'trend|market insight|hiring market|which city|growth|grew|growing)\b',
+        r'\b(?:how many|count|compare|comparison|versus|vs\.?|'
+        r'top compan(?:y|ies)|top roles?|trend|market insights?|hiring market|'
+        r'which city|growth|grew|growing)\b',
         low,
     ))
     metric = ''
     if insight:
         if len(cities) >= 2 or re.search(r'\b(?:compare|versus|vs\.?)\b', low):
             metric = 'compare_cities'
-        elif re.search(r'\btop compan', low):
+        elif re.search(r'\btop compan(?:y|ies)\b', low):
             metric = 'top_companies'
-        elif re.search(r'\btop role', low):
+        elif re.search(r'\btop roles?\b', low):
             metric = 'top_roles'
         elif re.search(r'\b(?:trend|growth|grew|growing)\b', low):
             metric = 'trend'
@@ -186,19 +228,28 @@ def _fallback_intent(text: str) -> JobMasterIntent:
     day_match = re.search(r'\b(1|2|4|7|14|30)\s*(?:d|day|days)\b', low)
     if day_match:
         days = int(day_match.group(1))
-    elif 'today' in low or '24h' in low:
+    elif '24h' in low or '24 hour' in low:
         days = 0
+    elif 'today' in low:
+        days = 1
 
     scrubbed = low
     for aliases in CITY_ALIASES.values():
         for alias in aliases:
             scrubbed = scrubbed.replace(alias, ' ')
+    scrubbed = re.sub(
+        r'\b\d{1,2}\s*(?:-|–|—|to)\s*\d{1,2}\s*(?:years?|yrs?)?\b',
+        ' ',
+        scrubbed,
+    )
+    scrubbed = re.sub(r'\b\d{1,2}\+?\s*(?:years?|yrs?)\b', ' ', scrubbed)
+    scrubbed = re.sub(r'\bexperience\b', ' ', scrubbed)
     words = [
         w for w in re.findall(r'[a-z0-9+#.-]+', scrubbed)
         if w not in FILLER and not re.fullmatch(r'\d+(?:-\d+)?', w)
     ]
     if role_family:
-        words = []
+        words = [word for word in words if word not in FAMILY_WORDS]
     return JobMasterIntent(
         kind='insight' if insight else 'job_search',
         role_family=role_family,
@@ -298,8 +349,8 @@ def canonical_link(job: dict[str, Any]) -> str:
 
 def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
     title = str(job.get('title') or '')
-    if intent.role_family:
-        return title_matches_role_family(title, intent.role_family)
+    if intent.role_family and not title_matches_role_family(title, intent.role_family):
+        return False
     if not intent.role_keywords:
         return True
     low = title.lower()
@@ -310,15 +361,18 @@ def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
     return difflib.SequenceMatcher(None, phrase, low).ratio() >= 0.45
 
 
-def _format_jobs(jobs: list[dict[str, Any]], page: int) -> str:
-    start = max(0, page) * PAGE_SIZE
-    picked = jobs[start:start + PAGE_SIZE]
-    if not picked:
-        return 'No more verified jobs match that search right now.' if page else (
+def _format_jobs(
+    jobs: list[dict[str, Any]],
+    *,
+    start_number: int,
+    has_more: bool,
+) -> str:
+    if not jobs:
+        return 'No more verified jobs match that search right now.' if start_number > 1 else (
             'No verified jobs match that search right now.'
         )
     lines: list[str] = []
-    for idx, job in enumerate(picked, start=start + 1):
+    for idx, job in enumerate(jobs, start=start_number):
         title = re.sub(r'\s+', ' ', str(job.get('title') or '')).strip()[:140]
         company = re.sub(
             r'\s+', ' ', str(job.get('company') or 'Company not stated'),
@@ -327,7 +381,7 @@ def _format_jobs(jobs: list[dict[str, Any]], page: int) -> str:
             r'\s+', ' ', experience_display(job.get('experience_band')),
         ).strip()[:40]
         lines.append(f'{idx}. {title} — {company} — {experience}\n{canonical_link(job)}')
-    if start + PAGE_SIZE < len(jobs):
+    if has_more:
         lines.append('Reply more for 10 more jobs.')
     return '\n\n'.join(lines)
 
@@ -344,28 +398,61 @@ class JobMasterEngine:
         self.interpreter = interpreter or IntentInterpreter()
         self.sessions = sessions or TelegramSessionStore()
 
-    def handle(self, text: str, chat_id: str) -> str:
+    def handle(self, text: str, chat_id: str, *, update_id: int | None = None) -> str:
         raw = (text or '').strip()
         if RESET_RE.match(raw):
-            self.sessions.clear(chat_id)
-            return 'Search reset. Send a role, city, or job-market question.'
+            reply = 'Search reset. Send a role, city, or job-market question.'
+            self.sessions.apply_result(
+                chat_id,
+                reply,
+                update_id=update_id,
+                clear_search=True,
+            )
+            return reply
         if MORE_RE.match(raw):
-            saved = self.sessions.advance(chat_id)
+            saved = self.sessions.load_search(chat_id)
             if not saved:
                 return 'Send a job search first, then reply more.'
-            intent_dict, page = saved
-            return self._job_reply(JobMasterIntent(**intent_dict), page)
+            intent_dict, page, seen_ids = saved
+            intent = JobMasterIntent(**intent_dict)
+            reply, new_ids = self._job_reply(intent, seen_ids=seen_ids)
+            self.sessions.apply_result(
+                chat_id,
+                reply,
+                update_id=update_id,
+                intent=intent_dict,
+                page=page + 1,
+                seen_ids=[*seen_ids, *new_ids],
+            )
+            return reply
 
         intent = self.interpreter.parse(raw)
         if intent.kind == 'insight':
-            return self._insight_reply(intent)
+            reply = self._insight_reply(intent)
+            self.sessions.apply_result(chat_id, reply, update_id=update_id)
+            return reply
         if intent.kind == 'help':
-            return 'JobMaster provides verified jobs and live job-market insights.'
+            reply = 'JobMaster provides verified jobs and live job-market insights.'
+            self.sessions.apply_result(chat_id, reply, update_id=update_id)
+            return reply
 
-        self.sessions.save_search(chat_id, asdict(intent), page=0)
-        return self._job_reply(intent, page=0)
+        reply, seen_ids = self._job_reply(intent, seen_ids=[])
+        self.sessions.apply_result(
+            chat_id,
+            reply,
+            update_id=update_id,
+            intent=asdict(intent),
+            page=0,
+            seen_ids=seen_ids,
+        )
+        return reply
 
-    def _job_reply(self, intent: JobMasterIntent, page: int) -> str:
+    def _job_reply(
+        self,
+        intent: JobMasterIntent,
+        *,
+        seen_ids: list[str],
+    ) -> tuple[str, list[str]]:
         params: dict[str, Any] = {'limit': MAX_FETCH}
         if intent.cities:
             params['city'] = intent.cities[0]
@@ -376,21 +463,35 @@ class JobMasterEngine:
         data = self.api_get('/api/jobs', params)
         rows = data if isinstance(data, list) else []
         valid: list[dict[str, Any]] = []
-        seen: set[str] = set()
+        prior_seen = set(seen_ids)
+        fetched_seen: set[str] = set()
         for job in rows:
             link = canonical_link(job)
             title = str(job.get('title') or '').strip()
             company = str(job.get('company') or '').strip()
             if not title or not link or not _matches_role(job, intent):
                 continue
-            key = str(job.get('linkedin_job_id') or link)
-            if key in seen:
+            band = normalize_experience_value(str(job.get('experience_band') or ''))
+            if intent.experience == 'fresher' and band and band != 'fresher':
                 continue
-            seen.add(key)
+            key = str(job.get('linkedin_job_id') or link)
+            if key in prior_seen or key in fetched_seen:
+                continue
+            fetched_seen.add(key)
             copied = dict(job)
             copied['job_url'] = link
             valid.append(copied)
-        return _format_jobs(valid, page)
+        picked = valid[:PAGE_SIZE]
+        new_ids = [
+            str(job.get('linkedin_job_id') or canonical_link(job))
+            for job in picked
+        ]
+        reply = _format_jobs(
+            picked,
+            start_number=len(seen_ids) + 1,
+            has_more=len(valid) > PAGE_SIZE,
+        )
+        return reply, new_ids
 
     def _insight_reply(self, intent: JobMasterIntent) -> str:
         params: dict[str, Any] = {
@@ -403,7 +504,12 @@ class JobMasterEngine:
         elif intent.experience:
             params['experience'] = intent.experience
         scope = city_label(intent.cities[0]) if intent.cities else 'All India'
-        window = 'past 24 hours' if intent.window_days == 0 else f'past {intent.window_days} days'
+        if intent.window_days == 0:
+            window = 'past 24 hours'
+        elif intent.window_days == 1:
+            window = 'today'
+        else:
+            window = f'past {intent.window_days} days'
 
         if intent.metric == 'compare_cities' and len(intent.cities) >= 2:
             left = self.api_get('/api/jobs/insights', {**params, 'city': intent.cities[0]})

@@ -160,6 +160,9 @@ def list_jobs(
         query = query.where(exp)
     if track:
         query = query.where(SearchConfig.track == track)
+        if track == 'fresher' and exp is None:
+            fresher_exp = experience_clause('fresher')
+            query = query.where(or_(JobMaster.experience_band.is_(None), fresher_exp))
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -223,7 +226,7 @@ def job_insights(
     today = now.date()
     if days == 0:
         time_col = JobMaster.scraped_at
-        recent_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        recent_start = now - timedelta(hours=24)
         recent_end = now
         prior_start = recent_start - timedelta(days=1)
         prior_end = recent_start
@@ -242,10 +245,13 @@ def job_insights(
         filters.append(exp)
     if track:
         filters.append(SearchConfig.track == track)
+        if track == 'fresher' and exp is None:
+            fresher_exp = experience_clause('fresher')
+            filters.append(or_(JobMaster.experience_band.is_(None), fresher_exp))
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         filters.append(JobMaster.title.op('~*')(pattern))
-    elif terms:
+    if terms:
         filters.append(or_(*[JobMaster.title.ilike(f'%{term}%') for term in terms]))
 
     def with_filters(query, start, end):

@@ -32,12 +32,15 @@ def make_job(i: int, *, title: str = 'Machine Learning Engineer', city: str = 'b
 class FakeAPI:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
+        self.fail_jobs = False
         self.jobs = [make_job(i) for i in range(1, 26)]
         self.jobs += [make_job(80, title='Java Software Engineer')]
 
     def __call__(self, path: str, params: dict | None = None):
         self.calls.append((path, params or {}))
         if path == '/api/jobs':
+            if self.fail_jobs:
+                raise OSError('tower unavailable')
             return self.jobs
         if path == '/api/jobs/insights':
             total = 80 if (params or {}).get('city') == 'chennai' else 120
@@ -84,6 +87,24 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertEqual(intent.experience, 'fresher')
         self.assertEqual(intent.role_family, 'ai_ml')
 
+    def test_specific_technology_is_not_broadened_to_all_software(self):
+        intent = _fallback_intent('Java developer jobs in Bangalore')
+        self.assertEqual(intent.role_family, 'software')
+        self.assertEqual(intent.role_keywords, ['java'])
+        self.api.jobs = [
+            make_job(1, title='Java Software Engineer'),
+            make_job(2, title='Python Software Engineer'),
+        ]
+        reply = self.engine.handle('Java developer jobs in Bangalore', '42')
+        self.assertIn('Java Software Engineer', reply)
+        self.assertNotIn('Python Software Engineer', reply)
+
+    def test_common_experience_phrases_map_to_bands(self):
+        self.assertEqual(_fallback_intent('Python jobs for 2 years experience').experience, '1-2')
+        self.assertEqual(_fallback_intent('Python jobs for 1-3 years').experience, '1-2')
+        self.assertEqual(_fallback_intent('Python jobs for 3 to 5 years').experience, '3-5')
+        self.assertEqual(_fallback_intent('Python jobs for 6–8 years').experience, '6-8')
+
     def test_model_cannot_invent_city_or_experience_scope(self):
         intent = IntentInterpreter._validate(
             {
@@ -96,6 +117,18 @@ class TelegramJobSearchTests(unittest.TestCase):
         )
         self.assertEqual(intent.cities, [])
         self.assertEqual(intent.experience, '')
+
+    def test_plural_top_company_and_role_requests_are_insights(self):
+        companies = _fallback_intent('Top companies in Bangalore')
+        roles = _fallback_intent('Top roles in Chennai')
+        self.assertEqual((companies.kind, companies.metric), ('insight', 'top_companies'))
+        self.assertEqual((roles.kind, roles.metric), ('insight', 'top_roles'))
+        self.assertEqual(companies.role_keywords, [])
+        self.assertEqual(roles.role_keywords, [])
+
+    def test_today_and_rolling_24_hours_are_distinct_windows(self):
+        self.assertEqual(_fallback_intent('How many jobs today?').window_days, 1)
+        self.assertEqual(_fallback_intent('How many jobs in 24h?').window_days, 0)
 
     def test_first_page_is_ten_verified_rows_and_no_fluff(self):
         reply = self.engine.handle(
@@ -137,6 +170,23 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertIn('11. Machine Learning Engineer', reply)
         self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 10)
 
+    def test_new_arrivals_do_not_duplicate_paginated_jobs(self):
+        first = self.engine.handle('AI jobs Bangalore for freshers', '42')
+        self.api.jobs.insert(0, make_job(99))
+        second = self.engine.handle('more', '42')
+        first_links = {line for line in first.splitlines() if line.startswith('https://')}
+        second_links = {line for line in second.splitlines() if line.startswith('https://')}
+        self.assertFalse(first_links & second_links)
+
+    def test_failed_more_does_not_advance_pagination(self):
+        self.engine.handle('AI jobs Bangalore for freshers', '42')
+        before = self.sessions.load_search('42')
+        self.api.fail_jobs = True
+        with self.assertRaises(OSError):
+            self.engine.handle('more', '42')
+        after = self.sessions.load_search('42')
+        self.assertEqual(before, after)
+
     def test_new_clears_pagination_without_hermes_metadata(self):
         self.engine.handle('AI jobs Bangalore', '42')
         reply = self.engine.handle('/new', '42')
@@ -166,8 +216,9 @@ class TelegramJobSearchTests(unittest.TestCase):
             {'title': 'AI Engineer', 'company': 'No Link'},
             make_job(2, title='Java Engineer'),
             make_job(3, title='AI Engineer'),
+            {**make_job(4, title='AI Engineer'), 'experience_band': '3-5 years'},
         ]
-        reply = self.engine.handle('AI jobs Bangalore', '42')
+        reply = self.engine.handle('AI jobs Bangalore for freshers', '42')
         self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 1)
         self.assertIn('AI Engineer — Company 3', reply)
         self.assertNotIn('No Link', reply)
@@ -186,6 +237,7 @@ class TelegramJobSearchTests(unittest.TestCase):
             'Bengaluru — 120 matching jobs in the past 7 days\n'
             'Source — live Watch Tower',
         )
+        self.assertEqual(self.api.calls[-1][1]['title_terms'], '')
 
     def test_role_and_fresher_scope_are_preserved_for_numbers(self):
         self.engine.handle('How many AI fresher jobs are in Bangalore?', '42')
