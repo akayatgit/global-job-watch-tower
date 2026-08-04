@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useVigilStore } from '../store/vigilStore'
@@ -9,11 +9,36 @@ import { useVigilStore } from '../store/vigilStore'
  */
 const COUNT = 16000
 
+/**
+ * Orb dot-color palette, keyed by build version (scripts/bump_version.sh).
+ * Each entry is [outerEmber, hotCore] in linear 0–1 RGB — every push cycles
+ * to the next hue so a new deploy is visible on the orb at a glance, no
+ * logs needed. Stays in the VIGIL warm/neon family, not a full rainbow.
+ */
+const VERSION_PALETTE: [[number, number, number], [number, number, number]][] = [
+  [[1.0, 0.28, 0.02], [1.0, 0.62, 0.12]], // ember (v0 default)
+  [[0.0, 0.5, 0.62], [0.15, 0.85, 0.92]], // cyan
+  [[0.5, 0.05, 0.72], [0.82, 0.28, 1.0]], // violet
+  [[0.72, 0.02, 0.08], [1.0, 0.22, 0.26]], // crimson
+  [[0.82, 0.55, 0.0], [1.0, 0.85, 0.28]], // gold
+  [[0.0, 0.5, 0.24], [0.28, 0.95, 0.55]], // emerald
+  [[0.03, 0.24, 0.82], [0.4, 0.58, 1.0]], // electric blue
+  [[0.82, 0.05, 0.34], [1.0, 0.38, 0.64]], // rose
+]
+
+function paletteForVersion(version: number): [[number, number, number], [number, number, number]] {
+  const n = VERSION_PALETTE.length
+  const idx = ((version % n) + n) % n
+  return VERSION_PALETTE[idx]
+}
+
 const vertexShader = /* glsl */ `
 uniform float uTime;
 uniform float uBurst;
 uniform float uScale;
 uniform float uCamDist;
+uniform vec3 uColorOuter;
+uniform vec3 uColorHot;
 attribute float aIndex;
 varying vec3 vColor;
 varying float vAlpha;
@@ -38,8 +63,8 @@ void main() {
   float kick = 1.0 + uBurst * (1.0 - t) * 0.35;
   vec3 pos = vec3(px, py, pz) * kick;
 
-  vColor = mix(vec3(1.0, 0.28, 0.02), vec3(1.0, 0.62, 0.12), t);
-  vColor = mix(vColor, vec3(1.0, 0.85, 0.45), pow(1.0 - t, 6.0) * 0.28);
+  vColor = mix(uColorOuter, uColorHot, t);
+  vColor = mix(vColor, vec3(1.0), pow(1.0 - t, 6.0) * 0.28);
 
   // Inside the orb: thin the fog so structure stays readable
   float inside = smoothstep(3.2, 0.6, uCamDist);
@@ -77,6 +102,7 @@ export function EnergyCore() {
   const sceneMode = useVigilStore((s) => s.sceneMode)
   const graphFocusId = useVigilStore((s) => s.graphFocusId)
   const sceneSpin = useVigilStore((s) => s.sceneSpin)
+  const version = useVigilStore((s) => s.vitals?.version ?? 0)
   const spinY = useRef(0)
   const lastT = useRef(0)
 
@@ -87,15 +113,26 @@ export function EnergyCore() {
     return { positions, aIndex }
   }, [])
 
-  const uniforms = useMemo(
-    () => ({
+  const uniforms = useMemo(() => {
+    const [outer, hot] = paletteForVersion(version)
+    return {
       uTime: { value: 0 },
       uBurst: { value: 0 },
       uScale: { value: 1 },
       uCamDist: { value: 8 },
-    }),
-    [],
-  )
+      uColorOuter: { value: new THREE.Vector3(...outer) },
+      uColorHot: { value: new THREE.Vector3(...hot) },
+    }
+    // Palette only seeds the initial value here; live updates happen below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!mat.current) return
+    const [outer, hot] = paletteForVersion(version)
+    mat.current.uniforms.uColorOuter.value.set(...outer)
+    mat.current.uniforms.uColorHot.value.set(...hot)
+  }, [version])
 
   useFrame((state) => {
     if (!mat.current) return

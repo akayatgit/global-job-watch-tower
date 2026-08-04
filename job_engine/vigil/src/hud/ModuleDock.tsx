@@ -117,6 +117,11 @@ export function ModuleDock() {
       >
         {countdownText}
       </div>
+      {vitals?.version != null ? (
+        <div className="rail-version" title={`Build v${vitals.version}`}>
+          v{vitals.version}
+        </div>
+      ) : null}
     </aside>
   )
 }
