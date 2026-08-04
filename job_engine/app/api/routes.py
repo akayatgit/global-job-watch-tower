@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ConfigIn, ConfigOut, JobOut, RunOut, RunRequest
@@ -124,6 +125,9 @@ def list_jobs(
     sector: str | None = None,
     city: str | None = None,
     experience: str | None = None,
+    track: str | None = None,
+    role_family: str | None = None,
+    title_terms: str | None = None,
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
@@ -133,15 +137,24 @@ def list_jobs(
 ):
     from app.cities import normalize_city_filter
     from app.experience_bands import experience_clause, normalize_experience
+    from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
 
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
     experience = normalize_experience(experience)
+    track = (track or '').strip().lower() or None
+    if track not in (None, 'fresher', 'signal'):
+        track = None
+    role_family = role_family if role_family in ROLE_FAMILY_REGEX else None
+    terms = [
+        token for token in re.findall(r'[a-z0-9+#.-]+', (title_terms or '').lower())
+        if len(token) >= 2
+    ][:5]
     query = (
         select(JobMaster, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
-        .order_by(desc(JobMaster.scraped_at))
+        .order_by(desc(JobMaster.scraped_at), desc(JobMaster.id))
         .limit(limit)
         .offset(offset)
     )
@@ -152,6 +165,16 @@ def list_jobs(
     exp = experience_clause(experience)
     if exp is not None:
         query = query.where(exp)
+    if track:
+        query = query.where(JobMaster.source_track == track)
+        if track == 'fresher' and exp is None:
+            fresher_exp = experience_clause('fresher')
+            query = query.where(or_(JobMaster.experience_band.is_(None), fresher_exp))
+    if role_family:
+        pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
+        query = query.where(JobMaster.title.op('~*')(pattern))
+    if terms:
+        query = query.where(or_(*[JobMaster.title.ilike(f'%{term}%') for term in terms]))
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -176,11 +199,128 @@ def list_jobs(
             city_key=job.city_key,
             sector=job.sector,
             experience_band=job.experience_band,
+            source_track=job.source_track,
             job_url=job.job_url,
             posted_date=job.posted_date,
             scraped_at=job.scraped_at,
         ))
     return out
+
+
+@router.get('/jobs/insights')
+def job_insights(
+    days: int = 7,
+    city: str | None = None,
+    experience: str | None = None,
+    track: str | None = None,
+    role_family: str | None = None,
+    title_terms: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Grounded count/ranking primitive for JobMaster market questions."""
+    from app.cities import city_label, normalize_city_filter
+    from app.experience_bands import experience_clause, normalize_experience
+    from app.job_role_families import ROLE_FAMILY_REGEX
+
+    days = days if days in (0, 1, 2, 4, 7, 14, 30) else 7
+    city = normalize_city_filter(city)
+    experience = normalize_experience(experience)
+    track = (track or '').strip().lower() or None
+    if track not in (None, 'fresher', 'signal'):
+        track = None
+    role_family = role_family if role_family in ROLE_FAMILY_REGEX else None
+    terms = [
+        token for token in re.findall(r'[a-z0-9+#.-]+', (title_terms or '').lower())
+        if len(token) >= 2
+    ][:5]
+
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    if days == 0:
+        time_col = JobMaster.scraped_at
+        recent_start = now - timedelta(hours=24)
+        recent_end = now
+        prior_start = recent_start - timedelta(days=1)
+        prior_end = recent_start
+    else:
+        time_col = JobMaster.posted_date
+        recent_start = today - timedelta(days=days - 1)
+        recent_end = today + timedelta(days=1)
+        prior_start = recent_start - timedelta(days=days)
+        prior_end = recent_start
+
+    filters = []
+    if city:
+        filters.append(JobMaster.city_key == city)
+    exp = experience_clause(experience)
+    if exp is not None:
+        filters.append(exp)
+    if track:
+        filters.append(JobMaster.source_track == track)
+        if track == 'fresher' and exp is None:
+            fresher_exp = experience_clause('fresher')
+            filters.append(or_(JobMaster.experience_band.is_(None), fresher_exp))
+    if role_family:
+        pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
+        filters.append(JobMaster.title.op('~*')(pattern))
+    if terms:
+        filters.append(or_(*[JobMaster.title.ilike(f'%{term}%') for term in terms]))
+
+    def with_filters(query, start, end):
+        return query.where(time_col >= start, time_col < end, *filters)
+
+    total_query = (
+        select(func.count(JobMaster.id))
+        .outerjoin(SearchConfig, JobMaster.search_config_id == SearchConfig.id)
+    )
+    total = int(db.execute(with_filters(total_query, recent_start, recent_end)).scalar() or 0)
+    prior = int(db.execute(with_filters(total_query, prior_start, prior_end)).scalar() or 0)
+
+    companies_query = (
+        select(Company.name, func.count(JobMaster.id).label('n'))
+        .join(JobMaster, JobMaster.company_id == Company.id)
+        .outerjoin(SearchConfig, JobMaster.search_config_id == SearchConfig.id)
+        .group_by(Company.id, Company.name)
+        .order_by(desc('n'))
+        .limit(10)
+    )
+    companies = db.execute(
+        with_filters(companies_query, recent_start, recent_end)
+    ).all()
+
+    cities_query = (
+        select(JobMaster.city_key, func.count(JobMaster.id).label('n'))
+        .outerjoin(SearchConfig, JobMaster.search_config_id == SearchConfig.id)
+        .where(JobMaster.city_key.is_not(None))
+        .group_by(JobMaster.city_key)
+        .order_by(desc('n'))
+        .limit(20)
+    )
+    cities = db.execute(with_filters(cities_query, recent_start, recent_end)).all()
+    roles_query = (
+        select(SearchConfig.name, func.count(JobMaster.id).label('n'))
+        .join(JobMaster, JobMaster.search_config_id == SearchConfig.id)
+        .group_by(SearchConfig.id, SearchConfig.name)
+        .order_by(desc('n'))
+        .limit(10)
+    )
+    roles = db.execute(with_filters(roles_query, recent_start, recent_end)).all()
+    return {
+        'days': days,
+        'city': city or '',
+        'role_family': role_family or '',
+        'experience': experience or '',
+        'track': track or '',
+        'total': total,
+        'prior_total': prior,
+        'delta': total - prior,
+        'companies': [{'name': name, 'n': int(n or 0)} for name, n in companies],
+        'cities': [
+            {'city': key, 'label': city_label(key), 'n': int(n or 0)}
+            for key, n in cities
+        ],
+        'roles': [{'name': name, 'n': int(n or 0)} for name, n in roles],
+    }
 
 
 # ---------- console ----------

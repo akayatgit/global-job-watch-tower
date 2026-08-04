@@ -61,6 +61,21 @@ old `title="fresh"` bug.
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
+**NOT DONE — Ashok rejected closure (2026-08-04, 20:32 UTC):** merged code
+and passing tests do not prove this incident is solved live. Keep this card
+In Progress until Ashok verifies the guest experience end-to-end and explicitly
+accepts it. Next action: capture the exact current guest-facing failure, reproduce
+that path, and fix the real behavior — do not infer closure from PR history.
+
+**Gate 3.0 recovery (2026-08-04, 21:10 UTC):** RCA proved Supriya's malformed
+AI/fresher reply and `/new` model banner came from Hermes' built-in Qwen agent;
+the deployed interception hook was no longer in the message path. Recovery PR
+replaces Hermes Telegram ingress with one dedicated JobMaster service. Every
+user gets the same focused capability #1: natural-language intent understanding,
+verified LinkedIn jobs, grounded market numbers/comparisons, `Thinking…`, 10
+rows, `more`, and a clean `/new`. Mock contract suite is green. This card remains
+open until the production result reaches Supriya and Ashok explicitly accepts it.
+
 **Status (2026-08-04, evening):** Manual ThinkPad step ELIMINATED — deploy
 now owns the Hermes gateway. Live failure that proved it: Ashok's wife
 (`@Supriyamk`) sent "hi" and got silence even after `/allow`, because (a) the

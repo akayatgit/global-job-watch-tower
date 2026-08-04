@@ -124,6 +124,9 @@ class JobMaster(Base):
     requirements_enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True,
     )
+    # Immutable provenance captured when this job was first stored. Search
+    # definitions may change track later; historical fresher scope must not.
+    source_track: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     search_config_id: Mapped[int | None] = mapped_column(ForeignKey('search_configs.id'), nullable=True)
     scrape_run_id: Mapped[int | None] = mapped_column(ForeignKey('scrape_runs.id'), nullable=True)
 

@@ -5,9 +5,14 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: watch-tower-thinkpad-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: [self-hosted, watch-tower]
+    timeout-minutes: 30
     steps:
       # This step's commands come from the commit that triggered this run
       # (GitHub evaluates workflow YAML server-side), so it runs even when
@@ -21,9 +26,18 @@ jobs:
           cd /home/user/Documents
           git checkout -- documents/briefs 2>/dev/null || true
       - name: Deploy Watch Tower
-        run: bash /home/user/Documents/scripts/deploy_local.sh
-      # Redacted Hermes/Telegram state so remote debugging never needs a
-      # terminal on the ThinkPad (guest-access incident 2026-08-04).
-      - name: Hermes diagnostics (redacted)
+        run: |
+          cd /home/user/Documents
+          git fetch origin main
+          git show "${GITHUB_SHA}:scripts/deploy_local.sh" > /tmp/watch-tower-deploy.sh
+          chmod 700 /tmp/watch-tower-deploy.sh
+          WATCH_TOWER_ROOT=/home/user/Documents bash /tmp/watch-tower-deploy.sh
+      # Redacted JobMaster/legacy-Hermes state so remote Telegram debugging
+      # never needs a terminal on the ThinkPad.
+      - name: JobMaster Telegram diagnostics (redacted)
         if: always()
-        run: bash /home/user/Documents/scripts/hermes_diagnostics.sh
+        run: |
+          cd /home/user/Documents
+          git show "${GITHUB_SHA}:scripts/hermes_diagnostics.sh" > /tmp/watch-tower-diagnostics.sh
+          chmod 700 /tmp/watch-tower-diagnostics.sh
+          bash /tmp/watch-tower-diagnostics.sh
