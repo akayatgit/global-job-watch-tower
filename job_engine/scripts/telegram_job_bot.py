@@ -96,10 +96,12 @@ class JobMasterTelegramBot:
         *,
         engine: JobMasterEngine | None = None,
         sessions: TelegramSessionStore | None = None,
+        health_enabled: bool = True,
     ):
         self.api = api
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
+        self.health_enabled = health_enabled
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
         self._chat_locks_guard = threading.Lock()
@@ -111,6 +113,14 @@ class JobMasterTelegramBot:
             lock = self._chat_locks.setdefault(str(chat_id), threading.Lock())
         with lock:
             self._process_locked(str(chat_id), text)
+
+    def _safe_process(self, chat_id: str, text: str) -> None:
+        try:
+            self.process(chat_id, text)
+        except Exception as exc:
+            LOG.exception('Telegram delivery failed chat=%s', chat_id)
+            if self.health_enabled:
+                self._write_health(status='degraded', error=str(exc)[:200])
 
     def _process_locked(self, chat_id: str, text: str) -> None:
         clean = (text or '').strip()
@@ -141,15 +151,16 @@ class JobMasterTelegramBot:
             self._page_count += 1
         else:
             self._query_count += 1
-        self._write_health(
-            status='running',
-            last_result='ok',
-            last_chat=chat_id,
-            last_kind='more' if MORE_RE.match(clean) else 'message',
-            last_text=clean[:120],
-            query_count=self._query_count,
-            page_count=self._page_count,
-        )
+        if self.health_enabled:
+            self._write_health(
+                status='running',
+                last_result='ok',
+                last_chat=chat_id,
+                last_kind='more' if MORE_RE.match(clean) else 'message',
+                last_text=clean[:120],
+                query_count=self._query_count,
+                page_count=self._page_count,
+            )
 
     def run(self) -> int:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
@@ -182,7 +193,7 @@ class JobMasterTelegramBot:
                             continue
                         text = message.get('text')
                         if isinstance(text, str):
-                            workers.submit(self.process, str(chat['id']), text)
+                            workers.submit(self._safe_process, str(chat['id']), text)
                 except urllib.error.HTTPError as exc:
                     body = exc.read().decode(errors='replace')
                     if exc.code == 409:
@@ -237,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     env = load_env()
     api = TelegramAPI(env.get('TELEGRAM_BOT_TOKEN', ''))
-    bot = JobMasterTelegramBot(api)
+    bot = JobMasterTelegramBot(api, health_enabled=args.command != 'smoke')
     if args.command == 'smoke':
         if not args.chat:
             parser.error('smoke requires --chat')

@@ -27,6 +27,11 @@ class FakeEngine:
         return '1. AI Engineer — Acme — Fresher\nhttps://www.linkedin.com/jobs/view/4448000001/'
 
 
+class FailingTelegramAPI(FakeTelegramAPI):
+    def send(self, chat_id: str, text: str) -> None:
+        raise OSError('Telegram unavailable')
+
+
 class TelegramBotContractTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -37,6 +42,7 @@ class TelegramBotContractTests(unittest.TestCase):
             self.api,
             engine=self.engine,
             sessions=self.sessions,
+            health_enabled=False,
         )
 
     def tearDown(self):
@@ -72,6 +78,17 @@ class TelegramBotContractTests(unittest.TestCase):
             'JobMaster provides verified jobs and live job-market insights. '
             'Ask naturally in any sentence.',
         )
+
+    def test_telegram_failure_is_contained_by_worker_boundary(self):
+        bot = JobMasterTelegramBot(
+            FailingTelegramAPI(),
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+        )
+        with self.assertLogs('jobmaster-telegram', level='ERROR'):
+            bot._safe_process('42', 'AI jobs Bangalore')
+        self.assertEqual(self.engine.calls, [])
 
 
 if __name__ == '__main__':

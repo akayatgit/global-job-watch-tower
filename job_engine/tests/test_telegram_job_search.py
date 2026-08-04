@@ -110,6 +110,17 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertEqual(len(second_links), 10)
         self.assertFalse(first_links & second_links)
 
+    def test_pagination_survives_process_restart(self):
+        self.engine.handle('AI jobs Bangalore for freshers', '42')
+        restarted = JobMasterEngine(
+            api_get=self.api,
+            interpreter=IntentInterpreter(enabled=False),
+            sessions=TelegramSessionStore(self.sessions.path),
+        )
+        reply = restarted.handle('more', '42')
+        self.assertIn('11. Machine Learning Engineer', reply)
+        self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 10)
+
     def test_new_clears_pagination_without_hermes_metadata(self):
         self.engine.handle('AI jobs Bangalore', '42')
         reply = self.engine.handle('/new', '42')
