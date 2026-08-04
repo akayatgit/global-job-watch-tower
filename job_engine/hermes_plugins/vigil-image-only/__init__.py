@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -225,6 +226,23 @@ def _handle_guest_command(text: str, chat: str):
             _reply(chat, f"Usage: /allow <telegram_id> [minutes={int(DEFAULT_TTL_MINUTES)}] [label]")
             return {"action": "skip", "reason": "allow-usage"}
         guest_id = parts[1]
+        # Muscle-memory guard (2026-08-04 incident): Ashok typed
+        # "/allow supriyamk" expecting a numeric-id grant to also accept a
+        # handle. add_guest() then tried to Telegram-send to chat_id
+        # "supriyamk" and got a silent HTTP 400 — no error surfaced to him,
+        # no access granted. A bare @handle or non-numeric token here almost
+        # certainly means "/allowuser" was meant — redirect instead of
+        # failing quietly.
+        if not re.fullmatch(r"-?\d+", guest_id.lstrip("@")):
+            handle = guest_id.lstrip("@")
+            add_username(handle, added_by=chat)
+            _reply(
+                chat,
+                f"'{guest_id}' isn't a numeric Telegram id, so I treated it as a "
+                f"username instead — allowed @{handle} permanently. Use "
+                f"/allow <numeric_id> for a temporary time-boxed grant.",
+            )
+            return {"action": "skip", "reason": "allow-redirected-username"}
         minutes = DEFAULT_TTL_MINUTES
         label_start = 2
         if len(parts) >= 3:
