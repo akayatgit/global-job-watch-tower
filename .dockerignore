@@ -1,0 +1,16 @@
+# Keep the image build context lean (context = repo root).
+.git
+.github
+.cursor
+documents
+terminals
+**/node_modules
+**/.data
+**/dist
+**/__pycache__
+**/*.pyc
+job_engine/vigil/dist
+backups
+*.tar.gz
+.env
+**/.env

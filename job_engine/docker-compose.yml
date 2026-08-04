@@ -1,6 +1,12 @@
-# Watch Tower v0 backup stack (API + Postgres + Redis).
-# Browser scrape still prefers the host Chrome profile; this compose
-# preserves Akay's application brain and data services as images/volumes.
+# Watch Tower plug-and-play stack (Gate 1.1): VIGIL + API + Postgres +
+# Redis + Celery worker/beat, one command:
+#
+#   docker compose -f job_engine/docker-compose.yml up --build
+#   → VIGIL at http://localhost:8002
+#
+# Host-only by design (see documents/docker-plug-and-play.md): Chrome
+# scrape profile, Ollama relevance (container defaults to keyword mode),
+# ~/.hermes Telegram gateway.
 services:
   db:
     image: postgres:16-alpine
@@ -22,22 +28,65 @@ services:
     image: redis:7-alpine
     ports:
       - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  api:
-    image: watch-tower:v0
-    build: .
-    environment:
+  migrate:
+    image: watch-tower:v1
+    build: &wt_build
+      context: ..
+      dockerfile: job_engine/Dockerfile
+    command: alembic upgrade head
+    environment: &wt_env
       DATABASE_URL: postgresql+psycopg2://jobengine:jobengine@db:5432/jobengine
       REDIS_URL: redis://redis:6379/0
       HEADLESS: "true"
       RELEVANCE_MODE: keyword
-    ports:
-      - "8002:8001"
     depends_on:
       db:
         condition: service_healthy
+
+  api:
+    image: watch-tower:v1
+    build: *wt_build
+    environment: *wt_env
+    ports:
+      - "8002:8001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/api/deploy/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    image: watch-tower:v1
+    build: *wt_build
+    command: celery -A app.celery_app worker -c 1 --loglevel=INFO
+    environment: *wt_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  beat:
+    image: watch-tower:v1
+    build: *wt_build
+    command: celery -A app.celery_app beat --loglevel=INFO
+    environment: *wt_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
 volumes:
   wt_pgdata:
