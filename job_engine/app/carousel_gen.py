@@ -1,4 +1,8 @@
-"""TECH JOB MARKET MOVEMENT — carousel (Grok Imagine graphic posters, no Pillow cards)."""
+"""TECH JOB MARKET MOVEMENT — carousel.
+
+Nano Banana graphic posters with rotating per-run art direction
+(prompt_dictionary.CAROUSEL_THEMES) — real tower numbers, fresh look every run.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +17,28 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app import config
-from app.prompt_dictionary import graphic_carousel_prompt
+from app.prompt_dictionary import graphic_carousel_prompt, pick_carousel_theme
 
 BASE = 'http://127.0.0.1:8001'
 TZ = ZoneInfo('Asia/Kolkata')
 TMP_ROOT = config.BASE_DIR / '.data' / 'carousel_tmp'
+SEED_FILE = config.BASE_DIR / '.data' / 'carousel_theme_seed.txt'
+
+
+def next_run_seed() -> int:
+    """Increment-per-run counter so each carousel gets the NEXT theme —
+    guaranteed different from the previous album (Ashok 2026-08-04:
+    the old carousel "creates the same" every time)."""
+    try:
+        seed = int(SEED_FILE.read_text(encoding='utf-8').strip()) + 1
+    except Exception:
+        seed = 0
+    try:
+        SEED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SEED_FILE.write_text(str(seed), encoding='utf-8')
+    except Exception:
+        pass
+    return seed
 
 
 @dataclass
@@ -75,7 +96,7 @@ def fetch_facts() -> dict:
     }
 
 
-def build_slides(facts: dict) -> list[Slide]:
+def build_slides(facts: dict, theme: dict | None = None) -> list[Slide]:
     today = facts['jobs_today']
     total = facts['total_jobs']
     rise = facts['rise_name']
@@ -104,7 +125,7 @@ def build_slides(facts: dict) -> list[Slide]:
             sub=s,
             stat=st,
             bg_prompt=graphic_carousel_prompt(
-                slide_key=k, headline=h, sub=s, stat=st,
+                slide_key=k, headline=h, sub=s, stat=st, theme=theme,
             ),
         )
         for k, h, s, st in specs
@@ -198,7 +219,13 @@ def fetch_topic_jobs(role: str | None, city: str | None, *, limit: int = 40) -> 
     return data
 
 
-def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: datetime) -> tuple[list[Slide], str]:
+def build_topic_slides(
+    role: str,
+    city_label: str,
+    jobs: list[dict],
+    now: datetime,
+    theme: dict | None = None,
+) -> tuple[list[Slide], str]:
     date_s = now.strftime('%d %b %Y')
     counts: dict[str, int] = {}
     for j in jobs:
@@ -229,7 +256,7 @@ def build_topic_slides(role: str, city_label: str, jobs: list[dict], now: dateti
             sub=s,
             stat=st,
             bg_prompt=graphic_carousel_prompt(
-                slide_key=k, headline=h, sub=s, stat=st, role_hint=role,
+                slide_key=k, headline=h, sub=s, stat=st, role_hint=role, theme=theme,
             ),
         )
         for k, h, s, st in raw
@@ -255,6 +282,7 @@ def generate_carousel(
     from app.replicate_img import generate_image
 
     now = datetime.now(TZ)
+    theme = pick_carousel_theme(next_run_seed())
     topic = parse_topic(topic_msg or '') if topic_msg else {}
     if topic.get('role'):
         jobs = fetch_topic_jobs(topic.get('role'), topic.get('city'))
@@ -263,10 +291,11 @@ def generate_carousel(
             topic.get('city_label') or '',
             jobs,
             now,
+            theme=theme,
         )
     else:
         facts = fetch_facts()
-        slides = build_slides(facts)
+        slides = build_slides(facts, theme=theme)
         caption = build_caption(facts)
 
     run_dir = TMP_ROOT / datetime.now(TZ).strftime('%Y%m%d-%H%M%S')

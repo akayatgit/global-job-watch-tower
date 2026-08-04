@@ -117,6 +117,123 @@ def fallback_graphic_prompt(*, punchline: str, fact_line: str, mood: str = 'rese
     return assert_visual_prompt(prompt)
 
 
+# ---------------------------------------------------------------------------
+# Carousel art direction (Ashok 2026-08-04: "the current carousel is shitty,
+# it is sticking to one prompt, and creates the same") — one theme per RUN
+# (coherent album), rotating across runs so no two carousels look alike, and
+# a distinct layout per SLIDE ROLE so the set reads like a designed series,
+# not six renders of the same template. Facts stay verbatim tower numbers.
+# ---------------------------------------------------------------------------
+
+CAROUSEL_THEMES: tuple[dict, ...] = (
+    {
+        'name': 'midnight editorial',
+        'canvas': 'near-black graphite background with a barely visible fine dot grid',
+        'ink': 'warm off-white typography',
+        'accent': 'one electric cyan accent only',
+        'type': 'huge modern editorial serif display for hero numbers and words, small clean sans-serif for crumbs',
+        'finish': 'matte print finish, hairline rules separating zones, museum-poster restraint',
+    },
+    {
+        'name': 'swiss paper minimal',
+        'canvas': 'warm paper off-white background, flat, no texture noise',
+        'ink': 'pure ink-black typography',
+        'accent': 'a single vermilion red-orange accent bar or dot',
+        'type': 'massive tight grotesque sans-serif, strict swiss grid alignment, dramatic size contrast between hero and crumb',
+        'finish': 'clean international-typographic-style poster, huge negative space, zero decoration beyond the grid',
+    },
+    {
+        'name': 'terminal pulse',
+        'canvas': 'very dark green-black console background with a faint scanline sheen',
+        'ink': 'phosphor green data marks and typography',
+        'accent': 'one amber warning-light accent',
+        'type': 'bold monospaced terminal typography, numbers oversized like a trading screen',
+        'finish': 'crisp glowing edges on type only, everything else flat and dark, ops-room energy',
+    },
+    {
+        'name': 'dusk gradient signal',
+        'canvas': 'smooth deep-violet to ember-orange vertical gradient background',
+        'ink': 'white typography with soft glow only on the hero number',
+        'accent': 'thin glowing signal line arcing across the composition',
+        'type': 'rounded geometric sans-serif, hero number enormous and centered',
+        'finish': 'premium fintech-app hero-screen feel, soft depth, no cards or panels',
+    },
+    {
+        'name': 'brutalist poster',
+        'canvas': 'single solid electric cobalt-blue background, completely flat',
+        'ink': 'gigantic white typography bleeding slightly off the frame edges',
+        'accent': 'one black underline slab',
+        'type': 'ultra-heavy condensed sans-serif, hero word or number fills half the frame',
+        'finish': 'loud modern brutalist gallery poster, confident, zero gradients, zero icons',
+    },
+    {
+        'name': 'ink and gold',
+        'canvas': 'deep charcoal background with a whisper of dark marble texture',
+        'ink': 'champagne-gold typography and thin gold rules',
+        'accent': 'one small warm-white highlight on the key number',
+        'type': 'elegant high-contrast serif for heroes, letter-spaced small caps for crumbs',
+        'finish': 'luxury annual-report cover feel, precise, quiet, expensive',
+    },
+)
+
+# Slide-role layouts — concrete compositions, not "invent a metaphor"
+_CAROUSEL_LAYOUTS: dict[str, str] = {
+    'hook': (
+        'Cover slide. The hero question fills the top two-thirds in enormous type, '
+        'stacked in two or three ragged lines with strong hierarchy. The series name '
+        'sits small at the very bottom edge like a publication footer. No imagery '
+        'besides typography and the single accent element.'
+    ),
+    'big-number': (
+        'Stat hero slide. One enormous numeral dominates dead center at roughly half '
+        'the frame height, with the label in small type directly above it and the '
+        'secondary count in small type below. The accent element points at or '
+        'underlines the number.'
+    ),
+    'ranked-list': (
+        'Ranked list slide. A clean left-aligned column of five short rows, each row '
+        'exactly one name and one number, separated by hairline rules, biggest value '
+        'on top with its row rendered slightly larger and in the accent treatment. '
+        'Title in small caps at the top. Numbers right-aligned in a tidy column.'
+    ),
+    'rising': (
+        'Momentum slide. One steep clean ascending line or arrow travels from the '
+        'bottom-left toward the top-right of the frame in the accent treatment; '
+        'the role name sits at the line\'s peak in large type with the +delta '
+        'number attached to it like a badge. Small label at the bottom-left origin.'
+    ),
+    'stat-chips': (
+        'Snapshot slide. Two or three short stat pairs arranged as an airy vertical '
+        'stack — each pair is a small label over a large number — separated by '
+        'generous whitespace, all left-aligned on the grid. No boxes around them.'
+    ),
+    'cta': (
+        'Closing slide. The sign-off phrase large in the upper third, the brand line '
+        'small and centered near the bottom, and the single accent element between '
+        'them acting as a full stop. Calmest slide of the set.'
+    ),
+}
+
+# Map every known slide key to a layout role
+_SLIDE_LAYOUT_BY_KEY: dict[str, str] = {
+    'hook': 'hook',
+    'topic-hook': 'hook',
+    'pulse': 'big-number',
+    'date': 'stat-chips',
+    'rising': 'rising',
+    'hirer': 'big-number',
+    'companies': 'ranked-list',
+    'more': 'ranked-list',
+    'fresher': 'stat-chips',
+    'cta': 'cta',
+}
+
+
+def pick_carousel_theme(run_seed: int) -> dict:
+    """Stable within one run, rotates across runs — no two albums alike."""
+    return CAROUSEL_THEMES[run_seed % len(CAROUSEL_THEMES)]
+
+
 def graphic_carousel_prompt(
     *,
     slide_key: str,
@@ -124,20 +241,32 @@ def graphic_carousel_prompt(
     sub: str,
     stat: str,
     role_hint: str = '',
+    theme: dict | None = None,
+    run_seed: int = 0,
 ) -> str:
+    theme = theme or pick_carousel_theme(run_seed)
+    layout = _CAROUSEL_LAYOUTS.get(_SLIDE_LAYOUT_BY_KEY.get(slide_key, 'big-number'))
+
     h = ' · '.join(x.strip() for x in headline.replace('\n', ' · ').split('·') if x.strip())[:100]
     s = sub.replace('\n', ' · ').strip()[:80]
-    st = stat.replace('\n', ' · ').strip()[:100]
-    role_bit = f' Role focus cue in the metaphor only: {role_hint}.' if role_hint else ''
+    st = stat.replace('\n', ' · ').strip()[:120]
+    role_bit = f' Subtle nod to the role "{role_hint}" in the accent element only.' if role_hint else ''
+
     prompt = (
-        f'Hyper-clean 2D vector illustration, vertical 3:4 social frame, slide feel "{slide_key}".'
-        f'{role_bit} Invent a unique data metaphor (signal, gauge, path, cluster marks) — '
-        f'not a PowerPoint slide, not a campaign poster. High contrast, lively asymmetric '
-        f'composition, generous negative space, sharp edges, no frosted cards, no atrium stock, '
-        f'no India hologram. Draw typography into the art: hero "{h}"; crumb "{s}"; '
-        f'fact "{st}". Tiny punchy words only. Studio-clean lighting, phone-readable, '
-        f'one geometric accent, premium illustration finish. Expand with concrete color, '
-        f'lighting, depth, and placement detail so the prompt stays richly visual and long '
-        f'enough for a strong Grok Imagine render without any policy-essay language.'
+        f'Modern minimal social-media graphic, vertical 3:4 frame, "{theme["name"]}" art direction. '
+        f'{theme["canvas"].capitalize()}. {theme["ink"].capitalize()}. {theme["accent"].capitalize()}. '
+        f'Typography: {theme["type"]}. Finish: {theme["finish"]}. '
+        f'{layout}{role_bit} '
+        f'Render this exact text into the artwork, spelled precisely, nothing more: '
+        f'hero text "{h}"; supporting line "{s}"; data text "{st}". '
+        f'Every number must appear exactly as written — never invent, round, or add figures. '
+        f'The typography IS the design: obsessive kerning, strong alignment, dramatic size '
+        f'hierarchy, phone-readable at thumbnail size. Flat 2D graphic design, no photos, '
+        f'no 3D renders, no stock illustrations of people or laptops, no frosted glass cards, '
+        f'no fake UI chrome, no watermarks, no extra decorative icons, no additional words. '
+        f'Consistent margins as if part of a designed six-slide series from one design system. '
+        f'Composition breathes: at least a third of the frame stays empty. '
+        f'The result should look like a page from a premium data-driven zine that a design '
+        f'studio would post — confident, quiet, exact.'
     )
     return assert_visual_prompt(prompt)

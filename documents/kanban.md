@@ -22,6 +22,32 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 5. Public carousel — clean modern design with real tower data (Ashok 2026-08-04)
+
+**Status (2026-08-04):** Slice 1 shipped — rotating art-direction engine.
+Ashok: *"the current carousel is shitty, it is sticking to one prompt, and
+creates the same"* — prioritized ABOVE the Trendjack gig ("no time for
+gimmicks"). Root cause found: `graphic_carousel_prompt` was ONE hardcoded
+template reused for every slide of every run, leaving "invent a unique data
+metaphor" to the image model — which converged to the same picture forever.
+
+**Fix shipped (slice 1):** `job_engine/app/prompt_dictionary.py` now has
+`CAROUSEL_THEMES` — 6 complete art directions (midnight editorial · swiss
+paper minimal · terminal pulse · dusk gradient signal · brutalist poster ·
+ink and gold) — plus per-slide-role layout specs (hook / big-number /
+ranked-list / rising / stat-chips / cta). One theme per RUN (coherent album),
+counter file `.data/carousel_theme_seed.txt` guarantees the NEXT run uses a
+DIFFERENT theme. All numbers stay verbatim tower facts; prompt guardrails
+(min length, leak markers) still enforced. 36 theme×slide combos verified.
+
+**Next slices:**
+- Ashok is sending Pinterest inspiration URLs → tune/replace themes to match
+  his taste (themes are data, easy to swap).
+- Render a real album per theme on the ThinkPad (needs Replicate token) and
+  let Ashok pick keepers / kill weak themes.
+- Consider Pillow-composited exact-text layer if Nano Banana misspells
+  numbers on ranked-list slides (data authenticity rule).
+
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
 **Status (2026-08-04):** Code done, PR up for review. Extended same-day to
