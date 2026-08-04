@@ -132,25 +132,23 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 
 ### 4. Gate 1.1 — tower as a plug-and-play Docker image (Ashok 2026-08-04)
 
+**Status (2026-08-04): code done + verified on a blank cloud VM.** Full stack
+(`db → migrate → api/worker/beat`) booted from scratch, VIGIL served at
+`:8002`, migrations clean, worker ready, orb version visible in-container.
+See `documents/docker-plug-and-play.md`. Remaining nice-to-have: milestone
+image tagging convention in CI (documented, not automated).
+
 **Ask:** "setup as a docker image to just plug and play anywhere."
 
-**Today:** `job_engine/Dockerfile` + `job_engine/docker-compose.yml` already
-boot API + Postgres + Redis (`watch-tower:v0`, keyword mode, no Chrome/Ollama).
-That's a backup brain, not yet a full plug-and-play tower.
-
-**Slice to complete:**
-- Verify compose boots clean on a fresh machine (empty volume → migrations →
-  VIGIL loads at `:8002`).
-- Add Celery worker + beat services to compose (currently API only).
-- Document the one-command run + what's deliberately host-only (Chrome
-  scrape profile, Ollama, `~/.hermes`) in `documents/` (update existing
-  docs, no new near-duplicates).
-- Push image build into CI or a script so every milestone tag can produce a
-  `watch-tower:vN` image.
-
-**Acceptance:** `docker compose up` on a blank laptop serves VIGIL with a
-working DB and worker; README-level doc says exactly what works in-container
-vs. what needs the host.
+**What shipped:**
+- Multi-stage `job_engine/Dockerfile` (VIGIL vite build + Python app +
+  repo `VERSION`), root `.dockerignore`, build context = repo root.
+- Compose grew `migrate` (one-shot alembic), `worker`, `beat`, healthchecks,
+  enforced boot order.
+- scrapling fresh-install import crash patched at build (UA pin 149 → 141;
+  upstream data only ships ≤141 — see doc).
+- `documents/docker-plug-and-play.md` — one-command run, smoke checks,
+  what's deliberately host-only (Chrome profile, Ollama, `~/.hermes`).
 
 ### 3. General remote break-glass access to the ThinkPad
 
