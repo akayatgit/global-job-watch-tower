@@ -14,6 +14,17 @@ Zero external dependencies (stdlib only) so it stays importable from
 whatever Python environment the Hermes gateway happens to run under.
 
 Store: job_engine/.data/telegram_guests.json (gitignored, ThinkPad-local).
+
+**Username access (2026-08-04):** onboarding a guest by numeric id needs a
+detour through @userinfobot. When Ashok already knows someone's `@handle`
+(e.g. "allow telegram username @azr0099"), grant it directly — no id lookup
+needed. `DEFAULT_ALLOWED_USERNAMES` below is a code-reviewed, git-tracked
+permanent allowlist (never expires, ships on deploy — unlike numeric guests
+which live in the gitignored, ThinkPad-local JSON store). `/allowuser` /
+`/revokeuser` manage additional handles from Telegram without a code change,
+stored the same way as numeric guests. Matching is done against whatever
+username the incoming Telegram update carries for the sender — see
+`_sender_username()` in the plugin for the (best-effort, defensive) lookup.
 """
 
 from __future__ import annotations
@@ -28,6 +39,18 @@ HERMES_ENV = Path.home() / '.hermes' / '.env'
 
 DEFAULT_TTL_MINUTES = 60.0
 MAX_TTL_MINUTES = 60.0 * 24 * 14  # two weeks cap — a forgotten guest can't linger forever
+
+# Permanent, code-reviewed username allowlist — never expires, no ThinkPad
+# manual step, effective as soon as this deploys. Add a handle here when
+# Ashok says "allow telegram username @whoever"; usernames are matched
+# case-insensitively with or without the leading "@".
+DEFAULT_ALLOWED_USERNAMES = {
+    'azr0099',
+}
+
+
+def _norm_username(username) -> str:
+    return str(username or '').strip().lstrip('@').lower()
 
 
 def _load_hermes_env() -> dict:
@@ -57,14 +80,16 @@ def owner_ids() -> set:
 
 def _load() -> dict:
     if not GUESTS_FILE.is_file():
-        return {'guests': {}}
+        return {'guests': {}, 'usernames': {}}
     try:
         data = json.loads(GUESTS_FILE.read_text(encoding='utf-8'))
         if not isinstance(data.get('guests'), dict):
             data['guests'] = {}
+        if not isinstance(data.get('usernames'), dict):
+            data['usernames'] = {}
         return data
     except Exception:
-        return {'guests': {}}
+        return {'guests': {}, 'usernames': {}}
 
 
 def _save(data: dict) -> None:
@@ -83,16 +108,30 @@ def _prune(data: dict) -> bool:
     return bool(expired)
 
 
-def is_allowed(user_id) -> bool:
-    """True for the owner, or a guest whose grant hasn't expired yet."""
+def is_allowed(user_id, username=None) -> bool:
+    """True for the owner, a guest whose grant hasn't expired, or a sender
+    whose Telegram @username is on the allowlist (default or granted)."""
     user_id = str(user_id)
     if user_id in owner_ids():
+        return True
+    if username and is_username_allowed(username):
         return True
     data = _load()
     if _prune(data):
         _save(data)
     g = data['guests'].get(user_id)
     return bool(g) and g.get('expires_at', 0) > time.time()
+
+
+def is_username_allowed(username) -> bool:
+    """True for a hardcoded default handle or one granted via /allowuser."""
+    handle = _norm_username(username)
+    if not handle:
+        return False
+    if handle in DEFAULT_ALLOWED_USERNAMES:
+        return True
+    data = _load()
+    return handle in data['usernames']
 
 
 def add_guest(user_id, minutes: float = DEFAULT_TTL_MINUTES, label: str = '', added_by: str = '') -> dict:
@@ -124,6 +163,49 @@ def revoke_guest(user_id) -> bool:
     if existed:
         _save(data)
     return existed
+
+
+def add_username(username, added_by: str = '') -> dict:
+    """Grant permanent access to a Telegram @username (no expiry — matches
+    the code-reviewed defaults; use /revokeuser to undo)."""
+    handle = _norm_username(username)
+    data = _load()
+    entry = {'added_at': time.time(), 'added_by': str(added_by or '')}
+    data['usernames'][handle] = entry
+    _save(data)
+    return entry
+
+
+def revoke_username(username) -> bool:
+    """Remove a granted @username. Handles baked into DEFAULT_ALLOWED_USERNAMES
+    can't be revoked this way by design — that's a code change, not a runtime one."""
+    handle = _norm_username(username)
+    if handle in DEFAULT_ALLOWED_USERNAMES:
+        return False
+    data = _load()
+    existed = data['usernames'].pop(handle, None) is not None
+    if existed:
+        _save(data)
+    return existed
+
+
+def list_usernames() -> list:
+    """Every allowed @username — permanent defaults first, then granted ones."""
+    data = _load()
+    out = [
+        {'username': h, 'source': 'default', 'added_by': '', 'added_at': None}
+        for h in sorted(DEFAULT_ALLOWED_USERNAMES)
+    ]
+    for h, g in data['usernames'].items():
+        if h in DEFAULT_ALLOWED_USERNAMES:
+            continue
+        out.append({
+            'username': h,
+            'source': 'granted',
+            'added_by': g.get('added_by') or '',
+            'added_at': g.get('added_at'),
+        })
+    return out
 
 
 def list_guests() -> list:
