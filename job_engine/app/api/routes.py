@@ -246,3 +246,14 @@ def deploy_status():
     See documents/deploy-verification.md."""
     from app.deploy_status import compute_deploy_status
     return compute_deploy_status()
+
+
+# ---------- telegram guest access ----------
+
+@router.get('/telegram/guests')
+def telegram_guests():
+    """Read-only view of who currently has temporary Telegram bot access
+    (granted via /allow from Ashok's phone). Mutations stay Telegram-only —
+    see documents/hermes-agent-integration.md "Telegram guest access"."""
+    from app.telegram_guests import list_guests
+    return {'guests': list_guests()}
