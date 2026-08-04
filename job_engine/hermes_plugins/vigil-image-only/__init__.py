@@ -338,7 +338,7 @@ def _run_director(text: str, bot: str, chat: str, persona: str = "owner") -> Non
         logger.exception("DIRECTOR exception: %s", e)
 
 
-def telegram_to_director(event, gateway=None, session_store=None, **kwargs):
+def _telegram_to_director_inner(event, gateway=None, session_store=None, **kwargs):
     if not _is_telegram(event):
         return None
 
@@ -383,6 +383,32 @@ def telegram_to_director(event, gateway=None, session_store=None, **kwargs):
     # guest "hi" got a Hermes skills/platform essay). DIRECTOR replies
     # asynchronously to the guest's chat via DIRECTOR_TARGET_CHAT.
     return {"action": "skip", "reason": f"director-handled-{persona}"}
+
+
+def telegram_to_director(event, gateway=None, session_store=None, **kwargs):
+    """Hard outer guard (2026-08-04 incident): Hermes' documented hook contract
+    says an UNCAUGHT exception here makes the gateway "fall through to normal
+    dispatch" — i.e. its own built-in agent answers instead, with none of our
+    gating, blackbox rules, or link requirements. Real log evidence from that
+    exact night: `gateway.platforms.base: Sending response (2580 chars) to
+    <guest chat>` — Hermes' own send path, not ours — right where a guest
+    should have gotten a plain skip. Never again: whatever happens inside,
+    this outer function ALWAYS returns a recognized action dict, never raises."""
+    try:
+        result = _telegram_to_director_inner(event, gateway, session_store, **kwargs)
+        return result if result is not None else {"action": "skip", "reason": "no-match"}
+    except Exception as e:
+        logger.exception("telegram_to_director crashed — forcing skip: %s", e)
+        try:
+            chat = _chat_id(event)
+            if chat:
+                _reply(
+                    chat,
+                    "Had a hiccup on my end — send that again in a moment.",
+                )
+        except Exception:
+            pass
+        return {"action": "skip", "reason": "plugin-error"}
 
 
 def register(ctx):

@@ -112,6 +112,20 @@ dropped; one factual tower-stat line; friendly deterministic greeting for
 dedup, no-link exclusion, empty-match fallback). Owner chat (full Jarvis,
 LLM) unchanged.
 
+**Third layer, same night — closed the exception escape hatch:** the
+diagnostics log from that exact minute showed
+`gateway.platforms.base: Sending response (2580 chars) to <guest chat>` —
+Hermes' OWN send path, not ours — right where our plugin should have
+returned a plain skip. Per Hermes' documented `pre_gateway_dispatch`
+contract: "exceptions in plugin callbacks are caught and logged; the
+gateway always falls through to normal dispatch on error." Any uncaught
+exception anywhere in our hook hands the message straight to Hermes'
+ungoverned built-in agent. Fixed: the entire hook body now runs inside an
+outer guard (`telegram_to_director` → `_telegram_to_director_inner`) that
+can never raise — on any error it logs, sends a short safe apology, and
+always returns `{"action": "skip", ...}`. Verified with a simulated crash:
+outer function still returns a clean skip dict, never propagates.
+
 Earlier same day: added **`@username` allowlisting** (`/allowuser`,
 `/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
 `job_engine/app/telegram_guests.py`) so Ashok can grant access to a known
