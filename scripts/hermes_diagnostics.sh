@@ -4,6 +4,11 @@
 # a terminal on the laptop. Never prints tokens or full .env files.
 set -uo pipefail
 
+# The self-hosted Actions runner is a system service. Point diagnostics at the
+# logged-in user's systemd manager, matching deploy_local.sh.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+
 redact() { sed -E 's/[0-9]{6,}:[A-Za-z0-9_-]{25,}/[TOKEN]/g'; }
 
 echo "=== JobMaster Telegram service ==="
