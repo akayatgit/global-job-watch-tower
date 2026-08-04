@@ -466,6 +466,25 @@ def main(argv: list[str] | None = None) -> int:
         print('SESSION_CLEARED' if ok else 'CLEAR_SEND_FAILED')
         return 0 if ok else 1
 
+    if persona == 'guest':
+        # Deterministic guest path — NO LLM, guaranteed links, no chit-chat/
+        # hallucination drift (Ashok 2026-08-04: LLM guest agent invented
+        # salary bands, speculated employers, dropped links entirely).
+        from app.director.guest_reply import build_guest_reply
+        from app.director.tools_courier import send_telegram_text
+        try:
+            reply = build_guest_reply(text)
+            ok = send_telegram_text(reply, max_len=3900, kind='courier_reply')
+        except Exception as e:
+            _log('guest_reply_error', error=str(e)[:400])
+            ok = send_telegram_text(
+                'Had trouble pulling listings just now — try again in a moment.',
+                max_len=300, kind='courier_reply',
+            )
+        _log('guest_reply', ok=ok, text=text[:120])
+        print('GUEST_OK' if ok else 'GUEST_FAILED')
+        return 0 if ok else 1
+
     if _is_carousel(text):
         trace = start_trace(bot=bot, chat=chat, text=text)
         try:
@@ -479,10 +498,7 @@ def main(argv: list[str] | None = None) -> int:
 
     trace = start_trace(bot=bot, chat=chat, text=text)
     try:
-        if persona == 'guest':
-            # Immediate friendly ack, zero internals (guests are job seekers)
-            send_telegram_text('On it — checking fresh openings for you…')
-        elif mode == 'summarize':
+        if mode == 'summarize':
             send_telegram_text('Drafting final text…')
         elif mode == 'image':
             send_telegram_text('Building visual from agreed facts…')
