@@ -36,6 +36,9 @@ use — they should love opening the app, never fight it.
   default sort = most recent first, live filters, empty state with guidance.
 - Follow agile methodology when running work: break requests into slices,
   deliver the highest-value slice fully, verify, then iterate.
+- **User-facing Definition of Done:** merged code, passing tests, and deploy
+  success are necessary evidence, not acceptance. An incident stays open until
+  Ashok verifies the real end-to-end experience and explicitly accepts it.
 
 ## Dashboards must give insight, not just tables
 
