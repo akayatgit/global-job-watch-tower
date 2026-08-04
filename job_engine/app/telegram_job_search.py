@@ -314,9 +314,13 @@ def _format_jobs(jobs: list[dict[str, Any]], page: int) -> str:
         )
     lines: list[str] = []
     for idx, job in enumerate(picked, start=start + 1):
-        title = str(job.get('title') or '').strip()
-        company = str(job.get('company') or 'Company not stated').strip()
-        experience = str(job.get('experience_band') or 'Not stated').strip()
+        title = re.sub(r'\s+', ' ', str(job.get('title') or '')).strip()
+        company = re.sub(
+            r'\s+', ' ', str(job.get('company') or 'Company not stated'),
+        ).strip()
+        experience = re.sub(
+            r'\s+', ' ', str(job.get('experience_band') or 'Not stated'),
+        ).strip()
         lines.append(f'{idx}. {title} — {company} — {experience}\n{canonical_link(job)}')
     if start + PAGE_SIZE < len(jobs):
         lines.append('Reply more for 10 more jobs.')

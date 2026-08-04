@@ -14,10 +14,12 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,7 @@ HEALTH_FILE = ROOT / '.data' / 'jobmaster_telegram_health.json'
 VERSION_FILE = ROOT.parent / 'VERSION'
 LOG = logging.getLogger('jobmaster-telegram')
 STOP = False
+HEALTH_LOCK = threading.Lock()
 
 
 def load_env() -> dict[str, str]:
@@ -98,10 +101,18 @@ class JobMasterTelegramBot:
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
         self._last_request: dict[str, float] = {}
+        self._chat_locks: dict[str, threading.Lock] = {}
+        self._chat_locks_guard = threading.Lock()
         self._query_count = 0
         self._page_count = 0
 
     def process(self, chat_id: str, text: str) -> None:
+        with self._chat_locks_guard:
+            lock = self._chat_locks.setdefault(str(chat_id), threading.Lock())
+        with lock:
+            self._process_locked(str(chat_id), text)
+
+    def _process_locked(self, chat_id: str, text: str) -> None:
         clean = (text or '').strip()
         if not clean:
             return
@@ -155,55 +166,57 @@ class JobMasterTelegramBot:
         self._write_health(status='running', bot=me.get('username', ''))
 
         backoff = 1
-        while not STOP:
-            try:
-                updates = self.api.updates(offset)
-                backoff = 1
-                self._write_health(status='running', bot=me.get('username', ''))
-                for update in updates:
-                    update_id = int(update.get('update_id', -1))
-                    offset = max(offset, update_id + 1)
-                    self.sessions.set_state('telegram_update_offset', offset)
-                    message = update.get('message') or {}
-                    chat = message.get('chat') or {}
-                    if chat.get('type') != 'private' or not chat.get('id'):
-                        continue
-                    text = message.get('text')
-                    if isinstance(text, str):
-                        self.process(str(chat['id']), text)
-            except urllib.error.HTTPError as exc:
-                body = exc.read().decode(errors='replace')
-                if exc.code == 409:
-                    LOG.error('Telegram poll conflict: another consumer owns getUpdates: %s', body[:300])
-                    self._write_health(status='conflict', error='another Telegram poller is active')
-                    return 9
-                LOG.warning('Telegram HTTP %s: %s', exc.code, body[:300])
-                self._write_health(status='degraded', error=f'HTTP {exc.code}')
-            except Exception as exc:
-                LOG.exception('Telegram poll failed')
-                self._write_health(status='degraded', error=str(exc)[:200])
-            if not STOP:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix='jobmaster') as workers:
+            while not STOP:
+                try:
+                    updates = self.api.updates(offset)
+                    backoff = 1
+                    self._write_health(status='running', bot=me.get('username', ''))
+                    for update in updates:
+                        update_id = int(update.get('update_id', -1))
+                        offset = max(offset, update_id + 1)
+                        self.sessions.set_state('telegram_update_offset', offset)
+                        message = update.get('message') or {}
+                        chat = message.get('chat') or {}
+                        if chat.get('type') != 'private' or not chat.get('id'):
+                            continue
+                        text = message.get('text')
+                        if isinstance(text, str):
+                            workers.submit(self.process, str(chat['id']), text)
+                except urllib.error.HTTPError as exc:
+                    body = exc.read().decode(errors='replace')
+                    if exc.code == 409:
+                        LOG.error('Telegram poll conflict: another consumer owns getUpdates: %s', body[:300])
+                        self._write_health(status='conflict', error='another Telegram poller is active')
+                        return 9
+                    LOG.warning('Telegram HTTP %s: %s', exc.code, body[:300])
+                    self._write_health(status='degraded', error=f'HTTP {exc.code}')
+                except Exception as exc:
+                    LOG.exception('Telegram poll failed')
+                    self._write_health(status='degraded', error=str(exc)[:200])
+                if not STOP:
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 30)
         self._write_health(status='stopped')
         return 0
 
     @staticmethod
     def _write_health(**fields: Any) -> None:
-        HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-        current: dict[str, Any] = {}
-        if HEALTH_FILE.exists():
-            try:
-                current = json.loads(HEALTH_FILE.read_text(encoding='utf-8'))
-            except (OSError, json.JSONDecodeError):
-                current = {}
-        current.update(fields)
-        current['pid'] = os.getpid()
-        current['version'] = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else 'unknown'
-        current['updated_at'] = time.time()
-        tmp = HEALTH_FILE.with_suffix('.tmp')
-        tmp.write_text(json.dumps(current, indent=2), encoding='utf-8')
-        tmp.replace(HEALTH_FILE)
+        with HEALTH_LOCK:
+            HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            current: dict[str, Any] = {}
+            if HEALTH_FILE.exists():
+                try:
+                    current = json.loads(HEALTH_FILE.read_text(encoding='utf-8'))
+                except (OSError, json.JSONDecodeError):
+                    current = {}
+            current.update(fields)
+            current['pid'] = os.getpid()
+            current['version'] = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else 'unknown'
+            current['updated_at'] = time.time()
+            tmp = HEALTH_FILE.with_suffix('.tmp')
+            tmp.write_text(json.dumps(current, indent=2), encoding='utf-8')
+            tmp.replace(HEALTH_FILE)
 
 
 def _stop(_signum, _frame) -> None:
