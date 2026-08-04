@@ -1839,6 +1839,23 @@ button, input, select {
   word-break: break-word;
 }
 
+/* Build version — quick "did it deploy" signal under the countdown */
+.rail-version {
+  padding: 0 4px 2px;
+  text-align: center;
+  font-family: var(--font-hud);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  color: #4b5563;
+  user-select: none;
+  pointer-events: none;
+}
+.module-rail.collapsed .rail-version {
+  font-size: 7px;
+}
+
 /* AI vs Keyword compare */
 .stat-card.ai-tone .n { color: var(--vg-amber); }
 .stat-card.kw-tone .n { color: var(--vg-crimson); }
