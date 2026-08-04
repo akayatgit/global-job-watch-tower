@@ -91,6 +91,16 @@ after editing `scripts/deploy_local.sh`.
 Remote debugging now standard: every deploy prints redacted Hermes
 diagnostics (`scripts/hermes_diagnostics.sh`) in the Actions log.
 
+**Guest soul shipped (2026-08-04, late night):** wife's "hi" was answered by
+the Hermes BUILT-IN agent (skills/platform essay — engine-room talk to a job
+seeker). Fixes: (1) plugin returns skip IMMEDIATELY for guest chats (no
+600s join) so the built-in agent can never win a race; (2) new **guest
+persona** end-to-end (plugin `--persona guest` → router ack "On it —
+checking fresh openings for you…" → `GUEST_INSTRUCTIONS` VIGIL agent):
+simple job-hunting assistant, total blackbox on internals, job lists always
+with LinkedIn links (no link → don't list), guest tools exclude
+heat/vision/watchlist/images. Owner chat unchanged (full Jarvis).
+
 Earlier same day: added **`@username` allowlisting** (`/allowuser`,
 `/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
 `job_engine/app/telegram_guests.py`) so Ashok can grant access to a known

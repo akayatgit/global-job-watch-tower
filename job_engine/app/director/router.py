@@ -142,7 +142,7 @@ def _parse_mode(text: str) -> tuple[str, str]:
     return 'chat', raw
 
 
-def _text_fallback(text: str) -> bool:
+def _text_fallback(text: str, persona: str = 'owner') -> bool:
     """Last resort text reply from live STAGEHAND — no images."""
     from app.director.tools_courier import send_telegram_text
     from app.director.tools_stagehand import _get
@@ -171,15 +171,16 @@ def _text_fallback(text: str) -> bool:
                 f"{c.get('name')} {c.get('recent') if c.get('recent') is not None else c.get('n')}"
                 for c in cos
             ))
-        lines.append('(text fallback — DIRECTOR missed courier_reply)')
+        if persona != 'guest':
+            lines.append('(text fallback — DIRECTOR missed courier_reply)')
         return send_telegram_text('\n'.join(lines), max_len=3900, kind='courier_reply')
 
     tower = _get('/api/ultron/tower')
     stats = (tower or {}).get('stats') or {}
     msg = (
         f"All India · today {stats.get('jobs_today', '—')} · "
-        f"total {stats.get('total_jobs', '—')} · companies {stats.get('companies', '—')}\n"
-        '(text fallback)'
+        f"total {stats.get('total_jobs', '—')} · companies {stats.get('companies', '—')}"
+        + ('' if persona == 'guest' else '\n(text fallback)')
     )
     return send_telegram_text(msg, max_len=3900, kind='courier_reply')
 
@@ -368,15 +369,17 @@ def _answer_fallback(text: str) -> bool:
 
 def _attempt(
     text: str, bot: str, chat: str, *, mode: str, attempt: int, before: float, trace,
+    persona: str = 'owner',
 ) -> bool:
     from app.director.agent import run_director
     from app.director.tools_courier import send_telegram_text
 
     try:
         if trace:
-            trace.node('attempt_begin', attempt=attempt, mode=mode)
+            trace.node('attempt_begin', attempt=attempt, mode=mode, persona=persona)
         out = run_director(
             text, bot=bot, chat_id=chat, mode=mode, trace=trace, attempt=attempt,
+            persona=persona,
         )
         if mode == 'image':
             sent = _mtime_image() > before
@@ -425,8 +428,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--bot', default='vigil_akay_bot')
     p.add_argument('--chat', default='')
     p.add_argument('--text', default='')
+    p.add_argument('--persona', default='owner', choices=['owner', 'guest'])
     p.add_argument('message', nargs='*', help='fallback positional message')
     args = p.parse_args(argv)
+    persona = args.persona
 
     text = (args.text or ' '.join(args.message)).strip()
     if not text and not sys.stdin.isatty():
@@ -448,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
 
     key = os.getenv('OPENAI_API_KEY', '')
     mode, payload = _parse_mode(text)
-    _log('start', bot=bot, chat=chat, mode=mode, text=text[:160], key_len=len(key), key_prefix=key[:7])
+    _log('start', bot=bot, chat=chat, mode=mode, persona=persona, text=text[:160], key_len=len(key), key_prefix=key[:7])
 
     if text.lower().strip() in {'/new', '/reset', '/clear', 'new', 'reset', 'clear'}:
         clear_session(bot, chat)
@@ -474,7 +479,10 @@ def main(argv: list[str] | None = None) -> int:
 
     trace = start_trace(bot=bot, chat=chat, text=text)
     try:
-        if mode == 'summarize':
+        if persona == 'guest':
+            # Immediate friendly ack, zero internals (guests are job seekers)
+            send_telegram_text('On it — checking fresh openings for you…')
+        elif mode == 'summarize':
             send_telegram_text('Drafting final text…')
         elif mode == 'image':
             send_telegram_text('Building visual from agreed facts…')
@@ -490,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
                     ok = _answer_fallback(payload)
                     kind = 'answer_fallback'
                 else:
-                    ok = _text_fallback(payload)
+                    ok = _text_fallback(payload, persona=persona)
                     kind = 'text_fallback'
                 trace.node(kind, ok=ok, reason='bad_key')
                 trace.finish('fallback' if ok else 'failed', {'kind': kind, 'ok': ok, 'mode': mode})
@@ -502,7 +510,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
         before = _mtime_image() if mode == 'image' else _mtime_text()
-        if _attempt(payload, bot, chat, mode=mode, attempt=1, before=before, trace=trace):
+        if _attempt(payload, bot, chat, mode=mode, attempt=1, before=before, trace=trace, persona=persona):
             _log('success', attempt=1, mode=mode)
             trace.finish('ok', {'kind': 'director', 'attempt': 1, 'mode': mode, 'trace_id': trace.id})
             print(f'TRACE:{trace.id}', file=sys.stderr)
@@ -511,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
         _log('retrying', reason='no_delivery_after_attempt_1', mode=mode)
         trace.hint(f'Attempt 1 did not deliver Telegram {"image" if mode == "image" else "text"} — retrying')
         before2 = _mtime_image() if mode == 'image' else _mtime_text()
-        if _attempt(payload, bot, chat, mode=mode, attempt=2, before=before2, trace=trace):
+        if _attempt(payload, bot, chat, mode=mode, attempt=2, before=before2, trace=trace, persona=persona):
             _log('success', attempt=2, mode=mode)
             trace.finish('ok_retry', {'kind': 'director', 'attempt': 2, 'mode': mode, 'trace_id': trace.id})
             print(f'TRACE:{trace.id}', file=sys.stderr)
@@ -523,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
                 kind = 'answer_fallback'
                 hint = 'Both DIRECTOR attempts missed image send — Pillow answer fallback used'
             else:
-                ok = _text_fallback(payload)
+                ok = _text_fallback(payload, persona=persona)
                 kind = 'text_fallback'
                 hint = 'Both DIRECTOR attempts missed text send — STAGEHAND text fallback used'
             _log(kind, ok=ok, mode=mode)

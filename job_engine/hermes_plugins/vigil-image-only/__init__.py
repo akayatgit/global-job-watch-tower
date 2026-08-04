@@ -303,13 +303,14 @@ def _director_env() -> dict:
     return env
 
 
-def _run_director(text: str, bot: str, chat: str) -> None:
+def _run_director(text: str, bot: str, chat: str, persona: str = "owner") -> None:
     try:
         cmd = [
             PY, "-m", "app.director.router",
             "--bot", bot,
             "--chat", chat,
             "--text", text,
+            "--persona", persona,
         ]
         r = subprocess.run(
             cmd,
@@ -364,12 +365,24 @@ def telegram_to_director(event, gateway=None, session_store=None, **kwargs):
         )
         return {"action": "skip", "reason": "not-authorised"}
 
-    logger.info("DIRECTOR dispatch bot=%s chat=%s text=%s", bot, chat, text[:120])
-    t = threading.Thread(target=_run_director, args=(text, bot, chat), daemon=True)
+    is_owner = chat in owner_ids()
+    persona = "owner" if is_owner else "guest"
+    logger.info(
+        "DIRECTOR dispatch bot=%s chat=%s persona=%s text=%s",
+        bot, chat, persona, text[:120],
+    )
+    t = threading.Thread(
+        target=_run_director, args=(text, bot, chat, persona), daemon=True,
+    )
     t.start()
-    t.join(timeout=600)
-
-    return {"action": "skip", "reason": "director-handled"}
+    if is_owner:
+        # Existing owner behavior: block until DIRECTOR finishes
+        t.join(timeout=600)
+    # Guests: return skip IMMEDIATELY so the Hermes built-in agent can never
+    # win a race and answer with engine-room talk (incident 2026-08-04:
+    # guest "hi" got a Hermes skills/platform essay). DIRECTOR replies
+    # asynchronously to the guest's chat via DIRECTOR_TARGET_CHAT.
+    return {"action": "skip", "reason": f"director-handled-{persona}"}
 
 
 def register(ctx):

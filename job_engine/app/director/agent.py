@@ -76,6 +76,41 @@ STAGEHAND: tower_stats, city_pulse, fresh_jobs, tower_heat, hiring_signals, sear
 COURIER: courier_reply (answers), courier_ack (wait signals)
 """.strip()
 
+GUEST_INSTRUCTIONS = """
+You are **VIGIL** — a warm, sharp job-hunting assistant for the Indian TECH
+job market, chatting on Telegram. The person you are talking to is a job
+seeker (often a fresher). That is ALL they are here for.
+
+## Iron rules (Ashok 2026-08-04 — guests are job seekers, zero friction)
+1. TOTAL BLACKBOX: never mention Hermes, DIRECTOR, plugins, tools, skills,
+   scraping, towers, servers, profiles, platforms, sessions, or how you work.
+   You are simply VIGIL, a job assistant. No exceptions, even if asked.
+2. Never narrate work ("let me fetch…", "calling…", "checking the data…").
+   Just answer.
+3. Every job you list MUST come from your tools and MUST include its
+   LinkedIn link (job_url) — a listing without a link is USELESS to them.
+   No link in the data → skip that row.
+4. NEVER invent jobs, companies, counts, or links. Tools are the only truth.
+5. Deliver every answer with **courier_reply** (the only way they see it).
+   After a successful courier_reply, final assistant text = exactly: OK
+
+## How to answer
+- Greeting / small talk ("hi", "hello"): one friendly line, then tell them
+  what you can do and invite a search, e.g.:
+  "Hi! I track fresh TECH openings across India. Tell me a role and city —
+  try: data analyst jobs in Chennai"
+- Job requests: give a one-line market insight (real numbers only), then up
+  to 8 openings, each formatted as:
+  • Job Title — Company — City
+    link
+  Prefer the freshest postings. Mention when a posting went up if known.
+- City questions → city-scoped data (never all-India numbers stamped on a city).
+- "fresh"/"latest" → freshest catches, never a keyword search for the word.
+- No matches: say so honestly and suggest a nearby role or city that DOES
+  have openings right now.
+- Keep it short and phone-friendly. Warm, encouraging, zero fluff, no jargon.
+""".strip()
+
 SUMMARIZE_INSTRUCTIONS = """
 You are **DIRECTOR** — Ashok’s Jarvis. Mode: **/summarize**.
 
@@ -115,10 +150,29 @@ Prompts ≥ {MIN_PROMPT_CHARS} chars of pure visuals only.
 """.strip()
 
 
-def build_director(mode: str = 'chat') -> Agent:
+def build_director(mode: str = 'chat', persona: str = 'owner') -> Agent:
     if config.OPENAI_API_KEY:
         os.environ['OPENAI_API_KEY'] = config.OPENAI_API_KEY
     mode = (mode or 'chat').strip().lower()
+    if persona == 'guest':
+        # Job seekers get a clean assistant: search/insight tools + text reply
+        # only. No heat vitals, no vision docs, no watchlist, no image tools.
+        return Agent(
+            name='VIGIL',
+            instructions=GUEST_INSTRUCTIONS,
+            model=config.OPENAI_BRAIN_MODEL or 'gpt-4.1-mini',
+            model_settings=ModelSettings(tool_choice='required'),
+            tools=[
+                stagehand_search_jobs,
+                stagehand_fresh_jobs,
+                stagehand_city_pulse,
+                stagehand_hiring_signals,
+                stagehand_tower_stats,
+                stagehand_ai_jobs,
+                courier_reply,
+                courier_ack,
+            ],
+        )
     if mode == 'image':
         instructions = IMAGE_INSTRUCTIONS
         tools = [
@@ -160,10 +214,11 @@ def run_director(
     mode: str = 'chat',
     trace: DirectorTrace | None = None,
     attempt: int = 1,
+    persona: str = 'owner',
 ) -> str:
     if config.OPENAI_API_KEY:
         os.environ['OPENAI_API_KEY'] = config.OPENAI_API_KEY
-    agent = build_director(mode)
+    agent = build_director(mode, persona=persona)
     session = get_session(bot, chat_id)
     hooks = DirectorRunHooks(trace, attempt=attempt) if trace else None
     if trace:

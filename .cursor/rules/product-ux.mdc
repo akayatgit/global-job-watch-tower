@@ -376,9 +376,17 @@ use — they should love opening the app, never fight it.
   ack (“Still verifying…”) and retry. Image model = Replicate `google/nano-banana-2`
   (not Grok Imagine). Immediate “On it…” ack on every Telegram message.
 - **Telegram text-first Jarvis (2026-08-04):** Default chat = **text only** (STAGEHAND
-  + `courier_reply`). `/summarize` → final draft text from the thread. `/image` →
-  fact boards / Nano Banana from agreed facts. `/new` clears memory with a text
-  note. Fix data collection in text before concentrating on images.
+ + `courier_reply`). `/summarize` → final draft text from the thread. `/image` →
+ fact boards / Nano Banana from agreed facts. `/new` clears memory with a text
+ note. Fix data collection in text before concentrating on images.
+- **Guest soul (2026-08-04):** Non-owner Telegram chats get the VIGIL **guest
+ persona** — a simple job-hunting assistant. Total blackbox: never mention
+ Hermes/DIRECTOR/plugins/tools/tower/scraping or narrate tool usage. Immediate
+ ack ("On it — checking fresh openings…"), then job-market insight + up to 8
+ openings **with LinkedIn links (critical — no link, don't list)**. Guest tools
+ exclude heat/vision/watchlist/images. Owner (home channel) keeps full Jarvis.
+ Guests must never see a Hermes built-in-agent reply (plugin returns skip
+ immediately for guest chats).
 - **Talk small, land big (2026-08-04):** Chat replies to Ashok must be short,
   digestible, visually pleasing — bold the one action needed, one link, no
   walls of text, no buried questions. He skipped a confirmation because the
