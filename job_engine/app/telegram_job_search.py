@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
 from app import config
-from app.cities import city_label, normalize_city_filter
+from app.cities import city_label
 from app.job_role_families import ROLE_PATTERNS, title_matches_role_family
 from app.telegram_sessions import TelegramSessionStore
 
@@ -260,12 +260,11 @@ class IntentInterpreter:
         valid_metrics = {'count', 'top_companies', 'top_roles', 'compare_cities', 'trend'}
         kind = raw.get('kind') if raw.get('kind') in {'job_search', 'insight', 'help'} else fallback.kind
         family = raw.get('role_family') if raw.get('role_family') in valid_families else fallback.role_family
-        cities = []
-        for city in raw.get('cities') or []:
-            key = normalize_city_filter(str(city))
-            if key and key not in cities:
-                cities.append(key)
-        experience = normalize_experience_value(str(raw.get('experience') or '')) or fallback.experience
+        # City and experience change which facts are returned, so they require
+        # deterministic evidence in the user's text. The model may correct
+        # intent/role semantics but cannot invent a narrower data scope.
+        cities = fallback.cities
+        experience = fallback.experience
         keywords = [
             str(w).strip().lower()[:40]
             for w in (raw.get('role_keywords') or [])
@@ -282,7 +281,7 @@ class IntentInterpreter:
             kind=kind,
             role_family=family,
             role_keywords=keywords or fallback.role_keywords,
-            cities=cities[:2] or fallback.cities,
+            cities=cities[:2],
             experience=experience,
             metric=metric,
             window_days=days,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.telegram_job_search import (
     IntentInterpreter,
+    JobMasterIntent,
     JobMasterEngine,
     _fallback_intent,
     canonical_link,
@@ -82,6 +83,19 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertEqual(intent.cities, ['bengaluru'])
         self.assertEqual(intent.experience, 'fresher')
         self.assertEqual(intent.role_family, 'ai_ml')
+
+    def test_model_cannot_invent_city_or_experience_scope(self):
+        intent = IntentInterpreter._validate(
+            {
+                'kind': 'job_search',
+                'cities': ['mumbai'],
+                'experience': 'fresher',
+                'role_family': 'ai_ml',
+            },
+            JobMasterIntent(kind='job_search'),
+        )
+        self.assertEqual(intent.cities, [])
+        self.assertEqual(intent.experience, '')
 
     def test_first_page_is_ten_verified_rows_and_no_fluff(self):
         reply = self.engine.handle(
