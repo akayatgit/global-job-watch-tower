@@ -20,9 +20,21 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ---
 
-## To Do
+## In Progress
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
+
+**Status (2026-08-04):** Code done, PR up for review. Extended same-day to
+add **`@username` allowlisting** (`/allowuser`, `/revokeuser`, and a
+permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` set in
+`job_engine/app/telegram_guests.py` — currently `@azr0099`) so Ashok can
+grant access to a known handle directly, without the numeric-id
+`@userinfobot` detour. **One manual ThinkPad step still required before any
+of this is live:** set `TELEGRAM_ALLOW_ALL_USERS=true` in `~/.hermes/.env`
+and run `hermes gateway restart` (or re-run
+`job_engine/scripts/setup_hermes_telegram.sh` / re-bootstrap, which now
+defaults to `true`). Until that flip happens, Hermes still silently drops
+non-Ashok senders before our new allowlist ever sees them.
 
 **Problem (2026-08-04):** Ashok tried to demo the Telegram bot (`@vigil_akay_bot`)
 to an investor. Messages from the investor's phone and his wife's phone got
@@ -77,13 +89,20 @@ laptop, no Cloudflare dashboard):
 - Document the one-time `TELEGRAM_ALLOW_ALL_USERS=true` manual step (and
   why it's now safe — our own gate replaces it) in
   `documents/hermes-agent-integration.md`.
+- **Username variant:** a handle in `DEFAULT_ALLOWED_USERNAMES` (or granted
+  via `/allowuser <handle>`) gets a real DIRECTOR reply with **no** numeric
+  id ever exchanged; `/guests` lists allowed usernames alongside numeric
+  guests; `/revokeuser` removes a granted handle (defaults require a code
+  change, by design).
 
 **Files:** `job_engine/hermes_plugins/vigil-image-only/__init__.py`,
-`job_engine/app/director/router.py`, new `job_engine/app/telegram_guests.py`,
-`job_engine/scripts/telegram_watch_tower.py` (bootstrap defaults),
-`documents/hermes-agent-integration.md`.
+`job_engine/app/director/router.py`, `job_engine/app/telegram_guests.py`,
+`job_engine/app/api/routes.py`, `job_engine/scripts/telegram_watch_tower.py`
+(bootstrap defaults), `documents/hermes-agent-integration.md`.
 
 ---
+
+## To Do
 
 ### 2. Verify + lock Cloudflare Access properly
 

@@ -284,7 +284,12 @@ def cmd_bootstrap(wait_s: int = 180) -> int:
         'TELEGRAM_ALLOWED_USERS': user_id,
         'TELEGRAM_HOME_CHANNEL': chat_id,
         'TELEGRAM_HOME_CHANNEL_NAME': 'Ashok',
-        'TELEGRAM_ALLOW_ALL_USERS': 'false',
+        # Our own repo-side allowlist (job_engine/app/telegram_guests.py,
+        # enforced in hermes_plugins/vigil-image-only) now owns access
+        # control, manageable via /allow /revoke /guests from Ashok's phone.
+        # Hermes must let every message through to reach that gate — see
+        # documents/hermes-agent-integration.md "Telegram guest access".
+        'TELEGRAM_ALLOW_ALL_USERS': 'true',
     })
     STATE.write_text(json.dumps({
         'chat_id': chat_id, 'user_id': user_id, 'username': uname,
