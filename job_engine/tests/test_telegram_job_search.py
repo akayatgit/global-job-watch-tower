@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.job_role_families import title_matches_role_family
 from app.telegram_job_search import (
     IntentInterpreter,
     JobMasterIntent,
@@ -41,7 +42,26 @@ class FakeAPI:
         if path == '/api/jobs':
             if self.fail_jobs:
                 raise OSError('tower unavailable')
-            return self.jobs
+            params = params or {}
+            rows = list(self.jobs)
+            if params.get('city'):
+                rows = [row for row in rows if row.get('city_key') == params['city']]
+            if params.get('track'):
+                rows = [row for row in rows if row.get('source_track') == params['track']]
+            if params.get('role_family'):
+                rows = [
+                    row for row in rows
+                    if title_matches_role_family(row.get('title'), params['role_family'])
+                ]
+            terms = str(params.get('title_terms') or '').split()
+            if terms:
+                rows = [
+                    row for row in rows
+                    if any(term in str(row.get('title') or '').lower() for term in terms)
+                ]
+            offset = int(params.get('offset') or 0)
+            limit = int(params.get('limit') or len(rows))
+            return rows[offset:offset + limit]
         if path == '/api/jobs/insights':
             total = 80 if (params or {}).get('city') == 'chennai' else 120
             return {
@@ -147,6 +167,7 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertEqual(path, '/api/jobs')
         self.assertEqual(params['city'], 'bengaluru')
         self.assertEqual(params['track'], 'fresher')
+        self.assertEqual(params['role_family'], 'ai_ml')
 
     def test_more_returns_next_ten_without_duplicates(self):
         first = self.engine.handle('AI jobs Bangalore for freshers', '42')
@@ -177,6 +198,16 @@ class TelegramJobSearchTests(unittest.TestCase):
         first_links = {line for line in first.splitlines() if line.startswith('https://')}
         second_links = {line for line in second.splitlines() if line.startswith('https://')}
         self.assertFalse(first_links & second_links)
+
+    def test_more_can_scan_beyond_first_thousand_server_matches(self):
+        self.api.jobs = [make_job(i) for i in range(1, 1206)]
+        intent = _fallback_intent('AI jobs Bangalore for freshers')
+        seen = [str(job['linkedin_job_id']) for job in self.api.jobs[:1000]]
+        self.sessions.save_search('42', intent.__dict__, page=99, seen_ids=seen)
+        reply = self.engine.handle('more', '42')
+        self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 10)
+        offsets = [params.get('offset') for path, params in self.api.calls if path == '/api/jobs']
+        self.assertIn(1000, offsets)
 
     def test_failed_more_does_not_advance_pagination(self):
         self.engine.handle('AI jobs Bangalore for freshers', '42')

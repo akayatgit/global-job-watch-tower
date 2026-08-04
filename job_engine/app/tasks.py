@@ -324,6 +324,7 @@ def run_scrape(self, scrape_run_id: int):
                         job_url=job.job_url,
                         posted_date=job.posted_date,
                         raw_text=job.raw_text,
+                        source_track=cfg.track,
                         search_config_id=cfg.id,
                         scrape_run_id=run.id,
                     )

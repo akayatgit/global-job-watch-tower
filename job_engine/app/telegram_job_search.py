@@ -24,7 +24,8 @@ from app.telegram_sessions import TelegramSessionStore
 
 BASE = 'http://127.0.0.1:8001'
 PAGE_SIZE = 10
-MAX_FETCH = 1000
+API_PAGE_SIZE = 200
+MAX_SCAN = 10_000
 ALLOWED_WINDOWS = {0, 1, 2, 4, 7, 14, 30}
 
 LINKEDIN_ID_RE = re.compile(r'/jobs/view/(?:[^/?#]*-)?(\d{6,})(?:[/?#]|$)', re.I)
@@ -453,34 +454,45 @@ class JobMasterEngine:
         *,
         seen_ids: list[str],
     ) -> tuple[str, list[str]]:
-        params: dict[str, Any] = {'limit': MAX_FETCH}
+        params: dict[str, Any] = {
+            'limit': API_PAGE_SIZE,
+            'role_family': intent.role_family,
+            'title_terms': ' '.join(intent.role_keywords),
+        }
         if intent.cities:
             params['city'] = intent.cities[0]
         if intent.experience == 'fresher':
             params['track'] = 'fresher'
         elif intent.experience:
             params['experience'] = intent.experience
-        data = self.api_get('/api/jobs', params)
-        rows = data if isinstance(data, list) else []
         valid: list[dict[str, Any]] = []
         prior_seen = set(seen_ids)
         fetched_seen: set[str] = set()
-        for job in rows:
-            link = canonical_link(job)
-            title = str(job.get('title') or '').strip()
-            company = str(job.get('company') or '').strip()
-            if not title or not link or not _matches_role(job, intent):
-                continue
-            band = normalize_experience_value(str(job.get('experience_band') or ''))
-            if intent.experience == 'fresher' and band and band != 'fresher':
-                continue
-            key = str(job.get('linkedin_job_id') or link)
-            if key in prior_seen or key in fetched_seen:
-                continue
-            fetched_seen.add(key)
-            copied = dict(job)
-            copied['job_url'] = link
-            valid.append(copied)
+        offset = 0
+        while offset < MAX_SCAN and len(valid) <= PAGE_SIZE:
+            data = self.api_get('/api/jobs', {**params, 'offset': offset})
+            rows = data if isinstance(data, list) else []
+            for job in rows:
+                link = canonical_link(job)
+                title = str(job.get('title') or '').strip()
+                company = str(job.get('company') or '').strip()
+                if not title or not link or not _matches_role(job, intent):
+                    continue
+                band = normalize_experience_value(str(job.get('experience_band') or ''))
+                if intent.experience == 'fresher' and band and band != 'fresher':
+                    continue
+                key = str(job.get('linkedin_job_id') or link)
+                if key in prior_seen or key in fetched_seen:
+                    continue
+                fetched_seen.add(key)
+                copied = dict(job)
+                copied['job_url'] = link
+                valid.append(copied)
+                if len(valid) > PAGE_SIZE:
+                    break
+            if len(rows) < API_PAGE_SIZE or len(valid) > PAGE_SIZE:
+                break
+            offset += len(rows)
         picked = valid[:PAGE_SIZE]
         new_ids = [
             str(job.get('linkedin_job_id') or canonical_link(job))

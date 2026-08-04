@@ -126,6 +126,8 @@ def list_jobs(
     city: str | None = None,
     experience: str | None = None,
     track: str | None = None,
+    role_family: str | None = None,
+    title_terms: str | None = None,
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
@@ -135,6 +137,7 @@ def list_jobs(
 ):
     from app.cities import normalize_city_filter
     from app.experience_bands import experience_clause, normalize_experience
+    from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
 
     sector = normalize_sector(sector)
@@ -143,11 +146,15 @@ def list_jobs(
     track = (track or '').strip().lower() or None
     if track not in (None, 'fresher', 'signal'):
         track = None
+    role_family = role_family if role_family in ROLE_FAMILY_REGEX else None
+    terms = [
+        token for token in re.findall(r'[a-z0-9+#.-]+', (title_terms or '').lower())
+        if len(token) >= 2
+    ][:5]
     query = (
-        select(JobMaster, Company.name, SearchConfig.track)
+        select(JobMaster, Company.name)
         .outerjoin(Company, JobMaster.company_id == Company.id)
-        .outerjoin(SearchConfig, JobMaster.search_config_id == SearchConfig.id)
-        .order_by(desc(JobMaster.scraped_at))
+        .order_by(desc(JobMaster.scraped_at), desc(JobMaster.id))
         .limit(limit)
         .offset(offset)
     )
@@ -159,10 +166,15 @@ def list_jobs(
     if exp is not None:
         query = query.where(exp)
     if track:
-        query = query.where(SearchConfig.track == track)
+        query = query.where(JobMaster.source_track == track)
         if track == 'fresher' and exp is None:
             fresher_exp = experience_clause('fresher')
             query = query.where(or_(JobMaster.experience_band.is_(None), fresher_exp))
+    if role_family:
+        pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
+        query = query.where(JobMaster.title.op('~*')(pattern))
+    if terms:
+        query = query.where(or_(*[JobMaster.title.ilike(f'%{term}%') for term in terms]))
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -176,7 +188,7 @@ def list_jobs(
 
     rows = db.execute(query).all()
     out = []
-    for job, company_name, source_track in rows:
+    for job, company_name in rows:
         # Don't model_validate(job) — relationship `company` is a Company object
         out.append(JobOut(
             id=job.id,
@@ -187,7 +199,7 @@ def list_jobs(
             city_key=job.city_key,
             sector=job.sector,
             experience_band=job.experience_band,
-            source_track=source_track,
+            source_track=job.source_track,
             job_url=job.job_url,
             posted_date=job.posted_date,
             scraped_at=job.scraped_at,
@@ -244,7 +256,7 @@ def job_insights(
     if exp is not None:
         filters.append(exp)
     if track:
-        filters.append(SearchConfig.track == track)
+        filters.append(JobMaster.source_track == track)
         if track == 'fresher' and exp is None:
             fresher_exp = experience_clause('fresher')
             filters.append(or_(JobMaster.experience_band.is_(None), fresher_exp))
