@@ -59,6 +59,26 @@ old `title="fresh"` bug.
 - Consider Pillow-composited exact-text layer if Nano Banana misspells
   numbers on ranked-list slides (data authenticity rule).
 
+### 6. [URGENT] Restore Ashok-only Telegram command deck
+
+**Status (2026-08-04, 23:23 UTC):** Ashok's `/stats ai`,
+`/hiringinsights`, and `/governmentjobs` were falling into ordinary JobMaster
+search parsing after the dedicated-ingress cutover. Root cause: Gate 3.0
+replaced Hermes `quick_commands`, but the new poller restored only `/new` and
+generic help—not the deterministic VIGIL command router or Telegram command
+scope.
+
+**Fix in review:** the dedicated JobMaster service routes live VIGIL boards and
+grounded shortcut queries before normal search parsing. Commands are authorized
+only when `chat_id == TELEGRAM_HOME_CHANNEL`. Startup clears default and
+all-private Telegram menus, then installs the command deck with a chat-specific
+scope for Ashok. Other users retain the same clean JobMaster conversation and
+cannot invoke VIGIL operations. Contract suite: 38 tests green.
+
+**Acceptance:** deploy, confirm Ashok sees and can run the menu commands, then
+confirm Supriya does not see the command deck and `/health` cannot expose tower
+operations in her chat. Keep this card open until Ashok accepts the live result.
+
 ## Done
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency

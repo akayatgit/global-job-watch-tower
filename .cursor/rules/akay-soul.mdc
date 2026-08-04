@@ -73,6 +73,10 @@ need to be told twice.
   develop from here." Accepted baseline = `milestone/jobmaster-gate3-v1`.
   Future JobMaster capabilities evolve from this point; never restore Hermes
   Telegram fallback or model-authored job facts.
+- **2026-08-04 · Ashok owns the command deck.** JobMaster conversation stays
+  simple and uniform for everyone; VIGIL operational slash commands and their
+  Telegram menu belong only to Ashok's home chat. Never expose the tower's
+  control surface to customer chats.
 
 ## Honesty note on the codeword
 

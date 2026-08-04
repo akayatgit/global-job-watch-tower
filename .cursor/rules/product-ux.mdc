@@ -421,3 +421,10 @@ use — they should love opening the app, never fight it.
   `milestone/jobmaster-gate3-v1` as the UX baseline: immediate acknowledgement,
   concise grounded results, canonical links, deterministic facts, and no Hermes
   or model fallback. Extend JobMaster through additive capabilities from here.
+- **JobMaster owner commands (2026-08-04):** The customer persona and normal
+  job-search conversation remain identical for everyone, but VIGIL operational
+  slash commands are **Ashok-only**. Telegram's command menu is scoped to
+  `TELEGRAM_HOME_CHANNEL`; default/all-private command menus are cleared.
+  Owner commands (`/stats`, `/towerinsights`, `/health`, `/hiringsignals`,
+  `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`)
+  route deterministically. Other users never execute or see VIGIL operations.

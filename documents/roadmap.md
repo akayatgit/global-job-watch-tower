@@ -74,6 +74,11 @@ verified jobs and grounded market facts out. No Hermes Telegram fallback.
 | Grounded counts, top companies/roles, city comparisons | **Accepted live** |
 | Mock contract suite + live Supriya acceptance | **Locked at `2fda2d7`** |
 
+**Owner-command fast follow:** restore deterministic VIGIL slash commands after
+the Hermes cutover, scope the Telegram menu to Ashok's home chat, and keep all
+customer chats on the clean JobMaster interface. Code and contract tests are
+green; live acceptance remains open on kanban card #6.
+
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
 flashcards, relevant tech news, tutorials, and LMS progress. Entitlements are
