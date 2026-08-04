@@ -22,3 +22,8 @@ jobs:
           git checkout -- documents/briefs 2>/dev/null || true
       - name: Deploy Watch Tower
         run: bash /home/user/Documents/scripts/deploy_local.sh
+      # Redacted Hermes/Telegram state so remote debugging never needs a
+      # terminal on the ThinkPad (guest-access incident 2026-08-04).
+      - name: Hermes diagnostics (redacted)
+        if: always()
+        run: bash /home/user/Documents/scripts/hermes_diagnostics.sh
