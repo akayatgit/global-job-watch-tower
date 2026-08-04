@@ -5,7 +5,7 @@
 # restart, then re-queue the cancelled roles.
 set -euo pipefail
 
-REPO_ROOT="/home/user/Documents"
+REPO_ROOT="${WATCH_TOWER_ROOT:-/home/user/Documents}"
 JOB_ENGINE="$REPO_ROOT/job_engine"
 DATA_DIR="$JOB_ENGINE/.data"
 LOG_DIR="$DATA_DIR/logs"
@@ -58,7 +58,7 @@ source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
 
 psql_q() {
-  psql -h 127.0.0.1 -p 5433 -U jobengine -d jobengine -Atqc "$1" 2>/dev/null || true
+  psql -h 127.0.0.1 -p 5433 -U jobengine -d jobengine -v ON_ERROR_STOP=1 -Atqc "$1"
 }
 
 stop_beat() {
@@ -86,28 +86,38 @@ stop_worker() {
 }
 
 cancel_active_for_deploy() {
-  : > "$RETRIGGER_FILE"
   if ! pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1; then
-    log "Postgres not ready — skip cancel/retrigger bookkeeping"
-    return
+    die "Postgres not ready — refusing deploy without retrigger bookkeeping"
   fi
-  # Capture distinct roles to re-run after deploy (job ids dedupe LinkedIn rows)
-  psql_q "
-    SELECT DISTINCT search_config_id
-    FROM scrape_runs
-    WHERE status IN ('queued','dispatched','running','cancel_requested')
-      AND search_config_id IS NOT NULL
-    ORDER BY 1;
-  " > "$RETRIGGER_FILE"
+  # Cancel and capture affected roles in one PostgreSQL statement. A database
+  # error rolls the whole statement back, so killed work can never be captured
+  # without cancellation (or cancelled without a recovery record).
+  local active_rows
+  active_rows="$(psql_q "
+    WITH cancelled AS (
+      UPDATE scrape_runs
+      SET status='cancelled', finished_at=now(),
+          error='cancelled for deploy — will retrigger after restart'
+      WHERE status IN ('queued','dispatched','running','cancel_requested')
+      RETURNING search_config_id
+    )
+    SELECT c.search_config_id, COALESCE(sc.name, 'Unknown role'), count(*)
+    FROM cancelled c
+    LEFT JOIN search_configs sc ON sc.id = c.search_config_id
+    WHERE c.search_config_id IS NOT NULL
+    GROUP BY c.search_config_id, COALESCE(sc.name, 'Unknown role')
+    ORDER BY c.search_config_id;
+  ")"
+  local confirmed_file="${RETRIGGER_FILE}.confirmed"
+  : > "$confirmed_file"
+  while IFS='|' read -r config_id role_name role_count; do
+    [ -n "$config_id" ] && printf '%s\n' "$config_id" >> "$confirmed_file"
+    [ -n "$role_name" ] && log "active search: $role_name ($role_count run(s))"
+  done <<< "$active_rows"
+  mv "$confirmed_file" "$RETRIGGER_FILE"
 
   local n
-  n="$(psql_q "
-    UPDATE scrape_runs
-    SET status='cancelled', finished_at=now(),
-        error='cancelled for deploy — will retrigger after restart'
-    WHERE status IN ('queued','dispatched','running','cancel_requested')
-    RETURNING id;
-  " | wc -l | tr -d ' ')"
+  n="$(awk -F'|' '{n += $3} END {print n + 0}' <<< "$active_rows")"
   log "cancelled active searches: ${n:-0} (roles to retrigger: $(wc -l < "$RETRIGGER_FILE" | tr -d ' '))"
 
   # Drop queued Celery messages so cancelled run ids cannot resurrect
@@ -129,9 +139,10 @@ retrigger_cancelled() {
     return
   fi
   log "retriggering cancelled roles after deploy..."
+  local retrigger_code=0
   (
     cd "$JOB_ENGINE"
-    RETRIGGER_FILE="$RETRIGGER_FILE" python3 - <<'PY'
+    RETRIGGER_FILE="$RETRIGGER_FILE" FORCE_RETRIGGER="${FORCE_RETRIGGER:-0}" python3 - <<'PY'
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -161,6 +172,18 @@ with SessionLocal() as db:
         if cfg is None or not cfg.enabled:
             print(f"skip config {cid} (missing or disabled)")
             continue
+        if os.environ.get("FORCE_RETRIGGER") == "1":
+            active = db.execute(
+                select(ScrapeRun).where(
+                    ScrapeRun.search_config_id == cid,
+                    ScrapeRun.status.in_(("queued", "dispatched", "running", "cancel_requested")),
+                )
+            ).scalars().all()
+            for old_run in active:
+                old_run.status = "cancelled"
+                old_run.finished_at = now
+                old_run.error = "cancelled during failed-deploy recovery"
+            db.commit()
         busy = db.execute(
             select(ScrapeRun.id).where(
                 ScrapeRun.search_config_id == cid,
@@ -180,19 +203,61 @@ with SessionLocal() as db:
         db.add(run)
         db.commit()
         db.refresh(run)
-        run_scrape.delay(run.id)
+        try:
+            run_scrape.delay(run.id)
+        except Exception:
+            run.status = "failed"
+            run.finished_at = datetime.now(timezone.utc)
+            run.error = "deploy retrigger dispatch failed — safe to retry"
+            db.commit()
+            raise
         print(f"retriggered config {cid} as run #{run.id}")
         n += 1
 print(f"retriggered={n}")
 PY
-  ) | tee -a "$DEPLOY_LOG"
+  ) | tee -a "$DEPLOY_LOG" || retrigger_code=$?
+  if [ "$retrigger_code" -ne 0 ]; then
+    log "ERROR: retrigger failed; preserving $RETRIGGER_FILE for recovery"
+    return "$retrigger_code"
+  fi
   rm -f "$RETRIGGER_FILE"
 }
 
-# Critical: pause schedule, cancel everything active, kill worker — deploy wins
+DEPLOY_COMPLETE=0
+recover_cancelled_on_failure() {
+  local code=$?
+  if [ "$code" -ne 0 ] && [ "$DEPLOY_COMPLETE" -ne 1 ] && [ -s "$RETRIGGER_FILE" ]; then
+    set +e
+    log "deploy failed — preserving cancelled roles by requeueing them..."
+    FORCE_RETRIGGER=1 retrigger_cancelled
+  fi
+  if [ "$code" -ne 0 ]; then
+    set +e
+    if ! systemctl --user is-active --quiet watch-tower-worker.service \
+        || ! systemctl --user is-active --quiet watch-tower-beat.service; then
+      log "deploy failed with services stopped — attempting safe app recovery..."
+      bash "$JOB_ENGINE/restart_app.sh" >>"$DEPLOY_LOG" 2>&1 \
+        || log "CRITICAL: app recovery failed; inspect $DEPLOY_LOG"
+    fi
+  fi
+  return "$code"
+}
+trap recover_cancelled_on_failure EXIT
+
+# Critical: pause schedule, stop task mutations, then cancel active runs.
+pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1 \
+  || die "Postgres not ready — deploy has not disturbed active searches"
+: > "$RETRIGGER_FILE"
+psql_q "
+  SELECT DISTINCT search_config_id
+  FROM scrape_runs
+  WHERE status IN ('queued','dispatched','running','cancel_requested')
+    AND search_config_id IS NOT NULL
+  ORDER BY 1;
+" > "$RETRIGGER_FILE"
 stop_beat
-cancel_active_for_deploy
 stop_worker
+cancel_active_for_deploy
 
 BEFORE_SHA="$(git rev-parse HEAD)"
 log "fetching origin/main (was $BEFORE_SHA)..."
@@ -331,6 +396,7 @@ if [ ! -f "$SMOKE_MARKER" ]; then
 fi
 
 retrigger_cancelled
+DEPLOY_COMPLETE=1
 
 python3 - <<PY | tee "$STAMP_FILE" | tee -a "$DEPLOY_LOG"
 import json

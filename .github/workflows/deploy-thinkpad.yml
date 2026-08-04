@@ -21,7 +21,12 @@ jobs:
           cd /home/user/Documents
           git checkout -- documents/briefs 2>/dev/null || true
       - name: Deploy Watch Tower
-        run: bash /home/user/Documents/scripts/deploy_local.sh
+        run: |
+          cd /home/user/Documents
+          git fetch origin main
+          git show "${GITHUB_SHA}:scripts/deploy_local.sh" > /tmp/watch-tower-deploy.sh
+          chmod 700 /tmp/watch-tower-deploy.sh
+          WATCH_TOWER_ROOT=/home/user/Documents bash /tmp/watch-tower-deploy.sh
       # Redacted JobMaster/legacy-Hermes state so remote Telegram debugging
       # never needs a terminal on the ThinkPad.
       - name: JobMaster Telegram diagnostics (redacted)
