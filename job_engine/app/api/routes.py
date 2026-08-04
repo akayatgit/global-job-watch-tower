@@ -234,3 +234,15 @@ def stats(db: Session = Depends(get_db)):
             )
         ).scalar(),
     }
+
+
+# ---------- deploy verification ----------
+
+@router.get('/deploy/status')
+def deploy_status():
+    """No-DB, no-auth stamp so a PR merge can be confirmed live on the
+    ThinkPad: compares the last `Deploy ThinkPad` run's commit against the
+    commit the running process was actually started from.
+    See documents/deploy-verification.md."""
+    from app.deploy_status import compute_deploy_status
+    return compute_deploy_status()

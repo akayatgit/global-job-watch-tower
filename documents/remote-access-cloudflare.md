@@ -86,6 +86,10 @@ Re-run is safe (idempotent tunnel reuse). Credentials stay under `~/.cloudflared
 
 Tunnel does **not** disturb scrapes. Deploy restarts API/worker/beat only.
 
+To confirm a merged PR actually deployed (Akay's post-merge check, works
+from Cursor cloud with no ThinkPad access): see
+[`deploy-verification.md`](./deploy-verification.md).
+
 ## Security rules
 
 - Never expose Postgres `:5433` or Redis publicly.

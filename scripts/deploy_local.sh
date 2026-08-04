@@ -40,12 +40,19 @@ export PGPASSWORD="${PGPASSWORD:-}"
 log "=== Watch Tower deploy start ==="
 cd "$REPO_ROOT"
 
-# Refuse unexpected dirty tracked files (ignored .env/.data are fine)
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+# Refuse unexpected dirty tracked files (ignored .env/.data are fine).
+# documents/briefs/ is cron-regenerated output (hermes_daily_brief.py writes
+# it directly, no commit) — a local edit there is expected noise, not a real
+# change to protect. Treating it as fatal wedged every deploy for 2 days
+# (2026-08-02..08-04) since this very check ran *before* the fix could be
+# pulled. See documents/deploy-verification.md.
+DIRTY="$(git status --porcelain --untracked-files=no -- . ':!documents/briefs' 2>/dev/null || true)"
+if [ -n "$DIRTY" ]; then
   log "dirty tracked files:"
-  git status --porcelain --untracked-files=no | tee -a "$DEPLOY_LOG"
+  echo "$DIRTY" | tee -a "$DEPLOY_LOG"
   die "working tree has local tracked changes — commit/stash before deploy"
 fi
+git checkout -- documents/briefs 2>/dev/null || true
 
 source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
@@ -194,6 +201,14 @@ git reset --hard origin/main
 AFTER_SHA="$(git rev-parse HEAD)"
 log "code aligned to $AFTER_SHA"
 
+# Defense in depth: the Action ran for a specific push, so if this deploy
+# somehow lands on a different HEAD than that push (double-push race,
+# stale runner queue), fail loud instead of silently reporting "ok".
+if [ -n "${GITHUB_SHA:-}" ] && [ "$AFTER_SHA" != "$GITHUB_SHA" ]; then
+  log "WARNING: deployed HEAD ($AFTER_SHA) != triggering commit (\$GITHUB_SHA=$GITHUB_SHA)"
+  log "another push landed on origin/main between trigger and pull — deploying the newer commit is correct, continuing"
+fi
+
 cd "$JOB_ENGINE"
 log "applying migrations..."
 alembic upgrade head
@@ -232,6 +247,7 @@ print(json.dumps({
     "deployed_at": datetime.now(timezone.utc).isoformat(),
     "before_sha": "$BEFORE_SHA",
     "sha": "$AFTER_SHA",
+    "triggering_sha": "${GITHUB_SHA:-}" or None,
     "status": "ok",
     "policy": "cancel-active-then-retrigger",
 }, indent=2))
