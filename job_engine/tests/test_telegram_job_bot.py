@@ -28,6 +28,20 @@ class FakeEngine:
         return '1. AI Engineer — Acme — Fresher\nhttps://www.linkedin.com/jobs/view/4448000001/'
 
 
+class SmokeEngine:
+    def __init__(self, valid: bool = True):
+        self.valid = valid
+
+    def handle(self, text: str, chat_id: str) -> str:
+        if not self.valid:
+            return 'JobMaster could not reach live Watch Tower data. Try again shortly.'
+        return '\n\n'.join(
+            f'{i}. AI Engineer {i} — Company {i} — Fresher\n'
+            f'https://www.linkedin.com/jobs/view/{4448000000 + i}/'
+            for i in range(1, 11)
+        )
+
+
 class FailingTelegramAPI(FakeTelegramAPI):
     def send(self, chat_id: str, text: str) -> None:
         raise OSError('Telegram unavailable')
@@ -106,6 +120,31 @@ class TelegramBotContractTests(unittest.TestCase):
             'JobMaster provides verified jobs and live job-market insights. '
             'Ask naturally in any sentence.',
         )
+
+    def test_smoke_sends_only_ten_row_grounded_contract(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=SmokeEngine(valid=True),
+            sessions=self.sessions,
+            health_enabled=False,
+        )
+        bot.smoke('42', 'Fresh jobs in Bangalore in AI space for fresher')
+        self.assertEqual(self.api.sent[0], ('42', 'Thinking…'))
+        self.assertEqual(
+            self.api.sent[1][1].count('https://www.linkedin.com/jobs/view/'),
+            10,
+        )
+
+    def test_smoke_rejects_fallback_before_sending_result(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=SmokeEngine(valid=False),
+            sessions=self.sessions,
+            health_enabled=False,
+        )
+        with self.assertRaises(RuntimeError):
+            bot.smoke('42', 'Fresh jobs in Bangalore in AI space for fresher')
+        self.assertEqual(self.api.sent, [])
 
     def test_telegram_failure_is_contained_by_worker_boundary(self):
         bot = JobMasterTelegramBot(

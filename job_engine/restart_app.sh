@@ -16,6 +16,7 @@ DATA_DIR="$(pwd)/.data"
 LOG_DIR="$DATA_DIR/logs"
 WORKDIR="$(pwd)"
 AI_BIN="/home/user/anaconda3/envs/ai/bin"
+RUNTIME_SHA="$(git -C "$WORKDIR/.." rev-parse HEAD)"
 mkdir -p "$LOG_DIR"
 
 stop_unit() {
@@ -52,6 +53,7 @@ start_unit() {
     --property="RestartSec=3" \
     --setenv="PATH=${AI_BIN}:/usr/bin:/bin" \
     --setenv="HOME=/home/user" \
+    --setenv="WATCH_TOWER_RUNTIME_SHA=${RUNTIME_SHA}" \
     "$@"
   sleep 0.6
   local pid

@@ -11,6 +11,7 @@ running process tree is actually built from, so the API can answer
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -44,7 +45,9 @@ def compute_deploy_status() -> dict:
         except Exception:
             stamp = {'error': 'last_deploy.json is unreadable/corrupt'}
 
-    running_sha = _git_head()
+    # Captured when the API process starts. Falling back to git is only for
+    # local development; production units always set this immutable value.
+    running_sha = os.getenv('WATCH_TOWER_RUNTIME_SHA') or _git_head()
     deployed_sha = stamp.get('sha')
 
     return {

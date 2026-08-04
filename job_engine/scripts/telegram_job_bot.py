@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import threading
@@ -28,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.telegram_job_search import MORE_RE, RESET_RE, JobMasterEngine  # noqa: E402
+from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
 from app.telegram_sessions import TelegramSessionStore  # noqa: E402
 
 HERMES_ENV = Path.home() / '.hermes' / '.env'
@@ -37,6 +38,9 @@ VERSION_FILE = ROOT.parent / 'VERSION'
 LOG = logging.getLogger('jobmaster-telegram')
 STOP = False
 HEALTH_LOCK = threading.Lock()
+SMOKE_LINK_RE = re.compile(r'https://www\.linkedin\.com/jobs/view/\d+/')
+SMOKE_ROW_RE = re.compile(r'^\d+\. .+ — .+ — .+$', re.MULTILINE)
+SMOKE_BANNED = ('mcp__', 'provider:', 'model:', 'endpoint:', 'watch tower data')
 
 
 def load_env() -> dict[str, str]:
@@ -244,6 +248,24 @@ class JobMasterTelegramBot:
             LOG.exception('immediate acknowledgement failed chat=%s', chat_id)
             return False
 
+    def smoke(self, chat_id: str, query: str) -> None:
+        """Send only a contract-valid grounded production search result."""
+        reply = self.engine.handle(query, chat_id)
+        low = reply.lower()
+        links = SMOKE_LINK_RE.findall(reply)
+        rows = SMOKE_ROW_RE.findall(reply)
+        if (
+            len(links) != PAGE_SIZE
+            or len(rows) != PAGE_SIZE
+            or len(set(links)) != PAGE_SIZE
+            or any(marker in low for marker in SMOKE_BANNED)
+        ):
+            raise RuntimeError(
+                f'production smoke contract failed: rows={len(rows)} links={len(links)}'
+            )
+        self.api.send(chat_id, 'Thinking…')
+        self.api.send(chat_id, reply)
+
     def _process_locked(
         self,
         chat_id: str,
@@ -323,7 +345,12 @@ class JobMasterTelegramBot:
             # be drained or silently lost.
             offset = 0
             self.sessions.set_state('telegram_update_offset', offset)
-        self._write_health(status='running', bot=me.get('username', ''))
+        poll_successes = 0
+        self._write_health(
+            status='starting',
+            bot=me.get('username', ''),
+            poll_successes=poll_successes,
+        )
 
         backoff = 1
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='jobmaster') as workers:
@@ -331,9 +358,17 @@ class JobMasterTelegramBot:
                 self._enqueue_update(workers, update_id, chat_id, text)
             while not STOP:
                 try:
-                    updates = self.api.updates(offset)
+                    poll_timeout = 2 if poll_successes < 2 else 25
+                    updates = self.api.updates(offset, timeout=poll_timeout)
+                    poll_successes += 1
                     backoff = 1
-                    self._write_health(status='running', bot=me.get('username', ''))
+                    self._write_health(
+                        status='running' if poll_successes >= 2 else 'starting',
+                        bot=me.get('username', ''),
+                        poll_successes=poll_successes,
+                        last_poll_at=time.time(),
+                        error=None,
+                    )
                     for update in updates:
                         update_id = int(update.get('update_id', -1))
                         offset = max(offset, update_id + 1)
@@ -414,8 +449,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'smoke':
         if not args.chat:
             parser.error('smoke requires --chat')
-        bot.process(args.chat, args.query)
-        return 0
+        try:
+            bot.smoke(args.chat, args.query)
+            return 0
+        except Exception:
+            LOG.exception('production smoke failed')
+            return 8
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     return bot.run()
