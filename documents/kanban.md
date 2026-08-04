@@ -59,142 +59,6 @@ old `title="fresh"` bug.
 - Consider Pillow-composited exact-text layer if Nano Banana misspells
   numbers on ranked-list slides (data authenticity rule).
 
-### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
-
-**Status (2026-08-04, evening):** Manual ThinkPad step ELIMINATED — deploy
-now owns the Hermes gateway. Live failure that proved it: Ashok's wife
-(`@Supriyamk`) sent "hi" and got silence even after `/allow`, because (a) the
-gateway still had `TELEGRAM_ALLOW_ALL_USERS=false` and dropped her before the
-plugin, (b) the gateway never restarts on deploy so plugin code was stale,
-and (c) every DIRECTOR reply was hardcoded to `TELEGRAM_HOME_CHANNEL` — even
-an allowed guest's answers would have landed in Ashok's chat. All three fixed:
-`scripts/deploy_local.sh` now flips the gate flag + restarts the gateway on
-every deploy; router sets `DIRECTOR_TARGET_CHAT` (sender's chat) and all four
-send paths (courier text, fact boards, lens images, carousel) honor it;
-`@supriyamk` added to `DEFAULT_ALLOWED_USERNAMES` (with `@azr0099`).
-Telegram bots cannot DM first — guests must send one message, then Vigil
-replies in their chat.
-
-**Second root cause found via remote diagnostics (2026-08-04 night):** the
-Hermes gateway loads plugins from `~/.hermes/plugins/vigil-image-only/` — a
-one-time COPY (9.5 KB) that no deploy ever refreshed, while the repo version
-had grown to 13.5 KB. Every plugin change shipped today (username allowlist,
-`/allowuser`, sender-username extraction) never actually ran. Log proof:
-`DIRECTOR blocked unauthorised chat=1221647274 text=Hi` after the allowlist
-deploy, and `guest-reply failed chat=supriyamk: HTTP 400` (old code treating
-a handle as a numeric chat id). Fix: deploy now re-copies the plugin dir
-into `~/.hermes/plugins/` before every gateway restart, plus a one-time
-marker-guarded welcome message to the wrongly blocked chat. Lesson: deploy
-script changes take effect only on the NEXT run (bash reads the file that
-`git reset --hard` replaces mid-run) — always trigger a follow-up deploy
-after editing `scripts/deploy_local.sh`.
-Remote debugging now standard: every deploy prints redacted Hermes
-diagnostics (`scripts/hermes_diagnostics.sh`) in the Actions log.
-
-**Guest soul shipped (2026-08-04, late night):** wife's "hi" was answered by
-the Hermes BUILT-IN agent (skills/platform essay — engine-room talk to a job
-seeker). Fixes: (1) plugin returns skip IMMEDIATELY for guest chats (no
-600s join) so the built-in agent can never win a race; (2) new **guest
-persona** end-to-end (plugin `--persona guest` → router).
-
-**v2, same night — killed the LLM entirely for guests:** even with the
-guest persona above, the LLM agent still drifted on a follow-up question
-("data science jobs bangalore") — invented salary bands, speculated
-employers ("typically at Google/Amazon/Zoho"), a chatty generic-assistant
-greeting by her first name, and **zero links**. This is the exact
-hallucination class boards were fixed for on 2026-08-02 ("Boards are now
-deterministic text — no LLM rewrite"). Applied the same medicine: guests
-now get `app/director/guest_reply.py` — a pure-Python parse-role/city →
-hit `/api/jobs` + `/api/ultron/tower` directly → format function. Zero LLM
-calls in the guest path. Every row requires a real `job_url` or it is
-dropped; one factual tower-stat line; friendly deterministic greeting for
-"hi"/blank asks. Verified with mocked-network unit tests (extraction,
-dedup, no-link exclusion, empty-match fallback). Owner chat (full Jarvis,
-LLM) unchanged.
-
-**Third layer, same night — closed the exception escape hatch:** the
-diagnostics log from that exact minute showed
-`gateway.platforms.base: Sending response (2580 chars) to <guest chat>` —
-Hermes' OWN send path, not ours — right where our plugin should have
-returned a plain skip. Per Hermes' documented `pre_gateway_dispatch`
-contract: "exceptions in plugin callbacks are caught and logged; the
-gateway always falls through to normal dispatch on error." Any uncaught
-exception anywhere in our hook hands the message straight to Hermes'
-ungoverned built-in agent. Fixed: the entire hook body now runs inside an
-outer guard (`telegram_to_director` → `_telegram_to_director_inner`) that
-can never raise — on any error it logs, sends a short safe apology, and
-always returns `{"action": "skip", ...}`. Verified with a simulated crash:
-outer function still returns a clean skip dict, never propagates.
-
-Earlier same day: added **`@username` allowlisting** (`/allowuser`,
-`/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
-`job_engine/app/telegram_guests.py`) so Ashok can grant access to a known
-handle directly, without the numeric-id `@userinfobot` detour.
-
-**Problem (2026-08-04):** Ashok tried to demo the Telegram bot (`@vigil_akay_bot`)
-to an investor. Messages from the investor's phone and his wife's phone got
-**zero replies** — only Ashok's own linked account works. He was away from
-the ThinkPad with no remote terminal access, so the only known fix (edit
-`~/.hermes/.env`, restart the gateway) was impossible to apply live.
-
-**Root cause:** `job_engine/scripts/telegram_watch_tower.py` bootstrap sets
-`TELEGRAM_ALLOWED_USERS=<ashok_id>` and `TELEGRAM_ALLOW_ALL_USERS=false` in
-`~/.hermes/.env` (outside git). That gate is enforced **inside the external
-Hermes gateway binary** (`~/.local/bin/hermes`, not in this repo) — it drops
-non-allowed senders *before* our plugin hook
-(`job_engine/hermes_plugins/vigil-image-only/__init__.py:112` →
-`telegram_to_director`) ever sees the message. So a repo-side fix can't
-intercept anything Hermes already silently dropped, and any fix requires
-either a terminal on the ThinkPad or a Hermes gateway restart — both were
-unavailable at the moment they were needed.
-
-**Approach:** stop relying on Hermes's own allowlist for anything but "is
-this bot open at all." Set `TELEGRAM_ALLOW_ALL_USERS=true` permanently in
-`~/.hermes/.env` (one-time manual step, needs to happen on the ThinkPad —
-note this for whoever picks up the card) so every message reaches our
-plugin hook, then build **our own** access control fully inside this repo,
-manageable entirely from Ashok's phone via Telegram commands (no SSH, no
-laptop, no Cloudflare dashboard):
-
-- New small store (e.g. `job_engine/app/telegram_guests.py` +
-  `job_engine/.data/telegram_guests.json` or a DB table) holding
-  `{telegram_user_id, added_by, expires_at, label}`.
-- In `telegram_to_director` (or a new pre-check called from it), before
-  dispatching to DIRECTOR: allow if `from.id` is the primary owner
-  (Ashok's id, from `~/.hermes/watch_tower_telegram.json`) **or** a
-  non-expired guest row. Otherwise reply nothing (keep current silent
-  behavior for randoms) or a short "ask the owner to `/allow` you" — Ashok's
-  call, default to silent to match existing private-ops posture.
-- Admin-only commands, usable only by the primary owner:
-  - `/allow <user_id> [minutes=60]` — add/refresh a guest, default 60 min.
-  - `/revoke <user_id>` — remove immediately.
-  - `/guests` — list active guests + remaining time.
-- Getting a guest's numeric Telegram id: have them message
-  [@userinfobot](https://t.me/userinfobot) once (safe, doesn't touch our
-  bot's state) and read their `Id` back to Ashok.
-
-**Acceptance criteria:**
-- From his own phone only (no ThinkPad access), Ashok sends
-  `/allow <investor_id> 60` → investor's next message gets a real DIRECTOR
-  reply → after 60 minutes it silently stops working again → `/guests`
-  shows the active entry and countdown → `/revoke` removes access
-  immediately.
-- Works whether or not Ashok has any ThinkPad/terminal/Cloudflare access at
-  the time.
-- Document the one-time `TELEGRAM_ALLOW_ALL_USERS=true` manual step (and
-  why it's now safe — our own gate replaces it) in
-  `documents/hermes-agent-integration.md`.
-- **Username variant:** a handle in `DEFAULT_ALLOWED_USERNAMES` (or granted
-  via `/allowuser <handle>`) gets a real DIRECTOR reply with **no** numeric
-  id ever exchanged; `/guests` lists allowed usernames alongside numeric
-  guests; `/revokeuser` removes a granted handle (defaults require a code
-  change, by design).
-
-**Files:** `job_engine/hermes_plugins/vigil-image-only/__init__.py`,
-`job_engine/app/director/router.py`, `job_engine/app/telegram_guests.py`,
-`job_engine/app/api/routes.py`, `job_engine/scripts/telegram_watch_tower.py`
-(bootstrap defaults), `documents/hermes-agent-integration.md`.
-
 ---
 
 ## To Do
@@ -265,3 +129,13 @@ card #2).
 | Deploy verification check + fix `documents/briefs` dirty-file wedge (attempt 1 — insufficient alone) | [#5](https://github.com/akayatgit/global-job-watch-tower/pull/5) | 2026-08-04 |
 | Build version counter + orb dot-color signal + rail version footer | [#6](https://github.com/akayatgit/global-job-watch-tower/pull/6) | 2026-08-04 |
 | Actually unblock the deploy pipeline (fix lives in workflow YAML, not the gated script) | [#7](https://github.com/akayatgit/global-job-watch-tower/pull/7) | 2026-08-04 |
+| **#1 [URGENT] Telegram guest access** — own allowlist (`/allow` `/revoke` `/allowuser` `/revokeuser` `/guests`, expiry, owner can't be revoked), deploy owns the Hermes gateway + plugin sync, sender-scoped replies, guest persona → deterministic zero-LLM guest replies, outer exception guard so a bug can never fall through to Hermes' built-in agent. Full incident + fix write-up lives in `documents/hermes-agent-integration.md` § "Telegram guest access" — do not re-investigate, it is closed. | [#19](https://github.com/akayatgit/global-job-watch-tower/pull/19) · [#20](https://github.com/akayatgit/global-job-watch-tower/pull/20) · [#21](https://github.com/akayatgit/global-job-watch-tower/pull/21) · [#22](https://github.com/akayatgit/global-job-watch-tower/pull/22) · [#23](https://github.com/akayatgit/global-job-watch-tower/pull/23) · [#24](https://github.com/akayatgit/global-job-watch-tower/pull/24) · [#25](https://github.com/akayatgit/global-job-watch-tower/pull/25) · [#26](https://github.com/akayatgit/global-job-watch-tower/pull/26) | 2026-08-04 |
+
+**Note on stale duplicate PRs — ignore, do not resume:** draft `#9`
+(`cursor/telegram-guest-access-624b`, based on the never-merged `#8`
+`cursor/add-engineering-kanban-624b`) and its child `#10`
+(`cursor/telegram-allow-username-azr0099-fb06`) built card #1 a different way,
+earlier, before the real fix above landed directly on `main`. Left open per
+"don't close PRs without Ashok's word," but they are dead branches — the
+shipped code is `job_engine/app/telegram_guests.py` on `main`, not either of
+those branches.
