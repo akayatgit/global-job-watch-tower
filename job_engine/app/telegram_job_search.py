@@ -1,0 +1,423 @@
+"""JobMaster capability #1: grounded jobs and job-market insights.
+
+An LLM may translate messy language into a small, validated intent object.
+It never sees or writes job rows, links, counts, or comparisons. Every fact
+in the final response comes from Watch Tower HTTP APIs and deterministic
+formatters in this module.
+"""
+
+from __future__ import annotations
+
+import difflib
+import json
+import os
+import re
+import urllib.parse
+import urllib.request
+from dataclasses import asdict, dataclass, field
+from typing import Any, Callable
+
+from app import config
+from app.cities import CITY_BY_ID, city_label, normalize_city_filter
+from app.experience_bands import normalize_experience
+from app.telegram_sessions import TelegramSessionStore
+
+BASE = 'http://127.0.0.1:8001'
+PAGE_SIZE = 10
+MAX_FETCH = 1000
+ALLOWED_WINDOWS = {0, 1, 2, 4, 7, 14, 30}
+
+LINKEDIN_ID_RE = re.compile(r'/jobs/view/(?:[^/?#]*-)?(\d{6,})(?:[/?#]|$)', re.I)
+MORE_RE = re.compile(r'^\s*(?:more|next|show\s+more|more\s+jobs|next\s+10)\s*[.!?]*\s*$', re.I)
+RESET_RE = re.compile(r'^\s*(?:/new|/reset|/clear|new|reset|clear)\s*$', re.I)
+
+AI_TITLE_RE = re.compile(
+    r'(?i)(?<![a-z])(?:ai/?ml|a\.?i\.?|artificial\s+intelligence|'
+    r'machine\s+learning|\bml\b|llm|genai|generative\s+ai|deep\s+learning|'
+    r'nlp\b|computer\s+vision)(?![a-z])'
+)
+ROLE_PATTERNS = {
+    'ai_ml': AI_TITLE_RE,
+    'data': re.compile(r'(?i)\b(?:data|analytics?|business intelligence|bi developer)\b'),
+    'software': re.compile(r'(?i)\b(?:software|developer|engineer|programmer|full.?stack|backend|frontend)\b'),
+    'cybersecurity': re.compile(r'(?i)\b(?:cyber|security|soc|penetration|infosec)\b'),
+    'cloud_devops': re.compile(r'(?i)\b(?:cloud|devops|sre|site reliability|platform engineer)\b'),
+    'product': re.compile(r'(?i)\b(?:product manager|product owner|product analyst)\b'),
+    'design': re.compile(r'(?i)\b(?:designer|design|ui/?ux|ux|ui)\b'),
+}
+
+CITY_ALIASES = {
+    'bengaluru': ('bengaluru', 'bangalore', 'bengalore', 'banglore'),
+    'hyderabad': ('hyderabad', 'hydrabad', 'secunderabad'),
+    'chennai': ('chennai', 'madras'),
+    'kerala': ('kerala', 'kochi', 'cochin', 'trivandrum', 'ernakulam'),
+    'pune': ('pune',),
+    'mumbai': ('mumbai', 'bombay', 'thane'),
+    'delhi': ('delhi', 'new delhi', 'delhi ncr'),
+    'gurugram': ('gurugram', 'gurgaon'),
+    'noida': ('noida', 'greater noida'),
+    'ahmedabad': ('ahmedabad', 'amdavad'),
+    'kolkata': ('kolkata', 'calcutta'),
+    'remote': ('remote', 'work from home', 'wfh'),
+    'india': ('india', 'pan india'),
+}
+
+FILLER = {
+    'a', 'an', 'and', 'any', 'are', 'at', 'available', 'for', 'find', 'fresh',
+    'fresher', 'freshers', 'give', 'in', 'is', 'job', 'jobs', 'latest', 'me',
+    'of', 'opening', 'openings', 'please', 'role', 'roles', 'show', 'space',
+    'the', 'today', 'want', 'with',
+}
+
+
+@dataclass
+class JobMasterIntent:
+    kind: str = 'job_search'  # job_search | insight | help
+    role_family: str = ''
+    role_keywords: list[str] = field(default_factory=list)
+    cities: list[str] = field(default_factory=list)
+    experience: str = ''
+    metric: str = ''  # count | top_companies | top_roles | compare_cities | trend
+    window_days: int = 7
+
+
+def _http_get(path: str, params: dict[str, Any] | None = None) -> dict | list:
+    url = BASE + path
+    clean = {k: v for k, v in (params or {}).items() if v not in (None, '')}
+    if clean:
+        url += '?' + urllib.parse.urlencode(clean)
+    req = urllib.request.Request(url, headers={'Accept': 'application/json'})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
+def _extract_cities(text: str) -> list[str]:
+    low = (text or '').lower()
+    found: list[tuple[int, str]] = []
+    for key, aliases in CITY_ALIASES.items():
+        positions = [low.find(alias) for alias in aliases if alias in low]
+        if positions:
+            found.append((min(positions), key))
+    if not found:
+        words = re.findall(r'[a-z]+', low)
+        all_aliases = [(alias, key) for key, aliases in CITY_ALIASES.items() for alias in aliases]
+        for word in words:
+            matches = difflib.get_close_matches(word, [a for a, _ in all_aliases], n=1, cutoff=0.82)
+            if matches:
+                key = next(k for a, k in all_aliases if a == matches[0])
+                found.append((low.find(word), key))
+                break
+    return list(dict.fromkeys(key for _pos, key in sorted(found)))
+
+
+def _fallback_intent(text: str) -> JobMasterIntent:
+    low = (text or '').lower()
+    cities = _extract_cities(low)
+    experience = ''
+    if re.search(r'\b(?:fresher|freshers|fresh graduate|graduate|entry.?level|intern(?:ship)?)\b', low):
+        experience = 'fresher'
+    else:
+        for token in ('1-2', '3-5', '6-8', '9-12', '13+'):
+            if token in low:
+                experience = normalize_experience(token) or ''
+                break
+
+    role_family = ''
+    if re.search(r'(?i)(?:\bai\b|\bml\b|artificial intelligence|machine learning|genai|llm)', low):
+        role_family = 'ai_ml'
+    elif re.search(r'\b(?:data science|data scientist|data analyst|analytics)\b', low):
+        role_family = 'data'
+    elif re.search(r'\b(?:cyber|security|soc|infosec)\b', low):
+        role_family = 'cybersecurity'
+    elif re.search(r'\b(?:cloud|devops|sre)\b', low):
+        role_family = 'cloud_devops'
+    elif re.search(r'\b(?:software|developer|engineer|full.?stack|backend|frontend)\b', low):
+        role_family = 'software'
+
+    insight = bool(re.search(
+        r'\b(?:how many|count|compare|comparison|versus|vs\.?|top compan|top role|'
+        r'trend|market insight|hiring market|which city|growth|grew|growing)\b',
+        low,
+    ))
+    metric = ''
+    if insight:
+        if len(cities) >= 2 or re.search(r'\b(?:compare|versus|vs\.?)\b', low):
+            metric = 'compare_cities'
+        elif re.search(r'\btop compan', low):
+            metric = 'top_companies'
+        elif re.search(r'\btop role', low):
+            metric = 'top_roles'
+        elif re.search(r'\b(?:trend|growth|grew|growing)\b', low):
+            metric = 'trend'
+        else:
+            metric = 'count'
+
+    days = 7
+    day_match = re.search(r'\b(1|2|4|7|14|30)\s*(?:d|day|days)\b', low)
+    if day_match:
+        days = int(day_match.group(1))
+    elif 'today' in low or '24h' in low:
+        days = 0
+
+    scrubbed = low
+    for aliases in CITY_ALIASES.values():
+        for alias in aliases:
+            scrubbed = scrubbed.replace(alias, ' ')
+    words = [
+        w for w in re.findall(r'[a-z0-9+#.-]+', scrubbed)
+        if w not in FILLER and not re.fullmatch(r'\d+(?:-\d+)?', w)
+    ]
+    if role_family:
+        words = []
+    return JobMasterIntent(
+        kind='insight' if insight else 'job_search',
+        role_family=role_family,
+        role_keywords=words[:5],
+        cities=cities[:2],
+        experience=experience,
+        metric=metric,
+        window_days=days,
+    )
+
+
+class IntentInterpreter:
+    """Constrained language understanding; output is validated before use."""
+
+    def __init__(self, enabled: bool | None = None):
+        if enabled is None:
+            enabled = os.getenv('JOBMASTER_LLM_INTENT', 'true').lower() == 'true'
+        self.enabled = enabled
+
+    def parse(self, text: str) -> JobMasterIntent:
+        fallback = _fallback_intent(text)
+        if not self.enabled or not config.OPENAI_API_KEY:
+            return fallback
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=12)
+            response = client.chat.completions.create(
+                model=config.OPENAI_BRAIN_MODEL,
+                temperature=0,
+                response_format={'type': 'json_object'},
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': (
+                            'Translate the user message into JSON only. You are an intent parser, '
+                            'not an answer writer. Keys: kind (job_search|insight|help), '
+                            'role_family (ai_ml|data|software|cybersecurity|cloud_devops|product|'
+                            'design|empty), role_keywords (array max 5), cities (array max 2 of '
+                            'bengaluru|hyderabad|chennai|kerala|pune|mumbai|delhi|gurugram|noida|'
+                            'ahmedabad|kolkata|remote|india), experience '
+                            '(fresher|1-2|3-5|6-8|9-12|13plus|empty), metric '
+                            '(count|top_companies|top_roles|compare_cities|trend|empty), '
+                            'window_days (0|1|2|4|7|14|30). Correct spelling and infer meaning. '
+                            'Never include jobs, companies, links, counts, advice, or prose.'
+                        ),
+                    },
+                    {'role': 'user', 'content': text[:1200]},
+                ],
+            )
+            raw = json.loads(response.choices[0].message.content or '{}')
+            return self._validate(raw, fallback)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _validate(raw: dict[str, Any], fallback: JobMasterIntent) -> JobMasterIntent:
+        valid_families = set(ROLE_PATTERNS)
+        valid_metrics = {'count', 'top_companies', 'top_roles', 'compare_cities', 'trend'}
+        kind = raw.get('kind') if raw.get('kind') in {'job_search', 'insight', 'help'} else fallback.kind
+        family = raw.get('role_family') if raw.get('role_family') in valid_families else fallback.role_family
+        cities = []
+        for city in raw.get('cities') or []:
+            key = normalize_city_filter(str(city))
+            if key and key not in cities:
+                cities.append(key)
+        experience = normalize_experience(str(raw.get('experience') or '')) or fallback.experience
+        keywords = [
+            str(w).strip().lower()[:40]
+            for w in (raw.get('role_keywords') or [])
+            if str(w).strip()
+        ][:5]
+        metric = raw.get('metric') if raw.get('metric') in valid_metrics else fallback.metric
+        try:
+            days = int(raw.get('window_days', fallback.window_days))
+        except (TypeError, ValueError):
+            days = fallback.window_days
+        if days not in ALLOWED_WINDOWS:
+            days = fallback.window_days
+        return JobMasterIntent(
+            kind=kind,
+            role_family=family,
+            role_keywords=keywords or fallback.role_keywords,
+            cities=cities[:2] or fallback.cities,
+            experience=experience,
+            metric=metric,
+            window_days=days,
+        )
+
+
+def canonical_link(job: dict[str, Any]) -> str:
+    job_id = str(job.get('linkedin_job_id') or '').strip()
+    if not job_id.isdigit():
+        match = LINKEDIN_ID_RE.search(str(job.get('job_url') or ''))
+        job_id = match.group(1) if match else ''
+    return f'https://www.linkedin.com/jobs/view/{job_id}/' if job_id else ''
+
+
+def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
+    title = str(job.get('title') or '')
+    if intent.role_family:
+        pattern = ROLE_PATTERNS.get(intent.role_family)
+        return bool(pattern and pattern.search(re.sub(r'(?i)apprentice', '', title)))
+    if not intent.role_keywords:
+        return True
+    low = title.lower()
+    matched = sum(1 for word in intent.role_keywords if word in low)
+    if matched:
+        return True
+    phrase = ' '.join(intent.role_keywords)
+    return difflib.SequenceMatcher(None, phrase, low).ratio() >= 0.45
+
+
+def _format_jobs(jobs: list[dict[str, Any]], page: int) -> str:
+    start = max(0, page) * PAGE_SIZE
+    picked = jobs[start:start + PAGE_SIZE]
+    if not picked:
+        return 'No more verified jobs match that search right now.' if page else (
+            'No verified jobs match that search right now.'
+        )
+    lines: list[str] = []
+    for idx, job in enumerate(picked, start=start + 1):
+        title = str(job.get('title') or '').strip()
+        company = str(job.get('company') or 'Company not stated').strip()
+        experience = str(job.get('experience_band') or 'Not stated').strip()
+        lines.append(f'{idx}. {title} — {company} — {experience}\n{canonical_link(job)}')
+    if start + PAGE_SIZE < len(jobs):
+        lines.append('Reply more for 10 more jobs.')
+    return '\n\n'.join(lines)
+
+
+class JobMasterEngine:
+    def __init__(
+        self,
+        *,
+        api_get: Callable[[str, dict[str, Any] | None], dict | list] = _http_get,
+        interpreter: IntentInterpreter | None = None,
+        sessions: TelegramSessionStore | None = None,
+    ):
+        self.api_get = api_get
+        self.interpreter = interpreter or IntentInterpreter()
+        self.sessions = sessions or TelegramSessionStore()
+
+    def handle(self, text: str, chat_id: str) -> str:
+        raw = (text or '').strip()
+        if RESET_RE.match(raw):
+            self.sessions.clear(chat_id)
+            return 'Search reset. Send a role, city, or job-market question.'
+        if MORE_RE.match(raw):
+            saved = self.sessions.advance(chat_id)
+            if not saved:
+                return 'Send a job search first, then reply more.'
+            intent_dict, page = saved
+            return self._job_reply(JobMasterIntent(**intent_dict), page)
+
+        intent = self.interpreter.parse(raw)
+        if intent.kind == 'insight':
+            return self._insight_reply(intent)
+        if intent.kind == 'help':
+            return 'JobMaster provides verified jobs and live job-market insights.'
+
+        self.sessions.save_search(chat_id, asdict(intent), page=0)
+        return self._job_reply(intent, page=0)
+
+    def _job_reply(self, intent: JobMasterIntent, page: int) -> str:
+        params: dict[str, Any] = {'limit': MAX_FETCH}
+        if intent.cities:
+            params['city'] = intent.cities[0]
+        if intent.experience == 'fresher':
+            params['track'] = 'fresher'
+        elif intent.experience:
+            params['experience'] = intent.experience
+        data = self.api_get('/api/jobs', params)
+        rows = data if isinstance(data, list) else []
+        valid: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for job in rows:
+            link = canonical_link(job)
+            title = str(job.get('title') or '').strip()
+            company = str(job.get('company') or '').strip()
+            if not title or not link or not _matches_role(job, intent):
+                continue
+            key = str(job.get('linkedin_job_id') or link)
+            if key in seen:
+                continue
+            seen.add(key)
+            copied = dict(job)
+            copied['job_url'] = link
+            valid.append(copied)
+        return _format_jobs(valid, page)
+
+    def _insight_reply(self, intent: JobMasterIntent) -> str:
+        params: dict[str, Any] = {'days': intent.window_days}
+        if intent.cities:
+            params['city'] = intent.cities[0]
+        if intent.experience:
+            params['experience'] = intent.experience
+        scope = city_label(intent.cities[0]) if intent.cities else 'All India'
+        window = 'past 24 hours' if intent.window_days == 0 else f'past {intent.window_days} days'
+
+        if intent.metric == 'compare_cities' and len(intent.cities) >= 2:
+            data = self.api_get('/api/ultron/cities/compare', {
+                'a': intent.cities[0],
+                'b': intent.cities[1],
+                'days': intent.window_days,
+                'experience': intent.experience,
+            })
+            if not isinstance(data, dict) or data.get('error'):
+                return 'I need two supported cities to make that comparison.'
+            a, b = data.get('a') or {}, data.get('b') or {}
+            return (
+                f"{a.get('label')} — {int(a.get('recent') or 0):,} jobs\n"
+                f"{b.get('label')} — {int(b.get('recent') or 0):,} jobs\n"
+                f"Difference — {int(data.get('gap') or 0):,} jobs\n"
+                f"Window — {window}"
+            )
+
+        if intent.metric == 'top_companies':
+            data = self.api_get('/api/ultron/top-companies', {**params, 'limit': 10})
+            companies = (data or {}).get('companies') if isinstance(data, dict) else []
+            lines = [
+                f"{i}. {row.get('name')} — {int(row.get('n') or 0):,} jobs"
+                for i, row in enumerate((companies or [])[:10], 1)
+            ]
+            return '\n'.join(lines + [f'Window — {window} · {scope}']) if lines else (
+                f'No company comparison is available for {scope} in the {window}.'
+            )
+
+        if intent.metric == 'top_roles':
+            data = self.api_get('/api/ultron/roles-rank', {**params, 'limit': 10})
+            roles = (data or {}).get('roles') if isinstance(data, dict) else []
+            lines = [
+                f"{i}. {row.get('name')} — {int(row.get('n') or row.get('count') or 0):,} jobs"
+                for i, row in enumerate((roles or [])[:10], 1)
+            ]
+            return '\n'.join(lines + [f'Window — {window} · {scope}']) if lines else (
+                f'No role comparison is available for {scope} in the {window}.'
+            )
+
+        tower_params: dict[str, Any] = {}
+        if intent.cities:
+            tower_params['city'] = intent.cities[0]
+        if intent.experience:
+            tower_params['experience'] = intent.experience
+        data = self.api_get('/api/ultron/tower', tower_params)
+        stats = (data or {}).get('stats') if isinstance(data, dict) else {}
+        return (
+            f"{scope} — {int((stats or {}).get('jobs_today') or 0):,} jobs caught today\n"
+            f"Indexed jobs — {int((stats or {}).get('total_jobs') or 0):,}\n"
+            f"Companies — {int((stats or {}).get('companies') or 0):,}\n"
+            'Source — live Watch Tower'
+        )

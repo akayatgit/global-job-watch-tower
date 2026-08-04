@@ -124,6 +124,7 @@ def list_jobs(
     sector: str | None = None,
     city: str | None = None,
     experience: str | None = None,
+    track: str | None = None,
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
@@ -138,9 +139,13 @@ def list_jobs(
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
     experience = normalize_experience(experience)
+    track = (track or '').strip().lower() or None
+    if track not in (None, 'fresher', 'signal'):
+        track = None
     query = (
-        select(JobMaster, Company.name)
+        select(JobMaster, Company.name, SearchConfig.track)
         .outerjoin(Company, JobMaster.company_id == Company.id)
+        .outerjoin(SearchConfig, JobMaster.search_config_id == SearchConfig.id)
         .order_by(desc(JobMaster.scraped_at))
         .limit(limit)
         .offset(offset)
@@ -152,6 +157,8 @@ def list_jobs(
     exp = experience_clause(experience)
     if exp is not None:
         query = query.where(exp)
+    if track:
+        query = query.where(SearchConfig.track == track)
     if company:
         query = query.where(Company.name.ilike(f'%{company}%'))
     if title:
@@ -165,7 +172,7 @@ def list_jobs(
 
     rows = db.execute(query).all()
     out = []
-    for job, company_name in rows:
+    for job, company_name, source_track in rows:
         # Don't model_validate(job) — relationship `company` is a Company object
         out.append(JobOut(
             id=job.id,
@@ -176,6 +183,7 @@ def list_jobs(
             city_key=job.city_key,
             sector=job.sector,
             experience_band=job.experience_band,
+            source_track=source_track,
             job_url=job.job_url,
             posted_date=job.posted_date,
             scraped_at=job.scraped_at,
