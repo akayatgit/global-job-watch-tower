@@ -75,6 +75,22 @@ send paths (courier text, fact boards, lens images, carousel) honor it;
 Telegram bots cannot DM first — guests must send one message, then Vigil
 replies in their chat.
 
+**Second root cause found via remote diagnostics (2026-08-04 night):** the
+Hermes gateway loads plugins from `~/.hermes/plugins/vigil-image-only/` — a
+one-time COPY (9.5 KB) that no deploy ever refreshed, while the repo version
+had grown to 13.5 KB. Every plugin change shipped today (username allowlist,
+`/allowuser`, sender-username extraction) never actually ran. Log proof:
+`DIRECTOR blocked unauthorised chat=1221647274 text=Hi` after the allowlist
+deploy, and `guest-reply failed chat=supriyamk: HTTP 400` (old code treating
+a handle as a numeric chat id). Fix: deploy now re-copies the plugin dir
+into `~/.hermes/plugins/` before every gateway restart, plus a one-time
+marker-guarded welcome message to the wrongly blocked chat. Lesson: deploy
+script changes take effect only on the NEXT run (bash reads the file that
+`git reset --hard` replaces mid-run) — always trigger a follow-up deploy
+after editing `scripts/deploy_local.sh`.
+Remote debugging now standard: every deploy prints redacted Hermes
+diagnostics (`scripts/hermes_diagnostics.sh`) in the Actions log.
+
 Earlier same day: added **`@username` allowlisting** (`/allowuser`,
 `/revokeuser`, permanent code-tracked `DEFAULT_ALLOWED_USERNAMES` in
 `job_engine/app/telegram_guests.py`) so Ashok can grant access to a known
