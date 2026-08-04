@@ -37,6 +37,7 @@ from app.tasks import _config_busy, run_scrape
 from app.tower_health import compute_vitals
 from app.ultron.hub import hub
 from app.ultron.serialize import to_jsonable
+from app.version_info import get_version
 from app.vigil_boards import BOARD_HELP, render_board, resolve_board
 from app.world_model import compute_world_model
 from app.city_skyline import compute_city_skyline, compute_jobs_skyline
@@ -96,6 +97,9 @@ def _vitals_json(v) -> dict:
         'countdown_role': v.countdown_role,
         'scrape_started_at': _iso(v.scrape_started_at),
         'avg_search_secs': v.avg_search_secs,
+        # Build version — bumped once per push (scripts/bump_version.sh).
+        # Drives the rail footer number and the orb's dot-color signal.
+        'version': get_version(),
     }
 
 
