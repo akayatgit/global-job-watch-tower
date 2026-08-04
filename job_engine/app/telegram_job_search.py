@@ -18,8 +18,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
 from app import config
-from app.cities import CITY_BY_ID, city_label, normalize_city_filter
-from app.experience_bands import normalize_experience
+from app.cities import city_label, normalize_city_filter
 from app.telegram_sessions import TelegramSessionStore
 
 BASE = 'http://127.0.0.1:8001'
@@ -68,6 +67,27 @@ FILLER = {
     'of', 'opening', 'openings', 'please', 'role', 'roles', 'show', 'space',
     'the', 'today', 'want', 'with',
 }
+
+
+def normalize_experience_value(raw: str | None) -> str:
+    key = (raw or '').strip().lower().replace(' ', '').replace('–', '-').replace('—', '-')
+    aliases = {
+        'fresher': 'fresher',
+        '0-1': 'fresher',
+        '0-1years': 'fresher',
+        '1-2': '1-2',
+        '1-2years': '1-2',
+        '3-5': '3-5',
+        '3-5years': '3-5',
+        '6-8': '6-8',
+        '6-8years': '6-8',
+        '9-12': '9-12',
+        '9-12years': '9-12',
+        '13+': '13plus',
+        '13plus': '13plus',
+        '13+years': '13plus',
+    }
+    return aliases.get(key, '')
 
 
 @dataclass
@@ -119,11 +139,14 @@ def _fallback_intent(text: str) -> JobMasterIntent:
     else:
         for token in ('1-2', '3-5', '6-8', '9-12', '13+'):
             if token in low:
-                experience = normalize_experience(token) or ''
+                experience = normalize_experience_value(token)
                 break
 
     role_family = ''
-    if re.search(r'(?i)(?:\bai\b|\bml\b|artificial intelligence|machine learning|genai|llm)', low):
+    if re.search(
+        r'(?i)(?:\bai\b|\bml\b|artificial intelligence|machin(?:e)?\s+learn(?:ing)?|genai|llm)',
+        low,
+    ):
         role_family = 'ai_ml'
     elif re.search(r'\b(?:data science|data scientist|data analyst|analytics)\b', low):
         role_family = 'data'
@@ -235,7 +258,7 @@ class IntentInterpreter:
             key = normalize_city_filter(str(city))
             if key and key not in cities:
                 cities.append(key)
-        experience = normalize_experience(str(raw.get('experience') or '')) or fallback.experience
+        experience = normalize_experience_value(str(raw.get('experience') or '')) or fallback.experience
         keywords = [
             str(w).strip().lower()[:40]
             for w in (raw.get('role_keywords') or [])

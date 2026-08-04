@@ -131,7 +131,8 @@ class JobMasterTelegramBot:
         else:
             self._query_count += 1
         self._write_health(
-            status='ok',
+            status='running',
+            last_result='ok',
             last_chat=chat_id,
             last_kind='more' if MORE_RE.match(clean) else 'message',
             last_text=clean[:120],
