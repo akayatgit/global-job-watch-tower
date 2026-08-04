@@ -110,6 +110,55 @@ System crontab 08:00 IST ─► hermes_daily_brief.py ──► documents/briefs
 - Home chat linked via channel directory / bootstrap
 - Crontab: brief then `telegram_watch_tower.py send-brief`
 
+### Telegram guest access (2026-08-04)
+
+**Incident:** Ashok tried to demo the bot to an investor from his phone — the
+investor's messages (and his wife's, from a prior test) got zero replies.
+Only Ashok's own linked account worked, and he had no ThinkPad terminal
+access to fix it live. See `documents/kanban.md` card #1 for the full
+incident writeup.
+
+**Root cause:** Hermes' own Telegram connector enforces
+`TELEGRAM_ALLOWED_USERS` **before** any plugin hook runs — a blocked
+sender's message never reaches our code, so no repo-side fix could
+intercept it. That gate lived entirely outside git, in `~/.hermes/.env`.
+
+**Fix — our own allowlist replaces Hermes':**
+
+1. **One-time manual step (ThinkPad terminal, do this once):** set
+   `TELEGRAM_ALLOW_ALL_USERS=true` in `~/.hermes/.env` and restart the
+   gateway (`hermes gateway restart`). `telegram_watch_tower.py bootstrap`
+   now writes this by default for any future re-bootstrap. This is safe —
+   every message now reaches our plugin hook, which enforces its own gate
+   immediately below.
+2. `job_engine/app/telegram_guests.py` — dependency-free (stdlib only) JSON
+   store at `job_engine/.data/telegram_guests.json` (gitignored,
+   ThinkPad-local): `{telegram_id: {expires_at, minutes, label, added_by}}`.
+   The owner (Ashok — `TELEGRAM_ALLOWED_USERS` / `TELEGRAM_HOME_CHANNEL` in
+   `~/.hermes/.env`) is always allowed and can never be revoked.
+3. `job_engine/hermes_plugins/vigil-image-only/__init__.py`
+   (`telegram_to_director`) checks `is_allowed(chat_id)` before dispatching
+   to DIRECTOR. Unauthorised senders are dropped **silently** (matches the
+   existing private-ops posture — the bot doesn't announce itself to
+   randoms). The import is wrapped in a try/except that **fails open**
+   (never blocks Ashok out over a bug in this module).
+4. **Owner-only Telegram commands** (from Ashok's own chat, phone-only, no
+   SSH/laptop/Cloudflare needed):
+   - `/allow <telegram_id> [minutes=60] [label]` — grant temporary access;
+     also pings the guest directly so they know to go ahead.
+   - `/revoke <telegram_id>` — remove access immediately.
+   - `/guests` — list active guests + time remaining.
+5. **Getting a guest's numeric Telegram id:** have them message
+   [@userinfobot](https://t.me/userinfobot) once (doesn't touch our bot's
+   state) and read their `Id` back to Ashok over any channel (voice, SMS,
+   in person).
+
+**Example (live investor demo, no ThinkPad access):**
+`/allow 987654321 60 investor demo` → their next message gets a real
+DIRECTOR reply → after 60 minutes it silently stops again → `/guests` shows
+the countdown → `/revoke 987654321` removes access immediately if needed
+sooner.
+
 ## Smoke checks
 
 ```bash

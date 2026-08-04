@@ -20,9 +20,17 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ---
 
-## To Do
+## In Progress
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
+
+**Status (2026-08-04):** Code done, PR up for review. **One manual ThinkPad
+step still required before this is live:** set
+`TELEGRAM_ALLOW_ALL_USERS=true` in `~/.hermes/.env` and run
+`hermes gateway restart` (or re-run
+`job_engine/scripts/setup_hermes_telegram.sh` / re-bootstrap, which now
+defaults to `true`). Until that flip happens, Hermes still silently drops
+non-Ashok senders before our new allowlist ever sees them.
 
 **Problem (2026-08-04):** Ashok tried to demo the Telegram bot (`@vigil_akay_bot`)
 to an investor. Messages from the investor's phone and his wife's phone got
@@ -84,6 +92,8 @@ laptop, no Cloudflare dashboard):
 `documents/hermes-agent-integration.md`.
 
 ---
+
+## To Do
 
 ### 2. Verify + lock Cloudflare Access properly
 
