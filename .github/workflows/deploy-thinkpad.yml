@@ -5,9 +5,14 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: watch-tower-thinkpad-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: [self-hosted, watch-tower]
+    timeout-minutes: 30
     steps:
       # This step's commands come from the commit that triggered this run
       # (GitHub evaluates workflow YAML server-side), so it runs even when
@@ -31,4 +36,8 @@ jobs:
       # never needs a terminal on the ThinkPad.
       - name: JobMaster Telegram diagnostics (redacted)
         if: always()
-        run: bash /home/user/Documents/scripts/hermes_diagnostics.sh
+        run: |
+          cd /home/user/Documents
+          git show "${GITHUB_SHA}:scripts/hermes_diagnostics.sh" > /tmp/watch-tower-diagnostics.sh
+          chmod 700 /tmp/watch-tower-diagnostics.sh
+          bash /tmp/watch-tower-diagnostics.sh

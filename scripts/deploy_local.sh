@@ -54,11 +54,35 @@ if [ -n "$DIRTY" ]; then
 fi
 git checkout -- documents/briefs 2>/dev/null || true
 
+CURRENT_BRANCH="$(git branch --show-current)"
+[ "$CURRENT_BRANCH" = "main" ] || die "runtime repository must stay on main (found $CURRENT_BRANCH)"
+log "fetching origin/main before any runtime disturbance..."
+git fetch origin main
+LOCAL_AHEAD="$(git rev-list --count origin/main..HEAD)"
+[ "$LOCAL_AHEAD" = "0" ] \
+  || die "runtime has $LOCAL_AHEAD unpushed local commit(s); refusing destructive alignment"
+TARGET_SHA="${GITHUB_SHA:-origin/main}"
+git cat-file -e "${TARGET_SHA}^{commit}" \
+  || die "triggering commit is unavailable locally: $TARGET_SHA"
+BACKUP_REF="refs/deploy-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+git update-ref "$BACKUP_REF" HEAD
+log "protected pre-deploy source at $BACKUP_REF"
+
 source /home/user/anaconda3/etc/profile.d/conda.sh
 conda activate ai
 
 psql_q() {
   psql -h 127.0.0.1 -p 5433 -U jobengine -d jobengine -v ON_ERROR_STOP=1 -Atqc "$1"
+}
+
+merge_retrigger_ids() {
+  local incoming="$1"
+  local merged="${RETRIGGER_FILE}.merged"
+  {
+    [ -f "$RETRIGGER_FILE" ] && awk '/^[0-9]+$/' "$RETRIGGER_FILE"
+    [ -f "$incoming" ] && awk '/^[0-9]+$/' "$incoming"
+  } | sort -n -u > "$merged"
+  mv "$merged" "$RETRIGGER_FILE"
 }
 
 stop_beat() {
@@ -114,7 +138,8 @@ cancel_active_for_deploy() {
     [ -n "$config_id" ] && printf '%s\n' "$config_id" >> "$confirmed_file"
     [ -n "$role_name" ] && log "active search: $role_name ($role_count run(s))"
   done <<< "$active_rows"
-  mv "$confirmed_file" "$RETRIGGER_FILE"
+  merge_retrigger_ids "$confirmed_file"
+  rm -f "$confirmed_file"
 
   local n
   n="$(awk -F'|' '{n += $3} END {print n + 0}' <<< "$active_rows")"
@@ -224,6 +249,9 @@ PY
 }
 
 DEPLOY_COMPLETE=0
+JOBMASTER_CUTOVER_STARTED=0
+JOBMASTER_STABLE=0
+HERMES_WAS_ACTIVE=0
 recover_cancelled_on_failure() {
   local code=$?
   if [ "$code" -ne 0 ] && [ "$DEPLOY_COMPLETE" -ne 1 ] && [ -s "$RETRIGGER_FILE" ]; then
@@ -233,6 +261,31 @@ recover_cancelled_on_failure() {
   fi
   if [ "$code" -ne 0 ]; then
     set +e
+    if [ "$JOBMASTER_CUTOVER_STARTED" -eq 1 ] && [ "$JOBMASTER_STABLE" -ne 1 ]; then
+      log "JobMaster cutover failed before stable ownership — rolling Telegram back..."
+      systemctl --user disable --now watch-tower-telegram.service \
+        >>"$DEPLOY_LOG" 2>&1 || true
+      if [ "$HERMES_WAS_ACTIVE" -eq 1 ]; then
+        local hermes_bin="$HOME/.local/bin/hermes"
+        if [ -x "$hermes_bin" ]; then
+          timeout 20s "$hermes_bin" gateway start >>"$DEPLOY_LOG" 2>&1 || true
+        fi
+        if ! pgrep -f '[h]ermes.*gateway|[g]ateway.*hermes' >/dev/null 2>&1; then
+          systemctl --user enable --now hermes-gateway.service \
+            >>"$DEPLOY_LOG" 2>&1 || true
+        fi
+        sleep 2
+        local rollback_pollers
+        rollback_pollers="$(pgrep -fc '[h]ermes.*gateway|[g]ateway.*hermes' 2>/dev/null || true)"
+        rollback_pollers="${rollback_pollers:-0}"
+        if systemctl --user is-active --quiet watch-tower-telegram.service \
+            || [ "$rollback_pollers" != "1" ]; then
+          log "CRITICAL: Telegram rollback ownership invalid (Hermes=$rollback_pollers, JobMaster must be inactive)"
+        else
+          log "Telegram rollback verified: exactly one Hermes poller, JobMaster disabled"
+        fi
+      fi
+    fi
     if ! systemctl --user is-active --quiet watch-tower-worker.service \
         || ! systemctl --user is-active --quiet watch-tower-beat.service; then
       log "deploy failed with services stopped — attempting safe app recovery..."
@@ -247,32 +300,31 @@ trap recover_cancelled_on_failure EXIT
 # Critical: pause schedule, stop task mutations, then cancel active runs.
 pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1 \
   || die "Postgres not ready — deploy has not disturbed active searches"
-: > "$RETRIGGER_FILE"
+captured_file="${RETRIGGER_FILE}.captured"
 psql_q "
   SELECT DISTINCT search_config_id
   FROM scrape_runs
   WHERE status IN ('queued','dispatched','running','cancel_requested')
     AND search_config_id IS NOT NULL
   ORDER BY 1;
-" > "$RETRIGGER_FILE"
+" > "$captured_file"
+merge_retrigger_ids "$captured_file"
+rm -f "$captured_file"
 stop_beat
 stop_worker
 cancel_active_for_deploy
 
 BEFORE_SHA="$(git rev-parse HEAD)"
-log "fetching origin/main (was $BEFORE_SHA)..."
-git fetch origin main
-git reset --hard origin/main
+log "aligning exact triggering commit $TARGET_SHA (was $BEFORE_SHA)..."
+git reset --hard "$TARGET_SHA"
 AFTER_SHA="$(git rev-parse HEAD)"
 log "code aligned to $AFTER_SHA"
 
 # Defense in depth: the Action ran for a specific push, so if this deploy
 # somehow lands on a different HEAD than that push (double-push race,
 # stale runner queue), fail loud instead of silently reporting "ok".
-if [ -n "${GITHUB_SHA:-}" ] && [ "$AFTER_SHA" != "$GITHUB_SHA" ]; then
-  log "WARNING: deployed HEAD ($AFTER_SHA) != triggering commit (\$GITHUB_SHA=$GITHUB_SHA)"
-  log "another push landed on origin/main between trigger and pull — deploying the newer commit is correct, continuing"
-fi
+[ "$AFTER_SHA" = "$(git rev-parse "$TARGET_SHA")" ] \
+  || die "deployed HEAD $AFTER_SHA does not match target $TARGET_SHA"
 
 cd "$JOB_ENGINE"
 log "applying migrations..."
@@ -290,6 +342,8 @@ ensure_jobmaster_telegram() {
   local py="/home/user/anaconda3/envs/ai/bin/python"
   local script="$JOB_ENGINE/scripts/telegram_job_bot.py"
   local unit="watch-tower-telegram.service"
+  local unit_dir="$HOME/.config/systemd/user"
+  local unit_file="$unit_dir/$unit"
   local health="$DATA_DIR/jobmaster_telegram_health.json"
   local logfile="$LOG_DIR/telegram.log"
 
@@ -298,32 +352,71 @@ ensure_jobmaster_telegram() {
   [ -x "$py" ] || die "Python environment missing: $py"
   [ -f "$script" ] || die "JobMaster Telegram entrypoint missing: $script"
 
+  if systemctl --user is-active --quiet hermes-gateway.service \
+      || pgrep -f '[h]ermes.*gateway|[g]ateway.*hermes' >/dev/null 2>&1; then
+    HERMES_WAS_ACTIVE=1
+  fi
+  JOBMASTER_CUTOVER_STARTED=1
   log "stopping Hermes Telegram gateway (JobMaster owns this token)..."
   local hermes_bin="$HOME/.local/bin/hermes"
   if [ -x "$hermes_bin" ]; then
-    "$hermes_bin" gateway stop >>"$DEPLOY_LOG" 2>&1 || true
+    timeout 20s "$hermes_bin" gateway stop >>"$DEPLOY_LOG" 2>&1 || true
   fi
-  systemctl --user disable --now hermes-gateway.service >>"$DEPLOY_LOG" 2>&1 || true
-  pkill -f 'hermes_cli.main gateway run' 2>/dev/null || true
+  timeout 20s systemctl --user disable --now hermes-gateway.service \
+    >>"$DEPLOY_LOG" 2>&1 || true
+  pkill -f '[h]ermes.*gateway|[g]ateway.*hermes' 2>/dev/null || true
+  sleep 1
+  if systemctl --user is-active --quiet hermes-gateway.service; then
+    die "Hermes gateway unit refused to stop"
+  fi
+  local hermes_pid
+  hermes_pid="$(systemctl --user show -p MainPID --value hermes-gateway.service 2>/dev/null || echo 0)"
+  [ -z "$hermes_pid" ] || [ "$hermes_pid" = "0" ] \
+    || die "Hermes gateway cgroup still owns pid $hermes_pid"
+  if pgrep -f '[h]ermes.*gateway|[g]ateway.*hermes' >/dev/null 2>&1; then
+    die "Hermes gateway process is still running"
+  fi
 
-  log "starting dedicated JobMaster Telegram service..."
+  log "installing persistent JobMaster Telegram service..."
+  mkdir -p "$unit_dir"
+  local unit_tmp="${unit_file}.tmp"
+  cat > "$unit_tmp" <<UNIT
+[Unit]
+Description=Watch Tower JobMaster Telegram
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=$JOB_ENGINE
+Environment=HOME=/home/user
+Environment=PATH=/home/user/anaconda3/envs/ai/bin:/usr/bin:/bin
+ExecStart=$py $script run
+Restart=on-failure
+RestartPreventExitStatus=9
+RestartSec=3
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=append:$logfile
+StandardError=append:$logfile
+
+[Install]
+WantedBy=default.target
+UNIT
+  install -m 0644 "$unit_tmp" "$unit_file"
+  rm -f "$unit_tmp"
   systemctl --user stop "$unit" 2>/dev/null || true
   systemctl --user reset-failed "$unit" 2>/dev/null || true
   pkill -f '[t]elegram_job_bot.py run' 2>/dev/null || true
   rm -f "$health"
-  systemd-run --user \
-    --unit="${unit%.service}" \
-    --working-directory="$JOB_ENGINE" \
-    --property="StandardOutput=append:${logfile}" \
-    --property="StandardError=append:${logfile}" \
-    --property="Restart=on-failure" \
-    --property="RestartSec=3" \
-    --setenv="PATH=/home/user/anaconda3/envs/ai/bin:/usr/bin:/bin" \
-    --setenv="HOME=/home/user" \
-    "$py" "$script" run >>"$DEPLOY_LOG" 2>&1
+  systemctl --user daemon-reload
+  systemctl --user enable "$unit" >>"$DEPLOY_LOG" 2>&1
+  systemctl --user restart "$unit"
 
   local healthy=0
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  for _ in $(seq 1 45); do
     if systemctl --user is-active --quiet "$unit" && [ -f "$health" ]; then
       if HEALTH_FILE="$health" "$py" - <<'PY'
 import json, os, time
@@ -331,7 +424,8 @@ from pathlib import Path
 p = Path(os.environ["HEALTH_FILE"])
 data = json.loads(p.read_text())
 fresh = time.time() - float(data.get("updated_at") or 0) < 45
-raise SystemExit(0 if data.get("status") == "running" and fresh else 1)
+stable = int(data.get("poll_successes") or 0) >= 2
+raise SystemExit(0 if data.get("status") == "running" and fresh and stable else 1)
 PY
       then
         healthy=1
@@ -348,20 +442,26 @@ PY
   local pollers
   pollers="$(pgrep -fc '[t]elegram_job_bot.py run' || true)"
   [ "$pollers" = "1" ] || die "expected exactly one JobMaster Telegram poller, found $pollers"
-  if pgrep -f 'hermes_cli.main gateway run' >/dev/null 2>&1; then
+  if pgrep -f '[h]ermes.*gateway|[g]ateway.*hermes' >/dev/null 2>&1; then
     die "Hermes gateway is still running — refusing dual Telegram consumers"
   fi
   log "JobMaster Telegram healthy (one poller, Hermes gateway off)"
+  JOBMASTER_STABLE=1
 }
 ensure_jobmaster_telegram
 
 # Health check
 ok=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8001/" 2>/dev/null \
-    || curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8001/api/docs" 2>/dev/null; then
-    ok=1
-    break
+  status_json="$(curl -fsS --max-time 3 "http://127.0.0.1:8001/api/deploy/status" 2>/dev/null || true)"
+  if [ -n "$status_json" ] && STATUS_JSON="$status_json" EXPECTED_SHA="$AFTER_SHA" python3 - <<'PY'
+import json, os
+data = json.loads(os.environ["STATUS_JSON"])
+raise SystemExit(0 if data.get("running_sha") == os.environ["EXPECTED_SHA"] else 1)
+PY
+  then
+      ok=1
+      break
   fi
   sleep 1
 done
@@ -374,26 +474,17 @@ for name in api worker beat; do
 done
 
 if [ "$ok" -ne 1 ]; then
-  die "HTTP health check failed on :8001"
+  die "API readiness/SHA check failed on :8001"
 fi
-
-# One-time live acceptance probe requested by Ashok: exercise the production
-# handler with Supriya's exact failed query. The marker prevents future deploys
-# from spamming her. Her subsequent "more" and "/new" exercise real inbound.
-SMOKE_MARKER="$DATA_DIR/.jobmaster_supriya_recovery_v1_sent"
-if [ ! -f "$SMOKE_MARKER" ]; then
-  log "sending one-time JobMaster recovery result to Supriya..."
-  if /home/user/anaconda3/envs/ai/bin/python \
-      "$JOB_ENGINE/scripts/telegram_job_bot.py" smoke \
-      --chat 1221647274 \
-      --query "Fresh jobs in Bangalore in AI space for fresher" \
-      >>"$DEPLOY_LOG" 2>&1; then
-    touch "$SMOKE_MARKER"
-    log "one-time Supriya recovery result sent"
-  else
-    die "JobMaster live smoke send failed"
-  fi
-fi
+pg_isready -h 127.0.0.1 -p 5433 >/dev/null 2>&1 \
+  || die "Postgres failed readiness after restart"
+redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -qx PONG \
+  || die "Redis failed readiness after restart"
+CELERY_PING="$(celery -A app.celery_app inspect ping --timeout 5 2>&1 || true)"
+grep -qi 'pong' <<< "$CELERY_PING" \
+  || die "Celery worker did not answer ping"
+systemctl --user is-active --quiet watch-tower-beat.service \
+  || die "Beat scheduling service is not active"
 
 retrigger_cancelled
 DEPLOY_COMPLETE=1

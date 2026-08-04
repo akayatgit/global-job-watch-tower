@@ -9,8 +9,12 @@ redact() { sed -E 's/[0-9]{6,}:[A-Za-z0-9_-]{25,}/[TOKEN]/g'; }
 echo "=== JobMaster Telegram service ==="
 systemctl --user status watch-tower-telegram.service --no-pager 2>&1 \
   | sed -E 's/[0-9]{7,}/[ID]/g' | head -25 || true
-echo "jobmaster_pollers=$(pgrep -fc '[t]elegram_job_bot.py run' 2>/dev/null || echo 0)"
-echo "hermes_gateway_pollers=$(pgrep -fc '[h]ermes_cli.main gateway run' 2>/dev/null || echo 0)"
+JOBMASTER_POLLERS="$(pgrep -fc '[t]elegram_job_bot.py run' 2>/dev/null || true)"
+HERMES_POLLERS="$(pgrep -fc '[h]ermes.*gateway|[g]ateway.*hermes' 2>/dev/null || true)"
+JOBMASTER_POLLERS="${JOBMASTER_POLLERS:-0}"
+HERMES_POLLERS="${HERMES_POLLERS:-0}"
+echo "jobmaster_pollers=$JOBMASTER_POLLERS"
+echo "hermes_gateway_pollers=$HERMES_POLLERS"
 
 echo "=== JobMaster Telegram health (safe fields only) ==="
 /home/user/anaconda3/envs/ai/bin/python - <<'PY' 2>&1 || true
@@ -94,3 +98,23 @@ echo "=== deploy.log hermes section (last 20) ==="
 grep -i hermes /home/user/Documents/job_engine/.data/logs/deploy.log 2>/dev/null | tail -20
 
 echo "=== diagnostics done ==="
+
+VERDICT=PASS
+systemctl --user is-active --quiet watch-tower-telegram.service || VERDICT=FAIL
+[ "$JOBMASTER_POLLERS" = "1" ] || VERDICT=FAIL
+[ "$HERMES_POLLERS" = "0" ] || VERDICT=FAIL
+/home/user/anaconda3/envs/ai/bin/python - <<'PY' >/dev/null 2>&1 || VERDICT=FAIL
+import json, time
+from pathlib import Path
+p = Path('/home/user/Documents/job_engine/.data/jobmaster_telegram_health.json')
+d = json.loads(p.read_text())
+healthy = (
+    d.get('status') == 'running'
+    and int(d.get('poll_successes') or 0) >= 2
+    and time.time() - float(d.get('updated_at') or 0) < 45
+    and not d.get('error')
+)
+raise SystemExit(0 if healthy else 1)
+PY
+echo "JOBMASTER_TELEGRAM_VERDICT=$VERDICT"
+[ "$VERDICT" = "PASS" ]
