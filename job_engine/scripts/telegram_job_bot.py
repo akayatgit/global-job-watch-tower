@@ -45,7 +45,7 @@ def load_env() -> dict[str, str]:
             if not line or line.lstrip().startswith('#') or '=' not in line:
                 continue
             key, value = line.split('=', 1)
-            values.setdefault(key.strip(), value.strip())
+            values.setdefault(key.strip(), value.strip().strip('"').strip("'"))
     return values
 
 
@@ -126,6 +126,7 @@ class JobMasterTelegramBot:
         clean = (text or '').strip()
         if not clean:
             return
+        is_reset = bool(RESET_RE.match(clean))
         if clean.lower() in {'/start', '/help', 'help'}:
             self.api.send(
                 chat_id,
@@ -133,13 +134,12 @@ class JobMasterTelegramBot:
                 'Ask naturally in any sentence.',
             )
             return
-        if not RESET_RE.match(clean):
+        if not is_reset:
             now = time.monotonic()
             last = self._last_request.get(chat_id, 0.0)
             if now - last < 1.0:
                 self.api.send(chat_id, 'One request at a time.')
                 return
-            self._last_request[chat_id] = now
             self.api.send(chat_id, 'Thinking…')
         try:
             reply = self.engine.handle(clean, chat_id)
@@ -147,6 +147,10 @@ class JobMasterTelegramBot:
             LOG.exception('request failed chat=%s text=%r', chat_id, clean[:120])
             reply = 'JobMaster could not reach live Watch Tower data. Try again shortly.'
         self.api.send(chat_id, reply)
+        if is_reset:
+            self._last_request.pop(chat_id, None)
+        else:
+            self._last_request[chat_id] = time.monotonic()
         if MORE_RE.match(clean):
             self._page_count += 1
         else:

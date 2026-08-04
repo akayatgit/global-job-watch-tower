@@ -71,6 +71,12 @@ class TelegramBotContractTests(unittest.TestCase):
         guest_reply = [text for chat, text in self.api.sent if chat == 'guest'][-1]
         self.assertEqual(owner_reply, guest_reply)
 
+    def test_same_chat_burst_is_throttled_after_first_result(self):
+        self.bot.process('42', 'AI jobs Bangalore')
+        self.bot.process('42', 'more')
+        self.assertEqual(self.api.sent[-1], ('42', 'One request at a time.'))
+        self.assertEqual(len(self.engine.calls), 1)
+
     def test_help_is_jobmaster_not_generic_assistant(self):
         self.bot.process('42', '/start')
         self.assertEqual(
