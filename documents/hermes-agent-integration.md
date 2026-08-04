@@ -1,5 +1,13 @@
 # Hermes Agent × Watch Tower (capacity-safe)
 
+> **Telegram superseded by Gate 3.0 JobMaster (2026-08-04).** The historical
+> Hermes/DIRECTOR architecture below remains for incident recovery and
+> non-Telegram tools. Hermes no longer consumes Telegram updates. The dedicated
+> `job_engine/scripts/telegram_job_bot.py` service is the only poller and routes
+> every user through the same JobMaster capability layer: constrained language
+> intent → live Watch Tower APIs → deterministic jobs/links/numbers/comparisons.
+> Deployment fails if Hermes is still polling or JobMaster is unhealthy.
+
 **Status:** Live on ThinkPad (2026-08-02)  
 **Brain:** Local Ollama only — `qwen3.5:4b-hermes` (64k ctx)  
 **Surfaces:** VIGIL Ask panel + Telegram `@vigil_akay_bot` + daily brief cron  

@@ -407,3 +407,12 @@ use — they should love opening the app, never fight it.
   codeword **WAKEUP** at the top of every chat's first reply. Append to the
   soul whenever Ashok shapes identity/behavior. Standing goal: whole tower as
   a plug-and-play Docker image (`job_engine/Dockerfile` + compose = seed).
+- **Gate 3.0 · JobMaster (2026-08-04):** Telegram face is **JobMaster** — one
+  uniform customer-support/information agent for everyone, never owner vs guest
+  personas. Capability #1 = verified jobs **and** grounded job-market numbers,
+  comparisons, rankings, and trends. The model may understand messy natural
+  language into a validated intent only; it never authors jobs, links, companies,
+  experience, counts, or comparisons. Immediate `Thinking…`; job results are up
+  to 10 rows (`Title — Company — Experience` + canonical LinkedIn link), `more`
+  paginates, `/new` resets cleanly. No MCP/model/tool status, generic assistant
+  chatter, advice, brainstorming, invented facts, or unrelated fallback jobs.

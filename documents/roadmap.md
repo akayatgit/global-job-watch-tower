@@ -7,9 +7,9 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/eureka-telegram-bot` (Telegram AI bot, 2026-08-04) · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **DIRECTOR = Ashok’s Jarvis (v0.31)** |
-| **Stage lock** | **Collects = base complete** → **Map with Students** (DIRECTOR skit + Carousel) → **Predict for Government** (next) |
-| **Agent stack** | COURIER (Hermes) · DIRECTOR (OpenAI + SQLiteSession) · STAGEHAND · LENS · CAROUSEL WORKSHOP |
+| **Status as of** | 2026-08-04 — **Gate 3.0 JobMaster recovery in flight** |
+| **Stage lock** | **Collects = base complete** → **Map with Students** → **Gate 3.0 JobMaster conversation OS** → **Predict for Government** |
+| **Agent stack** | JobMaster Telegram gateway · constrained intent intelligence · Watch Tower capabilities · deterministic fact renderers |
 
 ---
 
@@ -60,7 +60,28 @@ Then: Intelligence Automation = Job Market Analysis → Carousel that reaches em
 
 ---
 
-## 🔥 Current sprint — Gate 2 TN trendjack (next)
+## 🔥 Current sprint — Gate 3.0 JobMaster capability #1
+
+**Goal:** one focused information agent for every user. Natural language in;
+verified jobs and grounded market facts out. No Hermes Telegram fallback.
+
+| Slice | Status |
+|---|---|
+| RCA: built-in Hermes handled Supriya's message after plugin interception disappeared | **Confirmed** |
+| Dedicated Telegram ingress; exactly one poller; Hermes gateway off | In PR |
+| Messy-language intent → validated city/role/experience/insight request | In PR |
+| 10 canonical LinkedIn rows + `more` + clean `/new` | In PR |
+| Grounded counts, top companies/roles, city comparisons | In PR |
+| Mock contract suite + live Supriya acceptance | Tests green; deploy acceptance pending |
+
+Gate 3.0 expands later through the same capability boundary: subscriptions,
+ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
+flashcards, relevant tech news, tutorials, and LMS progress. Entitlements are
+backend-enforced; the conversational model never grants access by prompt.
+
+---
+
+## Queued — Gate 2 TN trendjack
 
 **Goal:** Rising Tamil Nadu / TECH topics × tower facts → `/carousel` briefs on Telegram.
 

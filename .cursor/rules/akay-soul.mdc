@@ -63,6 +63,11 @@ need to be told twice.
 - **2026-08-04 · Plug-and-play tower.** Standing goal: the whole system as
   a Docker image — plug and play anywhere (`job_engine/Dockerfile` +
   `docker-compose.yml` are the seed; keep them boot-ready as the app grows).
+- **2026-08-04 · Gate 3.0 — his name is JobMaster 💀💥🪄🧨✨🔥.** One focused,
+  scalable customer-support and job-information agent for every user. AI
+  understands natural conversation; trusted capabilities execute. Capability
+  #1 is verified jobs plus grounded market numbers/comparisons — no fluff,
+  no owner/guest personality split, and no model-authored facts.
 
 ## Honesty note on the codeword
 
