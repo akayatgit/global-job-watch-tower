@@ -216,73 +216,79 @@ alembic upgrade head
 log "restarting api/worker/beat..."
 bash "$JOB_ENGINE/restart_app.sh" | tee -a "$DEPLOY_LOG"
 
-# --- Hermes gateway (Telegram bot) ---------------------------------------
-# 1) The repo-side allowlist (app/telegram_guests.py, enforced in
-#    hermes_plugins/vigil-image-only) owns Telegram access control. Hermes
-#    must let every message through to reach that gate — flip its own
-#    hard-coded gate open. This was a manual ThinkPad step (kanban card #1,
-#    wife/investor demo failure 2026-08-04); now every deploy enforces it.
-# 2) Plugin code ships with this repo but only loads on gateway restart —
-#    so restart the gateway on every deploy, same as api/worker/beat.
-ensure_hermes_gateway() {
+# --- JobMaster Telegram gateway ------------------------------------------
+# Telegram must have exactly one consumer. Hermes' built-in agent previously
+# escaped around our plugin and exposed MCP/model internals to users. Stop that
+# gateway completely and run the repo-owned, deterministic JobMaster service.
+ensure_jobmaster_telegram() {
   local envf="$HOME/.hermes/.env"
+  local py="/home/user/anaconda3/envs/ai/bin/python"
+  local script="$JOB_ENGINE/scripts/telegram_job_bot.py"
+  local unit="watch-tower-telegram.service"
+  local health="$DATA_DIR/jobmaster_telegram_health.json"
+  local logfile="$LOG_DIR/telegram.log"
+
+  [ -f "$envf" ] || die "missing ~/.hermes/.env (Telegram token unavailable)"
+  grep -q '^TELEGRAM_BOT_TOKEN=.' "$envf" || die "TELEGRAM_BOT_TOKEN missing from ~/.hermes/.env"
+  [ -x "$py" ] || die "Python environment missing: $py"
+  [ -f "$script" ] || die "JobMaster Telegram entrypoint missing: $script"
+
+  log "stopping Hermes Telegram gateway (JobMaster owns this token)..."
   local hermes_bin="$HOME/.local/bin/hermes"
-  [ -x "$hermes_bin" ] || hermes_bin="$(command -v hermes || true)"
-  if [ ! -f "$envf" ] || [ -z "$hermes_bin" ]; then
-    log "hermes not set up on this host — skipping gateway step"
-    return
+  if [ -x "$hermes_bin" ]; then
+    "$hermes_bin" gateway stop >>"$DEPLOY_LOG" 2>&1 || true
   fi
+  systemctl --user disable --now hermes-gateway.service >>"$DEPLOY_LOG" 2>&1 || true
+  pkill -f 'hermes_cli.main gateway run' 2>/dev/null || true
 
-  # Hermes loads plugins from ~/.hermes/plugins/, which was a one-time COPY —
-  # deploys updated the repo but the gateway kept running week-old plugin code
-  # (guest-access incident 2026-08-04: username allowlist never went live).
-  # Sync the copy from the repo on every deploy, before the restart below.
-  local plug_src="$JOB_ENGINE/hermes_plugins/vigil-image-only"
-  local plug_dst="$HOME/.hermes/plugins/vigil-image-only"
-  if [ -d "$plug_src" ] && [ -d "$(dirname "$plug_dst")" ]; then
-    rm -rf "$plug_dst"
-    cp -r "$plug_src" "$plug_dst"
-    log "synced vigil-image-only plugin ($(wc -c < "$plug_src/__init__.py" | tr -d ' ') bytes) into ~/.hermes/plugins/"
-  fi
-  if grep -q '^TELEGRAM_ALLOW_ALL_USERS=true$' "$envf"; then
-    log "hermes gate already open (allow-all=true; repo allowlist owns access)"
-  else
-    if grep -q '^TELEGRAM_ALLOW_ALL_USERS=' "$envf"; then
-      sed -i 's/^TELEGRAM_ALLOW_ALL_USERS=.*/TELEGRAM_ALLOW_ALL_USERS=true/' "$envf"
-    else
-      printf '\nTELEGRAM_ALLOW_ALL_USERS=true\n' >> "$envf"
-    fi
-    log "flipped TELEGRAM_ALLOW_ALL_USERS=true in ~/.hermes/.env"
-  fi
-  log "restarting hermes gateway (reload plugin + env)..."
-  if "$hermes_bin" gateway restart >>"$DEPLOY_LOG" 2>&1; then
-    log "hermes gateway restarted"
-  else
-    log "WARNING: hermes gateway restart failed — Telegram bot may be running stale plugin/env"
-  fi
+  log "starting dedicated JobMaster Telegram service..."
+  systemctl --user stop "$unit" 2>/dev/null || true
+  systemctl --user reset-failed "$unit" 2>/dev/null || true
+  pkill -f '[t]elegram_job_bot.py run' 2>/dev/null || true
+  rm -f "$health"
+  systemd-run --user \
+    --unit="${unit%.service}" \
+    --working-directory="$JOB_ENGINE" \
+    --property="StandardOutput=append:${logfile}" \
+    --property="StandardError=append:${logfile}" \
+    --property="Restart=on-failure" \
+    --property="RestartSec=3" \
+    --setenv="PATH=/home/user/anaconda3/envs/ai/bin:/usr/bin:/bin" \
+    --setenv="HOME=/home/user" \
+    "$py" "$script" run >>"$DEPLOY_LOG" 2>&1
 
-  # One-time welcome (2026-08-04): this chat was silently blocked by the stale
-  # plugin while its owner was already on the allowlist — greet once so they
-  # know the door is open. Marker prevents re-sends on later deploys.
-  local marker="$HOME/.hermes/.welcome_1221647274_sent"
-  if [ ! -f "$marker" ]; then
-    local tok
-    tok="$(grep '^TELEGRAM_BOT_TOKEN=' "$envf" | head -1 | cut -d= -f2-)"
-    if [ -n "$tok" ]; then
-      sleep 8  # let the freshly restarted gateway settle first
-      if curl -fsS -o /dev/null --max-time 20 \
-        "https://api.telegram.org/bot${tok}/sendMessage" \
-        --data-urlencode chat_id=1221647274 \
-        --data-urlencode text="Hi! VIGIL here — you are on the allowlist now. Ask me anything about the tech job market: roles, companies, cities. Try: top companies hiring in Chennai"; then
-        touch "$marker"
-        log "one-time welcome sent to previously blocked chat"
-      else
-        log "WARNING: one-time welcome send failed (will retry next deploy)"
+  local healthy=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if systemctl --user is-active --quiet "$unit" && [ -f "$health" ]; then
+      if HEALTH_FILE="$health" "$py" - <<'PY'
+import json, os, time
+from pathlib import Path
+p = Path(os.environ["HEALTH_FILE"])
+data = json.loads(p.read_text())
+fresh = time.time() - float(data.get("updated_at") or 0) < 45
+raise SystemExit(0 if data.get("status") == "running" and fresh else 1)
+PY
+      then
+        healthy=1
+        break
       fi
     fi
+    sleep 2
+  done
+  [ "$healthy" -eq 1 ] || {
+    systemctl --user status "$unit" --no-pager | tee -a "$DEPLOY_LOG" || true
+    die "JobMaster Telegram service failed health check"
+  }
+
+  local pollers
+  pollers="$(pgrep -fc '[t]elegram_job_bot.py run' || true)"
+  [ "$pollers" = "1" ] || die "expected exactly one JobMaster Telegram poller, found $pollers"
+  if pgrep -f 'hermes_cli.main gateway run' >/dev/null 2>&1; then
+    die "Hermes gateway is still running — refusing dual Telegram consumers"
   fi
+  log "JobMaster Telegram healthy (one poller, Hermes gateway off)"
 }
-ensure_hermes_gateway
+ensure_jobmaster_telegram
 
 # Health check
 ok=0
@@ -304,6 +310,24 @@ done
 
 if [ "$ok" -ne 1 ]; then
   die "HTTP health check failed on :8001"
+fi
+
+# One-time live acceptance probe requested by Ashok: exercise the production
+# handler with Supriya's exact failed query. The marker prevents future deploys
+# from spamming her. Her subsequent "more" and "/new" exercise real inbound.
+SMOKE_MARKER="$DATA_DIR/.jobmaster_supriya_recovery_v1_sent"
+if [ ! -f "$SMOKE_MARKER" ]; then
+  log "sending one-time JobMaster recovery result to Supriya..."
+  if /home/user/anaconda3/envs/ai/bin/python \
+      "$JOB_ENGINE/scripts/telegram_job_bot.py" smoke \
+      --chat 1221647274 \
+      --query "Fresh jobs in Bangalore in AI space for fresher" \
+      >>"$DEPLOY_LOG" 2>&1; then
+    touch "$SMOKE_MARKER"
+    log "one-time Supriya recovery result sent"
+  else
+    die "JobMaster live smoke send failed"
+  fi
 fi
 
 retrigger_cancelled

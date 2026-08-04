@@ -6,6 +6,37 @@ set -uo pipefail
 
 redact() { sed -E 's/[0-9]{6,}:[A-Za-z0-9_-]{25,}/[TOKEN]/g'; }
 
+echo "=== JobMaster Telegram service ==="
+systemctl --user status watch-tower-telegram.service --no-pager 2>&1 \
+  | sed -E 's/[0-9]{7,}/[ID]/g' | head -25 || true
+echo "jobmaster_pollers=$(pgrep -fc '[t]elegram_job_bot.py run' 2>/dev/null || echo 0)"
+echo "hermes_gateway_pollers=$(pgrep -fc '[h]ermes_cli.main gateway run' 2>/dev/null || echo 0)"
+
+echo "=== JobMaster Telegram health (safe fields only) ==="
+/home/user/anaconda3/envs/ai/bin/python - <<'PY' 2>&1 || true
+import json, time
+from pathlib import Path
+p = Path('/home/user/Documents/job_engine/.data/jobmaster_telegram_health.json')
+if not p.exists():
+    print('health=missing')
+else:
+    d = json.loads(p.read_text())
+    print(json.dumps({
+        'status': d.get('status'),
+        'version': d.get('version'),
+        'updated_seconds_ago': round(time.time() - float(d.get('updated_at') or 0), 1),
+        'last_kind': d.get('last_kind'),
+        'query_count': d.get('query_count', 0),
+        'page_count': d.get('page_count', 0),
+        'error': d.get('error'),
+    }, sort_keys=True))
+PY
+
+echo "=== recent JobMaster Telegram logs (redacted) ==="
+tail -80 /home/user/Documents/job_engine/.data/logs/telegram.log 2>/dev/null \
+  | sed -E 's/[0-9]{7,}/[ID]/g' | redact || true
+
+# Legacy Hermes state remains useful to prove that its Telegram gateway is off.
 echo "=== hermes .env gate flags (only these two lines) ==="
 grep -E '^TELEGRAM_(ALLOW_ALL_USERS|ALLOWED_USERS)=' "$HOME/.hermes/.env" 2>/dev/null \
   | sed -E 's/(ALLOWED_USERS=).+/\1[IDS_REDACTED]/' || echo "(no ~/.hermes/.env)"
