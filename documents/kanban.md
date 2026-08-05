@@ -84,7 +84,10 @@ enforcing the managed guest store. Recovery in review adds Ashok-only
 `/allowguest`, `/blockguest`, and `/guests`; explicit blocks override default
 usernames, re-allow clears a block, numeric access can expire, owner access
 cannot be blocked, and unauthorized updates are rejected before entering the
-durable processing queue. Contract suite: 43/43 green.
+durable processing queue. Access mutations are serialized across processes;
+owner changes form an update-order barrier; queued/prepared replies recheck
+access; corrupt state fails closed. Contract suite: 50/50 green; focused
+security audit: no remaining high/medium findings.
 
 **Acceptance:** follow
 [`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md);
