@@ -43,8 +43,12 @@ from app.telegram_guests import (  # noqa: E402
     list_blocked,
     list_guests,
     list_usernames,
+    observe_identity,
 )
-from app.telegram_sessions import TelegramSessionStore  # noqa: E402
+from app.telegram_sessions import (  # noqa: E402
+    AmbiguousTelegramIdentity,
+    TelegramSessionStore,
+)
 from app.vigil_boards import render_board  # noqa: E402
 
 HERMES_ENV = Path.home() / '.hermes' / '.env'
@@ -83,6 +87,7 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'revokeuser',
     'guests',
     'guestlist',
+    'history',
 })
 OWNER_COMMANDS = frozenset((
     *OWNER_BOARD_COMMANDS,
@@ -93,6 +98,7 @@ OWNER_MENU = [
     {'command': 'allowguest', 'description': 'Allow a person'},
     {'command': 'blockguest', 'description': 'Block a person'},
     {'command': 'guests', 'description': 'People with access'},
+    {'command': 'history', 'description': 'Guest conversation history'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
     {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
@@ -104,6 +110,44 @@ OWNER_MENU = [
     {'command': 'brief', 'description': 'Daily hiring brief'},
     {'command': 'boards', 'description': 'VIGIL command menu'},
 ]
+
+
+def _utf16_units(text: str) -> int:
+    return len(str(text).encode('utf-16-le')) // 2
+
+
+def _truncate_utf16(text: str, max_units: int) -> str:
+    value = str(text or '')
+    if _utf16_units(value) <= max_units:
+        return value
+    suffix = '…'
+    budget = max(0, max_units - _utf16_units(suffix))
+    out: list[str] = []
+    used = 0
+    for character in value:
+        units = _utf16_units(character)
+        if used + units > budget:
+            break
+        out.append(character)
+        used += units
+    return ''.join(out) + suffix
+
+
+def _telegram_chunks(text: str, max_units: int = 3800) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    used = 0
+    for character in str(text or ''):
+        units = _utf16_units(character)
+        if current and used + units > max_units:
+            chunks.append(''.join(current))
+            current = []
+            used = 0
+        current.append(character)
+        used += units
+    if current:
+        chunks.append(''.join(current))
+    return chunks
 
 
 def load_env() -> dict[str, str]:
@@ -140,8 +184,7 @@ class TelegramAPI:
         remaining = (text or '').strip()
         if not remaining:
             return
-        while remaining:
-            chunk, remaining = remaining[:4000], remaining[4000:]
+        for chunk in _telegram_chunks(remaining):
             self.call('sendMessage', {
                 'chat_id': str(chat_id),
                 'text': chunk,
@@ -240,9 +283,75 @@ class JobMasterTelegramBot:
             return self.engine.handle(query, chat_id)
 
     @staticmethod
-    def _management_reply(chat_id: str, command: str, arg: str) -> str:
+    def _relative_age(timestamp: float) -> str:
+        seconds = max(0, int(time.time() - float(timestamp)))
+        if seconds < 60:
+            return 'just now'
+        minutes = seconds // 60
+        if minutes < 60:
+            return f'{minutes}m ago'
+        hours = minutes // 60
+        if hours < 24:
+            return f'{hours}h ago'
+        days = hours // 24
+        return f'{days}d ago'
+
+    def _management_reply(self, chat_id: str, command: str, arg: str) -> str:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
+        if command == 'history':
+            parts = (arg or '').split(maxsplit=1)
+            if not parts:
+                return 'Usage: /history <@username or Telegram ID> [1–40]'
+            identity = self._identity(parts[0])
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, identity_value = identity
+            limit = 10
+            if len(parts) >= 2:
+                try:
+                    limit = int(parts[1])
+                except ValueError:
+                    return 'History count must be a whole number from 1 to 40.'
+                if limit < 1:
+                    return 'History count must be a whole number from 1 to 40.'
+                limit = min(limit, 40)
+            lookup = (
+                f'@{identity_value}'
+                if identity_kind == 'username'
+                else identity_value
+            )
+            try:
+                history = self.sessions.conversation_history(lookup, limit=limit)
+            except AmbiguousTelegramIdentity:
+                return (
+                    f'{lookup} has been used by more than one Telegram account. '
+                    'Use the numeric Telegram ID to avoid exposing the wrong history.'
+                )
+            if not history:
+                return (
+                    f'No stored conversations for {lookup}. '
+                    'History starts after this feature is deployed.'
+                )
+            lines = [
+                f'CONVERSATION HISTORY · {lookup} · latest {len(history)}',
+                'Compact summaries · request fewer conversations for more detail.',
+                '',
+            ]
+            pair_budget = max(52, (3500 - _utf16_units('\n'.join(lines))) // len(history))
+            for index, item in enumerate(history, 1):
+                prefix = f"{index}. {self._relative_age(item['completed_at'])}"
+                fixed_units = _utf16_units(prefix) + _utf16_units('\nGuest: \nJobMaster: \n')
+                content_budget = max(12, pair_budget - fixed_units)
+                user_budget = max(5, content_budget // 3)
+                reply_budget = max(7, content_budget - user_budget)
+                lines.extend([
+                    prefix,
+                    f"Guest: {_truncate_utf16(item['user_text'], user_budget)}",
+                    f"JobMaster: {_truncate_utf16(item['bot_reply'], reply_budget)}",
+                    '',
+                ])
+            return _truncate_utf16('\n'.join(lines).rstrip(), 3700)
         if command in allow_commands:
             parts = (arg or '').split(maxsplit=2)
             if not parts:
@@ -400,6 +509,46 @@ class JobMasterTelegramBot:
                 self._write_health(status='degraded', error=str(exc)[:200])
             return False
 
+    def _finalize_delivered(
+        self,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        text: str,
+        reply: str,
+    ) -> None:
+        """Finish delivery without letting optional history strand a chat."""
+        if self._is_owner(chat_id):
+            self.sessions.complete_update(update_id)
+            return
+        try:
+            self.sessions.finalize_guest_conversation(
+                update_id,
+                chat_id,
+                username,
+                text,
+                reply,
+            )
+        except Exception as exc:
+            LOG.exception(
+                'conversation history persistence failed chat=%s update=%s',
+                chat_id,
+                update_id,
+            )
+            if self.health_enabled:
+                self._write_health(
+                    status='degraded',
+                    error=f'history persistence: {str(exc)[:160]}',
+                )
+            try:
+                self.sessions.complete_update(update_id)
+            except Exception:
+                LOG.exception(
+                    'delivered inbox cleanup failed chat=%s update=%s',
+                    chat_id,
+                    update_id,
+                )
+
     def _process_queued(
         self,
         update_id: int,
@@ -426,10 +575,26 @@ class JobMasterTelegramBot:
                 if self.health_enabled:
                     self._write_health(status='degraded', error=str(exc)[:200])
                 return False
-            self.sessions.complete_update(update_id)
+            self._finalize_delivered(
+                update_id,
+                chat_id,
+                username,
+                text,
+                prepared,
+            )
             return True
         if self._safe_process(chat_id, text, acked=acked, update_id=update_id):
-            self.sessions.complete_update(update_id)
+            reply = self.sessions.load_update_reply(update_id)
+            if reply is not None:
+                self._finalize_delivered(
+                    update_id,
+                    chat_id,
+                    username,
+                    text,
+                    reply,
+                )
+            else:
+                self.sessions.complete_update(update_id)
             return True
         return False
 
@@ -713,6 +878,8 @@ class JobMasterTelegramBot:
                                         offset,
                                     )
                                     continue
+                                if not self._is_owner(chat_id):
+                                    observe_identity(chat_id, username)
                                 if self.sessions.queue_update(
                                     update_id,
                                     chat_id,

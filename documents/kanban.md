@@ -91,10 +91,36 @@ security audit: no remaining high/medium findings.
 
 **Acceptance:** follow
 [`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md);
-confirm Ashok sees and can run all 13 menu commands; allow, list, block, and
+confirm Ashok sees and can run all owner menu commands; allow, list, block, and
 re-allow a test account; then confirm a blocked account receives no reply and
 Supriya does not see the command deck or expose tower operations. Keep this
 card open until Ashok accepts the live result.
+
+### 8. Ashok-only guest conversation history
+
+**Request (2026-08-05, 10:05 UTC):** after allowing `@cryptoonz`, Ashok needs
+to inspect guest test conversations from Telegram itself, with an owner command
+returning at most the latest 40 conversation pairs.
+
+**Important limit:** Telegram Bot API cannot retrieve messages retroactively.
+History begins after this feature deploys; earlier `@cryptoonz` replies are not
+recoverable from Telegram.
+
+**Implementation in review:** `/history <@username-or-id> [1–40]` is owner-only.
+Delivered guest question/final-reply pairs are archived locally and atomically
+removed from the durable inbox. Retention is strictly 40 per numeric chat,
+including migration cleanup. Owner traffic is excluded. Username grants bind
+to the first stable numeric ID; recycled/ambiguous usernames fail closed;
+observed aliases remain blockable. Output is a single compact response capped
+at 3,700 UTF-16 units. History failure cannot strand the chat queue.
+
+**Evidence:** 66 combined Telegram/search tests green; focused security review
+reports no remaining high/medium privacy, authorization, retention, durability,
+or delivery findings.
+
+**Acceptance:** after deploy, `@cryptoonz` sends one normal query; Ashok runs
+`/history @cryptoonz 40` and sees only that guest's delivered conversation;
+Supriya's same history command exposes nothing. Keep open until Ashok accepts.
 
 ## Done
 

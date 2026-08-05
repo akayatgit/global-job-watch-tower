@@ -59,6 +59,25 @@ From Ashok's chat only:
 - Prefer `@username`. Use a numeric Telegram ID when the person has no username
   or when access must survive a username change.
 
+### Read a guest's recent conversation history
+
+From Ashok's chat only:
+
+```text
+/history @cryptoonz
+/history @cryptoonz 40
+```
+
+- Default: latest 10 delivered guest conversation pairs.
+- Maximum stored and returned: 40 per guest.
+- The response is a compact Telegram-safe summary. Request fewer conversations
+  for more detail.
+- History starts after this feature is deployed. Telegram does not let bots
+  fetch older chat history retroactively.
+- If a username has belonged to multiple Telegram IDs, the command refuses to
+  guess; use the numeric Telegram ID.
+- Owner commands and owner conversations are not stored as guest history.
+
 ## 2. How to record a test
 
 Run **one case at a time**. Wait for the final reply before starting the next
@@ -92,7 +111,7 @@ logs into Telegram.
 
 Run in this order:
 
-`JM-001 → JM-002 → JM-017 → JM-019 → JM-018 → JM-003 → JM-010 → JM-011 → JM-020 → JM-030 → JM-031 → JM-040 → JM-050`
+`JM-001 → JM-002 → JM-017 → JM-019 → JM-028 → JM-018 → JM-003 → JM-010 → JM-011 → JM-020 → JM-030 → JM-031 → JM-040 → JM-050`
 
 Stop after the first failure and report its case ID, screenshot, and exact reply.
 
@@ -101,7 +120,7 @@ Stop after the first failure and report its case ID, screenshot, and exact reply
 | ID | Account | Send / action | Expected |
 |---|---|---|---|
 | JM-001 | Ashok | Open the bot chat | Blue **Menu** button or `/` command list is available. |
-| JM-002 | Ashok | Open **Menu** | Shows `/allowguest`, `/blockguest`, `/guests`, `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
+| JM-002 | Ashok | Open **Menu** | Shows `/allowguest`, `/blockguest`, `/guests`, `/history`, `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
 | JM-003 | Ashok | `/health` | Returns live `TOWER HEALTH` facts; no `Thinking…`, job search, model text, or internal error. |
 | JM-004 | Ashok | `/towerinsights` | Returns jobs, companies, roles, and fresh catches from the live tower. |
 | JM-005 | Ashok | `/stats ai` | Returns a grounded AI-job count for the past 24 hours; does not treat `stats` as a job title. |
@@ -132,6 +151,8 @@ Stop after the first failure and report its case ID, screenshot, and exact reply
 | JM-025 | Supriya | `/governmentjobs` | Does not execute the owner shortcut. She may still ask “government jobs” naturally. |
 | JM-026 | Supriya | `Fresh AI jobs in Bangalore` | Normal verified job search still works despite commands being restricted. |
 | JM-027 | Ashok then Supriya | Ashok runs `/health`; Supriya immediately searches for jobs | Replies stay in the correct chats; no cross-chat leakage. |
+| JM-028 | Ashok | `/history @cryptoonz 40` after `@cryptoonz` receives a reply | Returns only `@cryptoonz`'s latest stored guest conversation pairs, never more than 40. |
+| JM-029 | Supriya | `/history @cryptoonz 40` | Does not expose any guest history; gives only normal JobMaster guidance. |
 
 ## 6. Core conversation and acknowledgement
 
@@ -260,7 +281,9 @@ automated tests pass; live acceptance belongs to Ashok.
 |---|---|---|---|---|
 | JM-001 | 2026-08-05 05:29 | Ashok | PASS | Blue **Menu** button is visible in the private bot chat. |
 | JM-002 | 2026-08-05 05:43 | Ashok | FAIL | Menu lacked user management: allow guest, block guest, and access list. Recovery implementation opened immediately. |
-| JM-002-R1 |  | Ashok |  | Rerun after deployment; all 13 owner commands must be visible. |
+| JM-002-R1 | 2026-08-05 07:17 | Ashok | PASS | After deploying `223e603`, all 13 owner commands are visible, including `/allowguest`, `/blockguest`, and `/guests`. |
+| JM-017 | 2026-08-05 07:21 | Ashok | IN PROGRESS | Grant command returned the expected confirmation. Ashok later selected `@cryptoonz` as the real test guest; awaiting one successful normal query from that account before PASS. |
+| JM-028 |  | Ashok | BLOCKED | `/history` begins recording only after its deployment; pre-feature `@cryptoonz` conversations cannot be recovered through Telegram Bot API. |
 
 ## 15. Automation backlog
 

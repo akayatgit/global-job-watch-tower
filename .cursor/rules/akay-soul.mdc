@@ -85,6 +85,11 @@ need to be told twice.
   restored insight commands but omitted user management. Ashok must always
   have phone-only `/allowguest`, `/blockguest`, and `/guests`; access control
   lives in the dedicated JobMaster ingress and cannot disappear in a cutover.
+- **2026-08-05 · The test trail belongs in Ashok's hand.** Guest QA cannot
+  depend on opening the ThinkPad. `/history` gives Ashok the latest 40
+  delivered guest conversations in Telegram, with strict privacy: stable
+  numeric identity, no recycled-handle guessing, no owner traffic, no claim
+  that a bot can recover history from before recording began.
 
 ## Honesty note on the codeword
 

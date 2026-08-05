@@ -14,6 +14,10 @@ from app import config
 DEFAULT_DB = config.BASE_DIR / '.data' / 'jobmaster_telegram.db'
 
 
+class AmbiguousTelegramIdentity(ValueError):
+    """A mutable username has belonged to more than one numeric chat."""
+
+
 class TelegramSessionStore:
     def __init__(self, path: Path | str = DEFAULT_DB):
         self.path = Path(path)
@@ -49,6 +53,18 @@ class TelegramSessionStore:
                     reply TEXT,
                     created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS conversation_history (
+                    update_id INTEGER PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    username TEXT NOT NULL DEFAULT '',
+                    user_text TEXT NOT NULL,
+                    bot_reply TEXT NOT NULL,
+                    completed_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_conversation_history_chat
+                    ON conversation_history(chat_id, completed_at DESC);
+                CREATE INDEX IF NOT EXISTS ix_conversation_history_username
+                    ON conversation_history(username COLLATE NOCASE, completed_at DESC);
                 """
             )
             columns = {
@@ -67,6 +83,26 @@ class TelegramSessionStore:
                 conn.execute(
                     "ALTER TABLE telegram_inbox ADD COLUMN username TEXT NOT NULL DEFAULT ''"
                 )
+            # Enforce the product's strict privacy cap for databases created by
+            # older builds, not only when the next conversation arrives.
+            conn.execute(
+                """
+                DELETE FROM conversation_history
+                WHERE update_id IN (
+                    SELECT update_id
+                    FROM (
+                        SELECT
+                            update_id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY chat_id
+                                ORDER BY completed_at DESC, update_id DESC
+                            ) AS row_number
+                        FROM conversation_history
+                    )
+                    WHERE row_number > 40
+                )
+                """
+            )
 
     def save_search(
         self,
@@ -234,3 +270,155 @@ class TelegramSessionStore:
         if row is None or row['reply'] is None:
             return None
         return str(row['reply'])
+
+    def record_conversation(
+        self,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+        *,
+        completed_at: float | None = None,
+        retention_per_chat: int = 40,
+    ) -> None:
+        """Idempotently retain a delivered user message + final bot reply."""
+        keep = max(1, min(int(retention_per_chat), 40))
+        with self._lock, self._connect() as conn:
+            self._record_conversation(
+                conn,
+                update_id,
+                chat_id,
+                username,
+                user_text,
+                bot_reply,
+                completed_at=completed_at,
+                keep=keep,
+            )
+
+    @staticmethod
+    def _record_conversation(
+        conn: sqlite3.Connection,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+        *,
+        completed_at: float | None,
+        keep: int,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO conversation_history(
+                update_id, chat_id, username, user_text, bot_reply, completed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(update_id),
+                str(chat_id),
+                str(username or '').strip().lstrip('@').lower(),
+                str(user_text),
+                str(bot_reply),
+                float(completed_at if completed_at is not None else time.time()),
+            ),
+        )
+        conn.execute(
+            """
+            DELETE FROM conversation_history
+            WHERE chat_id=?
+              AND update_id NOT IN (
+                SELECT update_id
+                FROM conversation_history
+                WHERE chat_id=?
+                ORDER BY completed_at DESC, update_id DESC
+                LIMIT ?
+              )
+            """,
+            (str(chat_id), str(chat_id), keep),
+        )
+
+    def finalize_guest_conversation(
+        self,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+    ) -> None:
+        """Atomically archive a delivered guest reply and clear its inbox row."""
+        with self._lock, self._connect() as conn:
+            self._record_conversation(
+                conn,
+                update_id,
+                chat_id,
+                username,
+                user_text,
+                bot_reply,
+                completed_at=None,
+                keep=40,
+            )
+            conn.execute(
+                'DELETE FROM telegram_inbox WHERE update_id=?',
+                (int(update_id),),
+            )
+
+    def conversation_history(
+        self,
+        identity: str,
+        *,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Return oldest→newest within the requested latest window."""
+        raw = str(identity or '').strip()
+        count = max(1, min(int(limit), 40))
+        if raw.startswith('@'):
+            username = raw[1:]
+            with self._connect() as conn:
+                identities = conn.execute(
+                    """
+                    SELECT chat_id, MAX(completed_at) AS last_seen
+                    FROM conversation_history
+                    WHERE username = ? COLLATE NOCASE
+                    GROUP BY chat_id
+                    ORDER BY last_seen DESC
+                    """,
+                    (username,),
+                ).fetchall()
+            if len(identities) > 1:
+                raise AmbiguousTelegramIdentity(
+                    f'@{username} has more than one stored Telegram ID'
+                )
+            if not identities:
+                return []
+            where = 'chat_id = ?'
+            value = str(identities[0]['chat_id'])
+        elif raw.isdigit():
+            where = 'chat_id = ?'
+            value = raw
+        else:
+            where = 'username = ? COLLATE NOCASE'
+            value = raw
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT update_id, chat_id, username, user_text, bot_reply, completed_at
+                FROM conversation_history
+                WHERE {where}
+                ORDER BY completed_at DESC, update_id DESC
+                LIMIT ?
+                """,
+                (value, count),
+            ).fetchall()
+        return [
+            {
+                'update_id': int(row['update_id']),
+                'chat_id': str(row['chat_id']),
+                'username': str(row['username'] or ''),
+                'user_text': str(row['user_text']),
+                'bot_reply': str(row['bot_reply']),
+                'completed_at': float(row['completed_at']),
+            }
+            for row in reversed(rows)
+        ]
