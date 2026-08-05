@@ -230,6 +230,24 @@ welcome-back recall, `_extract_experience`/`_extract_role_family` refactor,
 `job_engine/tests/test_telegram_job_bot.py`,
 `documents/jobmaster-telegram-validation.md`.
 
+**Bug found + fixed during Ashok's first live test (2026-08-05, 14:18 UTC):**
+Ashok greeted the bot, then answered the role step with the bare word
+`Product` (the onboarding prompt's own example says "Product Manager") and
+got a false dead end: *"I don't see verified Product openings today. Want to
+try a different role?"* — even though real Product Manager postings existed.
+**RCA:** `_extract_role_family` only matched the full phrase "product
+manager/owner/analyst", never the bare category word, so `Product` fell
+through with `role_family=''` and only a loose `product` keyword, which a
+stricter title-terms scan can miss. (Confirmed via the deploy's redacted
+diagnostics: the `/actasguest`/`/actasowner` toggle, onboarding funnel, and
+`/history` text were all exactly the newly-deployed code — this was a real
+parser gap, not a stale process or a rogue LLM reply.) **Fix:** bare
+`product` now resolves to the `product` family exactly like `Product
+Manager` would; the strict phrase match stays intact as the job-title-side
+filter (`job_role_families.ROLE_FAMILY_REGEX`), which is correctly narrow
+since real postings are never titled bare "Product". 2 new regression tests
+(one on the parser, one on the full onboarding flow) — **165/165 green.**
+
 ## Done
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency

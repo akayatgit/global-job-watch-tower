@@ -197,6 +197,25 @@ class SearchUnderstandingTests(unittest.TestCase):
         self.assertIn('Company 1', reply)
         self.assertNotIn('Company 2', reply)
 
+    def test_bare_product_answer_also_resolves_to_product_family(self):
+        # RCA (2026-08-05, live test): onboarding's own role-step example
+        # list says "Product Manager", but a bare "Product" answer — a
+        # completely natural shortening — used to fall through with
+        # role_family='' and only 'product' as a loose keyword, so a real
+        # Product Manager opening could be missed by a stricter title-terms
+        # scan. "Product" alone must resolve exactly like "Product Manager".
+        i = _fallback_intent('Product')
+        self.assertEqual(i.role_family, 'product')
+        self.assertEqual(i.role_keywords, [])
+        api = FakeAPI([
+            make_job(1, title='Product Manager', experience_band=None, city='mumbai'),
+            make_job(2, title='Data Analyst', experience_band=None, city='mumbai'),
+        ])
+        engine = JobMasterEngine(api_get=api, interpreter=IntentInterpreter(enabled=False))
+        reply = engine.handle('Product', '1')
+        self.assertIn('Company 1', reply)
+        self.assertNotIn('Company 2', reply)
+
 
 # ---------------------------------------------------------------------------
 # Section 8 — result integrity (JM-050 .. JM-057)

@@ -240,7 +240,13 @@ def _extract_role_family(low: str) -> str:
         return 'cloud_devops'
     if re.search(r'\b(?:software|developer|engineer|full.?stack|backend|frontend)\b', low):
         return 'software'
-    if re.search(r'\b(?:product manager|product owner|product analyst)\b', low):
+    if re.search(r'\b(?:product manager|product owner|product analyst|product)\b', low):
+        # A bare "Product" answer (e.g. onboarding's role-step example list
+        # says "Product Manager" but people naturally shorten it) still means
+        # the Product family — the strict "product manager/owner/analyst"
+        # phrase match stays as the JOB-TITLE-side filter (job_role_families.
+        # ROLE_FAMILY_REGEX), which is correctly narrow since real postings
+        # are never titled bare "Product".
         return 'product'
     if re.search(r'\b(?:designer|design|ui\s*/?\s*ux|\bux\b|\bui\b)\b', low):
         return 'design'
