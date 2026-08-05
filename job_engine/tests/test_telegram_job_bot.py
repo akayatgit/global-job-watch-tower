@@ -268,6 +268,25 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(bot._sender_allowed('12345'))
         self.assertIn('12345', telegram_guests.list_blocked()['user_ids'])
 
+    def test_owner_cannot_block_self_or_store_invalid_username(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'12345'},
+        )
+        bot.process('12345', '/blockguest 12345')
+        self.assertEqual(self.api.sent[-1], ('12345', 'Ashok’s owner access cannot be blocked.'))
+        self.assertTrue(bot._sender_allowed('12345'))
+
+        bot.process('12345', '/allowguest @bad!')
+        self.assertEqual(
+            self.api.sent[-1],
+            ('12345', 'Use a valid Telegram @username or numeric Telegram ID.'),
+        )
+        self.assertFalse(telegram_guests.is_username_allowed('bad!'))
+
     def test_block_override_can_disable_default_username(self):
         bot = JobMasterTelegramBot(
             self.api,

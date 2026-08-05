@@ -231,6 +231,8 @@ class JobMasterTelegramBot:
             target = parts[0].strip()
             if not re.fullmatch(r'-?\d+', target.lstrip('@')):
                 handle = target.lstrip('@')
+                if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', handle):
+                    return 'Use a valid Telegram @username or numeric Telegram ID.'
                 add_username(handle, added_by=chat_id)
                 return f'Allowed @{handle}. Their next message will work.'
             target = target.lstrip('@')
@@ -254,9 +256,13 @@ class JobMasterTelegramBot:
                 return 'Usage: /blockguest <@username or Telegram ID>'
             if re.fullmatch(r'-?\d+', target.lstrip('@')):
                 target = target.lstrip('@')
+                if target == str(chat_id):
+                    return 'Ashok’s owner access cannot be blocked.'
                 block_guest(target, blocked_by=chat_id)
                 return f'Blocked {target}. New messages will be ignored.'
             handle = target.lstrip('@')
+            if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', handle):
+                return 'Use a valid Telegram @username or numeric Telegram ID.'
             block_username(handle, blocked_by=chat_id)
             return f'Blocked @{handle}. New messages will be ignored.'
 
