@@ -82,6 +82,14 @@ customer chats on the clean JobMaster interface. Insight commands deployed at
 inside the dedicated poller. Contract tests are green; deployment and live
 acceptance remain open on kanban card #6.
 
+**Guest QA visibility:** Ashok-only `/history <@username-or-id> [1–40]`
+captures delivered guest question/reply pairs from deployment onward so live
+test evidence can be inspected inside Telegram. Strict 40-per-person retention,
+stable numeric identity binding, recycled-username refusal, owner exclusion,
+compact UTF-16-safe output, and fail-safe persistence are required. Manual
+acceptance is tracked as JM-028/JM-029 and kanban #8; the same contract joins
+the future automated Telegram sandbox suite.
+
 **Acceptance track:** Ashok will execute the numbered best-case, worst-case,
 edge-case, security, pagination, insight, and owner-isolation suite in
 [`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md), one

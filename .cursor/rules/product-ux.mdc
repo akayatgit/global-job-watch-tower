@@ -441,3 +441,10 @@ use — they should love opening the app, never fight it.
   worst, edge, security, isolation, pagination, insight, and recovery paths.
   Later automation must preserve the same IDs and must not replace Ashok's live
   acceptance for user-facing closure.
+- **Ashok-only guest history (2026-08-05):** `/history <@username-or-id>
+  [1–40]` returns compact delivered guest question/reply pairs inside Telegram.
+  Never claim retroactive access—the Bot API cannot fetch old chats. Store only
+  guest traffic, never owner commands; retain strictly 40 per numeric person;
+  bind usernames to stable Telegram IDs; refuse recycled/ambiguous handles;
+  keep every observed alias blockable. Output must fit one Telegram message
+  safely in UTF-16 units. Guests can never read another guest's history.
