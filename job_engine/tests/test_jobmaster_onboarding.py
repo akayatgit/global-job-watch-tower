@@ -191,6 +191,56 @@ class GuestProfilePersistenceTests(BaseOnboardingTest):
         self.assertIsNone(self.sessions.get_guest_profile('never-chatted'))
 
 
+class ReturningGuestWelcomeBackTests(BaseOnboardingTest):
+    def test_returning_guest_greeting_recalls_stored_profile(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-40')
+        reply = self.engine.handle('Hi', 'chat-40')
+        self.assertIn('Welcome back', reply)
+        self.assertIn('AI/ML', reply)
+        self.assertIn('fresher', reply)
+        self.assertIn('Bengaluru', reply)
+        self.assertIn("'yes'", reply)
+
+    def test_saying_yes_repeats_the_search_with_zero_extra_questions(self):
+        self.api.jobs = [make_job(i, city='bengaluru') for i in range(1, 4)]
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-41')
+        self.engine.handle('Hi', 'chat-41')
+        final = self.engine.handle('yes', 'chat-41')
+        self.assertTrue(final.startswith('1.'))
+        self.assertIn('Company 1', final)
+        self.assertIsNone(self.sessions.load_onboarding('chat-41'))
+
+    def test_saying_no_starts_a_completely_fresh_funnel(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-42')
+        self.engine.handle('Hi', 'chat-42')
+        reply = self.engine.handle('something new', 'chat-42')
+        self.assertIn('What job role', reply)
+        onboarding = self.sessions.load_onboarding('chat-42')
+        self.assertEqual(onboarding['stage'], 'ask_role')
+
+    def test_naming_a_different_role_reconfirms_experience_and_city(self):
+        self._set_today_count(4)
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-43')
+        self.engine.handle('Hi', 'chat-43')
+        reply = self.engine.handle('Product Manager', 'chat-43')
+        self.assertIn('experience', reply.lower())
+        onboarding = self.sessions.load_onboarding('chat-43')
+        self.assertEqual(onboarding['role_family'], 'product')
+        self.assertFalse(onboarding['city_known'])
+
+    def test_unrecognized_reply_to_welcome_back_reprompts_gracefully(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-44')
+        self.engine.handle('Hi', 'chat-44')
+        reply = self.engine.handle('!!!', 'chat-44')
+        self.assertIn("didn't catch that", reply)
+        self.assertEqual(self.sessions.load_onboarding('chat-44')['stage'], 'ask_return_choice')
+
+    def test_first_time_guest_never_sees_a_welcome_back(self):
+        reply = self.engine.handle('Hi', 'chat-45')
+        self.assertNotIn('Welcome back', reply)
+        self.assertIn('What job role', reply)
+
+
 class GuestProfileFromNormalSearchTests(BaseOnboardingTest):
     def test_a_direct_one_shot_search_also_saves_a_profile(self):
         self.engine.handle('AI jobs in Bangalore for fresher', 'chat-30')
