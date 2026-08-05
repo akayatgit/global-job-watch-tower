@@ -98,6 +98,14 @@ Next automation slice converts the same IDs into contract tests, a Telegram
 sandbox integration suite, a read-only live smoke, deployment gates, and a
 nightly regression corpus (kanban #7).
 
+**Scale target (2026-08-05):** JobMaster must be designed to serve 1,00,000
+(1 lakh) users/guests within a month, with scraped data reaching roughly that
+many people through real conversion. This is now a standing design
+constraint (`.cursor/rules/product-ux.mdc`) — see
+`documents/scale-and-memory-architecture.md` for the current infra gap
+(session/guest state is a single local SQLite file and must move to
+Postgres/Redis before this holds) and kanban card #10 for the migration plan.
+
 **Guided onboarding + guest profiles (2026-08-05):** a bare greeting now
 starts a deterministic role → experience → city conversation instead of an
 unfiltered job dump, ending in the same grounded `_job_reply` results plus a

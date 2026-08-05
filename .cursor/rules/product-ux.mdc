@@ -442,9 +442,24 @@ use — they should love opening the app, never fight it.
   Later automation must preserve the same IDs and must not replace Ashok's live
   acceptance for user-facing closure.
 - **Ashok-only guest history (2026-08-05):** `/history <@username-or-id>
-  [1–40]` returns compact delivered guest question/reply pairs inside Telegram.
-  Never claim retroactive access—the Bot API cannot fetch old chats. Store only
-  guest traffic, never owner commands; retain strictly 40 per numeric person;
-  bind usernames to stable Telegram IDs; refuse recycled/ambiguous handles;
-  keep every observed alias blockable. Output must fit one Telegram message
-  safely in UTF-16 units. Guests can never read another guest's history.
+ [1–40]` returns compact delivered guest question/reply pairs inside Telegram.
+ Never claim retroactive access—the Bot API cannot fetch old chats. Store only
+ guest traffic, never owner commands; retain strictly 40 per numeric person;
+ bind usernames to stable Telegram IDs; refuse recycled/ambiguous handles;
+ keep every observed alias blockable. Output must fit one Telegram message
+ safely in UTF-16 units. Guests can never read another guest's history.
+- **1 lakh-user scale target (2026-08-05):** JobMaster must be designed to
+ serve 1,00,000 users/guests within a month, and scraped data must reach
+ roughly that many people through real conversion. Always pick infra/logic
+ with this scale in mind, not just "works for today's handful of test
+ guests." Full rationale + current gap (SQLite session store must move to
+ Postgres/Redis before this holds) in
+ `documents/scale-and-memory-architecture.md`; tracked as kanban card #10.
+- **Guest memory stays deterministic (2026-08-05):** a guest's remembered
+ role/experience/city (`guest_profiles`, refreshed by any completed
+ role-scoped search) is read back only through a plain template ("Welcome
+ back, you were looking for X in Y — reply 'yes' or tell me something new").
+ Never let an LLM "recall" or paraphrase a guest's stored search — same
+ no-invented-facts law as job rows/counts/links. DIRECTOR's `SQLiteSession`
+ (OpenAI Agents SDK memory, used for Ashok's own Jarvis chat) is a different,
+ LLM-replayed shape and must not be reused for guest-facing JobMaster memory.
