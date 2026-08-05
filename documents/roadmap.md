@@ -98,6 +98,15 @@ Next automation slice converts the same IDs into contract tests, a Telegram
 sandbox integration suite, a read-only live smoke, deployment gates, and a
 nightly regression corpus (kanban #7).
 
+**Guided onboarding + guest profiles (2026-08-05):** a bare greeting now
+starts a deterministic role → experience → city conversation instead of an
+unfiltered job dump, ending in the same grounded `_job_reply` results plus a
+forward-looking suggestion — Ashok's ask for "collect info gradually" and
+"user/guest management." Every completed flow saves a per-guest profile
+(role/experience/city) readable via the new Ashok-only `/guestprofile`
+command. 20 new contract tests, 145/145 green; live acceptance tracked as
+JM-130..145 in the validation doc and kanban card #9.
+
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
 flashcards, relevant tech news, tutorials, and LMS progress. Entitlements are

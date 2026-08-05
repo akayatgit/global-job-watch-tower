@@ -122,6 +122,66 @@ or delivery findings.
 `/history @cryptoonz 40` and sees only that guest's delivered conversation;
 Supriya's same history command exposes nothing. Keep open until Ashok accepts.
 
+### 9. Guided guest onboarding + guest profile management
+
+**Request (2026-08-05, 12:03 UTC):** Ashok — "when any guest greets or
+starting a conversation, we need to start collecting information gradually,
+such as Job Role, [then] I can get you x job roles postings with url, but can
+you provide me your experience so I can provide you better matching openings
+— fresher. Then do you have a city preference and show for today, forward
+ending questions and suggestions. We also need to start user/guest
+management."
+
+**Implementation in review:** a bare greeting (`Hi`, `Hello`, `Hey`, `Good
+morning`, etc. — fully anchored, never a substring of a real query) now starts
+a deterministic 3-step flow instead of returning an unfiltered job dump:
+1. **Role** — "What job role are you looking for?"
+2. **Experience** — states a grounded live count of matching jobs *today*
+   (`/api/jobs/insights?days=1`, never invented) with links, then asks for
+   experience (fresher / 1-2 / 3-5 / 6-8 / 9-12 / 13+ / "any").
+3. **City** — asks for a city preference ("any" skips the filter), then
+   returns up to 10 grounded rows via the exact same `_job_reply` pipeline
+   every other search uses, ending with a forward-looking suggestion
+   ("Tell me a new role or city anytime...").
+
+Any fully specified message (e.g. `AI jobs in Bangalore for fresher`) is
+never redirected into this flow — onboarding triggers only on a literal
+greeting, per Gate 3.0's "grounded results immediately" guarantee (verified
+by regression test). An eager multi-field answer at any step (e.g. `AI
+Engineer, fresher, in Chennai`) skips already-answered questions instead of
+forcing the full funnel. Zero-match roles and unrecognized experience/city
+answers get an honest, graceful fallback — never a dead end or invented data.
+`/new` cancels onboarding cleanly; `more` after completion paginates the
+onboarding-originated search exactly like any other. Applies identically to
+Ashok and guests (no personality split), per the standing JobMaster rule.
+
+**Guest management:** every completed onboarding (and, going forward, any
+completed search) saves a per-guest profile (role, experience, city, last
+updated). New Ashok-only command `/guestprofile <@username-or-id>` reads it
+back — same fail-closed ambiguous-username rule as `/history`. `/guests`
+(access allow/block list) already existed from card #6; this adds the
+"what are they actually looking for" layer on top.
+
+**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` — 20 new tests
+covering greeting detection, the full flow, zero-match/unrecognized-answer
+fallbacks, eager answers, `/new` cancellation, `more` continuity, and
+`/guestprofile` access control. Full suite: **145/145 green.** New `JM-130`
+through `JM-145` cases added to
+[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md)
+§14 for Ashok's live run.
+
+**Acceptance:** Ashok runs JM-130..145 live in Telegram (starting from a
+fresh `/new`'d chat) and confirms the flow feels natural, the "today" count is
+real, and `/guestprofile` shows what a test guest searched for. Keep open
+until Ashok accepts the live result.
+
+**Files:** `job_engine/app/telegram_job_search.py` (onboarding state machine,
+`_extract_experience`/`_extract_role_family` refactor, `_role_label`),
+`job_engine/app/telegram_sessions.py` (`onboarding_sessions` +
+`guest_profiles` tables), `job_engine/scripts/telegram_job_bot.py`
+(`/guestprofile` command), `job_engine/tests/test_jobmaster_onboarding.py`,
+`documents/jobmaster-telegram-validation.md`.
+
 ## Done
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
