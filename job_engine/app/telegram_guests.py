@@ -122,9 +122,13 @@ def _load() -> dict:
         }
     try:
         data = json.loads(GUESTS_FILE.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError('guest store root must be an object')
         for key in ('guests', 'usernames', 'blocked_ids', 'blocked_usernames'):
-            if not isinstance(data.get(key), dict):
+            if key not in data:
                 data[key] = {}
+            elif not isinstance(data[key], dict):
+                raise ValueError(f'guest store field {key} must be an object')
         return data
     except Exception as exc:
         raise GuestStoreError('Telegram guest access store is unreadable') from exc
