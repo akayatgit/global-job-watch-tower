@@ -30,6 +30,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
+from app.telegram_guests import (  # noqa: E402
+    DEFAULT_TTL_MINUTES,
+    add_guest,
+    add_username,
+    block_guest,
+    block_username,
+    format_ttl,
+    is_allowed,
+    list_blocked,
+    list_guests,
+    list_usernames,
+)
 from app.telegram_sessions import TelegramSessionStore  # noqa: E402
 from app.vigil_boards import render_board  # noqa: E402
 
@@ -59,8 +71,26 @@ OWNER_QUERY_COMMANDS = {
     'stats': lambda arg: f'How many {arg or ""} jobs in the past 24 hours?'.strip(),
     'governmentjobs': lambda _arg: 'Government jobs',
 }
-OWNER_COMMANDS = frozenset((*OWNER_BOARD_COMMANDS, *OWNER_QUERY_COMMANDS))
+OWNER_MANAGEMENT_COMMANDS = frozenset({
+    'allowguest',
+    'allow',
+    'allowuser',
+    'blockguest',
+    'block',
+    'revoke',
+    'revokeuser',
+    'guests',
+    'guestlist',
+})
+OWNER_COMMANDS = frozenset((
+    *OWNER_BOARD_COMMANDS,
+    *OWNER_QUERY_COMMANDS,
+    *OWNER_MANAGEMENT_COMMANDS,
+))
 OWNER_MENU = [
+    {'command': 'allowguest', 'description': 'Allow a person'},
+    {'command': 'blockguest', 'description': 'Block a person'},
+    {'command': 'guests', 'description': 'People with access'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
     {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
@@ -161,6 +191,9 @@ class JobMasterTelegramBot:
     def _is_owner(self, chat_id: str) -> bool:
         return str(chat_id) in self.owner_chat_ids
 
+    def _sender_allowed(self, chat_id: str, username: str = '') -> bool:
+        return self._is_owner(chat_id) or is_allowed(chat_id, username)
+
     def _owner_command_reply(
         self,
         chat_id: str,
@@ -169,6 +202,8 @@ class JobMasterTelegramBot:
         *,
         update_id: int | None,
     ) -> str:
+        if command in OWNER_MANAGEMENT_COMMANDS:
+            return self._management_reply(chat_id, command, arg)
         if command in OWNER_BOARD_COMMANDS:
             days = None
             if arg:
@@ -184,6 +219,69 @@ class JobMasterTelegramBot:
             if 'update_id' not in str(exc):
                 raise
             return self.engine.handle(query, chat_id)
+
+    @staticmethod
+    def _management_reply(chat_id: str, command: str, arg: str) -> str:
+        allow_commands = {'allowguest', 'allow', 'allowuser'}
+        block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
+        if command in allow_commands:
+            parts = (arg or '').split(maxsplit=2)
+            if not parts:
+                return 'Usage: /allowguest <@username or Telegram ID> [minutes] [name]'
+            target = parts[0].strip()
+            if not re.fullmatch(r'-?\d+', target.lstrip('@')):
+                handle = target.lstrip('@')
+                add_username(handle, added_by=chat_id)
+                return f'Allowed @{handle}. Their next message will work.'
+            target = target.lstrip('@')
+            minutes = DEFAULT_TTL_MINUTES
+            label = ''
+            if len(parts) >= 2:
+                try:
+                    minutes = float(parts[1])
+                    label = parts[2] if len(parts) >= 3 else ''
+                except ValueError:
+                    label = ' '.join(parts[1:])
+            entry = add_guest(target, minutes=minutes, label=label, added_by=chat_id)
+            duration = format_ttl(entry.get('minutes', minutes) * 60)
+            return (
+                f'Allowed {target} for {duration}.'
+                + (f' Name: {label}.' if label else '')
+            )
+        if command in block_commands:
+            target = (arg or '').split(maxsplit=1)[0].strip()
+            if not target:
+                return 'Usage: /blockguest <@username or Telegram ID>'
+            if re.fullmatch(r'-?\d+', target.lstrip('@')):
+                target = target.lstrip('@')
+                block_guest(target, blocked_by=chat_id)
+                return f'Blocked {target}. New messages will be ignored.'
+            handle = target.lstrip('@')
+            block_username(handle, blocked_by=chat_id)
+            return f'Blocked @{handle}. New messages will be ignored.'
+
+        allowed = list_usernames()
+        temporary = list_guests()
+        blocked = list_blocked()
+        lines = ['PEOPLE WITH ACCESS']
+        if allowed:
+            lines.extend(f"  · @{item['username']}" for item in allowed)
+        if temporary:
+            lines.append('')
+            lines.append('Temporary access')
+            for item in temporary:
+                label = f" · {item['label']}" if item['label'] else ''
+                lines.append(
+                    f"  · {item['user_id']}{label} · {format_ttl(item['expires_in_s'])} left"
+                )
+        if blocked['usernames'] or blocked['user_ids']:
+            lines.append('')
+            lines.append('Blocked')
+            lines.extend(f'  · @{handle}' for handle in blocked['usernames'])
+            lines.extend(f'  · {user_id}' for user_id in blocked['user_ids'])
+        if len(lines) == 1:
+            lines.append('  · No guests allowed.')
+        return '\n'.join(lines)
 
     def _configure_command_menu(self) -> bool:
         """Remove global commands and expose VIGIL operations only to Ashok."""
@@ -506,6 +604,19 @@ class JobMasterTelegramBot:
                             text = message.get('text')
                             if isinstance(text, str):
                                 chat_id = str(chat['id'])
+                                sender = message.get('from') or {}
+                                username = str(sender.get('username') or '')
+                                if not self._sender_allowed(chat_id, username):
+                                    LOG.info(
+                                        'ignored blocked Telegram sender chat=%s username=%s',
+                                        chat_id,
+                                        username or 'none',
+                                    )
+                                    self.sessions.set_state(
+                                        'telegram_update_offset',
+                                        offset,
+                                    )
+                                    continue
                                 if self.sessions.queue_update(update_id, chat_id, text):
                                     acked = self._pre_ack(chat_id, text)
                                     self._enqueue_update(

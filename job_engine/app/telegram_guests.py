@@ -81,16 +81,25 @@ def owner_ids() -> set:
 
 def _load() -> dict:
     if not GUESTS_FILE.is_file():
-        return {'guests': {}, 'usernames': {}}
+        return {
+            'guests': {},
+            'usernames': {},
+            'blocked_ids': {},
+            'blocked_usernames': {},
+        }
     try:
         data = json.loads(GUESTS_FILE.read_text(encoding='utf-8'))
-        if not isinstance(data.get('guests'), dict):
-            data['guests'] = {}
-        if not isinstance(data.get('usernames'), dict):
-            data['usernames'] = {}
+        for key in ('guests', 'usernames', 'blocked_ids', 'blocked_usernames'):
+            if not isinstance(data.get(key), dict):
+                data[key] = {}
         return data
     except Exception:
-        return {'guests': {}, 'usernames': {}}
+        return {
+            'guests': {},
+            'usernames': {},
+            'blocked_ids': {},
+            'blocked_usernames': {},
+        }
 
 
 def _save(data: dict) -> None:
@@ -115,9 +124,14 @@ def is_allowed(user_id, username=None) -> bool:
     user_id = str(user_id)
     if user_id in owner_ids():
         return True
+    data = _load()
+    if user_id in data['blocked_ids']:
+        return False
+    handle = _norm_username(username)
+    if handle and handle in data['blocked_usernames']:
+        return False
     if username and is_username_allowed(username):
         return True
-    data = _load()
     if _prune(data):
         _save(data)
     g = data['guests'].get(user_id)
@@ -129,9 +143,11 @@ def is_username_allowed(username) -> bool:
     handle = _norm_username(username)
     if not handle:
         return False
+    data = _load()
+    if handle in data['blocked_usernames']:
+        return False
     if handle in DEFAULT_ALLOWED_USERNAMES:
         return True
-    data = _load()
     return handle in data['usernames']
 
 
@@ -152,6 +168,7 @@ def add_guest(user_id, minutes: float = DEFAULT_TTL_MINUTES, label: str = '', ad
         'label': (label or '').strip()[:80],
         'added_by': str(added_by or ''),
     }
+    data['blocked_ids'].pop(user_id, None)
     data['guests'][user_id] = entry
     _save(data)
     return entry
@@ -172,6 +189,7 @@ def add_username(username, added_by: str = '') -> dict:
     handle = _norm_username(username)
     data = _load()
     entry = {'added_at': time.time(), 'added_by': str(added_by or '')}
+    data['blocked_usernames'].pop(handle, None)
     data['usernames'][handle] = entry
     _save(data)
     return entry
@@ -190,12 +208,35 @@ def revoke_username(username) -> bool:
     return existed
 
 
+def block_guest(user_id, blocked_by: str = '') -> dict:
+    """Deny a numeric Telegram id until Ashok explicitly allows it again."""
+    user_id = str(user_id).strip()
+    data = _load()
+    data['guests'].pop(user_id, None)
+    entry = {'blocked_at': time.time(), 'blocked_by': str(blocked_by or '')}
+    data['blocked_ids'][user_id] = entry
+    _save(data)
+    return entry
+
+
+def block_username(username, blocked_by: str = '') -> dict:
+    """Deny a Telegram username, including a code-tracked default."""
+    handle = _norm_username(username)
+    data = _load()
+    data['usernames'].pop(handle, None)
+    entry = {'blocked_at': time.time(), 'blocked_by': str(blocked_by or '')}
+    data['blocked_usernames'][handle] = entry
+    _save(data)
+    return entry
+
+
 def list_usernames() -> list:
     """Every allowed @username — permanent defaults first, then granted ones."""
     data = _load()
     out = [
         {'username': h, 'source': 'default', 'added_by': '', 'added_at': None}
         for h in sorted(DEFAULT_ALLOWED_USERNAMES)
+        if h not in data['blocked_usernames']
     ]
     for h, g in data['usernames'].items():
         if h in DEFAULT_ALLOWED_USERNAMES:
@@ -226,6 +267,14 @@ def list_guests() -> list:
         })
     out.sort(key=lambda g: g['expires_in_s'])
     return out
+
+
+def list_blocked() -> dict[str, list[str]]:
+    data = _load()
+    return {
+        'user_ids': sorted(data['blocked_ids']),
+        'usernames': sorted(data['blocked_usernames']),
+    }
 
 
 def format_ttl(seconds: float) -> str:

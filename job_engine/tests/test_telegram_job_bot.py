@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
+from app import telegram_guests
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import JobMasterTelegramBot
 
@@ -69,6 +71,18 @@ class TelegramBotContractTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests,
+            'GUESTS_FILE',
+            Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests,
+            'HERMES_ENV',
+            Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
         self.api = FakeTelegramAPI()
         self.engine = FakeEngine()
         self.bot = JobMasterTelegramBot(
@@ -79,6 +93,8 @@ class TelegramBotContractTests(unittest.TestCase):
         )
 
     def tearDown(self):
+        self.env_patch.stop()
+        self.guests_patch.stop()
         self.tmp.cleanup()
 
     def test_thinking_is_immediate_before_result(self):
@@ -198,6 +214,74 @@ class TelegramBotContractTests(unittest.TestCase):
         )
         self.assertEqual(self.engine.calls, [])
 
+    def test_guest_cannot_manage_access(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('guest', '/allowguest @intruder')
+        self.assertFalse(telegram_guests.is_username_allowed('intruder'))
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
+
+    def test_owner_can_allow_list_block_and_reallow_username(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/allowguest @newperson')
+        self.assertTrue(bot._sender_allowed('99', 'newperson'))
+        self.assertEqual(self.api.sent[-1], ('owner', 'Allowed @newperson. Their next message will work.'))
+
+        bot.process('owner', '/guests')
+        self.assertIn('@newperson', self.api.sent[-1][1])
+
+        bot.process('owner', '/blockguest @newperson')
+        self.assertFalse(bot._sender_allowed('99', 'newperson'))
+        self.assertIn('newperson', telegram_guests.list_blocked()['usernames'])
+
+        bot.process('owner', '/allowguest @newperson')
+        self.assertTrue(bot._sender_allowed('99', 'newperson'))
+        self.assertNotIn('newperson', telegram_guests.list_blocked()['usernames'])
+
+    def test_owner_can_timebox_and_block_numeric_guest(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/allowguest 12345 30 Investor')
+        self.assertTrue(bot._sender_allowed('12345'))
+        self.assertIn('Allowed 12345 for 30m', self.api.sent[-1][1])
+
+        bot.process('owner', '/blockguest 12345')
+        self.assertFalse(bot._sender_allowed('12345'))
+        self.assertIn('12345', telegram_guests.list_blocked()['user_ids'])
+
+    def test_block_override_can_disable_default_username(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        self.assertTrue(bot._sender_allowed('99', 'supriyamk'))
+        bot.process('owner', '/blockguest @supriyamk')
+        self.assertFalse(bot._sender_allowed('99', 'supriyamk'))
+        bot.process('owner', '/allowguest @supriyamk')
+        self.assertTrue(bot._sender_allowed('99', 'supriyamk'))
+
     def test_command_menu_is_scoped_only_to_owner_chat(self):
         bot = JobMasterTelegramBot(
             self.api,
@@ -219,6 +303,9 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(scope, {'type': 'chat', 'chat_id': 1221647274})
         commands = json.loads(self.api.calls[2][1]['commands'])
         self.assertIn({'command': 'health', 'description': 'Tower health'}, commands)
+        self.assertIn({'command': 'allowguest', 'description': 'Allow a person'}, commands)
+        self.assertIn({'command': 'blockguest', 'description': 'Block a person'}, commands)
+        self.assertIn({'command': 'guests', 'description': 'People with access'}, commands)
         self.assertEqual(len(self.api.calls), 3)
 
     def test_smoke_sends_only_ten_row_grounded_contract(self):
