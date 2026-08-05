@@ -463,3 +463,35 @@ use — they should love opening the app, never fight it.
  no-invented-facts law as job rows/counts/links. DIRECTOR's `SQLiteSession`
  (OpenAI Agents SDK memory, used for Ashok's own Jarvis chat) is a different,
  LLM-replayed shape and must not be reused for guest-facing JobMaster memory.
+- **JobMaster voice layer — 1A locked (2026-08-05):** Ashok — "the chat has
+ no life, we cant run on Regex... people want to naturally talk" — chose
+ **1A** over freeform-regex-only: an LLM may add tone/greeting/connective
+ language around a deterministic reply, but a byte-exact fact-lock
+ VALIDATOR (`job_engine/app/telegram_voice.py::validate_voice`) requires
+ every non-blank line containing a job title, company, experience label,
+ link, count, or comparison to survive character-for-character, in the same
+ order, with no new URL — any drift/timeout/disabled key falls back to the
+ plain deterministic reply, never an unverified fact. Applies to guest AND
+ owner job-search/insight/onboarding/`/start`/`/help` replies (no
+ personality split, per Gate 3.0); VIGIL owner board/management commands are
+ excluded on purpose and stay exactly deterministic.
+- **Subscriber = paid tier, deferred (2026-08-05):** "Subscriber" means a
+ paid tier unlocked after a guest has used JobMaster for a while, covering
+ quiz, alerts, flashcards, study materials, prep book, projects,
+ certifications, and a full LMS. Ashok: build this **next phase, not now** —
+ no engagement-threshold tracking, no upsell copy, no entitlement/payment
+ model exists yet. Standing instruction: don't hard-code the conversation
+ layer to assume "deterministic regex is the only surface" — keep it
+ extensible (the voice layer above is deliberately generic, not
+ job-listing-specific) so the future paid capability can speak naturally
+ about an entitlement without fighting regex.
+- **CRITICAL — Action + Decision line, every chat reply (2026-08-05):** Ashok
+ got a long technical reply and said "too much info, i cant understand,
+ whats my action step or decision." Every single reply to Ashok in chat
+ (no exceptions) must end with exactly two bold, emoji-wrapped lines, on
+ their own lines, nothing else after them:
+ `🎯 **YOUR ACTION:** <one short concrete thing to do, or "None — just FYI">`
+ `❓ **DECISION:** <the one YES/NO question, or "None">`
+ This replaces the plain "forward-working question" sign-off wherever the
+ two would otherwise duplicate — the Decision line **is** that question,
+ just impossible to miss. Never bury it inside a paragraph.

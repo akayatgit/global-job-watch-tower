@@ -124,6 +124,27 @@ ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
 flashcards, relevant tech news, tutorials, and LMS progress. Entitlements are
 backend-enforced; the conversational model never grants access by prompt.
 
+**1A — voice layer (2026-08-05):** Ashok — "the chat has no life, we can't
+run on Regex... people want to naturally talk" — approved option **1A**: an
+LLM warmth pass wraps the deterministic reply (tone, greeting, connective
+language only), gated by a byte-exact fact-lock VALIDATOR
+(`app/telegram_voice.py`) so every job title/company/experience/link/count/
+comparison line ships unmodified or the reply silently falls back to the
+plain deterministic text. Live now for job-search, insight, onboarding, and
+`/start`/`/help` replies; VIGIL owner commands stay exactly deterministic on
+purpose. 186/186 tests green (`test_telegram_voice.py` +
+`VoiceLayerWiringTests`).
+
+**Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
+tier unlocked after sustained usage, covering quiz, alerts, flashcards,
+study materials, prep book, projects, certifications, and a full LMS.
+Explicitly **not started** — no engagement tracking, no upsell copy, no
+entitlement model yet. Ashok's standing instruction: keep the architecture
+extensible for it now (the voice layer is generic, not job-listing-specific,
+for exactly this reason) rather than hard-coding everything to raw
+regex/deterministic-only assumptions that a future paid conversational
+capability would have to fight.
+
 ---
 
 ## Queued — Gate 2 TN trendjack

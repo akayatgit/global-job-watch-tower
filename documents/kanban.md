@@ -22,6 +22,75 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 11. JobMaster voice layer (1A) — natural tone around deterministic facts
+
+**Request (2026-08-05):** Ashok — "the chat has no life, we cant run on
+Regex, we are in AI era, people want to naturally talk... We need an AI
+layer who controls this regex, know our regex rules and convert the request
+from guest into regex and get the real info, but support the conversation
+with data using regex and basic conversations." Offered two options (1A: LLM
+reworded fact-locked replies vs 1B: LLM-free, freeform-slot-filling only);
+Ashok picked **1A**. Separately clarified "subscriber" means a future paid
+tier (quiz, alerts, flashcards, study materials, prep book, projects,
+certifications, LMS) unlocked after sustained usage — explicitly **deferred,
+not built this slice** — but the voice layer should stay generic enough
+that phase doesn't have to fight hard-coded regex-only assumptions.
+
+**Implementation (in review):** new `job_engine/app/telegram_voice.py`:
+- `VoiceLayer.speak(reply)` — best-effort pass through `OPENAI_BRAIN_MODEL`
+  (same model as the existing `IntentInterpreter`) with a system prompt that
+  allows only added tone/greeting/connective text; every fact line must be
+  copied verbatim. Disabled automatically without `OPENAI_API_KEY`, or via
+  `JOBMASTER_VOICE_LLM=false`. Any exception/timeout returns the original
+  reply untouched.
+- `validate_voice(original, candidate)` — byte-exact fact-lock: every
+  non-blank line of the deterministic reply must reappear verbatim, in
+  order, inside the candidate, and the candidate may not introduce a URL
+  absent from the original. Same authenticity-gate pattern as the owner
+  Jarvis `app/director/tools_validator.py`, applied to the guest/customer
+  surface for the first time.
+- Wired into `scripts/telegram_job_bot.py` around the main
+  `engine.handle()` reply (job search / insight / onboarding / `/new`) and
+  the `/start`/`/help` message only — **not** VIGIL owner board or
+  management commands, which stay exactly deterministic. `JobMasterEngine`
+  itself, and its full existing contract-test suite, are untouched.
+
+**Follow-up (2026-08-05, same day):** Ashok — "Not sure if the api key of
+openai is set in my laptop, add also that /health line." Added a new fact
+line to the existing `/health` board (`app/vigil_boards.py`, shared by the
+Telegram bot, `/boards` CLI, Hermes/Ask, MCP, and the Ultron web routes):
+`JobMaster voice AI: ON (OPENAI_API_KEY set)` /
+`OFF (no OPENAI_API_KEY)` / `OFF (disabled via JOBMASTER_VOICE_LLM)` — a
+pure local env check (no network, no model call), so Ashok can confirm the
+voice layer's actual runtime status from his phone instead of opening a
+terminal on the ThinkPad. This line is deterministic text, not LLM-voiced —
+`/health` itself is still never passed through `VoiceLayer` (owner boards
+stay exact), it just now reports one more true fact.
+
+**Evidence:** `job_engine/tests/test_telegram_voice.py` (validator +
+VoiceLayer unit tests, no network/real credentials) +
+`test_telegram_job_bot.py::VoiceLayerWiringTests` (voiced vs never-voiced
+paths, engine-failure fallback never voiced, durable retry reuses the
+already-voiced reply without a second model call) +
+`test_vigil_boards_health.py` (new `/health` voice-status line: on/off/
+flag-disabled, and that it survives inside the full health board render).
+Full suite: **190/190 green.**
+
+**Acceptance:** Ashok runs a live search on Telegram and confirms replies
+read like natural conversation (not a rigid template) while every job
+title/company/experience/link/count still matches the live tower exactly;
+confirms a VIGIL owner command (e.g. `/health`) is unchanged in tone and
+now also confirms the new voice-AI status line on `/health` correctly
+reflects whether `OPENAI_API_KEY` is set on his laptop. Keep open until
+Ashok accepts the live result.
+
+**Files:** `job_engine/app/telegram_voice.py`,
+`job_engine/app/vigil_boards.py`,
+`job_engine/scripts/telegram_job_bot.py`,
+`job_engine/tests/test_telegram_voice.py`,
+`job_engine/tests/test_telegram_job_bot.py`,
+`job_engine/tests/test_vigil_boards_health.py`, `job_engine/.env.example`.
+
 ### 5. Public carousel — clean modern design with real tower data (Ashok 2026-08-04)
 
 **Status (2026-08-04):** Slice 1 shipped — rotating art-direction engine.

@@ -351,6 +351,22 @@ profile already exists for the test account.
 | JM-160 | Ashok sends `/actasguest` twice in a row | Second send replies "Already testing as a guest" instead of double-toggling or erroring. |
 | JM-161 | Ashok sends `/actasguest`, then kills/restarts the bot service, then sends `/health` | Testing mode survived the restart — still gets the guest denial, not the health board. |
 
+## 14A. Voice layer — natural tone, facts still exact (1A, 2026-08-05)
+
+The bot may now add warmth/tone around a reply (an LLM rewording pass), but
+every job title, company, experience label, link, count, and comparison
+must still be byte-identical to what a plain deterministic reply would have
+sent. If the AI ever alters a fact, the safe fallback is the plain
+deterministic text — never a wrong or invented fact.
+
+| ID | Send | Expected |
+|---|---|---|
+| JM-170 | `AI jobs in Bangalore for fresher` | Reply reads more like natural conversation (not a rigid template) while every title/company/experience/link matches JM-051's contract exactly. |
+| JM-171 | `/health` (Ashok) | Unchanged, exactly deterministic — no added chit-chat, no reworded tone. |
+| JM-172 | `/allowguest @<test>` (Ashok) | Unchanged, exactly deterministic confirmation text. |
+| JM-173 | Repeat JM-170 several times | Tone may vary slightly between replies, but the job rows/links/counts never do. |
+| JM-174 | `/health` (Ashok) | New line `JobMaster voice AI: ON (OPENAI_API_KEY set)` or `OFF (no OPENAI_API_KEY)` / `OFF (disabled via JOBMASTER_VOICE_LLM)` tells Ashok, without opening a terminal, whether the voice layer can run on this laptop right now. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -378,6 +394,15 @@ Convert this suite without changing its IDs:
    (`.github/workflows/deploy-thinkpad.yml`). This is engineering evidence
    only — it does not close any case in the execution log below; only
    Ashok's live run does that.
+1A. **Voice layer contract tests — done (2026-08-05):** the fact-lock
+   validator and its wiring (`JM-170`..`JM-173` above) are automated in
+   `job_engine/tests/test_telegram_voice.py` and
+   `test_telegram_job_bot.py::VoiceLayerWiringTests` — no network/real
+   OpenAI credentials required. Still requires Ashok's live Telegram run to
+   close `JM-170`..`JM-173` in the execution log above. `JM-174` (the
+   `/health` voice-status line, added after Ashok asked whether his laptop
+   even has `OPENAI_API_KEY` set) is automated in
+   `job_engine/tests/test_vigil_boards_health.py`.
 2. **Guided onboarding + guest profile contract tests — done (2026-08-05):**
    JM-130..153 above are automated in
    `job_engine/tests/test_jobmaster_onboarding.py` (30 tests: greeting

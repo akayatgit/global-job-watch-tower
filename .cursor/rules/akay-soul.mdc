@@ -90,6 +90,13 @@ need to be told twice.
   delivered guest conversations in Telegram, with strict privacy: stable
   numeric identity, no recycled-handle guessing, no owner traffic, no claim
   that a bot can recover history from before recording began.
+- **2026-08-05 · CRITICAL — never bury the ask again.** Ashok: "Too much
+  info, i cant understand, whats my action step or decision." I explained a
+  feature and buried the actual YES/NO inside a wall of context. Fix, locked
+  in `product-ux.mdc` too: every single chat reply to Ashok now ends with two
+  bold, emoji-wrapped lines and nothing after them — `🎯 **YOUR ACTION:**
+  ...` then `❓ **DECISION:** ...` (or "None" for either). Not a suggestion,
+  a hard format rule for every reply from here on.
 
 ## Honesty note on the codeword
 

@@ -50,6 +50,7 @@ from app.telegram_sessions import (  # noqa: E402
     AmbiguousTelegramIdentity,
     TelegramSessionStore,
 )
+from app.telegram_voice import VoiceLayer  # noqa: E402
 from app.vigil_boards import render_board  # noqa: E402
 
 HERMES_ENV = Path.home() / '.hermes' / '.env'
@@ -221,10 +222,12 @@ class JobMasterTelegramBot:
         health_enabled: bool = True,
         owner_chat_ids: set[str] | None = None,
         board_renderer=None,
+        voice: VoiceLayer | None = None,
     ):
         self.api = api
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
+        self.voice = voice or VoiceLayer()
         self.health_enabled = health_enabled
         self.owner_chat_ids = {str(chat_id) for chat_id in (owner_chat_ids or set())}
         self.board_renderer = board_renderer or render_board
@@ -849,7 +852,7 @@ class JobMasterTelegramBot:
             return
         is_reset = bool(RESET_RE.match(clean))
         if clean.lower() in {'/start', '/help', 'help'}:
-            reply = (
+            reply = self.voice.speak(
                 'JobMaster provides verified jobs and live job-market insights. '
                 'Ask naturally in any sentence.'
             )
@@ -868,6 +871,7 @@ class JobMasterTelegramBot:
                 return
             if not acked:
                 self.api.send(chat_id, 'Thinking…')
+        engine_ok = True
         try:
             try:
                 reply = self.engine.handle(clean, chat_id, update_id=update_id)
@@ -880,6 +884,12 @@ class JobMasterTelegramBot:
         except Exception:
             LOG.exception('request failed chat=%s text=%r', chat_id, clean[:120])
             reply = 'JobMaster could not reach live Watch Tower data. Try again shortly.'
+            engine_ok = False
+        if engine_ok:
+            # Warmth pass only on a real grounded reply — never risk an extra
+            # model call on the already-degraded error path. Fact-locked: see
+            # app/telegram_voice.py.
+            reply = self.voice.speak(reply)
         if update_id is not None and self.sessions.load_update_reply(update_id) is None:
             self.sessions.save_update_reply(update_id, reply)
         self.api.send(chat_id, reply)
