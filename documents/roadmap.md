@@ -98,6 +98,27 @@ Next automation slice converts the same IDs into contract tests, a Telegram
 sandbox integration suite, a read-only live smoke, deployment gates, and a
 nightly regression corpus (kanban #7).
 
+**Scale target (2026-08-05):** JobMaster must be designed to serve 1,00,000
+(1 lakh) users/guests within a month, with scraped data reaching roughly that
+many people through real conversion. This is now a standing design
+constraint (`.cursor/rules/product-ux.mdc`) — see
+`documents/scale-and-memory-architecture.md` for the current infra gap
+(session/guest state is a single local SQLite file and must move to
+Postgres/Redis before this holds) and kanban card #10 for the migration plan.
+
+**Guided onboarding + guest profiles (2026-08-05):** a bare greeting now
+starts a deterministic role → experience → city conversation instead of an
+unfiltered job dump, ending in the same grounded `_job_reply` results plus a
+forward-looking suggestion — Ashok's ask for "collect info gradually" and
+"user/guest management." Every completed flow saves a per-guest profile
+(role/experience/city) readable via the new Ashok-only `/guestprofile`
+command. A returning guest's greeting recalls that stored profile instead of
+re-running the funnel ("zero friction... when they return"), and Ashok can
+now self-test the entire guest experience from his own phone via
+`/actasguest` / `/actasowner` — no second phone needed, and it can never lock
+him out of his own chat. 163/163 tests green; live acceptance tracked as
+JM-130..161 in the validation doc and kanban card #9.
+
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
 flashcards, relevant tech news, tutorials, and LMS progress. Entitlements are

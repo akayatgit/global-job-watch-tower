@@ -122,6 +122,114 @@ or delivery findings.
 `/history @cryptoonz 40` and sees only that guest's delivered conversation;
 Supriya's same history command exposes nothing. Keep open until Ashok accepts.
 
+### 9. Guided guest onboarding + guest profile management
+
+**Request (2026-08-05, 12:03 UTC):** Ashok — "when any guest greets or
+starting a conversation, we need to start collecting information gradually,
+such as Job Role, [then] I can get you x job roles postings with url, but can
+you provide me your experience so I can provide you better matching openings
+— fresher. Then do you have a city preference and show for today, forward
+ending questions and suggestions. We also need to start user/guest
+management."
+
+**Implementation in review:** a bare greeting (`Hi`, `Hello`, `Hey`, `Good
+morning`, etc. — fully anchored, never a substring of a real query) now starts
+a deterministic 3-step flow instead of returning an unfiltered job dump:
+1. **Role** — "What job role are you looking for?"
+2. **Experience** — states a grounded live count of matching jobs *today*
+   (`/api/jobs/insights?days=1`, never invented) with links, then asks for
+   experience (fresher / 1-2 / 3-5 / 6-8 / 9-12 / 13+ / "any").
+3. **City** — asks for a city preference ("any" skips the filter), then
+   returns up to 10 grounded rows via the exact same `_job_reply` pipeline
+   every other search uses, ending with a forward-looking suggestion
+   ("Tell me a new role or city anytime...").
+
+Any fully specified message (e.g. `AI jobs in Bangalore for fresher`) is
+never redirected into this flow — onboarding triggers only on a literal
+greeting, per Gate 3.0's "grounded results immediately" guarantee (verified
+by regression test). An eager multi-field answer at any step (e.g. `AI
+Engineer, fresher, in Chennai`) skips already-answered questions instead of
+forcing the full funnel. Zero-match roles and unrecognized experience/city
+answers get an honest, graceful fallback — never a dead end or invented data.
+`/new` cancels onboarding cleanly; `more` after completion paginates the
+onboarding-originated search exactly like any other. Applies identically to
+Ashok and guests (no personality split), per the standing JobMaster rule.
+
+**Guest management:** every completed search that states a role — not only
+guided onboarding, but any normal one-shot query like `AI jobs in Bangalore
+for fresher` — saves/refreshes a per-guest profile (role, experience, city,
+last updated). A later search overwrites the earlier profile; a bare,
+roleless query (`jobs`) or an insight-only question never touches it. New
+Ashok-only command `/guestprofile <@username-or-id>` reads it back — same
+fail-closed ambiguous-username rule as `/history`. `/guests` (access
+allow/block list) already existed from card #6; this adds the "what are they
+actually looking for" layer on top.
+
+**Addendum (2026-08-05, afternoon) — zero-friction welcome back:** a greeting
+from a chat that already has a stored `guest_profile` no longer re-runs the
+full role→experience→city funnel. It recalls the stored role/experience/city
+deterministically — a template over the same structured fields
+`_maybe_save_guest_profile` already writes, never an LLM summary — and offers
+"reply `yes` for today's openings, or tell me a new role." `yes` jumps
+straight to grounded results with zero extra questions; naming a different
+role re-confirms experience/city for that new role only; declining (`no` /
+"something else") starts a fresh full funnel. First-time guests with no
+stored profile are unaffected — they still get the original funnel from
+JM-130. 6 new tests (`JM-148`..`JM-153` below).
+
+**Addendum (2026-08-05, afternoon) — self-test the guest flow, no second
+phone:** Ashok — "Is it possible to create something like can switch the
+roles by a command and switch back, so I can test the guest flow as well. I
+dont have another mobile phone." New Ashok-only `/actasguest` /
+`/actasowner` toggle a per-chat "testing mode" flag
+(`simulate_guest:<chat_id>` in the existing durable `bot_state` table, so it
+survives a service restart):
+- `/actasguest` — this chat now gets exactly the guest experience: the
+  Telegram command menu is hidden (`deleteMyCommands` on that chat's scope),
+  every VIGIL/management command returns the same denial a real guest sees,
+  and search/onboarding conversations here are recorded like a guest's
+  (`conversation_history`, `guest_profiles`) so `/history` and
+  `/guestprofile` can also be exercised end-to-end against Ashok's own chat.
+- `/actasowner` — restores the command menu and full owner access instantly.
+- **Cannot lock Ashok out of his own chat:** message-queue acceptance
+  (`_sender_allowed`) and the toggle commands themselves are always gated on
+  the *real* owner check (`_is_owner`, static config), never the simulated
+  one — only command *authorization* and history *recording* flip
+  (`_effective_is_owner`). A genuine guest typing `/actasguest` gets the
+  ordinary owner-command denial and cannot flip anyone's mode. 8 new tests
+  (`JM-154`..`JM-161` below).
+
+**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` (30 tests —
+greeting detection, the full flow, zero-match/unrecognized-answer fallbacks,
+eager answers, `/new` cancellation, `more` continuity, `/guestprofile`
+access control, profile updates from any role-scoped search, and the
+welcome-back recall/accept/decline/new-role paths) +
+`job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests` (8 tests
+— command denial while simulating, menu hide/restore, restored access on
+`/actasowner`, never-silently-dropped, guest-style history recording, a real
+guest cannot flip anyone's mode, idempotent repeat toggles, state survives a
+restart). Full suite: **163/163 green.** `JM-130` through `JM-161` in
+[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md) §14
+for Ashok's live run.
+
+**Acceptance:** Ashok runs JM-130..161 live in Telegram (starting from a
+fresh `/new`'d chat) and confirms: the funnel feels natural and the "today"
+count is real; a returning guest gets the zero-friction recall instead of
+re-answering everything; `/guestprofile` shows what a test guest searched
+for; and — using only his own phone — `/actasguest` makes his own chat behave
+like a stranger's (menu gone, commands denied, same search experience) while
+`/actasowner` instantly gives full access back. Keep open until Ashok accepts
+the live result.
+
+**Files:** `job_engine/app/telegram_job_search.py` (onboarding state machine,
+welcome-back recall, `_extract_experience`/`_extract_role_family` refactor,
+`_role_label`), `job_engine/app/telegram_sessions.py` (`onboarding_sessions`
++ `guest_profiles` tables), `job_engine/scripts/telegram_job_bot.py`
+(`/guestprofile`, `/actasguest`, `/actasowner`, `_effective_is_owner`,
+`_toggle_role_switch`), `job_engine/tests/test_jobmaster_onboarding.py`,
+`job_engine/tests/test_telegram_job_bot.py`,
+`documents/jobmaster-telegram-validation.md`.
+
 ## Done
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
@@ -359,6 +467,41 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 ---
 
 ## Backlog
+
+### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
+
+**Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
+1,00,000 (1 lakh) users/guests in a month; every infra/logic choice from here
+should be picked with that scale in mind. Full research + rationale in
+[`documents/scale-and-memory-architecture.md`](./scale-and-memory-architecture.md).
+
+**Problem:** `job_engine/app/telegram_sessions.py` (search sessions,
+onboarding state, guest profiles, conversation history, the inbox queue) is
+one local SQLite file. SQLite single-writer file locking and single-machine
+storage are fine for the current pilot but become the ceiling well before 1
+lakh monthly guests — and they block ever running more than one JobMaster
+poller process.
+
+**Approach (not started):**
+1. Move those SQLite tables into Postgres (schema/access patterns unchanged
+   — a storage swap, not a redesign).
+2. Move the per-chat "processing now" lock and rate limiting into Redis
+   (already provisioned for Celery) instead of an in-process
+   `threading.Lock()`.
+3. Once state is off a local file, allow more than one JobMaster poller
+   process — keep the existing FIFO/no-duplicate-poller contract
+   (`JM-125`/`JM-126` in the validation doc).
+4. Add a synthetic load test (k6/locust-style burst) against the dedicated
+   JobMaster service — there is currently zero load evidence.
+
+**Acceptance:** documented capacity number (e.g. "N sustained req/s / M
+concurrent chats on current hardware") replaces "we think SQLite is fine";
+FIFO-per-chat and no-cross-chat-leakage contracts still hold after the
+migration; existing `job_engine/tests/test_jobmaster_*.py` suite still green
+against the new backing store.
+
+**Files:** `job_engine/app/telegram_sessions.py`, `docker-compose.yml`,
+`job_engine/scripts/telegram_job_bot.py`, deploy scripts.
 
 ### 4. Gate 1.1 — tower as a plug-and-play Docker image (Ashok 2026-08-04)
 
