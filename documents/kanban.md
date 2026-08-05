@@ -155,25 +155,29 @@ answers get an honest, graceful fallback — never a dead end or invented data.
 onboarding-originated search exactly like any other. Applies identically to
 Ashok and guests (no personality split), per the standing JobMaster rule.
 
-**Guest management:** every completed onboarding (and, going forward, any
-completed search) saves a per-guest profile (role, experience, city, last
-updated). New Ashok-only command `/guestprofile <@username-or-id>` reads it
-back — same fail-closed ambiguous-username rule as `/history`. `/guests`
-(access allow/block list) already existed from card #6; this adds the
-"what are they actually looking for" layer on top.
+**Guest management:** every completed search that states a role — not only
+guided onboarding, but any normal one-shot query like `AI jobs in Bangalore
+for fresher` — saves/refreshes a per-guest profile (role, experience, city,
+last updated). A later search overwrites the earlier profile; a bare,
+roleless query (`jobs`) or an insight-only question never touches it. New
+Ashok-only command `/guestprofile <@username-or-id>` reads it back — same
+fail-closed ambiguous-username rule as `/history`. `/guests` (access
+allow/block list) already existed from card #6; this adds the "what are they
+actually looking for" layer on top.
 
-**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` — 20 new tests
+**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` — 24 tests
 covering greeting detection, the full flow, zero-match/unrecognized-answer
-fallbacks, eager answers, `/new` cancellation, `more` continuity, and
-`/guestprofile` access control. Full suite: **145/145 green.** New `JM-130`
-through `JM-145` cases added to
+fallbacks, eager answers, `/new` cancellation, `more` continuity,
+`/guestprofile` access control, and profile updates from any role-scoped
+search. Full suite: **149/149 green.** `JM-130` through `JM-147` added to
 [`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md)
 §14 for Ashok's live run.
 
-**Acceptance:** Ashok runs JM-130..145 live in Telegram (starting from a
+**Acceptance:** Ashok runs JM-130..147 live in Telegram (starting from a
 fresh `/new`'d chat) and confirms the flow feels natural, the "today" count is
-real, and `/guestprofile` shows what a test guest searched for. Keep open
-until Ashok accepts the live result.
+real, and `/guestprofile` shows what a test guest searched for — whether they
+went through onboarding or asked directly. Keep open until Ashok accepts the
+live result.
 
 **Files:** `job_engine/app/telegram_job_search.py` (onboarding state machine,
 `_extract_experience`/`_extract_role_family` refactor, `_role_label`),

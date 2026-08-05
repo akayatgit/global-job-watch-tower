@@ -89,7 +89,12 @@ From Ashok's chat only:
 
 - Shows the role, experience, and city a guest last gave — either through the
   guided onboarding below or their most recently completed search.
-- `No stored preferences` means that guest has never finished onboarding or a
+- Updated by **any** completed search that states a role — the guided
+  onboarding flow below, or a normal one-shot query like `AI jobs in
+  Bangalore for fresher`. A later search overwrites the earlier profile. A
+  bare, roleless query (e.g. `jobs`) never overwrites a real stored profile.
+  Insight-only questions (e.g. `How many AI jobs...`) never touch it.
+- `No stored preferences` means that guest has never completed a role-scoped
   search yet.
 - Same fail-closed rule as `/history`: a `@username` reused by more than one
   Telegram ID refuses to guess; use the numeric Telegram ID instead.
@@ -317,6 +322,8 @@ is not competing with an existing session.
 | JM-143 | Ashok: `/guestprofile <guest>` after that guest finishes onboarding | Shows the guest's last role, experience, and city with a relative "last updated" time. |
 | JM-144 | Ashok: `/guestprofile <guest who never searched>` | Honest `No stored preferences` reply; no crash. |
 | JM-145 | Supriya: `/guestprofile <anyone>` | Owner-only command; guest receives normal JobMaster guidance, never another guest's data. |
+| JM-146 | A guest sends `AI jobs in Bangalore for fresher` directly (no greeting) | `/guestprofile` for that guest now shows AI/ML · fresher · Bengaluru without ever going through onboarding. |
+| JM-147 | Same guest later sends `Java developer jobs in Pune` | `/guestprofile` reflects the newer role/city; the AI/ML profile is overwritten, not merged. |
 
 ## 15. Execution log
 
@@ -346,14 +353,15 @@ Convert this suite without changing its IDs:
    only — it does not close any case in the execution log below; only
    Ashok's live run does that.
 2. **Guided onboarding + guest profile contract tests — done (2026-08-05):**
-   JM-130..145 above are automated in
-   `job_engine/tests/test_jobmaster_onboarding.py` (20 tests: greeting
+   JM-130..147 above are automated in
+   `job_engine/tests/test_jobmaster_onboarding.py` (24 tests: greeting
    detection, the full role→experience→city flow, zero-match/unrecognized-
    answer fallbacks, eager multi-field answers, `/new` cancellation, `more`
-   pagination continuity, and `/guestprofile` owner-only access with the
-   same fail-closed ambiguous-username rule as `/history`). 145/145 green
-   locally in the full suite. Still requires Ashok's live Telegram run to
-   close JM-130..145 in the execution log above.
+   pagination continuity, `/guestprofile` owner-only access with the same
+   fail-closed ambiguous-username rule as `/history`, and guest-profile
+   updates from any completed role-scoped search, not only onboarding).
+   149/149 green locally in the full suite. Still requires Ashok's live
+   Telegram run to close JM-130..147 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link

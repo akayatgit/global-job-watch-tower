@@ -504,7 +504,25 @@ class JobMasterEngine:
             page=0,
             seen_ids=seen_ids,
         )
+        # Keep the guest-management profile fresh from ANY completed search,
+        # not only the guided-onboarding path, so /guestprofile reflects what
+        # a returning guest is actually looking for right now.
+        self._maybe_save_guest_profile(chat_id, intent)
         return reply
+
+    def _maybe_save_guest_profile(self, chat_id: str, intent: JobMasterIntent) -> None:
+        if not intent.role_family and not intent.role_keywords:
+            # A stated role is the minimum signal worth remembering; a bare
+            # "jobs"-style query never overwrites a guest's real preference.
+            return
+        self.sessions.save_guest_profile(
+            chat_id,
+            role_label=_role_label(intent.role_family, intent.role_keywords),
+            role_family=intent.role_family,
+            role_keywords=intent.role_keywords,
+            experience=intent.experience,
+            city=intent.cities[0] if intent.cities else '',
+        )
 
     def _job_reply(
         self,
@@ -831,12 +849,5 @@ class JobMasterEngine:
             page=0,
             seen_ids=seen_ids,
         )
-        self.sessions.save_guest_profile(
-            chat_id,
-            role_label=_role_label(intent.role_family, intent.role_keywords),
-            role_family=intent.role_family,
-            role_keywords=intent.role_keywords,
-            experience=intent.experience,
-            city=intent.cities[0] if intent.cities else '',
-        )
+        self._maybe_save_guest_profile(chat_id, intent)
         return final_reply

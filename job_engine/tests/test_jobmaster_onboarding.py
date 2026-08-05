@@ -191,6 +191,36 @@ class GuestProfilePersistenceTests(BaseOnboardingTest):
         self.assertIsNone(self.sessions.get_guest_profile('never-chatted'))
 
 
+class GuestProfileFromNormalSearchTests(BaseOnboardingTest):
+    def test_a_direct_one_shot_search_also_saves_a_profile(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-30')
+        profile = self.sessions.get_guest_profile('chat-30')
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile['role_family'], 'ai_ml')
+        self.assertEqual(profile['experience'], 'fresher')
+        self.assertEqual(profile['city'], 'bengaluru')
+
+    def test_a_later_direct_search_overwrites_the_earlier_profile(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-31')
+        self.engine.handle('Java developer jobs in Pune', 'chat-31')
+        profile = self.sessions.get_guest_profile('chat-31')
+        self.assertEqual(profile['role_family'], 'software')
+        self.assertEqual(profile['city'], 'pune')
+
+    def test_bare_contentless_query_never_overwrites_a_real_profile(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', 'chat-32')
+        self.engine.handle('jobs', 'chat-32')
+        profile = self.sessions.get_guest_profile('chat-32')
+        self.assertEqual(profile['role_family'], 'ai_ml')
+
+    def test_insight_only_queries_do_not_touch_the_guest_profile(self):
+        self.api.insights['bengaluru'] = {
+            'total': 5, 'prior_total': 0, 'companies': [], 'roles': [],
+        }
+        self.engine.handle('How many AI jobs in Bangalore today?', 'chat-33')
+        self.assertIsNone(self.sessions.get_guest_profile('chat-33'))
+
+
 class GuestProfileOwnerCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
