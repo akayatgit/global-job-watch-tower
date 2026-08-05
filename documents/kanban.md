@@ -77,11 +77,21 @@ JobMaster conversation and cannot invoke VIGIL operations. Production SHA
 `af5c1ea`; contract suite 38/38 green; deployment diagnostics PASS; exactly one
 JobMaster poller; Hermes off; interrupted `AI/ML Intern` search retriggered.
 
+**JM-002 live failure (2026-08-05, 05:43 UTC):** Ashok opened the menu and
+found user management missing. Gate 3.0 had restored insight commands but not
+the former phone-only allow/revoke controls, and the dedicated poller was not
+enforcing the managed guest store. Recovery in review adds Ashok-only
+`/allowguest`, `/blockguest`, and `/guests`; explicit blocks override default
+usernames, re-allow clears a block, numeric access can expire, owner access
+cannot be blocked, and unauthorized updates are rejected before entering the
+durable processing queue. Contract suite: 43/43 green.
+
 **Acceptance:** follow
 [`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md);
-confirm Ashok sees and can run the menu commands, then confirm Supriya does not
-see the command deck and `/health` cannot expose tower operations in her chat.
-Keep this card open until Ashok accepts the live result.
+confirm Ashok sees and can run all 13 menu commands; allow, list, block, and
+re-allow a test account; then confirm a blocked account receives no reply and
+Supriya does not see the command deck or expose tower operations. Keep this
+card open until Ashok accepts the live result.
 
 ## Done
 

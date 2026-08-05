@@ -39,6 +39,26 @@ Only Ashok's home chat should receive the VIGIL command menu. Normal JobMaster
 search remains available to everyone. `/new` can still be typed manually by any
 user to clear their own search session.
 
+### Allow or block a guest
+
+From Ashok's chat only:
+
+```text
+/allowguest @username
+/blockguest @username
+/guests
+```
+
+- `/allowguest @username` grants access until Ashok blocks it.
+- `/blockguest @username` removes access; new messages are silently ignored.
+- `/guests` lists allowed, temporary, and blocked people.
+- A numeric ID can be time-boxed:
+  `/allowguest 123456789 60 Investor` allows 60 minutes.
+- Allowing someone again clears their previous block.
+- Ashok's own owner access cannot be blocked.
+- Prefer `@username`. Use a numeric Telegram ID when the person has no username
+  or when access must survive a username change.
+
 ## 2. How to record a test
 
 Run **one case at a time**. Wait for the final reply before starting the next
@@ -72,7 +92,7 @@ logs into Telegram.
 
 Run in this order:
 
-`JM-001 → JM-002 → JM-003 → JM-010 → JM-011 → JM-020 → JM-030 → JM-031 → JM-040 → JM-050`
+`JM-001 → JM-002 → JM-017 → JM-019 → JM-018 → JM-003 → JM-010 → JM-011 → JM-020 → JM-030 → JM-031 → JM-040 → JM-050`
 
 Stop after the first failure and report its case ID, screenshot, and exact reply.
 
@@ -81,7 +101,7 @@ Stop after the first failure and report its case ID, screenshot, and exact reply
 | ID | Account | Send / action | Expected |
 |---|---|---|---|
 | JM-001 | Ashok | Open the bot chat | Blue **Menu** button or `/` command list is available. |
-| JM-002 | Ashok | Open **Menu** | Shows `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
+| JM-002 | Ashok | Open **Menu** | Shows `/allowguest`, `/blockguest`, `/guests`, `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
 | JM-003 | Ashok | `/health` | Returns live `TOWER HEALTH` facts; no `Thinking…`, job search, model text, or internal error. |
 | JM-004 | Ashok | `/towerinsights` | Returns jobs, companies, roles, and fresh catches from the live tower. |
 | JM-005 | Ashok | `/stats ai` | Returns a grounded AI-job count for the past 24 hours; does not treat `stats` as a job title. |
@@ -96,6 +116,9 @@ Stop after the first failure and report its case ID, screenshot, and exact reply
 | JM-014 | Ashok | `/boards` | Returns the VIGIL command help list. |
 | JM-015 | Ashok | `/health@vigil_akay_bot` | Works exactly like `/health`. |
 | JM-016 | Ashok | `/HIRINGSIGNALS 7` | Command matching is case-insensitive and returns a 7-day board. |
+| JM-017 | Ashok | `/allowguest @<testusername>` | Confirms access. That test account's next normal job query works. |
+| JM-018 | Ashok | `/blockguest @<testusername>` | Confirms the block. New messages from that test account receive no reply. |
+| JM-019 | Ashok | `/guests` | Lists the test account under allowed or blocked as appropriate; never exposes this list to non-owners. |
 
 ## 5. Owner-only security tests
 
@@ -236,7 +259,8 @@ automated tests pass; live acceptance belongs to Ashok.
 | Case | UTC time | Account | Result | Evidence / notes |
 |---|---|---|---|---|
 | JM-001 | 2026-08-05 05:29 | Ashok | PASS | Blue **Menu** button is visible in the private bot chat. |
-| JM-002 |  |  |  |  |
+| JM-002 | 2026-08-05 05:43 | Ashok | FAIL | Menu lacked user management: allow guest, block guest, and access list. Recovery implementation opened immediately. |
+| JM-002-R1 |  | Ashok |  | Rerun after deployment; all 13 owner commands must be visible. |
 
 ## 15. Automation backlog
 

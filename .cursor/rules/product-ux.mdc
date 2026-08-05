@@ -425,9 +425,16 @@ use — they should love opening the app, never fight it.
   job-search conversation remain identical for everyone, but VIGIL operational
   slash commands are **Ashok-only**. Telegram's command menu is scoped to
   `TELEGRAM_HOME_CHANNEL`; default/all-private command menus are cleared.
-  Owner commands (`/stats`, `/towerinsights`, `/health`, `/hiringsignals`,
-  `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`)
-  route deterministically. Other users never execute or see VIGIL operations.
+  Owner commands (`/allowguest`, `/blockguest`, `/guests`, `/stats`,
+  `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`,
+  `/fresh`, `/governmentjobs`, `/brief`, `/boards`) route deterministically.
+  Other users never execute or see VIGIL operations.
+- **JobMaster managed access (2026-08-05):** Ashok must be able to allow,
+  block, re-allow, and list guests entirely from Telegram. Username access is
+  permanent until blocked; numeric-ID access may be time-boxed. A block
+  overrides code defaults and silently ignores new messages; allowing again
+  clears the block. Owner access cannot be blocked. The dedicated poller checks
+  access before accepting an update—never rely on Hermes for this gate.
 - **JobMaster acceptance corpus (2026-08-05):** Store live chat tests in
   `documents/jobmaster-telegram-validation.md` with stable `JM-*` IDs. Ashok
   runs them one by one and records the exact reply/screenshot. Cover happy,

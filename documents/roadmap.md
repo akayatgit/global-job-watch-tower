@@ -76,8 +76,11 @@ verified jobs and grounded market facts out. No Hermes Telegram fallback.
 
 **Owner-command fast follow:** restore deterministic VIGIL slash commands after
 the Hermes cutover, scope the Telegram menu to Ashok's home chat, and keep all
-customer chats on the clean JobMaster interface. Code and contract tests are
-green and deployed at `af5c1ea`; live acceptance remains open on kanban card #6.
+customer chats on the clean JobMaster interface. Insight commands deployed at
+`af5c1ea`; JM-002 then exposed missing user management. Recovery adds
+`/allowguest`, `/blockguest`, `/guests`, block-overrides, and access enforcement
+inside the dedicated poller. Contract tests are green; deployment and live
+acceptance remain open on kanban card #6.
 
 **Acceptance track:** Ashok will execute the numbered best-case, worst-case,
 edge-case, security, pagination, insight, and owner-isolation suite in
