@@ -519,6 +519,27 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(telegram_guests.is_allowed('99', 'changedname'))
         self.assertIn('99', telegram_guests.list_blocked()['user_ids'])
 
+    def test_username_grant_binds_to_first_numeric_identity(self):
+        telegram_guests.add_username('newperson')
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+
+    def test_blocking_previous_username_blocks_same_person_after_rename(self):
+        telegram_guests.add_guest('99', minutes=60)
+        telegram_guests.observe_identity('99', 'oldname')
+        telegram_guests.observe_identity('99', 'newname')
+        telegram_guests.block_username('oldname', blocked_by='owner')
+        self.assertFalse(telegram_guests.is_allowed('99', 'newname'))
+
+    def test_reallowing_recycled_username_does_not_resurrect_old_holder(self):
+        telegram_guests.add_username('newperson')
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        telegram_guests.block_username('newperson', blocked_by='owner')
+        telegram_guests.add_username('newperson', added_by='owner')
+        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+        self.assertFalse(telegram_guests.is_allowed('111', 'changedname'))
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+
     def test_command_menu_is_scoped_only_to_owner_chat(self):
         bot = JobMasterTelegramBot(
             self.api,
@@ -630,6 +651,30 @@ class TelegramBotContractTests(unittest.TestCase):
             restarted.pending_updates(),
             [(102, '42', 'newperson', 'AI jobs Bangalore')],
         )
+
+    def test_existing_history_is_pruned_to_forty_on_store_startup(self):
+        with self.sessions._connect() as conn:
+            for index in range(100):
+                conn.execute(
+                    """
+                    INSERT INTO conversation_history(
+                        update_id, chat_id, username, user_text, bot_reply, completed_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        5000 + index,
+                        '99',
+                        'cryptoonz',
+                        f'question {index}',
+                        f'answer {index}',
+                        float(index),
+                    ),
+                )
+        restarted = TelegramSessionStore(self.sessions.path)
+        history = restarted.conversation_history('99', limit=40)
+        self.assertEqual(len(history), 40)
+        self.assertEqual(history[0]['user_text'], 'question 60')
 
     def test_successful_delivery_records_conversation_pair(self):
         telegram_guests.add_username('newperson')

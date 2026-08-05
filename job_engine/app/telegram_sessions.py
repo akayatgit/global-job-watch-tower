@@ -83,6 +83,26 @@ class TelegramSessionStore:
                 conn.execute(
                     "ALTER TABLE telegram_inbox ADD COLUMN username TEXT NOT NULL DEFAULT ''"
                 )
+            # Enforce the product's strict privacy cap for databases created by
+            # older builds, not only when the next conversation arrives.
+            conn.execute(
+                """
+                DELETE FROM conversation_history
+                WHERE update_id IN (
+                    SELECT update_id
+                    FROM (
+                        SELECT
+                            update_id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY chat_id
+                                ORDER BY completed_at DESC, update_id DESC
+                            ) AS row_number
+                        FROM conversation_history
+                    )
+                    WHERE row_number > 40
+                )
+                """
+            )
 
     def save_search(
         self,
