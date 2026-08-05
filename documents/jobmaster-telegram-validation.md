@@ -261,7 +261,7 @@ automated tests pass; live acceptance belongs to Ashok.
 | JM-001 | 2026-08-05 05:29 | Ashok | PASS | Blue **Menu** button is visible in the private bot chat. |
 | JM-002 | 2026-08-05 05:43 | Ashok | FAIL | Menu lacked user management: allow guest, block guest, and access list. Recovery implementation opened immediately. |
 | JM-002-R1 | 2026-08-05 07:17 | Ashok | PASS | After deploying `223e603`, all 13 owner commands are visible, including `/allowguest`, `/blockguest`, and `/guests`. |
-| JM-017 |  | Ashok |  | Next: allow one dedicated test account. |
+| JM-017 | 2026-08-05 07:21 | Ashok | IN PROGRESS | `/allowguest @testaccount` returned `Allowed @testaccount. Their next message will work.` Awaiting one successful normal query from that account before PASS. |
 
 ## 15. Automation backlog
 
