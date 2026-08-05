@@ -65,6 +65,21 @@ class TelegramSessionStore:
                     ON conversation_history(chat_id, completed_at DESC);
                 CREATE INDEX IF NOT EXISTS ix_conversation_history_username
                     ON conversation_history(username COLLATE NOCASE, completed_at DESC);
+                CREATE TABLE IF NOT EXISTS onboarding_sessions (
+                    chat_id TEXT PRIMARY KEY,
+                    stage TEXT NOT NULL,
+                    data_json TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS guest_profiles (
+                    chat_id TEXT PRIMARY KEY,
+                    role_label TEXT NOT NULL DEFAULT '',
+                    role_family TEXT NOT NULL DEFAULT '',
+                    role_keywords_json TEXT NOT NULL DEFAULT '[]',
+                    experience TEXT NOT NULL DEFAULT '',
+                    city TEXT NOT NULL DEFAULT '',
+                    updated_at REAL NOT NULL
+                );
                 """
             )
             columns = {
@@ -364,6 +379,140 @@ class TelegramSessionStore:
                 (int(update_id),),
             )
 
+    @staticmethod
+    def _resolve_chat_id_by_username(conn: sqlite3.Connection, username: str) -> str:
+        """Stable numeric chat_id previously observed for a mutable @username.
+
+        Fails closed (raises) when the handle is ambiguous rather than
+        guessing which person it currently belongs to.
+        """
+        identities = conn.execute(
+            """
+            SELECT chat_id, MAX(completed_at) AS last_seen
+            FROM conversation_history
+            WHERE username = ? COLLATE NOCASE
+            GROUP BY chat_id
+            ORDER BY last_seen DESC
+            """,
+            (username,),
+        ).fetchall()
+        if len(identities) > 1:
+            raise AmbiguousTelegramIdentity(
+                f'@{username} has more than one stored Telegram ID'
+            )
+        if not identities:
+            return ''
+        return str(identities[0]['chat_id'])
+
+    def save_onboarding(self, chat_id: str, state: dict[str, Any]) -> None:
+        payload = json.dumps(state, separators=(',', ':'), ensure_ascii=False)
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO onboarding_sessions(chat_id, stage, data_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    stage=excluded.stage,
+                    data_json=excluded.data_json,
+                    updated_at=excluded.updated_at
+                """,
+                (str(chat_id), str(state.get('stage') or ''), payload, time.time()),
+            )
+
+    def load_onboarding(self, chat_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT data_json FROM onboarding_sessions WHERE chat_id=?',
+                (str(chat_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            data = json.loads(row['data_json'])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def clear_onboarding(self, chat_id: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute('DELETE FROM onboarding_sessions WHERE chat_id=?', (str(chat_id),))
+
+    def save_guest_profile(
+        self,
+        chat_id: str,
+        *,
+        role_label: str = '',
+        role_family: str = '',
+        role_keywords: list[str] | None = None,
+        experience: str = '',
+        city: str = '',
+    ) -> None:
+        payload = json.dumps(list(role_keywords or []), separators=(',', ':'))
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO guest_profiles(
+                    chat_id, role_label, role_family, role_keywords_json,
+                    experience, city, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    role_label=excluded.role_label,
+                    role_family=excluded.role_family,
+                    role_keywords_json=excluded.role_keywords_json,
+                    experience=excluded.experience,
+                    city=excluded.city,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    str(chat_id),
+                    str(role_label or ''),
+                    str(role_family or ''),
+                    payload,
+                    str(experience or ''),
+                    str(city or ''),
+                    time.time(),
+                ),
+            )
+
+    def get_guest_profile(self, identity: str) -> dict[str, Any] | None:
+        """Owner-only lookup by @username or numeric Telegram ID (JobMaster
+        guest management). Same fail-closed ambiguous-username rule as
+        conversation_history — never guesses across a renamed/recycled handle.
+        """
+        raw = str(identity or '').strip()
+        if raw.startswith('@'):
+            with self._connect() as conn:
+                chat_id = self._resolve_chat_id_by_username(conn, raw[1:])
+            if not chat_id:
+                return None
+        else:
+            chat_id = raw
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT chat_id, role_label, role_family, role_keywords_json,
+                       experience, city, updated_at
+                FROM guest_profiles WHERE chat_id=?
+                """,
+                (chat_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            keywords = json.loads(row['role_keywords_json'] or '[]')
+        except (TypeError, json.JSONDecodeError):
+            keywords = []
+        return {
+            'chat_id': str(row['chat_id']),
+            'role_label': str(row['role_label'] or ''),
+            'role_family': str(row['role_family'] or ''),
+            'role_keywords': [str(word) for word in keywords] if isinstance(keywords, list) else [],
+            'experience': str(row['experience'] or ''),
+            'city': str(row['city'] or ''),
+            'updated_at': float(row['updated_at']),
+        }
+
     def conversation_history(
         self,
         identity: str,
@@ -376,24 +525,11 @@ class TelegramSessionStore:
         if raw.startswith('@'):
             username = raw[1:]
             with self._connect() as conn:
-                identities = conn.execute(
-                    """
-                    SELECT chat_id, MAX(completed_at) AS last_seen
-                    FROM conversation_history
-                    WHERE username = ? COLLATE NOCASE
-                    GROUP BY chat_id
-                    ORDER BY last_seen DESC
-                    """,
-                    (username,),
-                ).fetchall()
-            if len(identities) > 1:
-                raise AmbiguousTelegramIdentity(
-                    f'@{username} has more than one stored Telegram ID'
-                )
-            if not identities:
+                resolved = self._resolve_chat_id_by_username(conn, username)
+            if not resolved:
                 return []
             where = 'chat_id = ?'
-            value = str(identities[0]['chat_id'])
+            value = resolved
         elif raw.isdigit():
             where = 'chat_id = ?'
             value = raw
