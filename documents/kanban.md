@@ -289,8 +289,38 @@ IDs when automating so a live failure maps directly to a regression test.
 
 **Slices:**
 
-1. Contract tests for command authorization, intent, output integrity,
-   pagination, no-match behavior, and prompt-leak attacks.
+1. **Contract tests for command authorization, intent, output integrity,
+   pagination, no-match behavior, and prompt-leak attacks — done (2026-08-05).**
+   `job_engine/tests/test_jobmaster_acceptance.py` adds 58 tests tagged with
+   their `JM-*` IDs (040–049, 050–057, 063–067, 070–078, 080–090, 100–108,
+   020–037), on top of the 67 pre-existing contract tests in
+   `test_telegram_job_bot.py` / `test_telegram_job_search.py`. Full suite:
+   **125/125 green.** `.github/workflows/deploy-thinkpad.yml` gained a
+   GitHub-hosted `test` job that the self-hosted `deploy` job now `needs:` —
+   a code regression fails CI before it ever reaches the ThinkPad, not just
+   after via post-deploy diagnostics.
+
+   **Three real bugs caught and fixed while building the suite** (would have
+   surfaced as live `JM-*` FAILs otherwise):
+   - `_fallback_intent` never assigned `role_family='product'` or `'design'`
+     even though `ROLE_FAMILY_REGEX` defines both — `UI UX designer` (JM-048)
+     and `product manager` (JM-049) searches were unscoped. Fixed.
+   - Job search only ever filtered by `intent.cities[0]`, silently dropping a
+     second stated city (JM-084, `"AI jobs in Bangalore and Chennai"`)
+     instead of keeping both or explaining the limit. Fixed: job search now
+     keeps and matches on all stated cities when the API can't take more than
+     one, exactly like the insight/compare path already did.
+   - The fresher-experience regex didn't accept the plural `"...for fresh
+     graduates"` (JM-041's literal wording) or bare `"graduates"` — only the
+     singular. Fixed.
+   - Minor: `years`/`yrs` leaked into `role_keywords` when a stated number was
+     out of the supported experience-band range (e.g. "200 years"), narrowing
+     future searches for no reason. Added to the filler-word list.
+
+   Remaining out of automated scope by design (need a real Telegram client,
+   deploy, or live LinkedIn data): JM-001, JM-002 (menu *visibility*, content
+   is covered), JM-052 (open every URL), JM-065, JM-078, JM-120–129.
+
 2. Telegram sandbox bot for menu scopes, delivery retry, FIFO, and restart
    persistence without spamming production users.
 3. Read-only production smoke for owner command, grounded search, canonical

@@ -289,8 +289,16 @@ automated tests pass; live acceptance belongs to Ashok.
 
 Convert this suite without changing its IDs:
 
-1. **Contract tests:** parsing, output format, command authorization, prompt
-   leakage, no-match behavior, and pagination.
+1. **Contract tests — done (2026-08-05):** parsing, output format, command
+   authorization, prompt leakage, no-match behavior, and pagination are now
+   automated in `job_engine/tests/test_jobmaster_acceptance.py` (58 tests,
+   `JM-*` IDs preserved as test names/docstrings) plus the pre-existing
+   `test_telegram_job_bot.py` / `test_telegram_job_search.py` (67 tests).
+   125/125 green locally; CI now runs the full suite on every push to `main`
+   and blocks the ThinkPad deploy job on failure
+   (`.github/workflows/deploy-thinkpad.yml`). This is engineering evidence
+   only — it does not close any case in the execution log below; only
+   Ashok's live run does that.
 2. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 3. **Live read-only smoke:** owner command, one grounded search, canonical-link
