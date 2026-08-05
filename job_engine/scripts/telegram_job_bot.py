@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.cities import city_label  # noqa: E402
 from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
 from app.telegram_guests import (  # noqa: E402
     DEFAULT_TTL_MINUTES,
@@ -88,17 +89,27 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'guests',
     'guestlist',
     'history',
+    'guestprofile',
 })
+# Ashok-only self-test toggle: no second phone needed to see the guest
+# experience. Always dispatched off the REAL owner check (never the
+# simulated one) so this pair of commands can never lock him out of his
+# own chat — see _toggle_role_switch.
+OWNER_ROLE_SWITCH_COMMANDS = frozenset({'actasguest', 'actasowner'})
 OWNER_COMMANDS = frozenset((
     *OWNER_BOARD_COMMANDS,
     *OWNER_QUERY_COMMANDS,
     *OWNER_MANAGEMENT_COMMANDS,
+    *OWNER_ROLE_SWITCH_COMMANDS,
 ))
 OWNER_MENU = [
     {'command': 'allowguest', 'description': 'Allow a person'},
     {'command': 'blockguest', 'description': 'Block a person'},
     {'command': 'guests', 'description': 'People with access'},
     {'command': 'history', 'description': 'Guest conversation history'},
+    {'command': 'guestprofile', 'description': 'Guest role/experience/city'},
+    {'command': 'actasguest', 'description': 'Test this chat as a guest'},
+    {'command': 'actasowner', 'description': 'Back to owner mode'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
     {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
@@ -251,10 +262,59 @@ class JobMasterTelegramBot:
         return None
 
     def _is_owner(self, chat_id: str) -> bool:
+        """Real owner identity. Always used for message-queue acceptance so
+        Ashok testing the guest experience (see _effective_is_owner) can
+        never accidentally get himself silently dropped."""
         return str(chat_id) in self.owner_chat_ids
+
+    def _is_simulating_guest(self, chat_id: str) -> bool:
+        return self.sessions.get_state(f'simulate_guest:{chat_id}', '0') == '1'
+
+    def _effective_is_owner(self, chat_id: str) -> bool:
+        """Owner-ness for command authorization and guest-history recording
+        only — this is the one thing /actasguest flips off, so Ashok's own
+        chat sees exactly what a guest sees for commands and history."""
+        return self._is_owner(chat_id) and not self._is_simulating_guest(chat_id)
 
     def _sender_allowed(self, chat_id: str, username: str = '') -> bool:
         return self._is_owner(chat_id) or is_allowed(chat_id, username)
+
+    def _toggle_role_switch(self, chat_id: str, command: str) -> str:
+        scope_chat_id: int | str = (
+            int(chat_id) if str(chat_id).lstrip('-').isdigit() else chat_id
+        )
+        if command == 'actasguest':
+            if self._is_simulating_guest(chat_id):
+                return "Already testing as a guest. Send /actasowner to switch back."
+            self.sessions.set_state(f'simulate_guest:{chat_id}', '1')
+            try:
+                self.api.call('deleteMyCommands', {
+                    'scope': json.dumps({'type': 'chat', 'chat_id': scope_chat_id}),
+                })
+            except Exception:
+                LOG.exception(
+                    'failed to hide command menu for guest simulation chat=%s', chat_id,
+                )
+            return (
+                'Testing mode ON. This chat now behaves exactly like a guest: '
+                'the command menu is hidden, VIGIL/management commands are '
+                "denied (you'll see the same reply a guest sees), and search "
+                "conversations here are recorded like a guest's for /history "
+                'and /guestprofile. Send /actasowner anytime to switch back.'
+            )
+        if not self._is_simulating_guest(chat_id):
+            return 'Already in owner mode.'
+        self.sessions.set_state(f'simulate_guest:{chat_id}', '0')
+        try:
+            self.api.call('setMyCommands', {
+                'scope': json.dumps({'type': 'chat', 'chat_id': scope_chat_id}),
+                'commands': json.dumps(OWNER_MENU),
+            })
+        except Exception:
+            LOG.exception(
+                'failed to restore command menu after guest simulation chat=%s', chat_id,
+            )
+        return 'Testing mode OFF. Command menu and full owner access are back.'
 
     def _owner_command_reply(
         self,
@@ -352,6 +412,42 @@ class JobMasterTelegramBot:
                     '',
                 ])
             return _truncate_utf16('\n'.join(lines).rstrip(), 3700)
+        if command == 'guestprofile':
+            parts = (arg or '').split()
+            if not parts:
+                return 'Usage: /guestprofile <@username or Telegram ID>'
+            identity = self._identity(parts[0])
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, identity_value = identity
+            lookup = (
+                f'@{identity_value}'
+                if identity_kind == 'username'
+                else identity_value
+            )
+            try:
+                profile = self.sessions.get_guest_profile(lookup)
+            except AmbiguousTelegramIdentity:
+                return (
+                    f'{lookup} has been used by more than one Telegram account. '
+                    'Use the numeric Telegram ID to avoid exposing the wrong profile.'
+                )
+            if not profile:
+                return (
+                    f'No stored preferences for {lookup} yet — they have not '
+                    'completed onboarding or a search.'
+                )
+            role = profile['role_label'] or 'not stated'
+            experience = profile['experience'] or 'any'
+            city = city_label(profile['city']) if profile['city'] else 'any'
+            age = self._relative_age(profile['updated_at'])
+            return (
+                f'GUEST PROFILE · {lookup}\n'
+                f'Role — {role}\n'
+                f'Experience — {experience}\n'
+                f'City — {city}\n'
+                f'Last updated — {age}'
+            )
         if command in allow_commands:
             parts = (arg or '').split(maxsplit=2)
             if not parts:
@@ -518,7 +614,7 @@ class JobMasterTelegramBot:
         reply: str,
     ) -> None:
         """Finish delivery without letting optional history strand a chat."""
-        if self._is_owner(chat_id):
+        if self._effective_is_owner(chat_id):
             self.sessions.complete_update(update_id)
             return
         try:
@@ -721,7 +817,12 @@ class JobMasterTelegramBot:
         parsed = self._command(clean)
         if parsed and parsed[0] in OWNER_COMMANDS:
             command, arg = parsed
-            if self._is_owner(chat_id):
+            if command in OWNER_ROLE_SWITCH_COMMANDS and self._is_owner(chat_id):
+                # Gated on the REAL owner check, never the simulated one, so
+                # Ashok can always flip this switch even while testing as a
+                # guest — see _toggle_role_switch.
+                reply = self._toggle_role_switch(chat_id, command)
+            elif self._effective_is_owner(chat_id):
                 try:
                     reply = self._owner_command_reply(
                         chat_id,
@@ -742,7 +843,7 @@ class JobMasterTelegramBot:
                     status='running',
                     last_result='ok',
                     last_chat=chat_id,
-                    last_kind='owner_command' if self._is_owner(chat_id) else 'restricted_command',
+                    last_kind='owner_command' if self._effective_is_owner(chat_id) else 'restricted_command',
                     last_text=f'/{command}',
                 )
             return

@@ -78,6 +78,27 @@ From Ashok's chat only:
   guess; use the numeric Telegram ID.
 - Owner commands and owner conversations are not stored as guest history.
 
+### Read a guest's last known role/experience/city preferences
+
+From Ashok's chat only:
+
+```text
+/guestprofile @cryptoonz
+/guestprofile 123456789
+```
+
+- Shows the role, experience, and city a guest last gave — either through the
+  guided onboarding below or their most recently completed search.
+- Updated by **any** completed search that states a role — the guided
+  onboarding flow below, or a normal one-shot query like `AI jobs in
+  Bangalore for fresher`. A later search overwrites the earlier profile. A
+  bare, roleless query (e.g. `jobs`) never overwrites a real stored profile.
+  Insight-only questions (e.g. `How many AI jobs...`) never touch it.
+- `No stored preferences` means that guest has never completed a role-scoped
+  search yet.
+- Same fail-closed rule as `/history`: a `@username` reused by more than one
+  Telegram ID refuses to guess; use the numeric Telegram ID instead.
+
 ## 2. How to record a test
 
 Run **one case at a time**. Wait for the final reply before starting the next
@@ -120,7 +141,7 @@ Stop after the first failure and report its case ID, screenshot, and exact reply
 | ID | Account | Send / action | Expected |
 |---|---|---|---|
 | JM-001 | Ashok | Open the bot chat | Blue **Menu** button or `/` command list is available. |
-| JM-002 | Ashok | Open **Menu** | Shows `/allowguest`, `/blockguest`, `/guests`, `/history`, `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
+| JM-002 | Ashok | Open **Menu** | Shows `/allowguest`, `/blockguest`, `/guests`, `/history`, `/guestprofile`, `/stats`, `/towerinsights`, `/health`, `/hiringsignals`, `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`. |
 | JM-003 | Ashok | `/health` | Returns live `TOWER HEALTH` facts; no `Thinking…`, job search, model text, or internal error. |
 | JM-004 | Ashok | `/towerinsights` | Returns jobs, companies, roles, and fresh catches from the live tower. |
 | JM-005 | Ashok | `/stats ai` | Returns a grounded AI-job count for the past 24 hours; does not treat `stats` as a job title. |
@@ -272,7 +293,65 @@ deployment. Do not deliberately break the live service merely to run them.
 | JM-128 | Bot service starts after reboot | Exactly one JobMaster poller; Hermes remains off; Ashok command menu is restored. |
 | JM-129 | Owner-menu API setup fails | Search remains safe; health exposes menu setup failure for operators. |
 
-## 14. Execution log
+## 14. Guided onboarding and guest profile management
+
+A bare greeting starts a short, deterministic conversation instead of an
+unfiltered job dump: role → (grounded "today" count →) experience → city →
+grounded results. Any fully specified message (e.g. `AI jobs in Bangalore for
+fresher`) still returns results immediately and is never redirected into this
+flow — onboarding only triggers on a literal greeting with no other content.
+Applies identically to Ashok and guests (no personality split). Run JM-130
+right after `/new` (or from a chat that has never searched) so the greeting
+is not competing with an existing session.
+
+| ID | Send | Expected |
+|---|---|---|
+| JM-130 | `Hi` (first message, no prior search) | JobMaster asks what job role you're looking for; no unfiltered job dump. |
+| JM-131 | Answer `AI Engineer` | Reply states a grounded count of AI/ML postings today with links, then asks for experience. |
+| JM-132 | Answer `fresher` | Asks for a city preference next. |
+| JM-133 | Answer `Chennai` | Returns up to 10 grounded Chennai AI/ML rows (`Title — Company — Experience` + LinkedIn link) ending with a forward-looking suggestion, not a dead end. |
+| JM-134 | At the role step, answer `Astronaut trainer` (zero matches) | Honest no-match reply; stays on the role question instead of dead-ending or inventing jobs. |
+| JM-135 | At the role step, answer `!!!!!` (no role detected) | Asks again for a role; does not crash or silently proceed. |
+| JM-136 | At the experience step, answer `any` | Skips the experience filter and asks for a city next. |
+| JM-137 | At the experience step, answer `a very long time` (unrecognized) | Gracefully explains it will show all experience levels, then still asks for a city. |
+| JM-138 | At the city step, answer `any` | Skips the city filter and returns results across all cities. |
+| JM-139 | At the city step, answer `Mars` (unrecognized) | Gracefully explains it will show all cities, then returns results. |
+| JM-140 | At the role step, answer `AI Engineer, fresher, in Chennai` in one message | Skips straight to grounded results; does not re-ask for slots already answered. |
+| JM-141 | Mid-flow, send `/new` | Onboarding is cancelled cleanly; the next message starts fresh. |
+| JM-142 | Complete onboarding, then send `more` | Pagination continues normally from the onboarding-originated search. |
+| JM-143 | Ashok: `/guestprofile <guest>` after that guest finishes onboarding | Shows the guest's last role, experience, and city with a relative "last updated" time. |
+| JM-144 | Ashok: `/guestprofile <guest who never searched>` | Honest `No stored preferences` reply; no crash. |
+| JM-145 | Supriya: `/guestprofile <anyone>` | Owner-only command; guest receives normal JobMaster guidance, never another guest's data. |
+| JM-146 | A guest sends `AI jobs in Bangalore for fresher` directly (no greeting) | `/guestprofile` for that guest now shows AI/ML · fresher · Bengaluru without ever going through onboarding. |
+| JM-147 | Same guest later sends `Java developer jobs in Pune` | `/guestprofile` reflects the newer role/city; the AI/ML profile is overwritten, not merged. |
+
+**Zero-friction welcome back** — run right after JM-133/JM-146 so a stored
+profile already exists for the test account.
+
+| ID | Send | Expected |
+|---|---|---|
+| JM-148 | That same guest sends a bare `Hi` again later | "Welcome back" message recalls the stored role/experience/city and offers `yes` for today's openings or a new role — not the full role→experience→city funnel again. |
+| JM-149 | Reply `yes` | Immediate grounded results for the recalled role/experience/city; zero extra questions asked. |
+| JM-150 | Greet again, then answer `no` (or "something else") | Starts a completely fresh funnel from the role question, ignoring the old profile. |
+| JM-151 | Greet again, then name a different role (e.g. `DevOps Engineer`) | Re-confirms experience and city for the *new* role only — does not silently reuse the old profile's experience/city. |
+| JM-152 | Greet again, then answer something unrecognized (e.g. `maybe later`) | Gracefully reprompts with the same welcome-back choice instead of crashing or dead-ending. |
+| JM-153 | A brand-new guest (no prior search) sends `Hi` | Gets the original JM-130 funnel — welcome-back never fires without a stored profile. |
+
+**Self-test the guest flow without a second phone** — Ashok-only
+`/actasguest` / `/actasowner`, run from Ashok's own chat.
+
+| ID | Send | Expected |
+|---|---|---|
+| JM-154 | Ashok: `/actasguest` | Confirms "Testing mode ON"; the Telegram `/` command menu in this chat empties out (matching what a real guest sees). |
+| JM-155 | While simulating, Ashok: `/health` (or any VIGIL command) | Gets the same "JobMaster can help you find verified jobs..." denial a real guest receives — not the tower health board. |
+| JM-156 | While simulating, Ashok sends `Hi` then completes a normal search | Identical onboarding/search experience as any guest — no personality difference, and the reply arrives normally (never silently dropped). |
+| JM-157 | Still simulating, Ashok: `/actasowner`, then `/history <Ashok's own @handle or ID>` | The test conversation from JM-156 shows up, proving it was recorded like a guest's. |
+| JM-158 | Ashok: `/actasowner` (from JM-157) | Confirms "Testing mode OFF"; the full VIGIL command menu reappears; `/health` immediately works again. |
+| JM-159 | A different, genuine guest sends `/actasguest` | Gets the ordinary owner-command denial; cannot flip their own or anyone else's mode. |
+| JM-160 | Ashok sends `/actasguest` twice in a row | Second send replies "Already testing as a guest" instead of double-toggling or erroring. |
+| JM-161 | Ashok sends `/actasguest`, then kills/restarts the bot service, then sends `/health` | Testing mode survived the restart — still gets the guest denial, not the health board. |
+
+## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
 automated tests pass; live acceptance belongs to Ashok.
@@ -285,7 +364,7 @@ automated tests pass; live acceptance belongs to Ashok.
 | JM-017 | 2026-08-05 07:21 | Ashok | IN PROGRESS | Grant command returned the expected confirmation. Ashok later selected `@cryptoonz` as the real test guest; awaiting one successful normal query from that account before PASS. |
 | JM-028 |  | Ashok | BLOCKED | `/history` begins recording only after its deployment; pre-feature `@cryptoonz` conversations cannot be recovered through Telegram Bot API. |
 
-## 15. Automation backlog
+## 16. Automation backlog
 
 Convert this suite without changing its IDs:
 
@@ -299,13 +378,26 @@ Convert this suite without changing its IDs:
    (`.github/workflows/deploy-thinkpad.yml`). This is engineering evidence
    only — it does not close any case in the execution log below; only
    Ashok's live run does that.
-2. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
+2. **Guided onboarding + guest profile contract tests — done (2026-08-05):**
+   JM-130..153 above are automated in
+   `job_engine/tests/test_jobmaster_onboarding.py` (30 tests: greeting
+   detection, the full role→experience→city flow, zero-match/unrecognized-
+   answer fallbacks, eager multi-field answers, `/new` cancellation, `more`
+   pagination continuity, `/guestprofile` owner-only access with the same
+   fail-closed ambiguous-username rule as `/history`, guest-profile updates
+   from any completed role-scoped search, and the zero-friction welcome-back
+   recall/accept/decline/new-role paths for returning guests). JM-154..161
+   (self-test `/actasguest` / `/actasowner`) are automated in
+   `job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests`
+   (8 tests). 163/163 green locally in the full suite. Still requires
+   Ashok's live Telegram run to close JM-130..161 in the execution log above.
+3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
-3. **Live read-only smoke:** owner command, one grounded search, canonical-link
+4. **Live read-only smoke:** owner command, one grounded search, canonical-link
    validation, and guest command denial.
-4. **Deployment gate:** exact runtime SHA, one poller, Hermes off, owner menu
+5. **Deployment gate:** exact runtime SHA, one poller, Hermes off, owner menu
    ready, active-role retrigger proof.
-5. **Nightly regression:** aliases, misspellings, experience bands, time
+6. **Nightly regression:** aliases, misspellings, experience bands, time
    windows, deep pagination, and injection corpus.
 
 Automation must never spam real users, consume production paid image credits,
