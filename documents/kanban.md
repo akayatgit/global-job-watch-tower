@@ -248,6 +248,25 @@ filter (`job_role_families.ROLE_FAMILY_REGEX`), which is correctly narrow
 since real postings are never titled bare "Product". 2 new regression tests
 (one on the parser, one on the full onboarding flow) — **165/165 green.**
 
+**Second bug found + fixed in the same live test session (2026-08-05, 14:40
+UTC):** Ashok sent `AI ML` as a plain message and got the generic *"JobMaster
+provides verified jobs and live job-market insights."* line instead of real
+search results. **RCA:** this is the `kind == 'help'` branch in
+`JobMasterEngine.handle` — the live OpenAI-backed `IntentInterpreter`
+classified `AI ML` as `kind='help'` (ambiguous two-letter-abbreviation
+fragment, no verb) even though the deterministic fallback parser plainly
+recognizes it as `role_family='ai_ml'`. This never showed up in the mocked
+suite because every existing test builds the engine with
+`IntentInterpreter(enabled=False)`, bypassing the real model call entirely —
+the gap only exists at the live LLM boundary. **Fix:** `IntentInterpreter.
+_validate` now refuses to let the model's `kind='help'` override a message
+where the deterministic fallback already found a clear `role_family` —
+`role_keywords` is deliberately excluded from this guard since it can pick
+up ordinary leftover words from genuinely help-ish chatter (e.g. "what can
+you do"), so only the clean `role_family` signal overrides "help". 2 new
+tests exercising the model-output validation boundary directly. **167/167
+green.**
+
 ## Done
 
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
