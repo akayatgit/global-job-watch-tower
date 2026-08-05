@@ -31,6 +31,28 @@ ALLOWED_WINDOWS = {0, 1, 2, 4, 7, 14, 30}
 LINKEDIN_ID_RE = re.compile(r'/jobs/view/(?:[^/?#]*-)?(\d{6,})(?:[/?#]|$)', re.I)
 MORE_RE = re.compile(r'^\s*(?:more|next|show\s+more|more\s+jobs|next\s+10)\s*[.!?]*\s*$', re.I)
 RESET_RE = re.compile(r'^\s*(?:/new|/reset|/clear|new|reset|clear)\s*$', re.I)
+# Bare greetings only — a fully specified first message (e.g. "AI jobs in
+# Bangalore for fresher") must still return grounded results immediately,
+# per Gate 3.0. This never matches inside a longer sentence (fully anchored).
+GREETING_RE = re.compile(
+    r'^\s*(?:hi+|hello+|hey+|heya|yo+|sup|namaste|vanakkam|'
+    r'good\s*(?:morning|afternoon|evening|day))\s*[!.,]*\s*$',
+    re.I,
+)
+SKIP_WORD_RE = re.compile(
+    r'^\s*(?:any|no|none|n/?a|nope|skip|anywhere|all|doesn.?t matter|does not matter|'
+    r'no preference|not sure|whatever)\s*[!.,]*\s*$',
+    re.I,
+)
+ROLE_FAMILY_LABELS = {
+    'ai_ml': 'AI/ML',
+    'data': 'Data',
+    'software': 'Software',
+    'cybersecurity': 'Cybersecurity',
+    'cloud_devops': 'Cloud/DevOps',
+    'product': 'Product',
+    'design': 'Design',
+}
 
 CITY_ALIASES = {
     'bengaluru': ('bengaluru', 'bangalore', 'bengalore', 'banglore'),
@@ -152,64 +174,69 @@ def _extract_cities(text: str) -> list[str]:
     return list(dict.fromkeys(key for _pos, key in sorted(found)))
 
 
-def _fallback_intent(text: str) -> JobMasterIntent:
-    low = (text or '').lower()
-    cities = _extract_cities(low)
-    experience = ''
+def _extract_experience(low: str) -> str:
+    """Parse a stated experience level out of already-lowercased text."""
     if re.search(r'\b(?:fresher|freshers|fresh graduates?|graduates?|entry.?level|intern(?:ship)?)\b', low):
-        experience = 'fresher'
+        return 'fresher'
+    range_match = re.search(
+        r'\b(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?|yrs?)?\b',
+        low,
+    )
+    single_match = re.search(r'\b(\d{1,2})\+?\s*(?:years?|yrs?)\b', low)
+    if range_match:
+        low_years = min(int(range_match.group(1)), int(range_match.group(2)))
+        high_years = max(int(range_match.group(1)), int(range_match.group(2)))
+        if high_years <= 1:
+            return 'fresher'
+        if low_years <= 1 and high_years <= 3:
+            return '1-2'
+        years = high_years
+    elif single_match:
+        years = int(single_match.group(1))
     else:
-        range_match = re.search(
-            r'\b(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?|yrs?)?\b',
-            low,
-        )
-        single_match = re.search(r'\b(\d{1,2})\+?\s*(?:years?|yrs?)\b', low)
-        if range_match:
-            low_years = min(int(range_match.group(1)), int(range_match.group(2)))
-            high_years = max(int(range_match.group(1)), int(range_match.group(2)))
-            if high_years <= 1:
-                experience = 'fresher'
-                years = -1
-            elif low_years <= 1 and high_years <= 3:
-                experience = '1-2'
-                years = -1
-            else:
-                years = high_years
-        elif single_match:
-            years = int(single_match.group(1))
-        else:
-            years = -1
-        if 0 <= years <= 1:
-            experience = 'fresher'
-        elif years == 2:
-            experience = '1-2'
-        elif 3 <= years <= 5:
-            experience = '3-5'
-        elif 6 <= years <= 8:
-            experience = '6-8'
-        elif 9 <= years <= 12:
-            experience = '9-12'
-        elif years >= 13:
-            experience = '13plus'
+        years = -1
+    if 0 <= years <= 1:
+        return 'fresher'
+    if years == 2:
+        return '1-2'
+    if 3 <= years <= 5:
+        return '3-5'
+    if 6 <= years <= 8:
+        return '6-8'
+    if 9 <= years <= 12:
+        return '9-12'
+    if years >= 13:
+        return '13plus'
+    return ''
 
-    role_family = ''
+
+def _extract_role_family(low: str) -> str:
+    """Best-effort role-family bucket out of already-lowercased text."""
     if re.search(
         r'(?i)(?:\bai\b|\bml\b|artificial intelligence|machin(?:e)?\s+learn(?:ing)?|genai|llm)',
         low,
     ):
-        role_family = 'ai_ml'
-    elif re.search(r'\b(?:data science|data scientist|data analyst|analytics)\b', low):
-        role_family = 'data'
-    elif re.search(r'\b(?:cyber|security|soc|infosec)\b', low):
-        role_family = 'cybersecurity'
-    elif re.search(r'\b(?:cloud|devops|sre)\b', low):
-        role_family = 'cloud_devops'
-    elif re.search(r'\b(?:software|developer|engineer|full.?stack|backend|frontend)\b', low):
-        role_family = 'software'
-    elif re.search(r'\b(?:product manager|product owner|product analyst)\b', low):
-        role_family = 'product'
-    elif re.search(r'\b(?:designer|design|ui\s*/?\s*ux|\bux\b|\bui\b)\b', low):
-        role_family = 'design'
+        return 'ai_ml'
+    if re.search(r'\b(?:data science|data scientist|data analyst|analytics)\b', low):
+        return 'data'
+    if re.search(r'\b(?:cyber|security|soc|infosec)\b', low):
+        return 'cybersecurity'
+    if re.search(r'\b(?:cloud|devops|sre)\b', low):
+        return 'cloud_devops'
+    if re.search(r'\b(?:software|developer|engineer|full.?stack|backend|frontend)\b', low):
+        return 'software'
+    if re.search(r'\b(?:product manager|product owner|product analyst)\b', low):
+        return 'product'
+    if re.search(r'\b(?:designer|design|ui\s*/?\s*ux|\bux\b|\bui\b)\b', low):
+        return 'design'
+    return ''
+
+
+def _fallback_intent(text: str) -> JobMasterIntent:
+    low = (text or '').lower()
+    cities = _extract_cities(low)
+    experience = _extract_experience(low)
+    role_family = _extract_role_family(low)
 
     insight = bool(re.search(
         r'\b(?:how many|count|compare|comparison|versus|vs\.?|'
@@ -373,6 +400,19 @@ def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
     return difflib.SequenceMatcher(None, phrase, low).ratio() >= 0.45
 
 
+def _is_skip_word(text: str) -> bool:
+    return bool(SKIP_WORD_RE.match((text or '').strip()))
+
+
+def _role_label(role_family: str, role_keywords: list[str]) -> str:
+    parts: list[str] = []
+    if role_family:
+        parts.append(ROLE_FAMILY_LABELS.get(role_family, role_family.replace('_', ' ').title()))
+    if role_keywords:
+        parts.append(' '.join(word.upper() if len(word) <= 3 else word.title() for word in role_keywords))
+    return ' '.join(parts) if parts else 'that role'
+
+
 def _format_jobs(
     jobs: list[dict[str, Any]],
     *,
@@ -414,6 +454,7 @@ class JobMasterEngine:
         raw = (text or '').strip()
         if RESET_RE.match(raw):
             reply = 'Search reset. Send a role, city, or job-market question.'
+            self.sessions.clear_onboarding(chat_id)
             self.sessions.apply_result(
                 chat_id,
                 reply,
@@ -437,6 +478,12 @@ class JobMasterEngine:
                 seen_ids=[*seen_ids, *new_ids],
             )
             return reply
+
+        onboarding = self.sessions.load_onboarding(chat_id)
+        if onboarding is not None:
+            return self._continue_onboarding(onboarding, raw, chat_id, update_id=update_id)
+        if GREETING_RE.match(raw):
+            return self._start_onboarding(chat_id, update_id=update_id)
 
         intent = self.interpreter.parse(raw)
         if intent.kind == 'insight':
@@ -600,3 +647,196 @@ class JobMasterEngine:
             f'{scope} — {total:,} matching jobs in the {window}\n'
             'Source — live Watch Tower'
         )
+
+    # -- Guided onboarding: greet → role → experience → city → results -----
+
+    def _start_onboarding(self, chat_id: str, *, update_id: int | None = None) -> str:
+        state = {
+            'stage': 'ask_role',
+            'role_family': '',
+            'role_keywords': [],
+            'experience': '',
+            'experience_known': False,
+            'cities': [],
+            'city_known': False,
+        }
+        self.sessions.save_onboarding(chat_id, state)
+        reply = (
+            "Hi! I'm JobMaster. What job role are you looking for? "
+            '(e.g. AI Engineer, Java Developer, Product Manager)'
+        )
+        self.sessions.apply_result(chat_id, reply, update_id=update_id)
+        return reply
+
+    def _continue_onboarding(
+        self,
+        state: dict[str, Any],
+        raw: str,
+        chat_id: str,
+        *,
+        update_id: int | None = None,
+    ) -> str:
+        stage = state.get('stage')
+        note = ''
+        if stage == 'ask_role':
+            parsed = _fallback_intent(raw)
+            if not parsed.role_family and not parsed.role_keywords:
+                reply = (
+                    "Sorry, I didn't catch a job role — try something like "
+                    "'AI Engineer', 'Java Developer', or 'Product Manager'."
+                )
+                self.sessions.apply_result(chat_id, reply, update_id=update_id)
+                return reply
+            state['role_family'] = parsed.role_family
+            state['role_keywords'] = parsed.role_keywords
+            self._absorb_optional_fields(state, parsed)
+        elif stage == 'ask_experience':
+            if _is_skip_word(raw):
+                state['experience'] = ''
+            else:
+                exp = _extract_experience(raw.lower())
+                if exp:
+                    state['experience'] = exp
+                else:
+                    state['experience'] = ''
+                    note = (
+                        "I couldn't match an experience level from that, so I'll show "
+                        'openings across all experience levels. '
+                    )
+            state['experience_known'] = True
+            self._absorb_optional_fields(state, _fallback_intent(raw))
+        elif stage == 'ask_city':
+            if _is_skip_word(raw):
+                state['cities'] = []
+            else:
+                found = _extract_cities(raw.lower())
+                state['cities'] = found[:1]
+                if not found:
+                    note = (
+                        "I couldn't match a city from that, so I'll show openings "
+                        'across all cities. '
+                    )
+            state['city_known'] = True
+        else:
+            # Corrupt/unknown stage recorded by an older build — fail safe by
+            # restarting the flow rather than getting stuck.
+            self.sessions.clear_onboarding(chat_id)
+            return self._start_onboarding(chat_id, update_id=update_id)
+
+        return self._progress_onboarding(state, chat_id, update_id=update_id, note=note)
+
+    @staticmethod
+    def _absorb_optional_fields(state: dict[str, Any], parsed: JobMasterIntent) -> None:
+        """Let an eager answer (e.g. "AI Engineer, fresher, in Chennai") skip
+        ahead instead of forcing every question even when already answered."""
+        if not state.get('experience_known') and parsed.experience:
+            state['experience'] = parsed.experience
+            state['experience_known'] = True
+        if not state.get('city_known') and parsed.cities:
+            state['cities'] = parsed.cities[:1]
+            state['city_known'] = True
+
+    def _role_count(self, role_family: str, role_keywords: list[str]) -> int:
+        data = self.api_get('/api/jobs/insights', {
+            'days': 1,  # "today" — matches the product's existing Today window
+            'role_family': role_family,
+            'title_terms': ' '.join(role_keywords),
+        })
+        if not isinstance(data, dict):
+            return 0
+        return int(data.get('total') or 0)
+
+    def _progress_onboarding(
+        self,
+        state: dict[str, Any],
+        chat_id: str,
+        *,
+        update_id: int | None = None,
+        note: str = '',
+    ) -> str:
+        if not state.get('experience_known'):
+            label = _role_label(state['role_family'], state['role_keywords'])
+            count = self._role_count(state['role_family'], state['role_keywords'])
+            if count <= 0:
+                # A full restart (not just clearing the role) avoids stale
+                # experience/city absorbed from this same eager message being
+                # silently carried into an unrelated next role attempt.
+                state = {
+                    'stage': 'ask_role',
+                    'role_family': '',
+                    'role_keywords': [],
+                    'experience': '',
+                    'experience_known': False,
+                    'cities': [],
+                    'city_known': False,
+                }
+                self.sessions.save_onboarding(chat_id, state)
+                reply = (
+                    f'{note}I don\u2019t see verified {label} openings today. '
+                    'Want to try a different role?'
+                )
+                self.sessions.apply_result(chat_id, reply, update_id=update_id)
+                return reply
+            state['stage'] = 'ask_experience'
+            self.sessions.save_onboarding(chat_id, state)
+            plural = 's' if count != 1 else ''
+            reply = (
+                f'{note}I can get you {count} {label} job posting{plural} today, with links, '
+                "but can you share your experience so I can match you better? "
+                '(fresher, 1-2, 3-5, 6-8, 9-12, 13+ years, or say \'any\')'
+            )
+            self.sessions.apply_result(chat_id, reply, update_id=update_id)
+            return reply
+        if not state.get('city_known'):
+            state['stage'] = 'ask_city'
+            self.sessions.save_onboarding(chat_id, state)
+            reply = f'{note}Do you have a city preference? (e.g. Bengaluru, Chennai, Remote — or say \'any\')'
+            self.sessions.apply_result(chat_id, reply, update_id=update_id)
+            return reply
+        return self._finish_onboarding(state, chat_id, update_id=update_id, note=note)
+
+    def _finish_onboarding(
+        self,
+        state: dict[str, Any],
+        chat_id: str,
+        *,
+        update_id: int | None = None,
+        note: str = '',
+    ) -> str:
+        intent = JobMasterIntent(
+            kind='job_search',
+            role_family=state.get('role_family') or '',
+            role_keywords=state.get('role_keywords') or [],
+            cities=state.get('cities') or [],
+            experience=state.get('experience') or '',
+        )
+        reply, seen_ids = self._job_reply(intent, seen_ids=[])
+        no_match = reply in (
+            'No verified jobs match that search right now.',
+            'No more verified jobs match that search right now.',
+        )
+        if no_match:
+            suggestion = 'Want to try a different role, experience, or city? Just tell me.'
+        elif 'Reply more' in reply:
+            suggestion = 'Tell me a new role or city anytime.'
+        else:
+            suggestion = 'Tell me a new role or city anytime, or reply more for more jobs.'
+        final_reply = f'{note}{reply}\n\n{suggestion}'.strip()
+        self.sessions.clear_onboarding(chat_id)
+        self.sessions.apply_result(
+            chat_id,
+            final_reply,
+            update_id=update_id,
+            intent=asdict(intent),
+            page=0,
+            seen_ids=seen_ids,
+        )
+        self.sessions.save_guest_profile(
+            chat_id,
+            role_label=_role_label(intent.role_family, intent.role_keywords),
+            role_family=intent.role_family,
+            role_keywords=intent.role_keywords,
+            experience=intent.experience,
+            city=intent.cities[0] if intent.cities else '',
+        )
+        return final_reply
