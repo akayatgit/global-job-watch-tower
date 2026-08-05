@@ -55,23 +55,41 @@ that phase doesn't have to fight hard-coded regex-only assumptions.
   management commands, which stay exactly deterministic. `JobMasterEngine`
   itself, and its full existing contract-test suite, are untouched.
 
+**Follow-up (2026-08-05, same day):** Ashok — "Not sure if the api key of
+openai is set in my laptop, add also that /health line." Added a new fact
+line to the existing `/health` board (`app/vigil_boards.py`, shared by the
+Telegram bot, `/boards` CLI, Hermes/Ask, MCP, and the Ultron web routes):
+`JobMaster voice AI: ON (OPENAI_API_KEY set)` /
+`OFF (no OPENAI_API_KEY)` / `OFF (disabled via JOBMASTER_VOICE_LLM)` — a
+pure local env check (no network, no model call), so Ashok can confirm the
+voice layer's actual runtime status from his phone instead of opening a
+terminal on the ThinkPad. This line is deterministic text, not LLM-voiced —
+`/health` itself is still never passed through `VoiceLayer` (owner boards
+stay exact), it just now reports one more true fact.
+
 **Evidence:** `job_engine/tests/test_telegram_voice.py` (validator +
 VoiceLayer unit tests, no network/real credentials) +
 `test_telegram_job_bot.py::VoiceLayerWiringTests` (voiced vs never-voiced
 paths, engine-failure fallback never voiced, durable retry reuses the
-already-voiced reply without a second model call). Full suite: **186/186
-green.**
+already-voiced reply without a second model call) +
+`test_vigil_boards_health.py` (new `/health` voice-status line: on/off/
+flag-disabled, and that it survives inside the full health board render).
+Full suite: **190/190 green.**
 
 **Acceptance:** Ashok runs a live search on Telegram and confirms replies
 read like natural conversation (not a rigid template) while every job
 title/company/experience/link/count still matches the live tower exactly;
-confirms a VIGIL owner command (e.g. `/health`) is unchanged. Keep open
-until Ashok accepts the live result.
+confirms a VIGIL owner command (e.g. `/health`) is unchanged in tone and
+now also confirms the new voice-AI status line on `/health` correctly
+reflects whether `OPENAI_API_KEY` is set on his laptop. Keep open until
+Ashok accepts the live result.
 
 **Files:** `job_engine/app/telegram_voice.py`,
+`job_engine/app/vigil_boards.py`,
 `job_engine/scripts/telegram_job_bot.py`,
 `job_engine/tests/test_telegram_voice.py`,
-`job_engine/tests/test_telegram_job_bot.py`, `job_engine/.env.example`.
+`job_engine/tests/test_telegram_job_bot.py`,
+`job_engine/tests/test_vigil_boards_health.py`, `job_engine/.env.example`.
 
 ### 5. Public carousel — clean modern design with real tower data (Ashok 2026-08-04)
 

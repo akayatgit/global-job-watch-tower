@@ -365,6 +365,7 @@ deterministic text — never a wrong or invented fact.
 | JM-171 | `/health` (Ashok) | Unchanged, exactly deterministic — no added chit-chat, no reworded tone. |
 | JM-172 | `/allowguest @<test>` (Ashok) | Unchanged, exactly deterministic confirmation text. |
 | JM-173 | Repeat JM-170 several times | Tone may vary slightly between replies, but the job rows/links/counts never do. |
+| JM-174 | `/health` (Ashok) | New line `JobMaster voice AI: ON (OPENAI_API_KEY set)` or `OFF (no OPENAI_API_KEY)` / `OFF (disabled via JOBMASTER_VOICE_LLM)` tells Ashok, without opening a terminal, whether the voice layer can run on this laptop right now. |
 
 ## 15. Execution log
 
@@ -398,7 +399,10 @@ Convert this suite without changing its IDs:
    `job_engine/tests/test_telegram_voice.py` and
    `test_telegram_job_bot.py::VoiceLayerWiringTests` — no network/real
    OpenAI credentials required. Still requires Ashok's live Telegram run to
-   close `JM-170`..`JM-173` in the execution log above.
+   close `JM-170`..`JM-173` in the execution log above. `JM-174` (the
+   `/health` voice-status line, added after Ashok asked whether his laptop
+   even has `OPENAI_API_KEY` set) is automated in
+   `job_engine/tests/test_vigil_boards_health.py`.
 2. **Guided onboarding + guest profile contract tests — done (2026-08-05):**
    JM-130..153 above are automated in
    `job_engine/tests/test_jobmaster_onboarding.py` (30 tests: greeting

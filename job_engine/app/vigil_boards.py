@@ -6,10 +6,13 @@ No LLM. Pure HTTP reads of the local Ultron API.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+from app.telegram_voice import VoiceLayer
 
 BASE = 'http://127.0.0.1:8001'
 BRIEF = Path('/home/user/Documents/documents/briefs/latest.txt')
@@ -136,6 +139,18 @@ def _board_tower() -> str:
     return '\n'.join(lines)
 
 
+def _voice_status_label() -> str:
+    """Cheap local check (no network, no model call) so /health tells Ashok on
+    this laptop whether the JobMaster voice layer (LLM warmth pass) can
+    actually run — he can't see the .env from Telegram."""
+    flag_on = os.getenv('JOBMASTER_VOICE_LLM', 'true').strip().lower() == 'true'
+    if not flag_on:
+        return 'OFF (disabled via JOBMASTER_VOICE_LLM)'
+    if VoiceLayer().enabled:
+        return 'ON (OPENAI_API_KEY set)'
+    return 'OFF (no OPENAI_API_KEY)'
+
+
 def _board_health() -> str:
     d = _get('/api/ultron/health')
     v = d.get('vitals') or d
@@ -151,6 +166,7 @@ def _board_health() -> str:
         f"Mode {v.get('filter_mode_policy', '—')} · Browser {'Hidden' if v.get('headless') else 'Visible'}",
         f"Now: {v.get('countdown_title') or v.get('next_search_label') or '—'}",
         f"Alert: {v.get('alert_label') or '—'}",
+        f"JobMaster voice AI: {_voice_status_label()}",
     ]
     if v.get('planb_detail'):
         lines.append(f"Plan B: {v['planb_detail']}")
