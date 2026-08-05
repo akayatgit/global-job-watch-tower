@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -12,9 +13,14 @@ from scripts.telegram_job_bot import JobMasterTelegramBot
 class FakeTelegramAPI:
     def __init__(self):
         self.sent: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, dict]] = []
 
     def send(self, chat_id: str, text: str) -> None:
         self.sent.append((chat_id, text))
+
+    def call(self, method: str, data: dict | None = None, timeout: int = 35) -> dict:
+        self.calls.append((method, data or {}))
+        return {'ok': True}
 
 
 class FakeEngine:
@@ -120,6 +126,100 @@ class TelegramBotContractTests(unittest.TestCase):
             'JobMaster provides verified jobs and live job-market insights. '
             'Ask naturally in any sentence.',
         )
+
+    def test_owner_board_command_bypasses_job_search_engine(self):
+        rendered: list[tuple[str, int | None]] = []
+
+        def board_renderer(board: str, *, days: int | None = None) -> str:
+            rendered.append((board, days))
+            return 'TOWER HEALTH · 72°'
+
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=board_renderer,
+        )
+        bot.process('owner', '/health')
+        self.assertEqual(self.api.sent, [('owner', 'TOWER HEALTH · 72°')])
+        self.assertEqual(rendered, [('health', None)])
+        self.assertEqual(self.engine.calls, [])
+
+    def test_owner_hiring_signal_command_passes_window(self):
+        rendered: list[tuple[str, int | None]] = []
+
+        def board_renderer(board: str, *, days: int | None = None) -> str:
+            rendered.append((board, days))
+            return 'HIRING SIGNALS'
+
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=board_renderer,
+        )
+        bot.process('owner', '/hiringsignals 14')
+        self.assertEqual(rendered, [('signals', 14)])
+
+    def test_owner_stats_command_becomes_grounded_insight_query(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/stats ai')
+        self.assertEqual(
+            self.engine.calls,
+            [('How many ai jobs in the past 24 hours?', 'owner')],
+        )
+        self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
+
+    def test_guest_cannot_run_owner_command(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=lambda *_args, **_kwargs: self.fail('board must not render'),
+        )
+        acked = bot._pre_ack('guest', '/health')
+        bot.process('guest', '/health', acked=acked)
+        self.assertFalse(acked)
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
+        self.assertEqual(self.engine.calls, [])
+
+    def test_command_menu_is_scoped_only_to_owner_chat(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'1221647274'},
+        )
+        self.assertTrue(bot._configure_command_menu())
+        self.assertEqual(self.api.calls[0][0], 'deleteMyCommands')
+        self.assertEqual(json.loads(self.api.calls[0][1]['scope']), {'type': 'default'})
+        self.assertEqual(self.api.calls[1][0], 'deleteMyCommands')
+        self.assertEqual(
+            json.loads(self.api.calls[1][1]['scope']),
+            {'type': 'all_private_chats'},
+        )
+        self.assertEqual(self.api.calls[2][0], 'setMyCommands')
+        scope = json.loads(self.api.calls[2][1]['scope'])
+        self.assertEqual(scope, {'type': 'chat', 'chat_id': 1221647274})
+        commands = json.loads(self.api.calls[2][1]['commands'])
+        self.assertIn({'command': 'health', 'description': 'Tower health'}, commands)
+        self.assertEqual(len(self.api.calls), 3)
 
     def test_smoke_sends_only_ten_row_grounded_contract(self):
         bot = JobMasterTelegramBot(

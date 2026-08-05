@@ -31,6 +31,7 @@ if str(ROOT) not in sys.path:
 
 from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
 from app.telegram_sessions import TelegramSessionStore  # noqa: E402
+from app.vigil_boards import render_board  # noqa: E402
 
 HERMES_ENV = Path.home() / '.hermes' / '.env'
 HEALTH_FILE = ROOT / '.data' / 'jobmaster_telegram_health.json'
@@ -41,6 +42,36 @@ HEALTH_LOCK = threading.Lock()
 SMOKE_LINK_RE = re.compile(r'https://www\.linkedin\.com/jobs/view/\d+/')
 SMOKE_ROW_RE = re.compile(r'^\d+\. .+ — .+ — .+$', re.MULTILINE)
 SMOKE_BANNED = ('mcp__', 'provider:', 'model:', 'endpoint:', 'watch tower data')
+COMMAND_RE = re.compile(r'^/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$', re.I)
+OWNER_BOARD_COMMANDS = {
+    'towerinsights': 'tower',
+    'health': 'health',
+    'hiringsignals': 'signals',
+    'hiringinsights': 'signals',
+    'signals': 'signals',
+    'searches': 'searches',
+    'watchlist': 'watchlist',
+    'fresh': 'fresh',
+    'brief': 'brief',
+    'boards': 'help',
+}
+OWNER_QUERY_COMMANDS = {
+    'stats': lambda arg: f'How many {arg or ""} jobs in the past 24 hours?'.strip(),
+    'governmentjobs': lambda _arg: 'Government jobs',
+}
+OWNER_COMMANDS = frozenset((*OWNER_BOARD_COMMANDS, *OWNER_QUERY_COMMANDS))
+OWNER_MENU = [
+    {'command': 'stats', 'description': 'Live job count · add a role'},
+    {'command': 'towerinsights', 'description': 'Tower insights'},
+    {'command': 'health', 'description': 'Tower health'},
+    {'command': 'hiringsignals', 'description': 'Hiring signals'},
+    {'command': 'searches', 'description': 'Roles being watched'},
+    {'command': 'watchlist', 'description': 'Watched companies'},
+    {'command': 'fresh', 'description': 'Freshest catches'},
+    {'command': 'governmentjobs', 'description': 'Government jobs'},
+    {'command': 'brief', 'description': 'Daily hiring brief'},
+    {'command': 'boards', 'description': 'VIGIL command menu'},
+]
 
 
 def load_env() -> dict[str, str]:
@@ -102,11 +133,15 @@ class JobMasterTelegramBot:
         engine: JobMasterEngine | None = None,
         sessions: TelegramSessionStore | None = None,
         health_enabled: bool = True,
+        owner_chat_ids: set[str] | None = None,
+        board_renderer=None,
     ):
         self.api = api
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
         self.health_enabled = health_enabled
+        self.owner_chat_ids = {str(chat_id) for chat_id in (owner_chat_ids or set())}
+        self.board_renderer = board_renderer or render_board
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
         self._chat_locks_guard = threading.Lock()
@@ -115,6 +150,62 @@ class JobMasterTelegramBot:
         self._active_chats: set[str] = set()
         self._query_count = 0
         self._page_count = 0
+
+    @staticmethod
+    def _command(text: str) -> tuple[str, str] | None:
+        match = COMMAND_RE.match((text or '').strip())
+        if not match:
+            return None
+        return match.group(1).lower(), (match.group(2) or '').strip()
+
+    def _is_owner(self, chat_id: str) -> bool:
+        return str(chat_id) in self.owner_chat_ids
+
+    def _owner_command_reply(
+        self,
+        chat_id: str,
+        command: str,
+        arg: str,
+        *,
+        update_id: int | None,
+    ) -> str:
+        if command in OWNER_BOARD_COMMANDS:
+            days = None
+            if arg:
+                try:
+                    days = int(arg.split()[0])
+                except ValueError:
+                    days = None
+            return self.board_renderer(OWNER_BOARD_COMMANDS[command], days=days)
+        query = OWNER_QUERY_COMMANDS[command](arg)
+        try:
+            return self.engine.handle(query, chat_id, update_id=update_id)
+        except TypeError as exc:
+            if 'update_id' not in str(exc):
+                raise
+            return self.engine.handle(query, chat_id)
+
+    def _configure_command_menu(self) -> bool:
+        """Remove global commands and expose VIGIL operations only to Ashok."""
+        try:
+            for scope_type in ('default', 'all_private_chats'):
+                self.api.call(
+                    'deleteMyCommands',
+                    {'scope': json.dumps({'type': scope_type})},
+                )
+            for chat_id in sorted(self.owner_chat_ids):
+                scope_chat_id: int | str = int(chat_id) if chat_id.lstrip('-').isdigit() else chat_id
+                self.api.call(
+                    'setMyCommands',
+                    {
+                        'scope': json.dumps({'type': 'chat', 'chat_id': scope_chat_id}),
+                        'commands': json.dumps(OWNER_MENU),
+                    },
+                )
+            return bool(self.owner_chat_ids)
+        except Exception:
+            LOG.exception('Telegram owner command menu setup failed')
+            return False
 
     def process(
         self,
@@ -239,7 +330,13 @@ class JobMasterTelegramBot:
 
     def _pre_ack(self, chat_id: str, text: str) -> bool:
         clean = (text or '').strip()
-        if not clean or RESET_RE.match(clean) or clean.lower() in {'/start', '/help', 'help'}:
+        parsed = self._command(clean)
+        if (
+            not clean
+            or RESET_RE.match(clean)
+            or clean.lower() in {'/start', '/help', 'help'}
+            or (parsed and parsed[0] in OWNER_COMMANDS)
+        ):
             return False
         try:
             self.api.send(chat_id, 'Thinking…')
@@ -276,6 +373,34 @@ class JobMasterTelegramBot:
     ) -> None:
         clean = (text or '').strip()
         if not clean:
+            return
+        parsed = self._command(clean)
+        if parsed and parsed[0] in OWNER_COMMANDS:
+            command, arg = parsed
+            if self._is_owner(chat_id):
+                try:
+                    reply = self._owner_command_reply(
+                        chat_id,
+                        command,
+                        arg,
+                        update_id=update_id,
+                    )
+                except Exception:
+                    LOG.exception('owner command failed chat=%s command=%s', chat_id, command)
+                    reply = 'That VIGIL command could not reach live tower data. Try again shortly.'
+            else:
+                reply = 'JobMaster can help you find verified jobs. Ask naturally in any sentence.'
+            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                self.sessions.save_update_reply(update_id, reply)
+            self.api.send(chat_id, reply)
+            if self.health_enabled:
+                self._write_health(
+                    status='running',
+                    last_result='ok',
+                    last_chat=chat_id,
+                    last_kind='owner_command' if self._is_owner(chat_id) else 'restricted_command',
+                    last_text=f'/{command}',
+                )
             return
         is_reset = bool(RESET_RE.match(clean))
         if clean.lower() in {'/start', '/help', 'help'}:
@@ -336,6 +461,7 @@ class JobMasterTelegramBot:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
         me = self.api.call('getMe').get('result') or {}
         LOG.info('JobMaster Telegram started bot=@%s', me.get('username', 'unknown'))
+        owner_commands_ready = self._configure_command_menu()
         offset_raw = self.sessions.get_state('telegram_update_offset', '')
         if offset_raw.isdigit():
             offset = int(offset_raw)
@@ -350,6 +476,7 @@ class JobMasterTelegramBot:
             status='starting',
             bot=me.get('username', ''),
             poll_successes=poll_successes,
+            owner_commands_ready=owner_commands_ready,
         )
 
         backoff = 1
@@ -367,6 +494,7 @@ class JobMasterTelegramBot:
                         bot=me.get('username', ''),
                         poll_successes=poll_successes,
                         last_poll_at=time.time(),
+                        owner_commands_ready=owner_commands_ready,
                         error=None,
                     )
                     for update in updates:
@@ -445,7 +573,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     env = load_env()
     api = TelegramAPI(env.get('TELEGRAM_BOT_TOKEN', ''))
-    bot = JobMasterTelegramBot(api, health_enabled=args.command != 'smoke')
+    owner_chat = (env.get('TELEGRAM_HOME_CHANNEL') or '').strip()
+    bot = JobMasterTelegramBot(
+        api,
+        health_enabled=args.command != 'smoke',
+        owner_chat_ids={owner_chat} if owner_chat else set(),
+    )
     if args.command == 'smoke':
         if not args.chat:
             parser.error('smoke requires --chat')
