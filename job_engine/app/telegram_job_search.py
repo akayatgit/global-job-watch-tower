@@ -364,6 +364,16 @@ class IntentInterpreter:
         valid_families = set(ROLE_PATTERNS)
         valid_metrics = {'count', 'top_companies', 'top_roles', 'compare_cities', 'trend'}
         kind = raw.get('kind') if raw.get('kind') in {'job_search', 'insight', 'help'} else fallback.kind
+        if kind == 'help' and fallback.role_family:
+            # RCA (2026-08-05, live test): sending a bare role fragment like
+            # "AI ML" got misclassified by the model as kind='help' — a
+            # generic assistant-chatter reply instead of a real search —
+            # even though the text plainly names a recognized role family.
+            # role_keywords is deliberately excluded here: it can pick up
+            # ordinary leftover words from genuinely help-ish chatter (e.g.
+            # "what can you do"), so only the clean role_family signal is
+            # trusted to override the model's own "help" classification.
+            kind = fallback.kind
         family = raw.get('role_family') if raw.get('role_family') in valid_families else fallback.role_family
         # City and experience change which facts are returned, so they require
         # deterministic evidence in the user's text. The model may correct

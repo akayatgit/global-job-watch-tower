@@ -511,6 +511,26 @@ class SecurityInjectionTests(BaseEngineTest):
         self.assertEqual(validated.cities, [])
         self.assertEqual(validated.experience, '')
 
+    def test_model_cannot_downgrade_a_clear_role_message_to_generic_help(self):
+        # RCA (2026-08-05, live test): sending "AI ML" got the live model to
+        # classify kind='help' — a generic assistant-chatter reply instead
+        # of real search results — even though the text plainly names a
+        # role. This never showed up in the mocked test suite because every
+        # other test disables the LLM entirely (IntentInterpreter(enabled=
+        # False)), so this guard is exercised directly at the validation
+        # boundary the real model output flows through.
+        fallback = _fallback_intent('AI ML')
+        self.assertEqual(fallback.role_family, 'ai_ml')
+        validated = IntentInterpreter._validate({'kind': 'help'}, fallback)
+        self.assertEqual(validated.kind, 'job_search')
+        self.assertEqual(validated.role_family, 'ai_ml')
+
+    def test_model_can_still_offer_help_when_nothing_grounds_it_as_a_search(self):
+        fallback = _fallback_intent('what can you do')
+        self.assertEqual(fallback.role_family, '')
+        validated = IntentInterpreter._validate({'kind': 'help'}, fallback)
+        self.assertEqual(validated.kind, 'help')
+
 
 # ---------------------------------------------------------------------------
 # Section 6 — core conversation and acknowledgement (JM-030 .. JM-037)
