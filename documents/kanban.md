@@ -165,25 +165,69 @@ fail-closed ambiguous-username rule as `/history`. `/guests` (access
 allow/block list) already existed from card #6; this adds the "what are they
 actually looking for" layer on top.
 
-**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` — 24 tests
-covering greeting detection, the full flow, zero-match/unrecognized-answer
-fallbacks, eager answers, `/new` cancellation, `more` continuity,
-`/guestprofile` access control, and profile updates from any role-scoped
-search. Full suite: **149/149 green.** `JM-130` through `JM-147` added to
-[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md)
-§14 for Ashok's live run.
+**Addendum (2026-08-05, afternoon) — zero-friction welcome back:** a greeting
+from a chat that already has a stored `guest_profile` no longer re-runs the
+full role→experience→city funnel. It recalls the stored role/experience/city
+deterministically — a template over the same structured fields
+`_maybe_save_guest_profile` already writes, never an LLM summary — and offers
+"reply `yes` for today's openings, or tell me a new role." `yes` jumps
+straight to grounded results with zero extra questions; naming a different
+role re-confirms experience/city for that new role only; declining (`no` /
+"something else") starts a fresh full funnel. First-time guests with no
+stored profile are unaffected — they still get the original funnel from
+JM-130. 6 new tests (`JM-148`..`JM-153` below).
 
-**Acceptance:** Ashok runs JM-130..147 live in Telegram (starting from a
-fresh `/new`'d chat) and confirms the flow feels natural, the "today" count is
-real, and `/guestprofile` shows what a test guest searched for — whether they
-went through onboarding or asked directly. Keep open until Ashok accepts the
-live result.
+**Addendum (2026-08-05, afternoon) — self-test the guest flow, no second
+phone:** Ashok — "Is it possible to create something like can switch the
+roles by a command and switch back, so I can test the guest flow as well. I
+dont have another mobile phone." New Ashok-only `/actasguest` /
+`/actasowner` toggle a per-chat "testing mode" flag
+(`simulate_guest:<chat_id>` in the existing durable `bot_state` table, so it
+survives a service restart):
+- `/actasguest` — this chat now gets exactly the guest experience: the
+  Telegram command menu is hidden (`deleteMyCommands` on that chat's scope),
+  every VIGIL/management command returns the same denial a real guest sees,
+  and search/onboarding conversations here are recorded like a guest's
+  (`conversation_history`, `guest_profiles`) so `/history` and
+  `/guestprofile` can also be exercised end-to-end against Ashok's own chat.
+- `/actasowner` — restores the command menu and full owner access instantly.
+- **Cannot lock Ashok out of his own chat:** message-queue acceptance
+  (`_sender_allowed`) and the toggle commands themselves are always gated on
+  the *real* owner check (`_is_owner`, static config), never the simulated
+  one — only command *authorization* and history *recording* flip
+  (`_effective_is_owner`). A genuine guest typing `/actasguest` gets the
+  ordinary owner-command denial and cannot flip anyone's mode. 8 new tests
+  (`JM-154`..`JM-161` below).
+
+**Evidence:** `job_engine/tests/test_jobmaster_onboarding.py` (30 tests —
+greeting detection, the full flow, zero-match/unrecognized-answer fallbacks,
+eager answers, `/new` cancellation, `more` continuity, `/guestprofile`
+access control, profile updates from any role-scoped search, and the
+welcome-back recall/accept/decline/new-role paths) +
+`job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests` (8 tests
+— command denial while simulating, menu hide/restore, restored access on
+`/actasowner`, never-silently-dropped, guest-style history recording, a real
+guest cannot flip anyone's mode, idempotent repeat toggles, state survives a
+restart). Full suite: **163/163 green.** `JM-130` through `JM-161` in
+[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md) §14
+for Ashok's live run.
+
+**Acceptance:** Ashok runs JM-130..161 live in Telegram (starting from a
+fresh `/new`'d chat) and confirms: the funnel feels natural and the "today"
+count is real; a returning guest gets the zero-friction recall instead of
+re-answering everything; `/guestprofile` shows what a test guest searched
+for; and — using only his own phone — `/actasguest` makes his own chat behave
+like a stranger's (menu gone, commands denied, same search experience) while
+`/actasowner` instantly gives full access back. Keep open until Ashok accepts
+the live result.
 
 **Files:** `job_engine/app/telegram_job_search.py` (onboarding state machine,
-`_extract_experience`/`_extract_role_family` refactor, `_role_label`),
-`job_engine/app/telegram_sessions.py` (`onboarding_sessions` +
-`guest_profiles` tables), `job_engine/scripts/telegram_job_bot.py`
-(`/guestprofile` command), `job_engine/tests/test_jobmaster_onboarding.py`,
+welcome-back recall, `_extract_experience`/`_extract_role_family` refactor,
+`_role_label`), `job_engine/app/telegram_sessions.py` (`onboarding_sessions`
++ `guest_profiles` tables), `job_engine/scripts/telegram_job_bot.py`
+(`/guestprofile`, `/actasguest`, `/actasowner`, `_effective_is_owner`,
+`_toggle_role_switch`), `job_engine/tests/test_jobmaster_onboarding.py`,
+`job_engine/tests/test_telegram_job_bot.py`,
 `documents/jobmaster-telegram-validation.md`.
 
 ## Done

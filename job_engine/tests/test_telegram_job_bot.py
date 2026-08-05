@@ -841,5 +841,117 @@ class TelegramBotContractTests(unittest.TestCase):
         )
 
 
+class RoleSwitchSelfTestTests(unittest.TestCase):
+    """/actasguest + /actasowner — test the guest experience with no second
+    phone by making Ashok's own chat behave like a guest, without ever being
+    able to lock him out of it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.engine = FakeEngine()
+        self.rendered: list[tuple[str, int | None]] = []
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=lambda board, *, days=None: self.rendered.append((board, days))
+            or 'TOWER HEALTH · 72°',
+        )
+
+    def tearDown(self):
+        self.env_patch.stop()
+        self.guests_patch.stop()
+        self.tmp.cleanup()
+
+    def test_actasguest_denies_owner_commands_in_that_chat(self):
+        self.bot.process('owner', '/actasguest')
+        self.assertIn('Testing mode ON', self.api.sent[-1][1])
+        self.bot.process('owner', '/health')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+        self.assertEqual(self.rendered, [])
+
+    def test_actasguest_hides_and_actasowner_restores_the_command_menu(self):
+        self.bot.process('owner', '/actasguest')
+        hide_calls = [call for call in self.api.calls if call[0] == 'deleteMyCommands']
+        self.assertTrue(hide_calls)
+        self.bot.process('owner', '/actasowner')
+        restore_calls = [call for call in self.api.calls if call[0] == 'setMyCommands']
+        self.assertTrue(restore_calls)
+        self.assertIn('Testing mode OFF', self.api.sent[-1][1])
+
+    def test_actasowner_restores_owner_commands(self):
+        self.bot.process('owner', '/actasguest')
+        self.bot.process('owner', '/actasowner')
+        self.bot.process('owner', '/health')
+        self.assertEqual(self.api.sent[-1][1], 'TOWER HEALTH · 72°')
+        self.assertEqual(self.rendered, [('health', None)])
+
+    def test_owner_is_never_silently_dropped_while_testing_as_a_guest(self):
+        self.bot.process('owner', '/actasguest')
+        self.bot._last_request.clear()
+        self.bot.process('owner', 'AI jobs Bangalore')
+        self.assertTrue(self.api.sent[-1][1].startswith('1. AI Engineer'))
+
+    def test_search_conversations_are_recorded_like_a_guests_while_testing(self):
+        self.bot.process('owner', '/actasguest')
+        self.assertTrue(
+            self.sessions.queue_update(
+                501, 'owner', 'AI jobs Bangalore', username='ashok',
+            )
+        )
+        self.assertTrue(
+            self.bot._process_queued(501, 'owner', 'ashok', 'AI jobs Bangalore')
+        )
+        history = self.sessions.conversation_history('ashok', limit=10)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['user_text'], 'AI jobs Bangalore')
+
+    def test_a_real_guest_cannot_flip_anyones_role_switch(self):
+        self.bot.process('guest', '/actasguest')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+        self.assertFalse(self.bot._is_simulating_guest('guest'))
+
+    def test_repeat_toggles_are_idempotent_with_a_clear_reply(self):
+        self.bot.process('owner', '/actasguest')
+        self.bot.process('owner', '/actasguest')
+        self.assertIn('Already testing as a guest', self.api.sent[-1][1])
+        self.bot.process('owner', '/actasowner')
+        self.bot.process('owner', '/actasowner')
+        self.assertIn('Already in owner mode', self.api.sent[-1][1])
+
+    def test_toggle_state_persists_across_a_restart(self):
+        self.bot.process('owner', '/actasguest')
+        restarted = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=TelegramSessionStore(self.sessions.path),
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        restarted.process('owner', '/health')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
