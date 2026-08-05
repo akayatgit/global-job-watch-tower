@@ -68,16 +68,33 @@ replaced Hermes `quick_commands`, but the new poller restored only `/new` and
 generic help—not the deterministic VIGIL command router or Telegram command
 scope.
 
-**Fix in review:** the dedicated JobMaster service routes live VIGIL boards and
-grounded shortcut queries before normal search parsing. Commands are authorized
-only when `chat_id == TELEGRAM_HOME_CHANNEL`. Startup clears default and
-all-private Telegram menus, then installs the command deck with a chat-specific
-scope for Ashok. Other users retain the same clean JobMaster conversation and
-cannot invoke VIGIL operations. Contract suite: 38 tests green.
+**Deployed (2026-08-05, 04:50 UTC):** the dedicated JobMaster service routes
+live VIGIL boards and grounded shortcut queries before normal search parsing.
+Commands are authorized only when `chat_id == TELEGRAM_HOME_CHANNEL`. Startup
+clears default and all-private Telegram menus, then installs the command deck
+with a chat-specific scope for Ashok. Other users retain the same clean
+JobMaster conversation and cannot invoke VIGIL operations. Production SHA
+`af5c1ea`; contract suite 38/38 green; deployment diagnostics PASS; exactly one
+JobMaster poller; Hermes off; interrupted `AI/ML Intern` search retriggered.
 
-**Acceptance:** deploy, confirm Ashok sees and can run the menu commands, then
-confirm Supriya does not see the command deck and `/health` cannot expose tower
-operations in her chat. Keep this card open until Ashok accepts the live result.
+**JM-002 live failure (2026-08-05, 05:43 UTC):** Ashok opened the menu and
+found user management missing. Gate 3.0 had restored insight commands but not
+the former phone-only allow/revoke controls, and the dedicated poller was not
+enforcing the managed guest store. Recovery in review adds Ashok-only
+`/allowguest`, `/blockguest`, and `/guests`; explicit blocks override default
+usernames, re-allow clears a block, numeric access can expire, owner access
+cannot be blocked, and unauthorized updates are rejected before entering the
+durable processing queue. Access mutations are serialized across processes;
+owner changes form an update-order barrier; queued/prepared replies recheck
+access; corrupt state fails closed. Contract suite: 50/50 green; focused
+security audit: no remaining high/medium findings.
+
+**Acceptance:** follow
+[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md);
+confirm Ashok sees and can run all 13 menu commands; allow, list, block, and
+re-allow a test account; then confirm a blocked account receives no reply and
+Supriya does not see the command deck or expose tower operations. Keep this
+card open until Ashok accepts the live result.
 
 ## Done
 
@@ -236,6 +253,30 @@ laptop, no Cloudflare dashboard):
 ---
 
 ## To Do
+
+### 7. Automate the JobMaster Telegram acceptance suite
+
+**Source contract:**
+[`documents/jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md).
+Ashok will first run its stable `JM-*` cases manually, one by one. Preserve those
+IDs when automating so a live failure maps directly to a regression test.
+
+**Slices:**
+
+1. Contract tests for command authorization, intent, output integrity,
+   pagination, no-match behavior, and prompt-leak attacks.
+2. Telegram sandbox bot for menu scopes, delivery retry, FIFO, and restart
+   persistence without spamming production users.
+3. Read-only production smoke for owner command, grounded search, canonical
+   links, and guest command denial.
+4. Deployment gate for exact SHA, one poller, Hermes off, owner menu ready, and
+   cancelled-role retrigger evidence.
+5. Nightly alias, typo, experience, time-window, deep-pagination, and injection
+   corpus.
+
+**Acceptance:** every automatable `JM-*` case reports pass/fail with captured
+evidence; destructive/outage cases run only in an isolated sandbox; no paid
+image credits or live LinkedIn searches are consumed without approval.
 
 ### 2. Verify + lock Cloudflare Access properly
 

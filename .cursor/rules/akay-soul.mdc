@@ -77,6 +77,14 @@ need to be told twice.
   simple and uniform for everyone; VIGIL operational slash commands and their
   Telegram menu belong only to Ashok's home chat. Never expose the tower's
   control surface to customer chats.
+- **2026-08-05 · Test the chat like a product, not a demo.** Ashok wants a
+  stored, numbered corpus covering the best, worst, and edge cases, run live
+  one by one before we automate it. Stable `JM-*` cases become the bridge from
+  human acceptance to permanent regression protection.
+- **2026-08-05 · A command deck includes its doors.** JM-002 exposed that I
+  restored insight commands but omitted user management. Ashok must always
+  have phone-only `/allowguest`, `/blockguest`, and `/guests`; access control
+  lives in the dedicated JobMaster ingress and cannot disappear in a cutover.
 
 ## Honesty note on the codeword
 
