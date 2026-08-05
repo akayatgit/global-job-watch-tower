@@ -54,6 +54,19 @@ class SmokeEngine:
         )
 
 
+class FakeVoice:
+    """Deterministic stand-in for VoiceLayer: prefixes every reply so tests
+    can assert exactly where the wiring applies it (and where it must not)."""
+
+    def __init__(self, prefix: str = 'VOICED::'):
+        self.prefix = prefix
+        self.calls: list[str] = []
+
+    def speak(self, reply: str) -> str:
+        self.calls.append(reply)
+        return f'{self.prefix}{reply}'
+
+
 class FailingTelegramAPI(FakeTelegramAPI):
     def send(self, chat_id: str, text: str) -> None:
         raise OSError('Telegram unavailable')
@@ -951,6 +964,119 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
             self.api.sent[-1][1],
             'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
         )
+
+
+class VoiceLayerWiringTests(unittest.TestCase):
+    """1A (Ashok 2026-08-05): the bot must run every grounded job-search/
+    insight reply and the /start · /help message through the voice layer,
+    but never an owner VIGIL board/management command — those must stay
+    exactly deterministic. See app/telegram_voice.py for the fact-lock
+    validator that makes the warmth pass itself safe; this suite only
+    covers the *wiring* (who gets voiced, who doesn't, and that a fresh
+    reply is voiced exactly once — not on a durable retry)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.engine = FakeEngine()
+        self.voice = FakeVoice()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            voice=self.voice,
+        )
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_job_search_reply_is_voiced(self):
+        self.bot.process('guest', 'AI jobs Bangalore')
+        expected = (
+            '1. AI Engineer — Acme — Fresher\n'
+            'https://www.linkedin.com/jobs/view/4448000001/'
+        )
+        self.assertEqual(self.api.sent[-1][1], f'{self.voice.prefix}{expected}')
+        self.assertEqual(len(self.voice.calls), 1)
+
+    def test_start_and_help_replies_are_voiced(self):
+        self.bot.process('guest', '/start')
+        self.assertTrue(self.api.sent[-1][1].startswith(self.voice.prefix))
+        self.bot.process('guest', '/help')
+        self.assertTrue(self.api.sent[-1][1].startswith(self.voice.prefix))
+
+    def test_owner_board_command_is_never_voiced(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=lambda *_a, **_k: 'TOWER HEALTH · 72°',
+            voice=self.voice,
+        )
+        bot.process('owner', '/health')
+        self.assertEqual(self.api.sent[-1], ('owner', 'TOWER HEALTH · 72°'))
+        self.assertEqual(self.voice.calls, [])
+
+    def test_owner_management_command_is_never_voiced(self):
+        self.bot.process('owner', '/allowguest @newperson')
+        self.assertEqual(
+            self.api.sent[-1],
+            ('owner', 'Allowed @newperson. Their next message will work.'),
+        )
+        self.assertEqual(self.voice.calls, [])
+
+    def test_engine_failure_fallback_is_never_voiced(self):
+        class BrokenEngine:
+            def handle(self, *_args, **_kwargs):
+                raise RuntimeError('boom')
+
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=BrokenEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            voice=self.voice,
+        )
+        bot.process('guest', 'AI jobs Bangalore')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster could not reach live Watch Tower data. Try again shortly.',
+        )
+        self.assertEqual(self.voice.calls, [])
+
+    def test_durable_retry_reuses_the_already_voiced_reply_without_recomputing(self):
+        telegram_guests.add_guest('guest', minutes=60, added_by='test')
+        self.assertTrue(
+            self.sessions.queue_update(1, 'guest', 'AI jobs Bangalore', username=''),
+        )
+        self.assertTrue(self.bot._process_queued(1, 'guest', '', 'AI jobs Bangalore'))
+        self.assertEqual(len(self.voice.calls), 1)
+        voiced_once = self.api.sent[-1][1]
+
+        # Requeue the same update as a durability replay (e.g. after a crash
+        # before the inbox row was cleared) — the prepared reply must be
+        # resent as-is, never re-voiced a second time.
+        self.sessions.queue_update(1, 'guest', 'AI jobs Bangalore', username='')
+        self.sessions.save_update_reply(1, voiced_once)
+        self.assertTrue(self.bot._process_queued(1, 'guest', '', 'AI jobs Bangalore'))
+        self.assertEqual(len(self.voice.calls), 1)
+        self.assertEqual(self.api.sent[-1][1], voiced_once)
 
 
 if __name__ == '__main__':
