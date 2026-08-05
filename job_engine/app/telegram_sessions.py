@@ -14,6 +14,10 @@ from app import config
 DEFAULT_DB = config.BASE_DIR / '.data' / 'jobmaster_telegram.db'
 
 
+class AmbiguousTelegramIdentity(ValueError):
+    """A mutable username has belonged to more than one numeric chat."""
+
+
 class TelegramSessionStore:
     def __init__(self, path: Path | str = DEFAULT_DB):
         self.path = Path(path)
@@ -256,40 +260,88 @@ class TelegramSessionStore:
         bot_reply: str,
         *,
         completed_at: float | None = None,
-        retention_per_chat: int = 500,
+        retention_per_chat: int = 40,
     ) -> None:
         """Idempotently retain a delivered user message + final bot reply."""
-        keep = max(40, min(int(retention_per_chat), 5000))
+        keep = max(1, min(int(retention_per_chat), 40))
         with self._lock, self._connect() as conn:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO conversation_history(
-                    update_id, chat_id, username, user_text, bot_reply, completed_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(update_id),
-                    str(chat_id),
-                    str(username or '').strip().lstrip('@').lower(),
-                    str(user_text),
-                    str(bot_reply),
-                    float(completed_at if completed_at is not None else time.time()),
-                ),
+            self._record_conversation(
+                conn,
+                update_id,
+                chat_id,
+                username,
+                user_text,
+                bot_reply,
+                completed_at=completed_at,
+                keep=keep,
+            )
+
+    @staticmethod
+    def _record_conversation(
+        conn: sqlite3.Connection,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+        *,
+        completed_at: float | None,
+        keep: int,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO conversation_history(
+                update_id, chat_id, username, user_text, bot_reply, completed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(update_id),
+                str(chat_id),
+                str(username or '').strip().lstrip('@').lower(),
+                str(user_text),
+                str(bot_reply),
+                float(completed_at if completed_at is not None else time.time()),
+            ),
+        )
+        conn.execute(
+            """
+            DELETE FROM conversation_history
+            WHERE chat_id=?
+              AND update_id NOT IN (
+                SELECT update_id
+                FROM conversation_history
+                WHERE chat_id=?
+                ORDER BY completed_at DESC, update_id DESC
+                LIMIT ?
+              )
+            """,
+            (str(chat_id), str(chat_id), keep),
+        )
+
+    def finalize_guest_conversation(
+        self,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+    ) -> None:
+        """Atomically archive a delivered guest reply and clear its inbox row."""
+        with self._lock, self._connect() as conn:
+            self._record_conversation(
+                conn,
+                update_id,
+                chat_id,
+                username,
+                user_text,
+                bot_reply,
+                completed_at=None,
+                keep=40,
             )
             conn.execute(
-                """
-                DELETE FROM conversation_history
-                WHERE chat_id=?
-                  AND update_id NOT IN (
-                    SELECT update_id
-                    FROM conversation_history
-                    WHERE chat_id=?
-                    ORDER BY completed_at DESC, update_id DESC
-                    LIMIT ?
-                  )
-                """,
-                (str(chat_id), str(chat_id), keep),
+                'DELETE FROM telegram_inbox WHERE update_id=?',
+                (int(update_id),),
             )
 
     def conversation_history(
@@ -302,8 +354,26 @@ class TelegramSessionStore:
         raw = str(identity or '').strip()
         count = max(1, min(int(limit), 40))
         if raw.startswith('@'):
-            where = 'username = ? COLLATE NOCASE'
-            value = raw[1:]
+            username = raw[1:]
+            with self._connect() as conn:
+                identities = conn.execute(
+                    """
+                    SELECT chat_id, MAX(completed_at) AS last_seen
+                    FROM conversation_history
+                    WHERE username = ? COLLATE NOCASE
+                    GROUP BY chat_id
+                    ORDER BY last_seen DESC
+                    """,
+                    (username,),
+                ).fetchall()
+            if len(identities) > 1:
+                raise AmbiguousTelegramIdentity(
+                    f'@{username} has more than one stored Telegram ID'
+                )
+            if not identities:
+                return []
+            where = 'chat_id = ?'
+            value = str(identities[0]['chat_id'])
         elif raw.isdigit():
             where = 'chat_id = ?'
             value = raw

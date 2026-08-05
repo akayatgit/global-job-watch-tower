@@ -119,12 +119,19 @@ def _load() -> dict:
             'usernames': {},
             'blocked_ids': {},
             'blocked_usernames': {},
+            'identities': {},
         }
     try:
         data = json.loads(GUESTS_FILE.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             raise ValueError('guest store root must be an object')
-        for key in ('guests', 'usernames', 'blocked_ids', 'blocked_usernames'):
+        for key in (
+            'guests',
+            'usernames',
+            'blocked_ids',
+            'blocked_usernames',
+            'identities',
+        ):
             if key not in data:
                 data[key] = {}
             elif not isinstance(data[key], dict):
@@ -231,6 +238,9 @@ def add_username(username, added_by: str = '') -> dict:
     data = _load()
     entry = {'added_at': time.time(), 'added_by': str(added_by or '')}
     data['blocked_usernames'].pop(handle, None)
+    for user_id, identity in data['identities'].items():
+        if _norm_username(identity.get('username')) == handle:
+            data['blocked_ids'].pop(user_id, None)
     data['usernames'][handle] = entry
     _save(data)
     return entry
@@ -270,6 +280,9 @@ def block_username(username, blocked_by: str = '') -> dict:
     data['usernames'].pop(handle, None)
     entry = {'blocked_at': time.time(), 'blocked_by': str(blocked_by or '')}
     data['blocked_usernames'][handle] = entry
+    for user_id, identity in data['identities'].items():
+        if _norm_username(identity.get('username')) == handle:
+            data['blocked_ids'][user_id] = dict(entry)
     _save(data)
     return entry
 
@@ -322,6 +335,28 @@ def list_blocked() -> dict[str, list[str]]:
         'user_ids': sorted(data['blocked_ids']),
         'usernames': sorted(data['blocked_usernames']),
     }
+
+
+@_locked
+def observe_identity(user_id, username) -> None:
+    """Remember the stable numeric id behind an allowed mutable username."""
+    user_id = str(user_id or '').strip()
+    handle = _norm_username(username)
+    if not user_id.isdigit() or int(user_id) <= 0 or not handle:
+        return
+    data = _load()
+    data['identities'][user_id] = {
+        'username': handle,
+        'seen_at': time.time(),
+    }
+    if len(data['identities']) > 5000:
+        oldest = sorted(
+            data['identities'],
+            key=lambda value: data['identities'][value].get('seen_at', 0),
+        )
+        for stale_id in oldest[:len(data['identities']) - 5000]:
+            data['identities'].pop(stale_id, None)
+    _save(data)
 
 
 def format_ttl(seconds: float) -> str:

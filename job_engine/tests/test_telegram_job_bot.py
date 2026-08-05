@@ -9,7 +9,11 @@ from unittest.mock import patch
 
 from app import telegram_guests
 from app.telegram_sessions import TelegramSessionStore
-from scripts.telegram_job_bot import JobMasterTelegramBot
+from scripts.telegram_job_bot import (
+    JobMasterTelegramBot,
+    _telegram_chunks,
+    _utf16_units,
+)
 
 
 class FakeTelegramAPI:
@@ -277,7 +281,40 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertNotIn('question 4\n', reply)
         self.assertIn('question 5', reply)
         self.assertIn('question 44', reply)
+        self.assertLessEqual(_utf16_units(reply), 3700)
+        self.assertEqual(
+            len(self.sessions.conversation_history('@cryptoonz', limit=40)),
+            40,
+        )
         self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
+
+    def test_recycled_username_history_fails_closed(self):
+        self.sessions.record_conversation(
+            801,
+            '111',
+            'cryptoonz',
+            'first person secret',
+            'first answer',
+        )
+        self.sessions.record_conversation(
+            802,
+            '222',
+            'cryptoonz',
+            'second person secret',
+            'second answer',
+        )
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/history @cryptoonz 40')
+        reply = self.api.sent[-1][1]
+        self.assertIn('more than one Telegram account', reply)
+        self.assertNotIn('first person secret', reply)
+        self.assertNotIn('second person secret', reply)
 
     def test_guest_cannot_read_conversation_history(self):
         self.sessions.record_conversation(
@@ -475,6 +512,13 @@ class TelegramBotContractTests(unittest.TestCase):
         bot.process('owner', '/allowguest @supriyamk')
         self.assertTrue(bot._sender_allowed('99', 'supriyamk'))
 
+    def test_username_block_also_blocks_observed_numeric_identity(self):
+        telegram_guests.add_username('newperson')
+        telegram_guests.observe_identity('99', 'newperson')
+        telegram_guests.block_username('newperson', blocked_by='owner')
+        self.assertFalse(telegram_guests.is_allowed('99', 'changedname'))
+        self.assertIn('99', telegram_guests.list_blocked()['user_ids'])
+
     def test_command_menu_is_scoped_only_to_owner_chat(self):
         bot = JobMasterTelegramBot(
             self.api,
@@ -609,6 +653,57 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]['user_text'], 'AI jobs Bangalore')
         self.assertTrue(history[0]['bot_reply'].startswith('1. AI Engineer'))
+
+    def test_owner_commands_are_not_stored_as_guest_history(self):
+        self.assertTrue(
+            self.sessions.queue_update(
+                104,
+                '42',
+                '/guests',
+                username='ashok',
+            )
+        )
+        self.assertTrue(
+            self.bot._process_queued(
+                104,
+                '42',
+                'ashok',
+                '/guests',
+            )
+        )
+        self.assertEqual(self.sessions.conversation_history('42', limit=40), [])
+
+    def test_history_failure_does_not_strand_delivered_chat(self):
+        telegram_guests.add_username('newperson')
+        self.assertTrue(
+            self.sessions.queue_update(
+                105,
+                '99',
+                'AI jobs Bangalore',
+                username='newperson',
+            )
+        )
+        with patch.object(
+            self.sessions,
+            'finalize_guest_conversation',
+            side_effect=OSError('disk full'),
+        ):
+            with self.assertLogs('jobmaster-telegram', level='ERROR'):
+                self.assertTrue(
+                    self.bot._process_queued(
+                        105,
+                        '99',
+                        'newperson',
+                        'AI jobs Bangalore',
+                    )
+                )
+        self.assertEqual(self.sessions.pending_updates(), [])
+
+    def test_telegram_chunks_respect_utf16_limit(self):
+        chunks = _telegram_chunks('💥' * 4000)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(_utf16_units(chunk) <= 3800 for chunk in chunks))
+        self.assertEqual(''.join(chunks), '💥' * 4000)
 
     def test_same_chat_updates_execute_in_telegram_order(self):
         for update_id, text in ((1, '/new'), (2, '/reset'), (3, '/clear')):
