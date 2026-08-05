@@ -198,8 +198,11 @@ class JobMasterTelegramBot:
             if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', handle):
                 return 'username', handle
             return None
-        if re.fullmatch(r'\d+', value) and int(value) > 0:
-            return 'user_id', value
+        if re.fullmatch(r'\d+', value):
+            user_id = int(value)
+            if 0 < user_id < 2**52:
+                return 'user_id', value
+            return None
         if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', value):
             return 'username', value
         return None
@@ -407,6 +410,14 @@ class JobMasterTelegramBot:
         acked: bool = False,
     ) -> bool:
         prepared = self.sessions.load_update_reply(update_id)
+        if not self._sender_allowed(chat_id, username):
+            LOG.info(
+                'dropped queued Telegram sender after access change chat=%s username=%s',
+                chat_id,
+                username or 'none',
+            )
+            self.sessions.complete_update(update_id)
+            return True
         if prepared is not None:
             try:
                 self.api.send(chat_id, prepared)
@@ -415,14 +426,6 @@ class JobMasterTelegramBot:
                 if self.health_enabled:
                     self._write_health(status='degraded', error=str(exc)[:200])
                 return False
-            self.sessions.complete_update(update_id)
-            return True
-        if not self._sender_allowed(chat_id, username):
-            LOG.info(
-                'dropped queued Telegram sender after access change chat=%s username=%s',
-                chat_id,
-                username or 'none',
-            )
             self.sessions.complete_update(update_id)
             return True
         if self._safe_process(chat_id, text, acked=acked, update_id=update_id):

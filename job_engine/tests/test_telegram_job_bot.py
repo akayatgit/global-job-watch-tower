@@ -291,7 +291,7 @@ class TelegramBotContractTests(unittest.TestCase):
         )
         self.assertFalse(telegram_guests.is_username_allowed('bad!'))
 
-        for invalid_id in ('0', '-1', '@12345'):
+        for invalid_id in ('0', '-1', '@12345', str(2**52)):
             bot.process('12345', f'/allowguest {invalid_id}')
             self.assertEqual(
                 self.api.sent[-1],
@@ -341,6 +341,37 @@ class TelegramBotContractTests(unittest.TestCase):
             )
         )
         self.assertEqual(self.engine.calls, [])
+        self.assertEqual(self.sessions.pending_updates(), [])
+
+    def test_prepared_reply_is_not_sent_after_guest_is_blocked(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/allowguest @newperson')
+        self.assertTrue(
+            self.sessions.queue_update(
+                502,
+                '99',
+                'AI jobs Bangalore',
+                username='newperson',
+            )
+        )
+        self.sessions.save_update_reply(502, 'prepared private result')
+        bot.process('owner', '/blockguest @newperson')
+        sent_before_retry = list(self.api.sent)
+        self.assertTrue(
+            bot._process_queued(
+                502,
+                '99',
+                'newperson',
+                'AI jobs Bangalore',
+            )
+        )
+        self.assertEqual(self.api.sent, sent_before_retry)
         self.assertEqual(self.sessions.pending_updates(), [])
 
     def test_concurrent_access_mutations_do_not_lose_grants(self):
