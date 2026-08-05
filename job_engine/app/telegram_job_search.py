@@ -12,6 +12,7 @@ import difflib
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
@@ -42,6 +43,20 @@ GREETING_RE = re.compile(
 SKIP_WORD_RE = re.compile(
     r'^\s*(?:any|no|none|n/?a|nope|skip|anywhere|all|doesn.?t matter|does not matter|'
     r'no preference|not sure|whatever)\s*[!.,]*\s*$',
+    re.I,
+)
+# A returning guest saying "yes" to their recalled profile — zero-friction
+# repeat search, no re-asking role/experience/city.
+AFFIRMATIVE_RE = re.compile(
+    r'^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|go ahead|same|same one|'
+    r'do that|continue|that one)\s*[!.,]*\s*$',
+    re.I,
+)
+# A returning guest explicitly wanting a different search than the one
+# recalled from their stored profile.
+DECLINE_RETURN_RE = re.compile(
+    r'^\s*(?:no|nope|not that|something else|something new|different|new one|'
+    r'new search|fresh)\s*[!.,]*\s*$',
     re.I,
 )
 ROLE_FAMILY_LABELS = {
@@ -404,6 +419,20 @@ def _is_skip_word(text: str) -> bool:
     return bool(SKIP_WORD_RE.match((text or '').strip()))
 
 
+def _relative_age(timestamp: float) -> str:
+    seconds = max(0, int(time.time() - float(timestamp)))
+    if seconds < 60:
+        return 'Just now'
+    minutes = seconds // 60
+    if minutes < 60:
+        return f'{minutes}m ago,'
+    hours = minutes // 60
+    if hours < 24:
+        return f'{hours}h ago,'
+    days = hours // 24
+    return f'{days}d ago,'
+
+
 def _role_label(role_family: str, role_keywords: list[str]) -> str:
     parts: list[str] = []
     if role_family:
@@ -669,6 +698,18 @@ class JobMasterEngine:
     # -- Guided onboarding: greet → role → experience → city → results -----
 
     def _start_onboarding(self, chat_id: str, *, update_id: int | None = None) -> str:
+        """A greeting either starts the fresh role→experience→city funnel, or
+        — for a returning guest with a remembered profile — recalls it and
+        offers a zero-friction repeat instead of asking everything again.
+        This recall is a deterministic template over stored structured
+        fields; no LLM ever summarizes or invents what a guest searched for.
+        """
+        profile = self.sessions.get_guest_profile(chat_id)
+        if profile and (profile.get('role_family') or profile.get('role_keywords')):
+            return self._welcome_back_with_profile(profile, chat_id, update_id=update_id)
+        return self._start_fresh_onboarding(chat_id, update_id=update_id)
+
+    def _start_fresh_onboarding(self, chat_id: str, *, update_id: int | None = None) -> str:
         state = {
             'stage': 'ask_role',
             'role_family': '',
@@ -682,6 +723,34 @@ class JobMasterEngine:
         reply = (
             "Hi! I'm JobMaster. What job role are you looking for? "
             '(e.g. AI Engineer, Java Developer, Product Manager)'
+        )
+        self.sessions.apply_result(chat_id, reply, update_id=update_id)
+        return reply
+
+    def _welcome_back_with_profile(
+        self,
+        profile: dict[str, Any],
+        chat_id: str,
+        *,
+        update_id: int | None = None,
+    ) -> str:
+        state = {
+            'stage': 'ask_return_choice',
+            'role_family': profile.get('role_family') or '',
+            'role_keywords': profile.get('role_keywords') or [],
+            'experience': profile.get('experience') or '',
+            'experience_known': True,
+            'cities': [profile['city']] if profile.get('city') else [],
+            'city_known': True,
+        }
+        self.sessions.save_onboarding(chat_id, state)
+        label = _role_label(state['role_family'], state['role_keywords'])
+        exp_txt = state['experience'] or 'any experience'
+        city_txt = city_label(state['cities'][0]) if state['cities'] else 'any city'
+        age = _relative_age(profile['updated_at'])
+        reply = (
+            f'Welcome back! {age} you were looking for {label} ({exp_txt}) in {city_txt}. '
+            "Reply 'yes' for today's openings on that, or tell me a new role."
         )
         self.sessions.apply_result(chat_id, reply, update_id=update_id)
         return reply
@@ -735,11 +804,34 @@ class JobMasterEngine:
                         'across all cities. '
                     )
             state['city_known'] = True
+        elif stage == 'ask_return_choice':
+            if AFFIRMATIVE_RE.match(raw):
+                return self._finish_onboarding(state, chat_id, update_id=update_id)
+            if _is_skip_word(raw) or DECLINE_RETURN_RE.match(raw):
+                return self._start_fresh_onboarding(chat_id, update_id=update_id)
+            parsed = _fallback_intent(raw)
+            if not parsed.role_family and not parsed.role_keywords:
+                reply = (
+                    "Sorry, I didn't catch that — reply 'yes' for today's openings "
+                    'on your last search, or tell me a new job role.'
+                )
+                self.sessions.apply_result(chat_id, reply, update_id=update_id)
+                return reply
+            # A different role than the one recalled — treat it as a fresh
+            # ask, re-confirming experience/city rather than reusing the old
+            # profile's values for an unrelated role.
+            state['role_family'] = parsed.role_family
+            state['role_keywords'] = parsed.role_keywords
+            state['experience'] = ''
+            state['experience_known'] = False
+            state['cities'] = []
+            state['city_known'] = False
+            self._absorb_optional_fields(state, parsed)
         else:
             # Corrupt/unknown stage recorded by an older build — fail safe by
             # restarting the flow rather than getting stuck.
             self.sessions.clear_onboarding(chat_id)
-            return self._start_onboarding(chat_id, update_id=update_id)
+            return self._start_fresh_onboarding(chat_id, update_id=update_id)
 
         return self._progress_onboarding(state, chat_id, update_id=update_id, note=note)
 
