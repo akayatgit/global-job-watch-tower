@@ -112,8 +112,12 @@ unfiltered job dump, ending in the same grounded `_job_reply` results plus a
 forward-looking suggestion — Ashok's ask for "collect info gradually" and
 "user/guest management." Every completed flow saves a per-guest profile
 (role/experience/city) readable via the new Ashok-only `/guestprofile`
-command. 20 new contract tests, 145/145 green; live acceptance tracked as
-JM-130..145 in the validation doc and kanban card #9.
+command. A returning guest's greeting recalls that stored profile instead of
+re-running the funnel ("zero friction... when they return"), and Ashok can
+now self-test the entire guest experience from his own phone via
+`/actasguest` / `/actasowner` — no second phone needed, and it can never lock
+him out of his own chat. 163/163 tests green; live acceptance tracked as
+JM-130..161 in the validation doc and kanban card #9.
 
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,
