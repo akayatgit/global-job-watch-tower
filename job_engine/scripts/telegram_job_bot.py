@@ -83,6 +83,7 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'revokeuser',
     'guests',
     'guestlist',
+    'history',
 })
 OWNER_COMMANDS = frozenset((
     *OWNER_BOARD_COMMANDS,
@@ -93,6 +94,7 @@ OWNER_MENU = [
     {'command': 'allowguest', 'description': 'Allow a person'},
     {'command': 'blockguest', 'description': 'Block a person'},
     {'command': 'guests', 'description': 'People with access'},
+    {'command': 'history', 'description': 'Guest conversation history'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
     {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
@@ -240,9 +242,62 @@ class JobMasterTelegramBot:
             return self.engine.handle(query, chat_id)
 
     @staticmethod
-    def _management_reply(chat_id: str, command: str, arg: str) -> str:
+    def _relative_age(timestamp: float) -> str:
+        seconds = max(0, int(time.time() - float(timestamp)))
+        if seconds < 60:
+            return 'just now'
+        minutes = seconds // 60
+        if minutes < 60:
+            return f'{minutes}m ago'
+        hours = minutes // 60
+        if hours < 24:
+            return f'{hours}h ago'
+        days = hours // 24
+        return f'{days}d ago'
+
+    def _management_reply(self, chat_id: str, command: str, arg: str) -> str:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
+        if command == 'history':
+            parts = (arg or '').split(maxsplit=1)
+            if not parts:
+                return 'Usage: /history <@username or Telegram ID> [1–40]'
+            identity = self._identity(parts[0])
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, identity_value = identity
+            limit = 10
+            if len(parts) >= 2:
+                try:
+                    limit = int(parts[1])
+                except ValueError:
+                    return 'History count must be a whole number from 1 to 40.'
+                if limit < 1:
+                    return 'History count must be a whole number from 1 to 40.'
+                limit = min(limit, 40)
+            lookup = (
+                f'@{identity_value}'
+                if identity_kind == 'username'
+                else identity_value
+            )
+            history = self.sessions.conversation_history(lookup, limit=limit)
+            if not history:
+                return (
+                    f'No stored conversations for {lookup}. '
+                    'History starts after this feature is deployed.'
+                )
+            lines = [
+                f'CONVERSATION HISTORY · {lookup} · latest {len(history)}',
+                '',
+            ]
+            for index, item in enumerate(history, 1):
+                lines.extend([
+                    f"{index}. {self._relative_age(item['completed_at'])}",
+                    f"Guest: {item['user_text']}",
+                    f"JobMaster: {item['bot_reply']}",
+                    '',
+                ])
+            return '\n'.join(lines).rstrip()
         if command in allow_commands:
             parts = (arg or '').split(maxsplit=2)
             if not parts:
@@ -426,9 +481,25 @@ class JobMasterTelegramBot:
                 if self.health_enabled:
                     self._write_health(status='degraded', error=str(exc)[:200])
                 return False
+            self.sessions.record_conversation(
+                update_id,
+                chat_id,
+                username,
+                text,
+                prepared,
+            )
             self.sessions.complete_update(update_id)
             return True
         if self._safe_process(chat_id, text, acked=acked, update_id=update_id):
+            reply = self.sessions.load_update_reply(update_id)
+            if reply is not None:
+                self.sessions.record_conversation(
+                    update_id,
+                    chat_id,
+                    username,
+                    text,
+                    reply,
+                )
             self.sessions.complete_update(update_id)
             return True
         return False

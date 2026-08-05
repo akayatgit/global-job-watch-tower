@@ -49,6 +49,18 @@ class TelegramSessionStore:
                     reply TEXT,
                     created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS conversation_history (
+                    update_id INTEGER PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    username TEXT NOT NULL DEFAULT '',
+                    user_text TEXT NOT NULL,
+                    bot_reply TEXT NOT NULL,
+                    completed_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_conversation_history_chat
+                    ON conversation_history(chat_id, completed_at DESC);
+                CREATE INDEX IF NOT EXISTS ix_conversation_history_username
+                    ON conversation_history(username COLLATE NOCASE, completed_at DESC);
                 """
             )
             columns = {
@@ -234,3 +246,89 @@ class TelegramSessionStore:
         if row is None or row['reply'] is None:
             return None
         return str(row['reply'])
+
+    def record_conversation(
+        self,
+        update_id: int,
+        chat_id: str,
+        username: str,
+        user_text: str,
+        bot_reply: str,
+        *,
+        completed_at: float | None = None,
+        retention_per_chat: int = 500,
+    ) -> None:
+        """Idempotently retain a delivered user message + final bot reply."""
+        keep = max(40, min(int(retention_per_chat), 5000))
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO conversation_history(
+                    update_id, chat_id, username, user_text, bot_reply, completed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(update_id),
+                    str(chat_id),
+                    str(username or '').strip().lstrip('@').lower(),
+                    str(user_text),
+                    str(bot_reply),
+                    float(completed_at if completed_at is not None else time.time()),
+                ),
+            )
+            conn.execute(
+                """
+                DELETE FROM conversation_history
+                WHERE chat_id=?
+                  AND update_id NOT IN (
+                    SELECT update_id
+                    FROM conversation_history
+                    WHERE chat_id=?
+                    ORDER BY completed_at DESC, update_id DESC
+                    LIMIT ?
+                  )
+                """,
+                (str(chat_id), str(chat_id), keep),
+            )
+
+    def conversation_history(
+        self,
+        identity: str,
+        *,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Return oldest→newest within the requested latest window."""
+        raw = str(identity or '').strip()
+        count = max(1, min(int(limit), 40))
+        if raw.startswith('@'):
+            where = 'username = ? COLLATE NOCASE'
+            value = raw[1:]
+        elif raw.isdigit():
+            where = 'chat_id = ?'
+            value = raw
+        else:
+            where = 'username = ? COLLATE NOCASE'
+            value = raw
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT update_id, chat_id, username, user_text, bot_reply, completed_at
+                FROM conversation_history
+                WHERE {where}
+                ORDER BY completed_at DESC, update_id DESC
+                LIMIT ?
+                """,
+                (value, count),
+            ).fetchall()
+        return [
+            {
+                'update_id': int(row['update_id']),
+                'chat_id': str(row['chat_id']),
+                'username': str(row['username'] or ''),
+                'user_text': str(row['user_text']),
+                'bot_reply': str(row['bot_reply']),
+                'completed_at': float(row['completed_at']),
+            }
+            for row in reversed(rows)
+        ]

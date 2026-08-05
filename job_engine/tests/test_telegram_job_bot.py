@@ -253,6 +253,69 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertTrue(bot._sender_allowed('99', 'newperson'))
         self.assertNotIn('newperson', telegram_guests.list_blocked()['usernames'])
 
+    def test_owner_can_read_at_most_forty_guest_conversations(self):
+        for index in range(45):
+            self.sessions.record_conversation(
+                1000 + index,
+                '99',
+                'cryptoonz',
+                f'question {index}',
+                f'answer {index}',
+                completed_at=1000 + index,
+            )
+        restarted = TelegramSessionStore(self.sessions.path)
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=restarted,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/history @cryptoonz 999')
+        reply = self.api.sent[-1][1]
+        self.assertIn('CONVERSATION HISTORY · @cryptoonz · latest 40', reply)
+        self.assertNotIn('question 4\n', reply)
+        self.assertIn('question 5', reply)
+        self.assertIn('question 44', reply)
+        self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
+
+    def test_guest_cannot_read_conversation_history(self):
+        self.sessions.record_conversation(
+            900,
+            '99',
+            'cryptoonz',
+            'private question',
+            'private answer',
+        )
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('guest', '/history @cryptoonz 40')
+        self.assertNotIn('private question', self.api.sent[-1][1])
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+
+    def test_history_command_explains_pre_feature_gap(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/history @cryptoonz 40')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'No stored conversations for @cryptoonz. '
+            'History starts after this feature is deployed.',
+        )
+
     def test_owner_can_timebox_and_block_numeric_guest(self):
         bot = JobMasterTelegramBot(
             self.api,
@@ -436,6 +499,10 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertIn({'command': 'allowguest', 'description': 'Allow a person'}, commands)
         self.assertIn({'command': 'blockguest', 'description': 'Block a person'}, commands)
         self.assertIn({'command': 'guests', 'description': 'People with access'}, commands)
+        self.assertIn(
+            {'command': 'history', 'description': 'Guest conversation history'},
+            commands,
+        )
         self.assertEqual(len(self.api.calls), 3)
 
     def test_command_menu_removes_previous_owner_chat_scope(self):
@@ -519,6 +586,29 @@ class TelegramBotContractTests(unittest.TestCase):
             restarted.pending_updates(),
             [(102, '42', 'newperson', 'AI jobs Bangalore')],
         )
+
+    def test_successful_delivery_records_conversation_pair(self):
+        telegram_guests.add_username('newperson')
+        self.assertTrue(
+            self.sessions.queue_update(
+                103,
+                '99',
+                'AI jobs Bangalore',
+                username='newperson',
+            )
+        )
+        self.assertTrue(
+            self.bot._process_queued(
+                103,
+                '99',
+                'newperson',
+                'AI jobs Bangalore',
+            )
+        )
+        history = self.sessions.conversation_history('@newperson', limit=40)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['user_text'], 'AI jobs Bangalore')
+        self.assertTrue(history[0]['bot_reply'].startswith('1. AI Engineer'))
 
     def test_same_chat_updates_execute_in_telegram_order(self):
         for update_id, text in ((1, '/new'), (2, '/reset'), (3, '/clear')):
