@@ -10,7 +10,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # JobMaster contract suite (documents/jobmaster-telegram-validation.md,
+  # kanban card #7). Runs on a GitHub-hosted runner so a code regression is
+  # caught before it ever reaches the self-hosted ThinkPad deploy job below —
+  # not just diagnosed after the fact via post-deploy diagnostics.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: pip install python-dotenv
+      - name: Run JobMaster contract suite
+        run: |
+          cd job_engine
+          python -m unittest discover -s tests -v
+
   deploy:
+    needs: test
     runs-on: [self-hosted, watch-tower]
     timeout-minutes: 30
     steps:
