@@ -77,7 +77,15 @@ verified jobs and grounded market facts out. No Hermes Telegram fallback.
 **Owner-command fast follow:** restore deterministic VIGIL slash commands after
 the Hermes cutover, scope the Telegram menu to Ashok's home chat, and keep all
 customer chats on the clean JobMaster interface. Code and contract tests are
-green; live acceptance remains open on kanban card #6.
+green and deployed at `af5c1ea`; live acceptance remains open on kanban card #6.
+
+**Acceptance track:** Ashok will execute the numbered best-case, worst-case,
+edge-case, security, pagination, insight, and owner-isolation suite in
+[`jobmaster-telegram-validation.md`](./jobmaster-telegram-validation.md), one
+case at a time with screenshots and actual replies. Keep test IDs stable.
+Next automation slice converts the same IDs into contract tests, a Telegram
+sandbox integration suite, a read-only live smoke, deployment gates, and a
+nightly regression corpus (kanban #7).
 
 Gate 3.0 expands later through the same capability boundary: subscriptions,
 ATS resume fixing, interview preparation, PDF guides, projects, quizzes,

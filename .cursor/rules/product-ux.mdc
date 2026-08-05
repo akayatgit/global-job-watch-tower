@@ -428,3 +428,9 @@ use — they should love opening the app, never fight it.
   Owner commands (`/stats`, `/towerinsights`, `/health`, `/hiringsignals`,
   `/searches`, `/watchlist`, `/fresh`, `/governmentjobs`, `/brief`, `/boards`)
   route deterministically. Other users never execute or see VIGIL operations.
+- **JobMaster acceptance corpus (2026-08-05):** Store live chat tests in
+  `documents/jobmaster-telegram-validation.md` with stable `JM-*` IDs. Ashok
+  runs them one by one and records the exact reply/screenshot. Cover happy,
+  worst, edge, security, isolation, pagination, insight, and recovery paths.
+  Later automation must preserve the same IDs and must not replace Ashok's live
+  acceptance for user-facing closure.
