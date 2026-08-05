@@ -183,10 +183,14 @@ def _remember_identity(data: dict, user_id: str, handle: str) -> None:
     identity['current_username'] = handle
     identity['seen_at'] = now
     usernames[handle] = now
-    if len(usernames) > 20:
-        oldest = sorted(usernames, key=usernames.get)
-        for stale_handle in oldest[:len(usernames) - 20]:
-            usernames.pop(stale_handle, None)
+
+
+def _binding_candidates(data: dict, handle: str) -> set[str]:
+    return {
+        user_id
+        for user_id, identity in data['identities'].items()
+        if handle in _identity_usernames(identity)
+    }
 
 
 @_locked
@@ -204,6 +208,14 @@ def is_allowed(user_id, username=None) -> bool:
         return False
     if handle and (handle in DEFAULT_ALLOWED_USERNAMES or handle in data['usernames']):
         bound_user_id = str(data['username_bindings'].get(handle) or '')
+        if not bound_user_id:
+            candidates = _binding_candidates(data, handle)
+            if len(candidates) > 1:
+                return False
+            if len(candidates) == 1:
+                bound_user_id = next(iter(candidates))
+                data['username_bindings'][handle] = bound_user_id
+                _save(data)
         if bound_user_id and bound_user_id != user_id:
             return False
         if not bound_user_id:

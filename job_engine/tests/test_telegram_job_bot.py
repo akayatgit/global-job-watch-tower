@@ -524,12 +524,53 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
         self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
 
+    def test_existing_identity_is_migrated_before_username_can_be_claimed(self):
+        telegram_guests.GUESTS_FILE.write_text(
+            json.dumps({
+                'guests': {},
+                'usernames': {'newperson': {'added_at': 1, 'added_by': 'owner'}},
+                'blocked_ids': {},
+                'blocked_usernames': {},
+                'identities': {
+                    '111': {'username': 'newperson', 'seen_at': 1},
+                },
+            }),
+            encoding='utf-8',
+        )
+        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+
+    def test_ambiguous_existing_identity_fails_closed(self):
+        telegram_guests.GUESTS_FILE.write_text(
+            json.dumps({
+                'guests': {},
+                'usernames': {'newperson': {'added_at': 1, 'added_by': 'owner'}},
+                'blocked_ids': {},
+                'blocked_usernames': {},
+                'identities': {
+                    '111': {'username': 'newperson', 'seen_at': 1},
+                    '222': {'username': 'newperson', 'seen_at': 2},
+                },
+            }),
+            encoding='utf-8',
+        )
+        self.assertFalse(telegram_guests.is_allowed('111', 'newperson'))
+        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+
     def test_blocking_previous_username_blocks_same_person_after_rename(self):
         telegram_guests.add_guest('99', minutes=60)
         telegram_guests.observe_identity('99', 'oldname')
         telegram_guests.observe_identity('99', 'newname')
         telegram_guests.block_username('oldname', blocked_by='owner')
         self.assertFalse(telegram_guests.is_allowed('99', 'newname'))
+
+    def test_all_observed_aliases_remain_blockable(self):
+        telegram_guests.add_guest('99', minutes=60)
+        aliases = [f'alias{i:03d}' for i in range(30)]
+        for handle in aliases:
+            telegram_guests.observe_identity('99', handle)
+        telegram_guests.block_username(aliases[0], blocked_by='owner')
+        self.assertFalse(telegram_guests.is_allowed('99', aliases[-1]))
 
     def test_reallowing_recycled_username_does_not_resurrect_old_holder(self):
         telegram_guests.add_username('newperson')
