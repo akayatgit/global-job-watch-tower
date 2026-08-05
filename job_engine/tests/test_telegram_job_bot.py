@@ -90,6 +90,7 @@ class TelegramBotContractTests(unittest.TestCase):
             engine=self.engine,
             sessions=self.sessions,
             health_enabled=False,
+            owner_chat_ids={'42'},
         )
 
     def tearDown(self):
@@ -283,7 +284,10 @@ class TelegramBotContractTests(unittest.TestCase):
         bot.process('12345', '/allowguest @bad!')
         self.assertEqual(
             self.api.sent[-1],
-            ('12345', 'Use a valid Telegram @username or numeric Telegram ID.'),
+            (
+                '12345',
+                'Use a valid Telegram @username or positive numeric Telegram ID.',
+            ),
         )
         self.assertFalse(telegram_guests.is_username_allowed('bad!'))
 
@@ -492,6 +496,7 @@ class TelegramBotContractTests(unittest.TestCase):
             engine=self.engine,
             sessions=self.sessions,
             health_enabled=False,
+            owner_chat_ids={'42'},
         )
         for update_id, text in ((1, 'AI jobs Bangalore'), (2, '/new')):
             self.sessions.queue_update(update_id, '42', text)
