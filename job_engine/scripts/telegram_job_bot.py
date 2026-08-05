@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import re
 import signal
@@ -32,6 +33,7 @@ if str(ROOT) not in sys.path:
 from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
 from app.telegram_guests import (  # noqa: E402
     DEFAULT_TTL_MINUTES,
+    MAX_TTL_MINUTES as MAX_GUEST_MINUTES,
     add_guest,
     add_username,
     block_guest,
@@ -176,7 +178,7 @@ class JobMasterTelegramBot:
         self._chat_locks: dict[str, threading.Lock] = {}
         self._chat_locks_guard = threading.Lock()
         self._queue_guard = threading.Lock()
-        self._chat_queues: dict[str, deque[tuple[int, str, bool]]] = {}
+        self._chat_queues: dict[str, deque[tuple[int, str, str, bool]]] = {}
         self._active_chats: set[str] = set()
         self._query_count = 0
         self._page_count = 0
@@ -187,6 +189,20 @@ class JobMasterTelegramBot:
         if not match:
             return None
         return match.group(1).lower(), (match.group(2) or '').strip()
+
+    @staticmethod
+    def _identity(raw: str) -> tuple[str, str] | None:
+        value = (raw or '').strip()
+        if value.startswith('@'):
+            handle = value[1:]
+            if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', handle):
+                return 'username', handle
+            return None
+        if re.fullmatch(r'\d+', value) and int(value) > 0:
+            return 'user_id', value
+        if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', value):
+            return 'username', value
+        return None
 
     def _is_owner(self, chat_id: str) -> bool:
         return str(chat_id) in self.owner_chat_ids
@@ -228,22 +244,34 @@ class JobMasterTelegramBot:
             parts = (arg or '').split(maxsplit=2)
             if not parts:
                 return 'Usage: /allowguest <@username or Telegram ID> [minutes] [name]'
-            target = parts[0].strip()
-            if not re.fullmatch(r'-?\d+', target.lstrip('@')):
-                handle = target.lstrip('@')
-                if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', handle):
-                    return 'Use a valid Telegram @username or numeric Telegram ID.'
+            identity = JobMasterTelegramBot._identity(parts[0])
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, target = identity
+            if identity_kind == 'username':
+                handle = target
                 add_username(handle, added_by=chat_id)
                 return f'Allowed @{handle}. Their next message will work.'
-            target = target.lstrip('@')
             minutes = DEFAULT_TTL_MINUTES
             label = ''
             if len(parts) >= 2:
                 try:
                     minutes = float(parts[1])
-                    label = parts[2] if len(parts) >= 3 else ''
                 except ValueError:
-                    label = ' '.join(parts[1:])
+                    return (
+                        'Minutes must be a number from 1 to '
+                        f'{int(MAX_GUEST_MINUTES)}.'
+                    )
+                if (
+                    not math.isfinite(minutes)
+                    or minutes < 1
+                    or minutes > MAX_GUEST_MINUTES
+                ):
+                    return (
+                        'Minutes must be a number from 1 to '
+                        f'{int(MAX_GUEST_MINUTES)}.'
+                    )
+                label = parts[2] if len(parts) >= 3 else ''
             entry = add_guest(target, minutes=minutes, label=label, added_by=chat_id)
             duration = format_ttl(entry.get('minutes', minutes) * 60)
             return (
@@ -251,18 +279,19 @@ class JobMasterTelegramBot:
                 + (f' Name: {label}.' if label else '')
             )
         if command in block_commands:
-            target = (arg or '').split(maxsplit=1)[0].strip()
-            if not target:
+            raw_target = (arg or '').split(maxsplit=1)[0].strip()
+            if not raw_target:
                 return 'Usage: /blockguest <@username or Telegram ID>'
-            if re.fullmatch(r'-?\d+', target.lstrip('@')):
-                target = target.lstrip('@')
+            identity = JobMasterTelegramBot._identity(raw_target)
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, target = identity
+            if identity_kind == 'user_id':
                 if target == str(chat_id):
                     return 'Ashok’s owner access cannot be blocked.'
                 block_guest(target, blocked_by=chat_id)
                 return f'Blocked {target}. New messages will be ignored.'
-            handle = target.lstrip('@')
-            if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', handle):
-                return 'Use a valid Telegram @username or numeric Telegram ID.'
+            handle = target
             block_username(handle, blocked_by=chat_id)
             return f'Blocked @{handle}. New messages will be ignored.'
 
@@ -297,6 +326,29 @@ class JobMasterTelegramBot:
                     'deleteMyCommands',
                     {'scope': json.dumps({'type': scope_type})},
                 )
+            previous_owner_ids = {
+                value
+                for value in self.sessions.get_state(
+                    'telegram_command_owner_ids',
+                    '',
+                ).split(',')
+                if value
+            }
+            for old_chat_id in sorted(previous_owner_ids - self.owner_chat_ids):
+                old_scope_id: int | str = (
+                    int(old_chat_id)
+                    if old_chat_id.lstrip('-').isdigit()
+                    else old_chat_id
+                )
+                self.api.call(
+                    'deleteMyCommands',
+                    {
+                        'scope': json.dumps({
+                            'type': 'chat',
+                            'chat_id': old_scope_id,
+                        }),
+                    },
+                )
             for chat_id in sorted(self.owner_chat_ids):
                 scope_chat_id: int | str = int(chat_id) if chat_id.lstrip('-').isdigit() else chat_id
                 self.api.call(
@@ -306,6 +358,10 @@ class JobMasterTelegramBot:
                         'commands': json.dumps(OWNER_MENU),
                     },
                 )
+            self.sessions.set_state(
+                'telegram_command_owner_ids',
+                ','.join(sorted(self.owner_chat_ids)),
+            )
             return bool(self.owner_chat_ids)
         except Exception:
             LOG.exception('Telegram owner command menu setup failed')
@@ -345,6 +401,7 @@ class JobMasterTelegramBot:
         self,
         update_id: int,
         chat_id: str,
+        username: str,
         text: str,
         *,
         acked: bool = False,
@@ -360,6 +417,14 @@ class JobMasterTelegramBot:
                 return False
             self.sessions.complete_update(update_id)
             return True
+        if not self._sender_allowed(chat_id, username):
+            LOG.info(
+                'dropped queued Telegram sender after access change chat=%s username=%s',
+                chat_id,
+                username or 'none',
+            )
+            self.sessions.complete_update(update_id)
+            return True
         if self._safe_process(chat_id, text, acked=acked, update_id=update_id):
             self.sessions.complete_update(update_id)
             return True
@@ -370,13 +435,14 @@ class JobMasterTelegramBot:
         workers: ThreadPoolExecutor,
         update_id: int,
         chat_id: str,
+        username: str,
         text: str,
         *,
         acked: bool = False,
     ) -> None:
         with self._queue_guard:
             queue = self._chat_queues.setdefault(chat_id, deque())
-            queue.append((update_id, text, acked))
+            queue.append((update_id, username, text, acked))
             if chat_id in self._active_chats:
                 return
             self._active_chats.add(chat_id)
@@ -392,14 +458,20 @@ class JobMasterTelegramBot:
                     self._active_chats.discard(chat_id)
                     self._chat_queues.pop(chat_id, None)
                     return
-                update_id, text, acked = queue.popleft()
-            if self._process_queued(update_id, chat_id, text, acked=acked):
+                update_id, username, text, acked = queue.popleft()
+            if self._process_queued(
+                update_id,
+                chat_id,
+                username,
+                text,
+                acked=acked,
+            ):
                 retry_delay = 1
                 failures = 0
                 continue
             with self._queue_guard:
                 self._chat_queues.setdefault(chat_id, deque()).appendleft(
-                    (update_id, text, acked)
+                    (update_id, username, text, acked)
                 )
             failures += 1
             if failures >= 3:
@@ -585,8 +657,23 @@ class JobMasterTelegramBot:
 
         backoff = 1
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='jobmaster') as workers:
-            for update_id, chat_id, text in self.sessions.pending_updates():
-                self._enqueue_update(workers, update_id, chat_id, text)
+            # Replay durable updates in Telegram order before opening a new poll.
+            # Owner access changes therefore take effect before any later guest
+            # message is authorized after a restart.
+            for update_id, chat_id, username, text in self.sessions.pending_updates():
+                if not self._process_queued(
+                    update_id,
+                    chat_id,
+                    username,
+                    text,
+                ):
+                    self._enqueue_update(
+                        workers,
+                        update_id,
+                        chat_id,
+                        username,
+                        text,
+                    )
             while not STOP:
                 try:
                     poll_timeout = 2 if poll_successes < 2 else 25
@@ -623,12 +710,46 @@ class JobMasterTelegramBot:
                                         offset,
                                     )
                                     continue
-                                if self.sessions.queue_update(update_id, chat_id, text):
+                                if self.sessions.queue_update(
+                                    update_id,
+                                    chat_id,
+                                    text,
+                                    username=username,
+                                ):
+                                    parsed = self._command(text)
+                                    if (
+                                        self._is_owner(chat_id)
+                                        and parsed
+                                        and parsed[0] in OWNER_MANAGEMENT_COMMANDS
+                                    ):
+                                        # Access changes are a barrier in the
+                                        # global Telegram update order. Apply
+                                        # them before authorizing a later
+                                        # message from another chat.
+                                        if not self._process_queued(
+                                            update_id,
+                                            chat_id,
+                                            username,
+                                            text,
+                                        ):
+                                            self._enqueue_update(
+                                                workers,
+                                                update_id,
+                                                chat_id,
+                                                username,
+                                                text,
+                                            )
+                                        self.sessions.set_state(
+                                            'telegram_update_offset',
+                                            offset,
+                                        )
+                                        continue
                                     acked = self._pre_ack(chat_id, text)
                                     self._enqueue_update(
                                         workers,
                                         update_id,
                                         chat_id,
+                                        username,
                                         text,
                                         acked=acked,
                                     )

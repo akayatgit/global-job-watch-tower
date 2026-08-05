@@ -29,13 +29,19 @@ username the incoming Telegram update carries for the sender — see
 
 from __future__ import annotations
 
+import fcntl
+import functools
 import json
+import math
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # job_engine/
 GUESTS_FILE = BASE_DIR / '.data' / 'telegram_guests.json'
 HERMES_ENV = Path.home() / '.hermes' / '.env'
+STORE_THREAD_LOCK = threading.RLock()
 
 DEFAULT_TTL_MINUTES = 60.0
 MAX_TTL_MINUTES = 60.0 * 24 * 14  # two weeks cap — a forgotten guest can't linger forever
@@ -48,6 +54,29 @@ DEFAULT_ALLOWED_USERNAMES = {
     'azr0099',
     'supriyamk',  # Ashok's wife (2026-08-04)
 }
+
+
+@contextmanager
+def _store_lock():
+    """Serialize read-modify-write across threads and local processes."""
+    with STORE_THREAD_LOCK:
+        GUESTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = GUESTS_FILE.with_suffix('.lock')
+        with lock_path.open('a+', encoding='utf-8') as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _locked(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _store_lock():
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 def _norm_username(username) -> str:
@@ -118,6 +147,7 @@ def _prune(data: dict) -> bool:
     return bool(expired)
 
 
+@_locked
 def is_allowed(user_id, username=None) -> bool:
     """True for the owner, a guest whose grant hasn't expired, or a sender
     whose Telegram @username is on the allowlist (default or granted)."""
@@ -130,7 +160,10 @@ def is_allowed(user_id, username=None) -> bool:
     handle = _norm_username(username)
     if handle and handle in data['blocked_usernames']:
         return False
-    if username and is_username_allowed(username):
+    if handle and (
+        handle in DEFAULT_ALLOWED_USERNAMES
+        or handle in data['usernames']
+    ):
         return True
     if _prune(data):
         _save(data)
@@ -138,6 +171,7 @@ def is_allowed(user_id, username=None) -> bool:
     return bool(g) and g.get('expires_at', 0) > time.time()
 
 
+@_locked
 def is_username_allowed(username) -> bool:
     """True for a hardcoded default handle or one granted via /allowuser."""
     handle = _norm_username(username)
@@ -151,13 +185,15 @@ def is_username_allowed(username) -> bool:
     return handle in data['usernames']
 
 
+@_locked
 def add_guest(user_id, minutes: float = DEFAULT_TTL_MINUTES, label: str = '', added_by: str = '') -> dict:
     user_id = str(user_id)
     try:
         minutes = float(minutes)
-    except (TypeError, ValueError):
-        minutes = DEFAULT_TTL_MINUTES
-    minutes = max(1.0, min(minutes, MAX_TTL_MINUTES))
+    except (TypeError, ValueError) as exc:
+        raise ValueError('minutes must be a number') from exc
+    if not math.isfinite(minutes) or minutes < 1 or minutes > MAX_TTL_MINUTES:
+        raise ValueError(f'minutes must be between 1 and {int(MAX_TTL_MINUTES)}')
     data = _load()
     _prune(data)
     now = time.time()
@@ -174,6 +210,7 @@ def add_guest(user_id, minutes: float = DEFAULT_TTL_MINUTES, label: str = '', ad
     return entry
 
 
+@_locked
 def revoke_guest(user_id) -> bool:
     user_id = str(user_id)
     data = _load()
@@ -183,6 +220,7 @@ def revoke_guest(user_id) -> bool:
     return existed
 
 
+@_locked
 def add_username(username, added_by: str = '') -> dict:
     """Grant permanent access to a Telegram @username (no expiry — matches
     the code-reviewed defaults; use /revokeuser to undo)."""
@@ -195,6 +233,7 @@ def add_username(username, added_by: str = '') -> dict:
     return entry
 
 
+@_locked
 def revoke_username(username) -> bool:
     """Remove a granted @username. Handles baked into DEFAULT_ALLOWED_USERNAMES
     can't be revoked this way by design — that's a code change, not a runtime one."""
@@ -208,6 +247,7 @@ def revoke_username(username) -> bool:
     return existed
 
 
+@_locked
 def block_guest(user_id, blocked_by: str = '') -> dict:
     """Deny a numeric Telegram id until Ashok explicitly allows it again."""
     user_id = str(user_id).strip()
@@ -219,6 +259,7 @@ def block_guest(user_id, blocked_by: str = '') -> dict:
     return entry
 
 
+@_locked
 def block_username(username, blocked_by: str = '') -> dict:
     """Deny a Telegram username, including a code-tracked default."""
     handle = _norm_username(username)
@@ -230,6 +271,7 @@ def block_username(username, blocked_by: str = '') -> dict:
     return entry
 
 
+@_locked
 def list_usernames() -> list:
     """Every allowed @username — permanent defaults first, then granted ones."""
     data = _load()
@@ -250,6 +292,7 @@ def list_usernames() -> list:
     return out
 
 
+@_locked
 def list_guests() -> list:
     """Active (non-expired) guests, soonest-to-expire first."""
     data = _load()
@@ -269,6 +312,7 @@ def list_guests() -> list:
     return out
 
 
+@_locked
 def list_blocked() -> dict[str, list[str]]:
     data = _load()
     return {

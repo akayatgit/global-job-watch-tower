@@ -44,6 +44,7 @@ class TelegramSessionStore:
                 CREATE TABLE IF NOT EXISTS telegram_inbox (
                     update_id INTEGER PRIMARY KEY,
                     chat_id TEXT NOT NULL,
+                    username TEXT NOT NULL DEFAULT '',
                     text TEXT NOT NULL,
                     reply TEXT,
                     created_at REAL NOT NULL
@@ -62,6 +63,10 @@ class TelegramSessionStore:
             }
             if 'reply' not in inbox_columns:
                 conn.execute('ALTER TABLE telegram_inbox ADD COLUMN reply TEXT')
+            if 'username' not in inbox_columns:
+                conn.execute(
+                    "ALTER TABLE telegram_inbox ADD COLUMN username TEXT NOT NULL DEFAULT ''"
+                )
 
     def save_search(
         self,
@@ -126,23 +131,43 @@ class TelegramSessionStore:
                 (key, str(value)),
             )
 
-    def queue_update(self, update_id: int, chat_id: str, text: str) -> bool:
+    def queue_update(
+        self,
+        update_id: int,
+        chat_id: str,
+        text: str,
+        username: str = '',
+    ) -> bool:
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT OR IGNORE INTO telegram_inbox(update_id, chat_id, text, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO telegram_inbox(
+                    update_id, chat_id, username, text, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (int(update_id), str(chat_id), text, time.time()),
+                (int(update_id), str(chat_id), str(username or ''), text, time.time()),
             )
         return bool(cursor.rowcount)
 
-    def pending_updates(self) -> list[tuple[int, str, str]]:
+    def pending_updates(self) -> list[tuple[int, str, str, str]]:
         with self._connect() as conn:
             rows = conn.execute(
-                'SELECT update_id, chat_id, text FROM telegram_inbox ORDER BY update_id'
+                """
+                SELECT update_id, chat_id, username, text
+                FROM telegram_inbox
+                ORDER BY update_id
+                """
             ).fetchall()
-        return [(int(row['update_id']), str(row['chat_id']), str(row['text'])) for row in rows]
+        return [
+            (
+                int(row['update_id']),
+                str(row['chat_id']),
+                str(row['username'] or ''),
+                str(row['text']),
+            )
+            for row in rows
+        ]
 
     def complete_update(self, update_id: int) -> None:
         with self._lock, self._connect() as conn:
