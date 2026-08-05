@@ -94,6 +94,22 @@ class OnboardingFlowTests(BaseOnboardingTest):
         self.assertIn('linkedin.com', final)
         self.assertIn('Tell me a new role or city', final)
 
+    def test_bare_product_role_answer_is_not_a_false_dead_end(self):
+        # RCA (2026-08-05, live test): Ashok answered the role step with the
+        # bare word "Product" (onboarding's own example says "Product
+        # Manager") and got a false "I don't see verified openings today"
+        # dead end even though real Product Manager postings existed —
+        # _extract_role_family required the full "product manager/owner/
+        # analyst" phrase. Fixed in telegram_job_search._extract_role_family.
+        self.api.jobs = [make_job(1, title='Product Manager', city='bengaluru')]
+        self._set_today_count(1)
+        self.engine.handle('Hi', 'chat-product')
+        reply = self.engine.handle('Product', 'chat-product')
+        self.assertNotIn("I don't see verified", reply)
+        self.assertIn('experience', reply.lower())
+        onboarding = self.sessions.load_onboarding('chat-product')
+        self.assertEqual(onboarding['role_family'], 'product')
+
     def test_zero_count_role_reasks_role_instead_of_dead_ending(self):
         self._set_today_count(0)
         self.engine.handle('Hi', 'chat-11')
