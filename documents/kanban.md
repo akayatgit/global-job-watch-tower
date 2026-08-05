@@ -424,6 +424,41 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 
 ## Backlog
 
+### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
+
+**Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
+1,00,000 (1 lakh) users/guests in a month; every infra/logic choice from here
+should be picked with that scale in mind. Full research + rationale in
+[`documents/scale-and-memory-architecture.md`](./scale-and-memory-architecture.md).
+
+**Problem:** `job_engine/app/telegram_sessions.py` (search sessions,
+onboarding state, guest profiles, conversation history, the inbox queue) is
+one local SQLite file. SQLite single-writer file locking and single-machine
+storage are fine for the current pilot but become the ceiling well before 1
+lakh monthly guests — and they block ever running more than one JobMaster
+poller process.
+
+**Approach (not started):**
+1. Move those SQLite tables into Postgres (schema/access patterns unchanged
+   — a storage swap, not a redesign).
+2. Move the per-chat "processing now" lock and rate limiting into Redis
+   (already provisioned for Celery) instead of an in-process
+   `threading.Lock()`.
+3. Once state is off a local file, allow more than one JobMaster poller
+   process — keep the existing FIFO/no-duplicate-poller contract
+   (`JM-125`/`JM-126` in the validation doc).
+4. Add a synthetic load test (k6/locust-style burst) against the dedicated
+   JobMaster service — there is currently zero load evidence.
+
+**Acceptance:** documented capacity number (e.g. "N sustained req/s / M
+concurrent chats on current hardware") replaces "we think SQLite is fine";
+FIFO-per-chat and no-cross-chat-leakage contracts still hold after the
+migration; existing `job_engine/tests/test_jobmaster_*.py` suite still green
+against the new backing store.
+
+**Files:** `job_engine/app/telegram_sessions.py`, `docker-compose.yml`,
+`job_engine/scripts/telegram_job_bot.py`, deploy scripts.
+
 ### 4. Gate 1.1 — tower as a plug-and-play Docker image (Ashok 2026-08-04)
 
 **Status (2026-08-04): code done + verified on a blank cloud VM.** Full stack
