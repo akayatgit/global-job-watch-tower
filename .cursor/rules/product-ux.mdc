@@ -485,3 +485,13 @@ use — they should love opening the app, never fight it.
  extensible (the voice layer above is deliberately generic, not
  job-listing-specific) so the future paid capability can speak naturally
  about an entitlement without fighting regex.
+- **CRITICAL — Action + Decision line, every chat reply (2026-08-05):** Ashok
+ got a long technical reply and said "too much info, i cant understand,
+ whats my action step or decision." Every single reply to Ashok in chat
+ (no exceptions) must end with exactly two bold, emoji-wrapped lines, on
+ their own lines, nothing else after them:
+ `🎯 **YOUR ACTION:** <one short concrete thing to do, or "None — just FYI">`
+ `❓ **DECISION:** <the one YES/NO question, or "None">`
+ This replaces the plain "forward-working question" sign-off wherever the
+ two would otherwise duplicate — the Decision line **is** that question,
+ just impossible to miss. Never bury it inside a paragraph.
