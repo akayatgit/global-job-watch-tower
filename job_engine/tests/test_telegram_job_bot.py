@@ -381,6 +381,11 @@ class TelegramBotContractTests(unittest.TestCase):
         allowed = {item['username'] for item in telegram_guests.list_usernames()}
         self.assertTrue(set(handles).issubset(allowed))
 
+    def test_corrupt_access_store_fails_closed_instead_of_restoring_defaults(self):
+        telegram_guests.GUESTS_FILE.write_text('{broken', encoding='utf-8')
+        with self.assertRaises(telegram_guests.GuestStoreError):
+            telegram_guests.is_allowed('99', 'supriyamk')
+
     def test_block_override_can_disable_default_username(self):
         bot = JobMasterTelegramBot(
             self.api,

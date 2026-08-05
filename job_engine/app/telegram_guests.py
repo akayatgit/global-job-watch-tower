@@ -56,6 +56,10 @@ DEFAULT_ALLOWED_USERNAMES = {
 }
 
 
+class GuestStoreError(RuntimeError):
+    """Access decisions must fail closed when persisted state is unreadable."""
+
+
 @contextmanager
 def _store_lock():
     """Serialize read-modify-write across threads and local processes."""
@@ -122,13 +126,8 @@ def _load() -> dict:
             if not isinstance(data.get(key), dict):
                 data[key] = {}
         return data
-    except Exception:
-        return {
-            'guests': {},
-            'usernames': {},
-            'blocked_ids': {},
-            'blocked_usernames': {},
-        }
+    except Exception as exc:
+        raise GuestStoreError('Telegram guest access store is unreadable') from exc
 
 
 def _save(data: dict) -> None:
