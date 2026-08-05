@@ -235,7 +235,8 @@ automated tests pass; live acceptance belongs to Ashok.
 
 | Case | UTC time | Account | Result | Evidence / notes |
 |---|---|---|---|---|
-| JM-001 |  |  |  |  |
+| JM-001 | 2026-08-05 05:29 | Ashok | PASS | Blue **Menu** button is visible in the private bot chat. |
+| JM-002 |  |  |  |  |
 
 ## 15. Automation backlog
 
