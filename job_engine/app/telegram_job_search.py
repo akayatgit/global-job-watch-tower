@@ -55,6 +55,7 @@ FILLER = {
     'please', 'role', 'roles', 'show', 'space', 'the', 'there', 'today', 'top',
     'total', 'trend', 'trends', 'want', 'which', 'with', 'compare', 'comparison',
     'count', 'currently', 'hiring', 'much', 'vs', 'versus', 'company', 'companies',
+    'year', 'years', 'yr', 'yrs',
 }
 FAMILY_WORDS = {
     'ai', 'ml', 'artificial', 'intelligence', 'machine', 'learning', 'genai',
@@ -155,7 +156,7 @@ def _fallback_intent(text: str) -> JobMasterIntent:
     low = (text or '').lower()
     cities = _extract_cities(low)
     experience = ''
-    if re.search(r'\b(?:fresher|freshers|fresh graduate|graduate|entry.?level|intern(?:ship)?)\b', low):
+    if re.search(r'\b(?:fresher|freshers|fresh graduates?|graduates?|entry.?level|intern(?:ship)?)\b', low):
         experience = 'fresher'
     else:
         range_match = re.search(
@@ -205,6 +206,10 @@ def _fallback_intent(text: str) -> JobMasterIntent:
         role_family = 'cloud_devops'
     elif re.search(r'\b(?:software|developer|engineer|full.?stack|backend|frontend)\b', low):
         role_family = 'software'
+    elif re.search(r'\b(?:product manager|product owner|product analyst)\b', low):
+        role_family = 'product'
+    elif re.search(r'\b(?:designer|design|ui\s*/?\s*ux|\bux\b|\bui\b)\b', low):
+        role_family = 'design'
 
     insight = bool(re.search(
         r'\b(?:how many|count|compare|comparison|versus|vs\.?|'
@@ -348,6 +353,12 @@ def canonical_link(job: dict[str, Any]) -> str:
     return f'https://www.linkedin.com/jobs/view/{job_id}/' if job_id else ''
 
 
+def _matches_city(job: dict[str, Any], intent: JobMasterIntent) -> bool:
+    if len(intent.cities) < 2:
+        return True
+    return str(job.get('city_key') or '') in set(intent.cities)
+
+
 def _matches_role(job: dict[str, Any], intent: JobMasterIntent) -> bool:
     title = str(job.get('title') or '')
     if intent.role_family and not title_matches_role_family(title, intent.role_family):
@@ -459,7 +470,10 @@ class JobMasterEngine:
             'role_family': intent.role_family,
             'title_terms': ' '.join(intent.role_keywords),
         }
-        if intent.cities:
+        if len(intent.cities) == 1:
+            # A second stated city cannot be pushed down to the API (single
+            # value), so it is kept and enforced client-side by _matches_city
+            # instead of silently dropped.
             params['city'] = intent.cities[0]
         if intent.experience == 'fresher':
             params['track'] = 'fresher'
@@ -477,6 +491,8 @@ class JobMasterEngine:
                 title = str(job.get('title') or '').strip()
                 company = str(job.get('company') or '').strip()
                 if not title or not link or not _matches_role(job, intent):
+                    continue
+                if not _matches_city(job, intent):
                     continue
                 band = normalize_experience_value(str(job.get('experience_band') or ''))
                 if intent.experience == 'fresher' and band and band != 'fresher':
