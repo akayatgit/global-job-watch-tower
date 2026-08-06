@@ -846,6 +846,19 @@ time lost to heat pause / deploys / enrichment) + an alert when the day is
 falling behind pace by noon. Emit `browser_open` from enrichment sessions
 too.
 
+### 21. Fix the 4/135 coverage hole — reach the ~73 searches/day ceiling
+
+Ashok (2026-08-06): parked in backlog for iteration planning. Yesterday the
+tower ran only 4 of 135 enabled role searches (3% coverage) against a
+measured capacity of ~73/day. Work: confirm the dominant cause from the live
+ThinkPad console (heat pause vs deploy cancels vs worker contention vs cron
+shadow), then fix in that order — e.g. retrigger roles cancelled by deploys,
+make enrichment yield to due searches, and re-slot roles whose daily cron
+window was shadowed after reseed. Related: #20 gives the monitoring so a slow
+day is visible by noon; #19 puts "Coverage today: N/135" on `/health`.
+Structural decision for planning: 135 roles > 73/day ceiling on one laptop —
+trim the catalogue, accept a 2-day rotation, or add the second laptop.
+
 ### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
 
 **Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
