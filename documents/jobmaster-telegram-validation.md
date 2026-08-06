@@ -367,6 +367,48 @@ deterministic text — never a wrong or invented fact.
 | JM-173 | Repeat JM-170 several times | Tone may vary slightly between replies, but the job rows/links/counts never do. |
 | JM-174 | `/health` (Ashok) | New line `JobMaster voice AI: ON (OPENAI_API_KEY set)` or `OFF (no OPENAI_API_KEY)` / `OFF (disabled via JOBMASTER_VOICE_LLM)` tells Ashok, without opening a terminal, whether the voice layer can run on this laptop right now. |
 
+## 14B. Button-driven guest flow (GTM: Intern/Fresher only) — 2026-08-06
+
+The primary guest path is now Telegram inline-keyboard taps — Family → Role →
+Experience → City → Results — no typing required. Free text (and the
+existing voice/NLU layer) is **not disabled**; it stays wired as a backup for
+anyone who types instead of tapping. Run JM-180 from a fresh chat (or right
+after `/new`) so the button flow is not competing with a stored profile.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-180 | Send `/start` (fresh chat) | JobMaster greets you and shows 7 family buttons (AI/ML, Data, Software, Cybersecurity, Cloud/DevOps, Product, Design) — no free-text prompt. |
+| JM-181 | Tap a family (e.g. `AI/ML`) | Shows that family's specific role buttons plus a `◀ Back` button. |
+| JM-182 | Tap a role (e.g. `ML Engineer`) | Shows 5 experience buttons: Intern, Fresher, 1–4 yrs, 5–10 yrs, 10+ yrs, plus `◀ Back`. |
+| JM-183 | Tap `◀ Back` from the experience screen | Returns to the same family's role buttons (state preserved, not reset to family list). |
+| JM-184 | Tap `Fresher` | Shows city buttons (Bengaluru, Chennai, Kerala, Hyderabad, ... , Remote, Any city). |
+| JM-185 | Tap `Intern` (separately, fresh flow) | Also reaches the city step — both focus experiences behave identically. |
+| JM-186 | Tap a city (e.g. `Bengaluru`) | Returns up to 10 grounded rows (`Title — Company — Experience` + LinkedIn link), same contract as JM-051, with a `More jobs ▸` button (if more exist) and a `🔄 New search` button. |
+| JM-187 | Tap `More jobs ▸` | Paginates the same search — no duplicate rows, same pagination contract as JM-063/JM-066. |
+| JM-188 | Tap `🔄 New search` | Restarts from the family buttons; old session/search state is cleared. |
+| JM-189 | Complete a search, then type a sentence instead of tapping (e.g. `Java jobs in Pune`) | Free text still works exactly as before — the backup path is live, not disabled. |
+| JM-190 | Tap `1–4 yrs` (or 5–10 / 10+) instead of Intern/Fresher | Static "coming soon" message, asks for an email; no search is run. |
+| JM-191 | Reply with a valid email | Confirmation message thanks you and offers a button back to Intern/Fresher search. |
+| JM-192 | Ashok: `/waitlist` after JM-191 | Shows that email with role/experience/relative time — proves the capture isn't a write-only black hole. |
+| JM-193 | At the waitlist-email prompt, reply `skip` | Politely declines further capture and offers a button to start an Intern/Fresher search instead. |
+| JM-194 | At the waitlist-email prompt, reply with garbage (not an email) | Asks again for a valid email or `skip`; does not crash or silently proceed. |
+| JM-195 | Complete an Intern/Fresher search, then send a bare `Hi` later | "Welcome back" prompt with `Yes, same search` / `New search` buttons (button equivalent of JM-148). |
+| JM-196 | Tap `Yes, same search` | Immediate grounded results for the recalled role/experience/city, zero extra taps. |
+| JM-197 | Tap an old/stale button from a previous session (e.g. after `/new` was sent in between) | Never a dead end — falls back to the family buttons instead of erroring. |
+
+## 14C. Live access diagnostics — `/checkaccess` (2026-08-06)
+
+Built after `@supriyamk` stopped receiving replies while `/actasguest`
+looked completely healthy — `/actasguest` can never exercise the real
+guest-access gate (it short-circuits on Ashok's own owner chat id), so this
+command runs the exact same decision a real message hits.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-198 | Ashok: `/checkaccess @supriyamk` | Reports ALLOWED/BLOCKED with a plain-English reason (e.g. "permanent default", "bound to Telegram ID X", "explicitly blocked"). Run this first for any live "a guest can't text" report. |
+| JM-199 | Ashok: `/checkaccess <a Telegram numeric ID that has never messaged>` | Reports BLOCKED — "no @username on file and no matching guest grant." |
+| JM-200 | Supriya (or any non-owner): `/checkaccess @anyone` | Ordinary owner-command denial ("JobMaster can help you find verified jobs...") — never leaks access-control internals to a guest. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because

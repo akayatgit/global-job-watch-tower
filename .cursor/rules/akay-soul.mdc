@@ -98,6 +98,22 @@ need to be told twice.
   ...` then `❓ **DECISION:** ...` (or "None" for either). Not a suggestion,
   a hard format rule for every reply from here on.
 
+- **2026-08-06 · When it breaks, cut scope, don't patch harder.** The voice/
+ AI layer shipped, then degraded in production and once left a real guest
+ with zero reply. Ashok's call: rip free-text-first out of the primary path,
+ rebuild the guest experience as taps (Family → Role → Experience → City →
+ Results), and keep the old AI/regex path only as an unseen fallback for
+ whoever still types. GTM scope is explicitly Intern + Fresher only —
+ everything else waitlists, it doesn't half-work. Lesson: when a clever
+ layer keeps producing live incidents, the right move is often to shrink
+ the surface it can break, not add another guard rail on top of it.
+- **2026-08-06 · A self-test that can't fail proves nothing.** `/actasguest`
+ looked green while a real guest (@supriyamk) got no reply at all — because
+ the simulated-guest check short-circuits on Ashok's own owner id before the
+ real `is_allowed()` gate ever runs. Built `/checkaccess` to run that exact
+ gate live from Telegram. Lesson: a "test as guest" mode is only honest if
+ it walks the same code path a stranger's message actually takes.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

@@ -495,3 +495,33 @@ use — they should love opening the app, never fight it.
  This replaces the plain "forward-working question" sign-off wherever the
  two would otherwise duplicate — the Decision line **is** that question,
  just impossible to miss. Never bury it inside a paragraph.
+- **Button-first guest flow, freeform text demoted to backup (2026-08-06):**
+ the voice/NLU layer above made real quality regressions (duplicated role
+ labels, "yes" leaking as a role keyword, city dropped from the "today" job
+ gate) and, once, guests got zero reply at all. Ashok: "rip that layer out
+ for now, but instead of free text lets keep the user on a buttons option to
+ filter down the search one by one... any other actions also through button
+ clicking logics only." Primary guest path is now Telegram inline-keyboard
+ taps: **Family → Role → Experience → City → Results**
+ (`job_engine/app/telegram_buttons.py::ButtonFlow`). Free text and the
+ LLM voice/intent layers stay wired exactly as before as a **fallback
+ only** — never disabled — for whenever a guest types instead of tapping.
+- **GTM focus = Intern + Fresher only (2026-08-06):** Experience buttons are
+ Intern · Fresher · 1–4 yrs · 5–10 yrs · 10+ yrs. Only Intern/Fresher run a
+ live search (both query the same "fresher" Watch Tower track — Internship +
+ Entry-level LinkedIn postings). Every other band shows a static "experienced
+ jobs are coming soon" message and captures an email into a waitlist
+ (`job_engine/app/telegram_waitlist.py`) instead of running a search that
+ track isn't ready to serve — visible to Ashok via the owner `/waitlist`
+ command. Do not wire real search results to non-focus experience bands
+ without an explicit GTM-scope change from Ashok.
+- **`/actasguest` cannot validate the real access gate (2026-08-06 finding):**
+ `_sender_allowed` short-circuits true for Ashok's own chat id before
+ `is_allowed()` ever runs, so testing "as a guest" from his own phone can
+ never reproduce a real guest-access failure (this is why @supriyamk's
+ outage was invisible to `/actasguest`). The owner-only `/checkaccess
+ <@username-or-id> [id-to-compare]` command
+ (`app/telegram_guests.py::describe_access`) runs the exact same allow/block/
+ binding logic a real message hits and returns a plain-English reason —
+ use this first for any "a specific guest can't text" report instead of
+ trusting `/actasguest`.
