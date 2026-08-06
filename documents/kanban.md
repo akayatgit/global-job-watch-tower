@@ -790,6 +790,62 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 
 ## Backlog
 
+*(Cards 15–20 parked here per Ashok 2026-08-06 — "add all these in backlog,
+at last we will place in iteration planning". Ordering happens in the next
+iteration-planning ritual, not here.)*
+
+### 15. Job Alerts 🔔 — SIPROG epic (specced, awaiting planning)
+
+Full Jira-style breakdown already written: epic + SIMET tasks/bugs with AC,
+DoD, t-shirt sizes, and checklists in
+[`documents/jira/page-1-siprog-epic.csv`](./jira/page-1-siprog-epic.csv) and
+[`documents/jira/page-2-simet-tasks.csv`](./jira/page-2-simet-tasks.csv).
+First retention loop: guests opt in after a search, tower pushes fresh
+matching jobs daily. Feeds the selling-engine vision (alerts = the ad space).
+
+### 16. Guest analytics — daily funnel numbers for the owner
+
+How many strangers said hi, how many finished the button flow, how many got
+jobs vs zero-result dead ends, how many hit the waitlist branch, repeat-guest
+rate. Deterministic counts from `telegram_sessions` / delivered history —
+never model-estimated. Surfaces in a `/stats` upgrade + VIGIL panel.
+
+### 17. Share hook — happy guests spread the bot
+
+After a successful result set, offer a one-tap "Share JobMaster" button
+(Telegram share deep-link with a friendly preheader). Word-of-mouth is the
+GTM engine; zero paid acquisition. Measure via guest analytics (#16).
+
+### 18. Guest feedback capture
+
+One-tap 👍/👎 after results + optional short text. Stored deterministically,
+readable via an owner command. Feeds iteration planning with real guest
+voice instead of guesses.
+
+### 19. `/health` owner board redesign — digestible in 30 seconds
+
+Ashok (2026-08-06): current board is "ugly data … for an owner". Redesign:
+verdict first (one line: healthy / degraded + why), human words, and the
+numbers an owner actually needs — searches done vs planned today
+(e.g. `4/135 roles`), jobs caught today, browser opens (true count incl.
+enrichment sessions — see #20 finding), capacity vs plan, next search.
+Detail on demand below the fold. Mock approved in the 2026-08-06 planning
+chat; build after iteration planning.
+
+### 20. Coverage + capacity monitoring — never discover "only 4 searches" by accident
+
+Findings from the 2026-08-06 investigation:
+- `browser_open` events fire only in the scrape session — the enrichment
+  backfills (every 10/15 min) open a real StealthySession browser without
+  recording it, so browser activity is undercounted.
+- 135 enabled roles vs a measured ~15 min/search on one worker = a hard
+  ceiling of ~73 Ollama searches/day — the catalogue is structurally
+  over-subscribed on one laptop; a "slow day" is invisible until Ashok asks.
+Build: a daily coverage tracker (roles run / roles enabled, jobs caught,
+time lost to heat pause / deploys / enrichment) + an alert when the day is
+falling behind pace by noon. Emit `browser_open` from enrichment sessions
+too.
+
 ### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
 
 **Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
