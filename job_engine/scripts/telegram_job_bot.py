@@ -31,7 +31,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.cities import city_label  # noqa: E402
-from app.telegram_job_search import MORE_RE, PAGE_SIZE, RESET_RE, JobMasterEngine  # noqa: E402
+from app.telegram_buttons import BTN_PREFIX, EXPERIENCE_LABELS, ButtonFlow, ButtonReply  # noqa: E402
+from app.telegram_job_search import (  # noqa: E402
+    GREETING_RE,
+    MORE_RE,
+    PAGE_SIZE,
+    RESET_RE,
+    ROLE_FAMILY_LABELS,
+    JobMasterEngine,
+)
+from app.telegram_waitlist import list_waitlist, waitlist_count  # noqa: E402
 from app.telegram_guests import (  # noqa: E402
     DEFAULT_TTL_MINUTES,
     MAX_TTL_MINUTES as MAX_GUEST_MINUTES,
@@ -39,6 +48,7 @@ from app.telegram_guests import (  # noqa: E402
     add_username,
     block_guest,
     block_username,
+    describe_access,
     format_ttl,
     is_allowed,
     list_blocked,
@@ -91,6 +101,8 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'guestlist',
     'history',
     'guestprofile',
+    'waitlist',
+    'checkaccess',
 })
 # Ashok-only self-test toggle: no second phone needed to see the guest
 # experience. Always dispatched off the REAL owner check (never the
@@ -109,6 +121,8 @@ OWNER_MENU = [
     {'command': 'guests', 'description': 'People with access'},
     {'command': 'history', 'description': 'Guest conversation history'},
     {'command': 'guestprofile', 'description': 'Guest role/experience/city'},
+    {'command': 'checkaccess', 'description': 'Why can/can\'t a person text?'},
+    {'command': 'waitlist', 'description': 'Experienced-hire email waitlist'},
     {'command': 'actasguest', 'description': 'Test this chat as a guest'},
     {'command': 'actasowner', 'description': 'Back to owner mode'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
@@ -203,10 +217,56 @@ class TelegramAPI:
                 'disable_web_page_preview': 'true',
             })
 
+    def send_keyboard(
+        self,
+        chat_id: str,
+        text: str,
+        keyboard: list[list[tuple[str, str]]] | None,
+    ) -> None:
+        """Send text with an inline keyboard attached to the LAST chunk only
+        — a button-flow message is always short enough to be one chunk in
+        practice, but this stays correct even if it ever isn't."""
+        remaining = (text or '').strip()
+        if not remaining:
+            return
+        chunks = _telegram_chunks(remaining)
+        markup = None
+        if keyboard:
+            markup = json.dumps({
+                'inline_keyboard': [
+                    [{'text': label, 'callback_data': data} for label, data in row]
+                    for row in keyboard
+                ]
+            })
+        for index, chunk in enumerate(chunks):
+            payload = {
+                'chat_id': str(chat_id),
+                'text': chunk,
+                'disable_web_page_preview': 'true',
+            }
+            if markup is not None and index == len(chunks) - 1:
+                payload['reply_markup'] = markup
+            self.call('sendMessage', payload)
+
+    def answer_callback(self, callback_query_id: str, text: str = '') -> None:
+        try:
+            data: dict[str, Any] = {'callback_query_id': callback_query_id}
+            if text:
+                data['text'] = text[:200]
+            self.call('answerCallbackQuery', data)
+        except Exception:
+            # Cosmetic only (clears the tap's loading spinner) — never let a
+            # failure here block delivering the actual reply.
+            LOG.exception('answerCallbackQuery failed id=%s', callback_query_id)
+
     def updates(self, offset: int, timeout: int = 25) -> list[dict]:
         result = self.call(
             'getUpdates',
-            {'offset': offset, 'timeout': timeout, 'allowed_updates': json.dumps(['message'])},
+            {
+                'offset': offset,
+                'timeout': timeout,
+                'allowed_updates': json.dumps(['message', 'callback_query']),
+            },
             timeout=timeout + 10,
         )
         return result.get('result') or []
@@ -228,6 +288,7 @@ class JobMasterTelegramBot:
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
         self.voice = voice or VoiceLayer()
+        self.button_flow = ButtonFlow(self.engine, self.sessions)
         self.health_enabled = health_enabled
         self.owner_chat_ids = {str(chat_id) for chat_id in (owner_chat_ids or set())}
         self.board_renderer = board_renderer or render_board
@@ -451,6 +512,45 @@ class JobMasterTelegramBot:
                 f'City — {city}\n'
                 f'Last updated — {age}'
             )
+        if command == 'checkaccess':
+            parts = (arg or '').split()
+            if not parts:
+                return 'Usage: /checkaccess <@username or Telegram ID> [Telegram ID to compare]'
+            identity = self._identity(parts[0])
+            if identity is None:
+                return 'Use a valid Telegram @username or positive numeric Telegram ID.'
+            identity_kind, identity_value = identity
+            user_id = identity_value if identity_kind == 'user_id' else ''
+            username = identity_value if identity_kind == 'username' else ''
+            if not user_id and len(parts) >= 2:
+                # Lets Ashok check "is @handle really this person's numeric
+                # id" (e.g. one he looked up via @userinfobot) in one shot,
+                # instead of two separate lookups.
+                second = self._identity(parts[1])
+                if second and second[0] == 'user_id':
+                    user_id = second[1]
+            lookup = f'@{identity_value}' if identity_kind == 'username' else identity_value
+            result = describe_access(user_id, username)
+            verdict = 'ALLOWED ✅' if result['allowed'] else 'BLOCKED ⛔'
+            return f'ACCESS CHECK · {lookup}\n{verdict}\n{result["reason"]}'
+        if command == 'waitlist':
+            limit = 20
+            if arg.strip():
+                try:
+                    limit = max(1, min(int(arg.strip().split()[0]), 200))
+                except ValueError:
+                    limit = 20
+            total = waitlist_count()
+            entries = list_waitlist(limit=limit)
+            if not entries:
+                return 'WAITLIST · 0 people\nNo experienced-hire emails collected yet.'
+            lines = [f'WAITLIST · {total} people · latest {len(entries)}', '']
+            for index, item in enumerate(entries, 1):
+                role = ROLE_FAMILY_LABELS.get(item.get('role_family', ''), item.get('role_family') or 'any role')
+                exp = EXPERIENCE_LABELS.get(item.get('experience', ''), item.get('experience') or 'unspecified')
+                age = self._relative_age(item.get('created_at', 0.0))
+                lines.append(f"{index}. {item.get('email', '')} · {role} · {exp} · {age}")
+            return _truncate_utf16('\n'.join(lines), 3700)
         if command in allow_commands:
             parts = (arg or '').split(maxsplit=2)
             if not parts:
@@ -608,6 +708,18 @@ class JobMasterTelegramBot:
                 self._write_health(status='degraded', error=str(exc)[:200])
             return False
 
+    @staticmethod
+    def _display_text(raw: str) -> str:
+        """A button tap's durable queue value carries a NUL-byte sentinel
+        (see BTN_PREFIX) that Telegram's own API would reject as text and
+        that would render as an invisible artifact in /history — show a
+        readable label instead. The raw sentinel value is only ever
+        consumed internally by _process_locked/button_flow, never by a
+        human."""
+        if raw.startswith(BTN_PREFIX):
+            return f'[tapped: {raw[len(BTN_PREFIX):]}]'
+        return raw
+
     def _finalize_delivered(
         self,
         update_id: int,
@@ -625,7 +737,7 @@ class JobMasterTelegramBot:
                 update_id,
                 chat_id,
                 username,
-                text,
+                self._display_text(text),
                 reply,
             )
         except Exception as exc:
@@ -657,6 +769,10 @@ class JobMasterTelegramBot:
         *,
         acked: bool = False,
     ) -> bool:
+        # NOTE: a reply already computed before a crash is replayed as plain
+        # text here (no inline keyboard) — extremely rare window, and the
+        # guest can still just tap /start again. Not worth persisting
+        # keyboard layouts through a crash for this.
         prepared = self.sessions.load_update_reply(update_id)
         if not self._sender_allowed(chat_id, username):
             LOG.info(
@@ -776,6 +892,7 @@ class JobMasterTelegramBot:
         parsed = self._command(clean)
         if (
             not clean
+            or clean.startswith(BTN_PREFIX)  # button taps reply instantly — no "Thinking…"
             or RESET_RE.match(clean)
             or clean.lower() in {'/start', '/help', 'help'}
             or (parsed and parsed[0] in OWNER_COMMANDS)
@@ -787,6 +904,17 @@ class JobMasterTelegramBot:
         except Exception:
             LOG.exception('immediate acknowledgement failed chat=%s', chat_id)
             return False
+
+    def _send_button_reply(
+        self,
+        chat_id: str,
+        reply: ButtonReply,
+        *,
+        update_id: int | None = None,
+    ) -> None:
+        if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+            self.sessions.save_update_reply(update_id, reply.text)
+        self.api.send_keyboard(chat_id, reply.text, reply.keyboard)
 
     def smoke(self, chat_id: str, query: str) -> None:
         """Send only a contract-valid grounded production search result."""
@@ -816,6 +944,18 @@ class JobMasterTelegramBot:
     ) -> None:
         clean = (text or '').strip()
         if not clean:
+            return
+        if clean.startswith(BTN_PREFIX):
+            # A tapped inline-keyboard button, encoded through the same
+            # durable per-chat pipeline as typed text (see the poll loop) —
+            # a NUL prefix can never appear in a real Telegram text message,
+            # so this can never collide with anything a guest actually types.
+            button_reply = self.button_flow.handle_callback(chat_id, clean[len(BTN_PREFIX):])
+            self._send_button_reply(chat_id, button_reply, update_id=update_id)
+            if self.health_enabled:
+                self._write_health(
+                    status='running', last_result='ok', last_chat=chat_id, last_kind='button',
+                )
             return
         parsed = self._command(clean)
         if parsed and parsed[0] in OWNER_COMMANDS:
@@ -851,7 +991,13 @@ class JobMasterTelegramBot:
                 )
             return
         is_reset = bool(RESET_RE.match(clean))
-        if clean.lower() in {'/start', '/help', 'help'}:
+        if clean.lower() == '/start':
+            # /start is an explicit "let's begin" — always launches the
+            # primary button-driven flow, overwriting any stale state.
+            button_reply = self.button_flow.start(chat_id)
+            self._send_button_reply(chat_id, button_reply, update_id=update_id)
+            return
+        if clean.lower() in {'/help', 'help'}:
             reply = self.voice.speak(
                 'JobMaster provides verified jobs and live job-market insights. '
                 'Ask naturally in any sentence.'
@@ -860,17 +1006,43 @@ class JobMasterTelegramBot:
                 self.sessions.save_update_reply(update_id, reply)
             self.api.send(chat_id, reply)
             return
-        if not is_reset:
-            now = time.monotonic()
-            last = self._last_request.get(chat_id, 0.0)
-            if now - last < 1.0:
-                reply = 'One request at a time.'
-                if update_id is not None:
-                    self.sessions.save_update_reply(update_id, reply)
-                self.api.send(chat_id, reply)
-                return
-            if not acked:
-                self.api.send(chat_id, 'Thinking…')
+        if is_reset:
+            # Guide guests straight back into the primary button path after
+            # a reset, instead of leaving them at a bare confirmation line.
+            engine_reply = self.engine.handle(clean, chat_id)
+            button_reply = self.button_flow.start(chat_id)
+            combined = ButtonReply(f'{engine_reply}\n\n{button_reply.text}', button_reply.keyboard)
+            self._send_button_reply(chat_id, combined, update_id=update_id)
+            self._last_request.pop(chat_id, None)
+            return
+        onboarding_state = self.sessions.load_onboarding(chat_id)
+        old_style_onboarding_active = (
+            onboarding_state is not None
+            and not str(onboarding_state.get('stage') or '').startswith('btn_')
+        )
+        if not old_style_onboarding_active and GREETING_RE.match(clean):
+            # A bare greeting from a chat with no in-progress LEGACY text
+            # onboarding launches the new button-driven flow instead of the
+            # old text prompt — see app/telegram_buttons.py.
+            button_reply = self.button_flow.start(chat_id)
+            self._send_button_reply(chat_id, button_reply, update_id=update_id)
+            return
+        waitlist_reply = self.button_flow.handle_text(chat_id, clean)
+        if waitlist_reply is not None:
+            # Only ever True while a guest is mid waitlist-email capture —
+            # an integral part of the button flow, not a "give up" case.
+            self._send_button_reply(chat_id, waitlist_reply, update_id=update_id)
+            return
+        now = time.monotonic()
+        last = self._last_request.get(chat_id, 0.0)
+        if now - last < 1.0:
+            reply = 'One request at a time.'
+            if update_id is not None:
+                self.sessions.save_update_reply(update_id, reply)
+            self.api.send(chat_id, reply)
+            return
+        if not acked:
+            self.api.send(chat_id, 'Thinking…')
         engine_ok = True
         try:
             try:
@@ -893,10 +1065,7 @@ class JobMasterTelegramBot:
         if update_id is not None and self.sessions.load_update_reply(update_id) is None:
             self.sessions.save_update_reply(update_id, reply)
         self.api.send(chat_id, reply)
-        if is_reset:
-            self._last_request.pop(chat_id, None)
-        else:
-            self._last_request[chat_id] = time.monotonic()
+        self._last_request[chat_id] = time.monotonic()
         if MORE_RE.match(clean):
             self._page_count += 1
         else:
@@ -911,6 +1080,28 @@ class JobMasterTelegramBot:
                 query_count=self._query_count,
                 page_count=self._page_count,
             )
+
+    @staticmethod
+    def _normalize_update(update: dict) -> tuple[bool, dict, dict, str | None, str | None]:
+        """Fold a raw Telegram update (a `message` or a `callback_query`,
+        see `allowed_updates` in `TelegramAPI.updates`) into one common
+        shape the poll loop can dispatch uniformly. A button tap is
+        re-encoded as BTN_PREFIX-tagged text so it flows through the exact
+        same durable per-chat queue as typed messages (see queue_update) —
+        callers never need a second code path for it."""
+        callback = update.get('callback_query')
+        if callback:
+            message = callback.get('message') or {}
+            chat = message.get('chat') or {}
+            sender = callback.get('from') or {}
+            data = callback.get('data')
+            text = f'{BTN_PREFIX}{data}' if isinstance(data, str) else None
+            return True, chat, sender, text, callback.get('id')
+        message = update.get('message') or {}
+        chat = message.get('chat') or {}
+        sender = message.get('from') or {}
+        text = message.get('text')
+        return False, chat, sender, text, None
 
     def run(self) -> int:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
@@ -970,17 +1161,15 @@ class JobMasterTelegramBot:
                     for update in updates:
                         update_id = int(update.get('update_id', -1))
                         offset = max(offset, update_id + 1)
-                        message = update.get('message') or {}
-                        chat = message.get('chat') or {}
+                        is_callback, chat, sender, text, callback_id = self._normalize_update(update)
                         if chat.get('type') == 'private' and chat.get('id'):
-                            text = message.get('text')
                             if isinstance(text, str):
                                 chat_id = str(chat['id'])
-                                sender = message.get('from') or {}
                                 username = str(sender.get('username') or '')
                                 if not self._sender_allowed(chat_id, username):
                                     LOG.info(
-                                        'ignored blocked Telegram sender chat=%s username=%s',
+                                        'ignored blocked Telegram %s chat=%s username=%s',
+                                        'callback' if is_callback else 'sender',
                                         chat_id,
                                         username or 'none',
                                     )
@@ -989,6 +1178,12 @@ class JobMasterTelegramBot:
                                         offset,
                                     )
                                     continue
+                                if is_callback and callback_id:
+                                    # Best practice: acknowledge the tap (clears
+                                    # the button's loading spinner) as soon as
+                                    # it is authorized — processing itself may
+                                    # take longer via the durable queue below.
+                                    self.api.answer_callback(callback_id)
                                 if not self._is_owner(chat_id):
                                     observe_identity(chat_id, username)
                                 if self.sessions.queue_update(

@@ -230,6 +230,94 @@ def is_allowed(user_id, username=None) -> bool:
 
 
 @_locked
+def describe_access(user_id: str = '', username: str = '') -> dict:
+    """Same decision `is_allowed` makes, plus a plain-English reason — built
+    for a live-from-Telegram diagnostic (/checkaccess) since Ashok has no
+    ThinkPad terminal on his phone. Accepts either identifier (or both);
+    fills in whichever is missing from the identity log recorded by
+    `observe_identity` on every accepted message.
+
+    2026-08-05 incident note: /actasguest can never catch a real access-gate
+    bug, because `_sender_allowed` short-circuits on Ashok's own owner chat
+    id before `is_allowed` ever runs — this is the tool that actually
+    exercises the same logic a real guest hits.
+    """
+    handle = _norm_username(username)
+    user_id = str(user_id or '').strip()
+    data = _load()
+    if not user_id and handle:
+        candidates = _binding_candidates(data, handle)
+        if len(candidates) == 1:
+            user_id = next(iter(candidates))
+    if not handle and user_id and user_id in data['identities']:
+        handle = _norm_username(data['identities'][user_id].get('current_username'))
+    if user_id and user_id in owner_ids():
+        return {'allowed': True, 'reason': 'this is Ashok\u2019s own owner id — always allowed'}
+    if user_id and user_id in data['blocked_ids']:
+        return {'allowed': False, 'reason': f'Telegram ID {user_id} is explicitly blocked (/blockguest)'}
+    if handle and handle in data['blocked_usernames']:
+        return {'allowed': False, 'reason': f'@{handle} is explicitly blocked (/blockguest)'}
+    if handle and (handle in DEFAULT_ALLOWED_USERNAMES or handle in data['usernames']):
+        source = 'permanent default' if handle in DEFAULT_ALLOWED_USERNAMES else 'granted via /allowuser'
+        bound_user_id = str(data['username_bindings'].get(handle) or '')
+        if not bound_user_id:
+            candidates = _binding_candidates(data, handle)
+            if len(candidates) > 1:
+                return {
+                    'allowed': False,
+                    'reason': (
+                        f'@{handle} is allowed ({source}) but the identity log has seen it '
+                        f'from {len(candidates)} different Telegram IDs — send one message '
+                        'from the real account to auto-resolve the binding.'
+                    ),
+                }
+            if len(candidates) == 1:
+                bound_user_id = next(iter(candidates))
+        if bound_user_id and user_id and bound_user_id != user_id:
+            return {
+                'allowed': False,
+                'reason': (
+                    f'@{handle} is allowed ({source}) but is bound to Telegram ID '
+                    f'{bound_user_id}, not {user_id} — likely a new Telegram account or a '
+                    'reused handle. Fix: /revokeuser {handle} then /allowuser {handle} '
+                    'again after they message once.'
+                ).format(handle=handle),
+            }
+        if not bound_user_id and not user_id:
+            return {
+                'allowed': True,
+                'reason': (
+                    f'@{handle} is allowed ({source}) — not yet bound to a Telegram ID, '
+                    'binds automatically on their first message.'
+                ),
+            }
+        return {'allowed': True, 'reason': f'@{handle} is allowed ({source})'}
+    if _prune(data):
+        _save(data)
+    guest = data['guests'].get(user_id) if user_id else None
+    if guest and guest.get('expires_at', 0) > time.time():
+        remaining = format_ttl(guest['expires_at'] - time.time())
+        return {'allowed': True, 'reason': f'temporary guest access, {remaining} left'}
+    if guest:
+        return {'allowed': False, 'reason': 'temporary guest access expired'}
+    if not user_id and not handle:
+        return {'allowed': False, 'reason': 'no Telegram ID or @username on record for this person yet'}
+    if not handle:
+        return {
+            'allowed': False,
+            'reason': (
+                f'Telegram ID {user_id} has no @username on file and no matching guest '
+                'grant — if they have a public @username set on Telegram, allow that '
+                'instead of the numeric ID (usernames never expire, IDs do).'
+            ),
+        }
+    return {
+        'allowed': False,
+        'reason': f'@{handle} is not on the allowlist and has no active temporary guest grant',
+    }
+
+
+@_locked
 def is_username_allowed(username) -> bool:
     """True for a hardcoded default handle or one granted via /allowuser."""
     handle = _norm_username(username)

@@ -386,6 +386,12 @@ class GuestProfileOwnerCommandTests(unittest.TestCase):
             def send(self, chat_id, text):
                 self.sent.append((chat_id, text))
 
+            def send_keyboard(self, chat_id, text, keyboard):
+                self.send(chat_id, text)
+
+            def answer_callback(self, callback_query_id, text=''):
+                pass
+
             def call(self, method, data=None, timeout=35):
                 return {'ok': True}
 

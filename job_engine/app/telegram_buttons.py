@@ -172,9 +172,9 @@ class ButtonFlow:
     plain typed text a safe, zero-extra-code backup path.
     """
 
-    def __init__(self, engine: JobMasterEngine):
+    def __init__(self, engine: JobMasterEngine, sessions=None):
         self.engine = engine
-        self.sessions = engine.sessions
+        self.sessions = sessions if sessions is not None else engine.sessions
 
     # -- entry points ---------------------------------------------------
 
@@ -196,7 +196,7 @@ class ButtonFlow:
 
     def _family_step(self) -> ButtonReply:
         return ButtonReply(
-            'What kind of role are you looking for?',
+            'JobMaster here! What kind of role are you looking for?',
             _rows([(label, f'fam:{key}') for label, key in FAMILY_BUTTONS]),
         )
 

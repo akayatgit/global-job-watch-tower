@@ -626,6 +626,12 @@ class CoreConversationTests(unittest.TestCase):
         def send(self, chat_id, text):
             self.sent.append((chat_id, text))
 
+        def send_keyboard(self, chat_id, text, keyboard):
+            self.send(chat_id, text)
+
+        def answer_callback(self, callback_query_id, text=''):
+            pass
+
         def call(self, method, data=None, timeout=35):
             return {'ok': True}
 
@@ -668,6 +674,7 @@ class OwnerIsolationTests(unittest.TestCase):
     def test_JM021_to_JM025_guest_cannot_run_any_owner_command(self):
         for command in (
             '/health', '/towerinsights', '/searches', '/stats ai', '/governmentjobs',
+            '/checkaccess @someone',
         ):
             self.api.sent.clear()
             self.bot.process('guest', command)
