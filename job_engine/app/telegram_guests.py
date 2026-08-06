@@ -1,5 +1,6 @@
-"""Telegram guest access — lets Ashok grant/revoke temporary bot access from
-his phone (`/allow`, `/revoke`, `/guests`) with zero ThinkPad terminal access.
+"""Telegram guest access — lets Ashok block/un-block a sender from his phone
+(`/blockguest`, `/allowguest`, `/guests`, `/checkaccess`) with zero ThinkPad
+terminal access.
 
 Why this exists (2026-08-04 investor-demo incident, see documents/kanban.md
 card #1 and documents/hermes-agent-integration.md): Hermes' own Telegram
@@ -8,7 +9,17 @@ a blocked sender's messages never reach our code at all. The fix is to flip
 Hermes to `TELEGRAM_ALLOW_ALL_USERS=true` (one-time manual step on the
 ThinkPad) so every message reaches
 `job_engine/hermes_plugins/vigil-image-only/__init__.py`, and enforce our
-*own* allowlist there instead — fully controllable from this repo / Telegram.
+*own* access decision there instead — fully controllable from this repo /
+Telegram.
+
+**OPEN GATE (2026-08-06, Ashok — public launch: "anyone should be allowed...
+the moment they say hi or hey or hello"):** `is_allowed()` now allows EVERY
+sender by default. The owner is always allowed; an explicit `/blockguest`
+(numeric id) or `/blockuser` (@handle) is the only thing that denies access.
+`DEFAULT_ALLOWED_USERNAMES`, `/allowuser` grants, and temporary `/allowguest`
+windows below predate the open gate — they still work (mostly as a way to
+*un-block* someone, or leave a note), but nothing needs a grant to get in
+anymore.
 
 Zero external dependencies (stdlib only) so it stays importable from
 whatever Python environment the Hermes gateway happens to run under.
@@ -195,8 +206,16 @@ def _binding_candidates(data: dict, handle: str) -> set[str]:
 
 @_locked
 def is_allowed(user_id, username=None) -> bool:
-    """True for the owner, a guest whose grant hasn't expired, or a sender
-    whose Telegram @username is on the allowlist (default or granted)."""
+    """Open gate (2026-08-06 — Ashok: "anyone should be allowed... the
+    moment they say hi or hey or hello"): JobMaster is going public, so
+    everyone is a guest by default now. The owner is always allowed; an
+    explicit /blockguest (numeric id) or /blockuser (@handle) is the ONLY
+    thing that denies access. Everything below that — DEFAULT_ALLOWED_USERNAMES,
+    /allowuser grants, temporary /allowguest windows, and the identity/
+    binding bookkeeping — predates the open gate and no longer gates
+    anything; it now only feeds `describe_access` (informational) and the
+    block cascade in `block_username` (so blocking a renamed/recycled
+    handle still reaches every numeric id observed using it)."""
     user_id = str(user_id)
     if user_id in owner_ids():
         return True
@@ -206,27 +225,9 @@ def is_allowed(user_id, username=None) -> bool:
     handle = _norm_username(username)
     if handle and handle in data['blocked_usernames']:
         return False
-    if handle and (handle in DEFAULT_ALLOWED_USERNAMES or handle in data['usernames']):
-        bound_user_id = str(data['username_bindings'].get(handle) or '')
-        if not bound_user_id:
-            candidates = _binding_candidates(data, handle)
-            if len(candidates) > 1:
-                return False
-            if len(candidates) == 1:
-                bound_user_id = next(iter(candidates))
-                data['username_bindings'][handle] = bound_user_id
-                _save(data)
-        if bound_user_id and bound_user_id != user_id:
-            return False
-        if not bound_user_id:
-            data['username_bindings'][handle] = user_id
-            _remember_identity(data, user_id, handle)
-            _save(data)
-        return True
     if _prune(data):
         _save(data)
-    g = data['guests'].get(user_id)
-    return bool(g) and g.get('expires_at', 0) > time.time()
+    return True
 
 
 @_locked
@@ -241,6 +242,11 @@ def describe_access(user_id: str = '', username: str = '') -> dict:
     bug, because `_sender_allowed` short-circuits on Ashok's own owner chat
     id before `is_allowed` ever runs — this is the tool that actually
     exercises the same logic a real guest hits.
+
+    2026-08-06 open-gate note: the only way this now returns `allowed: False`
+    is an explicit /blockguest or /blockuser — everyone else is public by
+    design, so a mismatched username↔id binding or an unrecognized stranger
+    is informational here, never a denial.
     """
     handle = _norm_username(username)
     user_id = str(user_id or '').strip()
@@ -257,63 +263,36 @@ def describe_access(user_id: str = '', username: str = '') -> dict:
         return {'allowed': False, 'reason': f'Telegram ID {user_id} is explicitly blocked (/blockguest)'}
     if handle and handle in data['blocked_usernames']:
         return {'allowed': False, 'reason': f'@{handle} is explicitly blocked (/blockguest)'}
+    if _prune(data):
+        _save(data)
     if handle and (handle in DEFAULT_ALLOWED_USERNAMES or handle in data['usernames']):
         source = 'permanent default' if handle in DEFAULT_ALLOWED_USERNAMES else 'granted via /allowuser'
         bound_user_id = str(data['username_bindings'].get(handle) or '')
         if not bound_user_id:
             candidates = _binding_candidates(data, handle)
-            if len(candidates) > 1:
-                return {
-                    'allowed': False,
-                    'reason': (
-                        f'@{handle} is allowed ({source}) but the identity log has seen it '
-                        f'from {len(candidates)} different Telegram IDs — send one message '
-                        'from the real account to auto-resolve the binding.'
-                    ),
-                }
             if len(candidates) == 1:
                 bound_user_id = next(iter(candidates))
         if bound_user_id and user_id and bound_user_id != user_id:
             return {
-                'allowed': False,
-                'reason': (
-                    f'@{handle} is allowed ({source}) but is bound to Telegram ID '
-                    f'{bound_user_id}, not {user_id} — likely a new Telegram account or a '
-                    'reused handle. Fix: /revokeuser {handle} then /allowuser {handle} '
-                    'again after they message once.'
-                ).format(handle=handle),
-            }
-        if not bound_user_id and not user_id:
-            return {
                 'allowed': True,
                 'reason': (
-                    f'@{handle} is allowed ({source}) — not yet bound to a Telegram ID, '
-                    'binds automatically on their first message.'
+                    f'open to the public; @{handle} is also named ({source}) but that grant is '
+                    f'bound to Telegram ID {bound_user_id}, not {user_id} — informational only, '
+                    'access itself is unaffected since JobMaster is open to everyone.'
                 ),
             }
-        return {'allowed': True, 'reason': f'@{handle} is allowed ({source})'}
-    if _prune(data):
-        _save(data)
+        return {'allowed': True, 'reason': f'open to the public; @{handle} is also named ({source})'}
     guest = data['guests'].get(user_id) if user_id else None
     if guest and guest.get('expires_at', 0) > time.time():
         remaining = format_ttl(guest['expires_at'] - time.time())
-        return {'allowed': True, 'reason': f'temporary guest access, {remaining} left'}
-    if guest:
-        return {'allowed': False, 'reason': 'temporary guest access expired'}
-    if not user_id and not handle:
-        return {'allowed': False, 'reason': 'no Telegram ID or @username on record for this person yet'}
-    if not handle:
         return {
-            'allowed': False,
-            'reason': (
-                f'Telegram ID {user_id} has no @username on file and no matching guest '
-                'grant — if they have a public @username set on Telegram, allow that '
-                'instead of the numeric ID (usernames never expire, IDs do).'
-            ),
+            'allowed': True,
+            'reason': f'open to the public; also has a temporary VIP grant, {remaining} left',
         }
+    who = f'@{handle}' if handle else (f'Telegram ID {user_id}' if user_id else 'this person')
     return {
-        'allowed': False,
-        'reason': f'@{handle} is not on the allowlist and has no active temporary guest grant',
+        'allowed': True,
+        'reason': f'{who} is not blocked — JobMaster is open to the public, no grant needed',
     }
 
 

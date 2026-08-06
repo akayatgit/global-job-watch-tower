@@ -152,6 +152,21 @@ because `/actasguest` structurally cannot (it short-circuits on Ashok's own
 owner id before the real gate ever runs) — see kanban card #12. 230/230
 tests green.
 
+**Open Gate — public access, no allowlist (2026-08-06):** Ashok — "1 lakh
+people will not flood overnight 😂 ... let anyone be the guest the moment
+they say hi" — JobMaster access flipped from allow-list-by-default to
+**open-by-default**: `app/telegram_guests.py::is_allowed()` now allows every
+sender except an explicit `/blockguest`/`/blockuser`; the old named allow-
+list, temporary grants, and username↔id binding logic still exist but no
+longer gate anything (kanban card #13). This is the actual "ship it to
+anyone with the link" moment; word of mouth is now the intended growth
+channel ahead of the 1-lakh scale migration above. Vision-only, explicitly
+not built yet: **Vigil 2.0**, the same bot selling affiliate items/ads
+(courses, books, gadgets, laptops) through the trust built by genuinely
+useful job alerts/insights — recorded as a standing law in
+`.cursor/rules/akay-soul.mdc` and `.cursor/rules/product-ux.mdc` so every
+future JobMaster decision keeps that funnel viable.
+
 **Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
 tier unlocked after sustained usage, covering quiz, alerts, flashcards,
 study materials, prep book, projects, certifications, and a full LMS.

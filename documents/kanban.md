@@ -22,6 +22,67 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 13. Open the Gate — public access, no more allow-one-by-one
+
+**Request (2026-08-06, 14:14 UTC):** Ashok, right after accepting card #11 at
+99/100 — "1 lakh people will not flood overnight 😂 ... we are just going to
+let 'Vigil' the guest chatbot come online, so we can start spreading about it
+... ship it to anyone who has the link ... **Open the Gate** ... Allow all
+the guests, no need for me to give allow one by one ... let anyone be the
+guest the moment they say hi or hey or hello anything they talk to."
+
+**Shipped:** `app/telegram_guests.py::is_allowed()` flipped from
+allow-list-by-default to **open-by-default**: the owner is always allowed;
+`/blockguest` (numeric id) / `/blockuser` (@handle) is now the *only* thing
+that denies access; every other sender — granted or not — is allowed the
+instant they message. `DEFAULT_ALLOWED_USERNAMES`, `/allowuser`/`/allowguest`
+grants, and the username↔id binding bookkeeping still exist (mostly to
+un-block someone or leave a VIP note) but no longer gate anything.
+`describe_access()`/`/checkaccess` updated to report `ALLOWED` with an
+informational reason instead of denying on a stale/mismatched binding.
+`/guests` dashboard rewritten to lead with **Blocked** (the real gate now)
+instead of a named allow-list that no longer decides who gets in. No change
+needed to the immediate-acknowledgement or button-flow-on-greeting paths —
+they already fire for any allowed sender, so opening the gate is what makes
+them fire for a genuinely new stranger too.
+
+**Why this matters (Ashok's framing):** JobMaster is going from an invite-only
+pilot to "anyone with the link" so word-of-mouth becomes the growth channel.
+Immediate acknowledgement (`Thinking…` / instant button prompts) is the
+retention mechanism this whole approach depends on — a stranger who says "hi"
+must never be silently ignored again (that was the entire class of bug behind
+@supriyamk's outage under the old allow-list gate).
+
+**Vision noted, not built (2026-08-06):** Ashok also described **Vigil 2.0**
+— the same bot selling affiliate items/ads through earned trust (job alerts,
+interview insights, quizzes, links, certification/skill recommendations, then
+tasteful high-ticket affiliate offers). Explicitly deferred — "just don't work
+on 2.0, but keep it in vision" — recorded as a standing law in
+`.cursor/rules/akay-soul.mdc` ("Why this must sell — survival law") and
+`.cursor/rules/product-ux.mdc` so future JobMaster decisions keep it viable.
+No monetization code in this slice.
+
+**Evidence:** full suite green (230/230) — `test_telegram_job_bot.py` updated:
+old deny-by-default binding-conflict tests rewritten to assert the new
+open-by-default behavior (`test_username_binding_no_longer_restricts_other_ids_under_open_gate`,
+`test_a_stranger_with_no_identity_record_at_all_is_still_allowed`,
+`test_checkaccess_allows_a_never_before_seen_stranger`,
+`test_checkaccess_notes_a_username_bound_to_a_different_telegram_id_but_still_allows`,
+`test_reallowing_a_username_does_not_lift_an_ids_own_block`); block-cascade
+tests (blocking a username/id, renamed/recycled aliases) verified unchanged.
+
+**Files:** `job_engine/app/telegram_guests.py`,
+`job_engine/scripts/telegram_job_bot.py`,
+`job_engine/tests/test_telegram_job_bot.py`, `.cursor/rules/akay-soul.mdc`,
+`.cursor/rules/product-ux.mdc`.
+
+**Acceptance:** Ashok merges/deploys, then a brand-new Telegram account with
+**no prior `/allowguest`/`/allowuser` grant** messages "hi" and gets an
+instant button-flow greeting; `/checkaccess <that id>` shows `ALLOWED`;
+`/blockguest <that id>` immediately silences them; `/allowguest <that id>`
+brings them back. Keep open until Ashok confirms this live with a real
+never-before-seen account (not `/actasguest`).
+
 ### 11. JobMaster voice layer (1A) — natural tone around deterministic facts
 
 **Request (2026-08-05):** Ashok — "the chat has no life, we cant run on
@@ -165,6 +226,22 @@ new `NormalizeUpdateTests` in `test_telegram_job_bot.py` covering the
 message-vs-callback_query poll-loop wiring in isolation (this exact
 `_normalize_update` method was called before it was defined during
 development — caught by this test, not by a human).
+
+**Accepted (2026-08-06, 13:53 UTC):** Ashok — "Im giving you 99/100. We have
+an usable product" — after live-testing the full tap-through flow, hitting
+the NLP Engineer zero-result case, and confirming the fallback fix. Card
+stays open only to capture the missing 1% (see next forward-working
+question) and the `@supriyamk` `/checkaccess` root cause below.
+
+**@supriyamk update (2026-08-06, superseded by card #13):** whatever the
+exact original cause was (block, stale binding, or a missing username on the
+update), it no longer matters — card #13's Open Gate change makes `is_allowed`
+allow-by-default, so @supriyamk (and any other never-granted sender) is
+allowed regardless of allow-list/binding state from here on. The only way she
+could still be silenced is an explicit `/blockguest`/`/blockuser` (check with
+`/checkaccess @supriyamk`) or a Hermes-side transport gate outside this repo
+(`TELEGRAM_ALLOW_ALL_USERS` on the ThinkPad) — both are one command/one env
+var away from confirming.
 
 **Acceptance:** Ashok runs `/checkaccess @supriyamk` live and reports the
 verdict/reason; if it comes back "not on the allowlist" or a binding

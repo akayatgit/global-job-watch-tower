@@ -405,9 +405,24 @@ command runs the exact same decision a real message hits.
 
 | ID | Do | Expected |
 |---|---|---|
-| JM-198 | Ashok: `/checkaccess @supriyamk` | Reports ALLOWED/BLOCKED with a plain-English reason (e.g. "permanent default", "bound to Telegram ID X", "explicitly blocked"). Run this first for any live "a guest can't text" report. |
-| JM-199 | Ashok: `/checkaccess <a Telegram numeric ID that has never messaged>` | Reports BLOCKED — "no @username on file and no matching guest grant." |
+| JM-198 | Ashok: `/checkaccess @supriyamk` | Reports ALLOWED with a plain-English reason (e.g. "permanent default", "open to the public"); a stale binding note is informational only, never a denial. Run this first for any live "a guest can't text" report. |
+| JM-199 | Ashok: `/checkaccess <a Telegram numeric ID that has never messaged>` | Reports ALLOWED — "is not blocked — JobMaster is open to the public, no grant needed." (Open Gate, 2026-08-06 — see 14D below.) |
 | JM-200 | Supriya (or any non-owner): `/checkaccess @anyone` | Ordinary owner-command denial ("JobMaster can help you find verified jobs...") — never leaks access-control internals to a guest. |
+
+## 14D. Open Gate — public access by default (2026-08-06)
+
+Ashok: "Allow all the guests, no need for me to give allow one by one ...
+let anyone be the guest the moment they say hi or hey or hello." Access
+flipped from allow-list-by-default to open-by-default — the only way in is
+now to be blocked.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-201 | A brand-new Telegram account that has **never** been touched by `/allowguest`/`/allowuser` sends "hi" | Immediate button-flow greeting (Family choices) — no silence, no need for Ashok to grant anything first. |
+| JM-202 | Ashok: `/checkaccess <that new account's id>` right after JM-201 | Reports ALLOWED — "is not blocked — JobMaster is open to the public, no grant needed." |
+| JM-203 | Ashok: `/blockguest <that id>`, then the same account sends any message | No reply at all (silent-on-deny, unchanged design) — the block still works even though the gate is open by default. |
+| JM-204 | Ashok: `/allowguest <that id>` after JM-203, then the account sends "hi" again | Access restored — immediate button-flow greeting again, same as JM-201. |
+| JM-205 | Ashok: `/guests` | Dashboard now leads with **Blocked** (the real gate) instead of a "people with access" allow-list; shows "Blocked: nobody." when clean. |
 
 ## 15. Execution log
 

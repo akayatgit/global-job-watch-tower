@@ -436,7 +436,10 @@ class TelegramBotContractTests(unittest.TestCase):
         for invalid_minutes in ('name', '0', '-1', 'inf', '20161'):
             bot.process('owner', f'/allowguest 12345 {invalid_minutes}')
             self.assertIn('Minutes must be a number from 1 to 20160', self.api.sent[-1][1])
-            self.assertFalse(bot._sender_allowed('12345'))
+            # Open gate (2026-08-06): a rejected /allowguest just means no
+            # *temporary* grant was recorded — 12345 is still allowed in,
+            # same as any other never-granted stranger.
+            self.assertTrue(bot._sender_allowed('12345'))
 
     def test_queued_guest_is_dropped_after_owner_blocks_username(self):
         bot = JobMasterTelegramBot(
@@ -549,8 +552,11 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertIn('BLOCKED', reply)
         self.assertIn('blocked', reply.lower())
 
-    def test_checkaccess_explains_a_username_bound_to_a_different_telegram_id(self):
+    def test_checkaccess_notes_a_username_bound_to_a_different_telegram_id_but_still_allows(self):
+        # Open gate (2026-08-06): a stale/mismatched username↔id binding is
+        # informational only now — it never denies access.
         telegram_guests.add_username('newperson')
+        telegram_guests.observe_identity('111', 'newperson')
         self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
         bot = JobMasterTelegramBot(
             self.api,
@@ -561,10 +567,12 @@ class TelegramBotContractTests(unittest.TestCase):
         )
         bot.process('owner', '/checkaccess @newperson 222')
         reply = self.api.sent[-1][1]
-        self.assertIn('BLOCKED', reply)
+        self.assertIn('ALLOWED', reply)
         self.assertIn('111', reply)
 
-    def test_checkaccess_flags_a_username_with_no_telegram_id_yet(self):
+    def test_checkaccess_allows_a_never_before_seen_stranger(self):
+        # Open gate (2026-08-06): nobody needs a grant anymore — only an
+        # explicit /blockguest denies access.
         bot = JobMasterTelegramBot(
             self.api,
             engine=self.engine,
@@ -574,7 +582,7 @@ class TelegramBotContractTests(unittest.TestCase):
         )
         bot.process('owner', '/checkaccess 555')
         reply = self.api.sent[-1][1]
-        self.assertIn('BLOCKED', reply)
+        self.assertIn('ALLOWED', reply)
 
     def test_checkaccess_is_denied_to_a_non_owner_like_every_management_command(self):
         bot = JobMasterTelegramBot(
@@ -612,28 +620,16 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(telegram_guests.is_allowed('99', 'changedname'))
         self.assertIn('99', telegram_guests.list_blocked()['user_ids'])
 
-    def test_username_grant_binds_to_first_numeric_identity(self):
+    def test_username_binding_no_longer_restricts_other_ids_under_open_gate(self):
+        # Pre-open-gate, a granted @username only "worked" for whichever
+        # numeric id it first bound to. That anti-hijack protection existed
+        # only to guard the allow-list gate — now that the gate is open by
+        # default (2026-08-06), it's moot: any id is allowed regardless.
         telegram_guests.add_username('newperson')
         self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
-        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+        self.assertTrue(telegram_guests.is_allowed('222', 'newperson'))
 
-    def test_existing_identity_is_migrated_before_username_can_be_claimed(self):
-        telegram_guests.GUESTS_FILE.write_text(
-            json.dumps({
-                'guests': {},
-                'usernames': {'newperson': {'added_at': 1, 'added_by': 'owner'}},
-                'blocked_ids': {},
-                'blocked_usernames': {},
-                'identities': {
-                    '111': {'username': 'newperson', 'seen_at': 1},
-                },
-            }),
-            encoding='utf-8',
-        )
-        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
-        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
-
-    def test_ambiguous_existing_identity_fails_closed(self):
+    def test_a_stranger_with_no_identity_record_at_all_is_still_allowed(self):
         telegram_guests.GUESTS_FILE.write_text(
             json.dumps({
                 'guests': {},
@@ -647,8 +643,9 @@ class TelegramBotContractTests(unittest.TestCase):
             }),
             encoding='utf-8',
         )
-        self.assertFalse(telegram_guests.is_allowed('111', 'newperson'))
-        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        self.assertTrue(telegram_guests.is_allowed('222', 'newperson'))
+        self.assertTrue(telegram_guests.is_allowed('333', 'someone-never-seen'))
 
     def test_blocking_previous_username_blocks_same_person_after_rename(self):
         telegram_guests.add_guest('99', minutes=60)
@@ -665,14 +662,19 @@ class TelegramBotContractTests(unittest.TestCase):
         telegram_guests.block_username(aliases[0], blocked_by='owner')
         self.assertFalse(telegram_guests.is_allowed('99', aliases[-1]))
 
-    def test_reallowing_recycled_username_does_not_resurrect_old_holder(self):
+    def test_reallowing_a_username_does_not_lift_an_ids_own_block(self):
+        # Open gate (2026-08-06): re-running /allowuser is now a no-op for
+        # access itself (everyone's already in), but it also must not have
+        # a side effect of silently un-blocking a numeric id that
+        # block_username had already cascaded to — only /allowguest for
+        # that specific id (or the id never having been linked) can do that.
         telegram_guests.add_username('newperson')
-        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        telegram_guests.observe_identity('111', 'newperson')
         telegram_guests.block_username('newperson', blocked_by='owner')
+        self.assertFalse(telegram_guests.is_allowed('111', 'newperson'))
         telegram_guests.add_username('newperson', added_by='owner')
-        self.assertFalse(telegram_guests.is_allowed('222', 'newperson'))
-        self.assertFalse(telegram_guests.is_allowed('111', 'changedname'))
-        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        self.assertFalse(telegram_guests.is_allowed('111', 'anything'))
+        self.assertTrue(telegram_guests.is_allowed('222', 'newperson'))
 
     def test_command_menu_is_scoped_only_to_owner_chat(self):
         bot = JobMasterTelegramBot(
@@ -695,9 +697,12 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(scope, {'type': 'chat', 'chat_id': 1221647274})
         commands = json.loads(self.api.calls[2][1]['commands'])
         self.assertIn({'command': 'health', 'description': 'Tower health'}, commands)
-        self.assertIn({'command': 'allowguest', 'description': 'Allow a person'}, commands)
-        self.assertIn({'command': 'blockguest', 'description': 'Block a person'}, commands)
-        self.assertIn({'command': 'guests', 'description': 'People with access'}, commands)
+        self.assertIn({'command': 'allowguest', 'description': 'Un-block / VIP a person'}, commands)
+        self.assertIn(
+            {'command': 'blockguest', 'description': 'Block a person (public by default)'},
+            commands,
+        )
+        self.assertIn({'command': 'guests', 'description': 'Access dashboard'}, commands)
         self.assertIn(
             {'command': 'history', 'description': 'Guest conversation history'},
             commands,
