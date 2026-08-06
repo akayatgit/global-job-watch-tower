@@ -116,9 +116,9 @@ OWNER_COMMANDS = frozenset((
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
 OWNER_MENU = [
-    {'command': 'allowguest', 'description': 'Allow a person'},
-    {'command': 'blockguest', 'description': 'Block a person'},
-    {'command': 'guests', 'description': 'People with access'},
+    {'command': 'allowguest', 'description': 'Un-block / VIP a person'},
+    {'command': 'blockguest', 'description': 'Block a person (public by default)'},
+    {'command': 'guests', 'description': 'Access dashboard'},
     {'command': 'history', 'description': 'Guest conversation history'},
     {'command': 'guestprofile', 'description': 'Guest role/experience/city'},
     {'command': 'checkaccess', 'description': 'Why can/can\'t a person text?'},
@@ -606,27 +606,35 @@ class JobMasterTelegramBot:
             block_username(handle, blocked_by=chat_id)
             return f'Blocked @{handle}. New messages will be ignored.'
 
+        # Open gate (2026-08-06): access is public now — /blockguest and
+        # /blockuser are the only remaining gate, so that's what this
+        # dashboard leads with. The named allow-list and temporary VIP
+        # grants below still exist (mostly for un-blocking / notes) but no
+        # longer decide who gets in.
         allowed = list_usernames()
         temporary = list_guests()
         blocked = list_blocked()
-        lines = ['PEOPLE WITH ACCESS']
-        if allowed:
-            lines.extend(f"  · @{item['username']}" for item in allowed)
-        if temporary:
-            lines.append('')
-            lines.append('Temporary access')
-            for item in temporary:
-                label = f" · {item['label']}" if item['label'] else ''
-                lines.append(
-                    f"  · {item['user_id']}{label} · {format_ttl(item['expires_in_s'])} left"
-                )
+        lines = ['ACCESS: OPEN TO EVERYONE', 'Anyone who messages JobMaster is a guest.']
         if blocked['usernames'] or blocked['user_ids']:
             lines.append('')
             lines.append('Blocked')
             lines.extend(f'  · @{handle}' for handle in blocked['usernames'])
             lines.extend(f'  · {user_id}' for user_id in blocked['user_ids'])
-        if len(lines) == 1:
-            lines.append('  · No guests allowed.')
+        else:
+            lines.append('')
+            lines.append('Blocked: nobody.')
+        if allowed:
+            lines.append('')
+            lines.append('Named (legacy allow-list, no longer required)')
+            lines.extend(f"  · @{item['username']}" for item in allowed)
+        if temporary:
+            lines.append('')
+            lines.append('Temporary VIP grants')
+            for item in temporary:
+                label = f" · {item['label']}" if item['label'] else ''
+                lines.append(
+                    f"  · {item['user_id']}{label} · {format_ttl(item['expires_in_s'])} left"
+                )
         return '\n'.join(lines)
 
     def _configure_command_menu(self) -> bool:
