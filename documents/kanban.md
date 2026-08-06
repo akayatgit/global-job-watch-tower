@@ -185,6 +185,25 @@ open until Ashok accepts the live result.
 `job_engine/tests/test_jobmaster_onboarding.py`,
 `job_engine/tests/test_jobmaster_acceptance.py`.
 
+**Live bug found right after merge (2026-08-06, Ashok's first live test):**
+tapped AI/ML → NLP Engineer → Fresher → a city and got a dead "No verified
+jobs match that search right now" screen. Root cause: `_matches_role`
+requires the specific role keyword (`nlp`) to literally appear in the job
+title — a real, narrow keyword like that can have zero live postings at any
+given moment even though the AI/ML family overall has plenty. This is a
+*button-UX-created* problem: free text rarely typed something this narrow,
+but a dedicated "NLP Engineer" button makes hitting an empty niche trivial.
+**Fixed:** `ButtonFlow._run_search` now retries with `role_keywords=[]`
+(exactly what "Any AI/ML role" already searches — same family, never a
+different one, so JM056's "no substitution across categories" contract is
+untouched) whenever the specific-role search comes back empty, and prefaces
+the wider results with "No {role} openings right now — here are other
+{family} roles instead." The guest's *actual* pick (NLP Engineer) is still
+what gets remembered for "welcome back," not the broadened search shown to
+them. New regression test:
+`test_a_narrow_role_with_zero_openings_falls_back_to_the_wider_family`.
+231/231 green.
+
 ### 5. Public carousel — clean modern design with real tower data (Ashok 2026-08-04)
 
 **Status (2026-08-04):** Slice 1 shipped — rotating art-direction engine.
