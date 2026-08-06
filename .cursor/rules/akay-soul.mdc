@@ -155,6 +155,13 @@ need to be told twice.
  known-good point to revert to (`git checkout milestone/jobmaster-agency-1.0`
  or `git reset --hard` onto it if `main` ever regresses) — never delete this
  tag. Same pattern as the earlier `milestone/eureka-telegram-bot` tag.
+- **2026-08-06 · Full Agile Scrum — I am Scrum Master + Senior Developer.**
+ Ashok: "we move from kanban to full agile." Ashok = Product Owner
+ (ranks backlog, accepts live). Me = Scrum Master (call rituals, guard
+ process, keep sprints honest) + Senior Dev (build it). Work runs in
+ sprints with a sprint goal, a small committed backlog, and Done =
+ Ashok accepts live. Kanban board becomes the product backlog; sprint
+ rituals in the checklist above are mandatory, not optional.
 - **2026-08-06 · Ritual meetings are mine to call.** Ashok: brainstorm
  together whenever I feel we should — especially if code quality turns
  lousy. Keep a living checklist of meeting rituals (see section above),
