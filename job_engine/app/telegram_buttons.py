@@ -25,7 +25,7 @@ the button chrome around them, it never invents data.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from app.cities import city_label
 from app.telegram_job_search import (
@@ -364,27 +364,55 @@ class ButtonFlow:
     def _run_search(
         self, chat_id: str, intent: JobMasterIntent, *, display_experience: str = 'fresher',
     ) -> ButtonReply:
+        chosen_intent = intent  # what the guest actually picked — used for the
+                                 # remembered guest profile, even if broadened below.
+        search_intent = intent
         reply_text, seen_ids = self.engine._job_reply(intent, seen_ids=[])
+        broadened_from = ''
+        if intent.role_keywords and 'No verified jobs' in reply_text:
+            # A specific role button (e.g. "NLP Engineer") can easily have
+            # zero live postings at any given moment even though its family
+            # has plenty — a narrow button tap should never dead-end a guest
+            # when a wider, still-honest, same-family result exists. This
+            # only ever widens *within* the chosen family (role_keywords=[]
+            # is exactly what "Any <Family> role" already searches) — it
+            # never substitutes a different family, so JM056's "no
+            # substitution across categories" contract still holds.
+            broader_intent = replace(intent, role_keywords=[])
+            broader_reply, broader_seen = self.engine._job_reply(broader_intent, seen_ids=[])
+            if 'No verified jobs' not in broader_reply:
+                broadened_from = _role_label(intent.role_family, intent.role_keywords)
+                search_intent = broader_intent
+                reply_text, seen_ids = broader_reply, broader_seen
         self.sessions.apply_result(
             chat_id,
             reply_text,
-            intent=asdict(intent),
+            intent=asdict(search_intent),
             page=0,
             seen_ids=seen_ids,
         )
-        self.engine._maybe_save_guest_profile(chat_id, intent)
+        self.engine._maybe_save_guest_profile(chat_id, chosen_intent)
         # Overwrite with the guest's own word (Intern vs Fresher) for a
         # truer "Welcome back" later — the query itself always uses the
         # shared 'fresher' track (see comment above), but the guest's
-        # self-identified label is worth remembering accurately.
+        # self-identified choice (not the broadened search) is worth
+        # remembering accurately.
         self.sessions.save_guest_profile(
             chat_id,
-            role_label=_role_label(intent.role_family, intent.role_keywords),
-            role_family=intent.role_family,
-            role_keywords=intent.role_keywords,
+            role_label=_role_label(chosen_intent.role_family, chosen_intent.role_keywords),
+            role_family=chosen_intent.role_family,
+            role_keywords=chosen_intent.role_keywords,
             experience=display_experience,
-            city=intent.cities[0] if intent.cities else '',
+            city=chosen_intent.cities[0] if chosen_intent.cities else '',
         )
+        if broadened_from:
+            family_label = ROLE_FAMILY_LABELS.get(
+                search_intent.role_family, search_intent.role_family.replace('_', ' ').title(),
+            )
+            reply_text = (
+                f'No {broadened_from} openings right now — here are other '
+                f'{family_label} roles instead:\n\n{reply_text}'
+            )
         actions: list[tuple[str, str]] = []
         if 'No verified jobs' in reply_text or 'No more verified jobs' in reply_text:
             actions = [('Try another role', 'reask:role'), ('Try another family', 'reask:family')]

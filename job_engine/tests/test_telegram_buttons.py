@@ -192,6 +192,31 @@ class FocusExperienceReachesCityAndResultsTests(BaseButtonFlowTest):
         self.assertIn('Try another role', labels)
         self.assertIn('Try another family', labels)
 
+    def test_a_narrow_role_with_zero_openings_falls_back_to_the_wider_family(self):
+        """Live regression (2026-08-06): Ashok picked AI/ML -> NLP Engineer
+        -> Fresher -> a city and got a dead 'No verified jobs' screen even
+        though the AI/ML family had openings — a narrow role button should
+        never dead-end a guest when the wider, still-honest, same-family
+        search has real results."""
+        self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
+        self.flow.handle_callback('chat-16', 'fam:ai_ml')
+        # ROLE_BUTTONS['ai_ml'][1] == ('NLP Engineer', ['nlp']) — no job in
+        # the fixture has "nlp" in its title, but the family itself does.
+        self.flow.handle_callback('chat-16', 'role:ai_ml:1')
+        self.flow.handle_callback('chat-16', 'exp:fresher')
+        bengaluru_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == 'bengaluru')
+        reply = self.flow.handle_callback('chat-16', f'city:{bengaluru_idx}')
+        self.assertNotIn('No verified jobs', reply.text)
+        self.assertIn('No AI/ML NLP openings right now', reply.text)
+        self.assertIn('here are other AI/ML roles instead', reply.text)
+        self.assertIn('Company 1', reply.text)
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('🔄 New search', labels)
+        # The guest's actual pick (NLP Engineer) is what gets remembered for
+        # "welcome back" — not the broadened search that was shown instead.
+        profile = self.sessions.get_guest_profile('chat-16')
+        self.assertEqual(profile['role_keywords'], ['nlp'])
+
     def test_more_button_reuses_the_existing_pagination_engine(self):
         self.api.jobs = [make_job(i, title='Java Developer', city='bengaluru') for i in range(1, 26)]
         self.flow.handle_callback('chat-15', 'fam:software')
