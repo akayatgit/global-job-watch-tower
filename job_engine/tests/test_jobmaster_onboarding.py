@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import telegram_guests
-from app.telegram_job_search import IntentInterpreter, JobMasterEngine
+from app.telegram_job_search import IntentInterpreter, JobMasterEngine, JobMasterIntent
 from app.telegram_sessions import AmbiguousTelegramIdentity, TelegramSessionStore
 from scripts.telegram_job_bot import JobMasterTelegramBot
 from tests.test_jobmaster_acceptance import FakeAPI, make_job
@@ -187,6 +187,81 @@ class OnboardingFlowTests(BaseOnboardingTest):
         guest_reply = self.engine.handle('Hi', 'guest-1')
         owner_reply = owner_engine.handle('Hi', 'owner-1')
         self.assertEqual(guest_reply, owner_reply)
+
+
+class LiveGuestRegressionTests(BaseOnboardingTest):
+    """RCA (2026-08-06): a real guest chat surfaced three bugs in one
+    session — a duplicated role label, a bare 'yes' leaking into a role
+    field, and the today-count gate silently dropping a city the guest
+    already gave. All three are pure onboarding-state-machine bugs, not
+    caused by the (innocent, fact-locked) voice layer. These stay covered
+    even after the button-based flow ships, since free text remains a
+    supported backup path."""
+
+    def test_yes_after_a_dead_end_does_not_leak_as_a_role_keyword(self):
+        # Any today-gate dead end resets the stage to ask_role, where
+        # AFFIRMATIVE_RE is never consulted (only at ask_return_choice) — a
+        # bare "yes" used to survive FILLER stripping and become the literal
+        # role_keyword ['yes'], which _role_label then upper-cased to "YES".
+        self._set_today_count(0)
+        self.engine.handle('Hi', 'chat-50')
+        dead_end = self.engine.handle('Astronaut trainer', 'chat-50')
+        self.assertIn('different role', dead_end.lower())
+        reply = self.engine.handle('yes', 'chat-50')
+        self.assertNotIn('YES', reply)
+        self.assertIn("didn't catch a job role", reply)
+
+    def test_no_after_a_dead_end_does_not_leak_as_a_role_keyword_either(self):
+        self._set_today_count(0)
+        self.engine.handle('Hi', 'chat-51')
+        self.engine.handle('Astronaut trainer', 'chat-51')
+        reply = self.engine.handle('no', 'chat-51')
+        self.assertNotIn('NO', reply)
+        self.assertIn("didn't catch a job role", reply)
+
+    def test_today_gate_respects_a_city_already_given_in_the_same_message(self):
+        # "AI jobs in Bangalore" absorbs the city immediately, but the count
+        # check used to ignore it and query the nationwide 'all' bucket.
+        self._set_today_count(50)  # nationwide 'all' bucket: plenty
+        self._set_today_count(0, city='bengaluru')  # but zero in Bengaluru
+        self.engine.handle('Hi', 'chat-52')
+        reply = self.engine.handle('AI jobs in Bangalore', 'chat-52')
+        # If the city were still being ignored this would show the count
+        # prompt (nationwide bucket has 50); city-aware, it must dead-end.
+        self.assertIn("I don\u2019t see verified", reply)
+        self.assertIn('Bengaluru', reply)
+        onboarding = self.sessions.load_onboarding('chat-52')
+        self.assertEqual(onboarding['stage'], 'ask_role')
+
+    def test_today_gate_count_prompt_also_mentions_the_known_city(self):
+        self._set_today_count(4, city='chennai')
+        self.engine.handle('Hi', 'chat-53')
+        reply = self.engine.handle('Data Analyst in Chennai', 'chat-53')
+        self.assertIn('4', reply)
+        self.assertIn('Chennai', reply)
+        self.assertIn('experience', reply.lower())
+
+    def test_llm_keywords_overlapping_the_family_do_not_duplicate_the_label(self):
+        # The deterministic fallback already strips FAMILY_WORDS, so this
+        # bug only reproduces via the LLM intent path, which used to skip
+        # that stripping entirely (see IntentInterpreter._validate).
+        class _StubInterpreter:
+            def parse(self, text):
+                return JobMasterIntent(
+                    kind='job_search',
+                    role_family='product',
+                    role_keywords=['product', 'manager'],
+                )
+
+        engine = JobMasterEngine(
+            api_get=self.api,
+            interpreter=_StubInterpreter(),
+            sessions=self.sessions,
+        )
+        engine.handle('product manager roles', 'chat-54')
+        profile = self.sessions.get_guest_profile('chat-54')
+        self.assertEqual(profile['role_label'], 'Product Manager')
+        self.assertNotIn('Product Product', profile['role_label'])
 
 
 class GuestProfilePersistenceTests(BaseOnboardingTest):
