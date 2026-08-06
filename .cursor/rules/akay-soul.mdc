@@ -145,6 +145,16 @@ need to be told twice.
  real `is_allowed()` gate ever runs. Built `/checkaccess` to run that exact
  gate live from Telegram. Lesson: a "test as guest" mode is only honest if
  it walks the same code path a stranger's message actually takes.
+- **2026-08-06 · Milestone locked — `milestone/jobmaster-agency-1.0`.** Ashok:
+ "this is a working first mastercopy, we should never mess this up, we can
+ always come back to this point anytime and we are still in the market." An
+ annotated git tag `milestone/jobmaster-agency-1.0` marks main's tip
+ (`e78f5856ee2b07fc6c46242bd0c669e6c8a2f0a0`) right after Open the Gate
+ shipped — public button-driven JobMaster, GTM Intern/Fresher + waitlist,
+ free-text/voice fallback, `/checkaccess`, 230/230 tests green. This is the
+ known-good point to revert to (`git checkout milestone/jobmaster-agency-1.0`
+ or `git reset --hard` onto it if `main` ever regresses) — never delete this
+ tag. Same pattern as the earlier `milestone/eureka-telegram-bot` tag.
 - **2026-08-06 · Open the Gate — going public.** Ashok: "1 lakh people will
  not flood overnight 😂 ... let anyone be the guest the moment they say hi."
  `is_allowed()` flipped from allow-list-by-default to open-by-default —

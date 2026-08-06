@@ -528,6 +528,32 @@ green.**
 
 ## Done
 
+### 14. Milestone locked — `milestone/jobmaster-agency-1.0`
+
+**Request (2026-08-06, 15:56 UTC):** Ashok — "label it as Jobmaster.agency
+1.0, save it as a milestone, point to last revert to in github... this is a
+working first mastercopy, we should never mess this up, we can always come
+back to this point anytime and we are still in the market."
+
+**Shipped:** annotated git tag `milestone/jobmaster-agency-1.0` at main's tip
+`e78f5856ee2b07fc6c46242bd0c669e6c8a2f0a0` (right after card #13's Open the
+Gate merged and deployed clean — see `JOBMASTER_TELEGRAM_VERDICT=PASS` in
+that deploy run). Same convention as the earlier `milestone/eureka-telegram-
+bot` tag. Covers everything shipped through card #13: Gate 3.0 JobMaster,
+guided onboarding + button-driven guest flow, GTM Intern/Fresher-only +
+experienced-hire waitlist, voice layer (1A) as an unseen free-text fallback,
+public Open Gate access, `/checkaccess`, full owner command deck. 230/230
+tests green at this commit. Verified pushed and visible under Tags on GitHub.
+
+**Recovery instructions (if `main` ever regresses):**
+```
+git fetch origin milestone/jobmaster-agency-1.0
+git checkout milestone/jobmaster-agency-1.0   # inspect it safely first
+# only if Ashok confirms a real revert is needed:
+git checkout main && git reset --hard milestone/jobmaster-agency-1.0
+```
+Never delete this tag. Recorded in `.cursor/rules/akay-soul.mdc`.
+
 ### 1. [URGENT] Telegram guest access — remove the ThinkPad-terminal dependency
 
 **LOCKED — Ashok accepted the live result (2026-08-04, 23:14 UTC):**

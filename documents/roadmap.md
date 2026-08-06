@@ -167,6 +167,16 @@ useful job alerts/insights — recorded as a standing law in
 `.cursor/rules/akay-soul.mdc` and `.cursor/rules/product-ux.mdc` so every
 future JobMaster decision keeps that funnel viable.
 
+**Milestone locked — `milestone/jobmaster-agency-1.0` (2026-08-06):** Ashok —
+"this is a working first mastercopy, we should never mess this up, we can
+always come back to this point anytime and we are still in the market." An
+annotated git tag marks main's tip right after Open the Gate shipped
+(`e78f5856ee2b07fc6c46242bd0c669e6c8a2f0a0`) as the known-good public
+JobMaster.agency 1.0 — button-driven guest flow, GTM Intern/Fresher focus,
+Open Gate public access, full owner command deck, 230/230 tests green. This
+is the safe point to `git reset --hard` back to if anything ever regresses
+(kanban card #14); never delete this tag.
+
 **Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
 tier unlocked after sustained usage, covering quiz, alerts, flashcards,
 study materials, prep book, projects, certifications, and a full LMS.
