@@ -1,0 +1,8 @@
+Issue Type,Issue ID,Epic Name,Summary,Description,T-Shirt Size,Priority,Acceptance Criteria,Definition of Done,Labels
+Epic,SIPROG-1,Job Alerts,"Job Alerts 🔔 — daily verified job alerts for saved guest searches","A guest who completes a search can subscribe with one tap to daily alerts for that exact role/experience/city. A dispatcher runs after each day's scrape and sends ONLY new, never-before-sent, verified jobs from the Watch Tower (same deterministic _job_reply pipeline — no model-authored facts, ever). One tap to stop anytime. This is the retention engine of Sprint 1.1 'Come Back Tomorrow' and the foundation of the selling-engine vision (Vigil 2.0 needs guests who return daily).","L","Highest","1. One-tap subscribe button appears after any successful search result
+2. Alert messages contain only verified tower jobs the guest has never been sent before (dedupe by job id per subscription)
+3. Zero new jobs = no message that day (silence beats spam)
+4. One-tap / one-command unsubscribe works instantly and is confirmed
+5. Dispatch runs only after the daily scrape completes — never during/before, never while the tower is hot
+6. Ashok can see subscriber count, last dispatch time, and failures from Telegram
+7. A guest who blocked the bot is auto-paused, never retried forever","All SIMET children Done; full test suite green; deployed via the normal pipeline with JOBMASTER_TELEGRAM_VERDICT=PASS; validation cases added to jobmaster-telegram-validation.md; Ashok subscribes on his own phone, receives a real next-day alert, unsubscribes, and explicitly accepts live. Code merged + tests passing is evidence, not closure.","sprint-1.1,retention,selling-engine,jobmaster"
