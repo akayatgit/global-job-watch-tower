@@ -166,6 +166,13 @@ message-vs-callback_query poll-loop wiring in isolation (this exact
 `_normalize_update` method was called before it was defined during
 development — caught by this test, not by a human).
 
+**Accepted (2026-08-06, 13:53 UTC):** Ashok — "Im giving you 99/100. We have
+an usable product" — after live-testing the full tap-through flow, hitting
+the NLP Engineer zero-result case, and confirming the fallback fix. Card
+stays open only to capture the missing 1% (see next forward-working
+question) and the still-unconfirmed `@supriyamk` `/checkaccess` root cause
+below.
+
 **Acceptance:** Ashok runs `/checkaccess @supriyamk` live and reports the
 verdict/reason; if it comes back "not on the allowlist" or a binding
 mismatch, resolve with `/allowuser` (or `/revokeuser` then `/allowuser`) and

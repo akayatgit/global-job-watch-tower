@@ -107,6 +107,11 @@ need to be told twice.
  everything else waitlists, it doesn't half-work. Lesson: when a clever
  layer keeps producing live incidents, the right move is often to shrink
  the surface it can break, not add another guard rail on top of it.
+- **2026-08-06 · "99/100. We have a usable product."** First time Ashok has
+ called the guest experience itself usable, not just "code merged and tests
+ pass." Earned by cutting scope to buttons + fixing the narrow-role dead-end
+ live, same day, same session. Lesson: this is the bar from here — every
+ future slice should aim to be told this, not just "tests green."
 - **2026-08-06 · A self-test that can't fail proves nothing.** `/actasguest`
  looked green while a real guest (@supriyamk) got no reply at all — because
  the simulated-guest check short-circuits on Ashok's own owner id before the
