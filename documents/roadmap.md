@@ -135,6 +135,23 @@ plain deterministic text. Live now for job-search, insight, onboarding, and
 purpose. 186/186 tests green (`test_telegram_voice.py` +
 `VoiceLayerWiringTests`).
 
+**Button-driven guest flow — GTM Intern/Fresher only (2026-08-06):** the
+voice/free-text path above (1A) shipped real live regressions and, once,
+left a real guest with zero reply. Ashok's call: make the *primary* guest
+path tap-only — **Family → Role → Experience → City → Results** via
+Telegram inline keyboards (`app/telegram_buttons.py::ButtonFlow`) — with
+free text (and the existing voice/NLU layer) kept wired exactly as before,
+unseen, purely as a fallback for whoever still types. Only Intern/Fresher
+experience buttons run a live search (GTM focus); 1–4/5–10/10+ show a
+"coming soon" message and collect an email into a waitlist
+(`app/telegram_waitlist.py`, owner `/waitlist` command) instead of running
+a search that track isn't ready to serve. Also shipped: owner-only
+`/checkaccess` (`app/telegram_guests.py::describe_access`) — a live,
+phone-only diagnostic that runs the exact real guest access-gate decision,
+because `/actasguest` structurally cannot (it short-circuits on Ashok's own
+owner id before the real gate ever runs) — see kanban card #12. 230/230
+tests green.
+
 **Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
 tier unlocked after sustained usage, covering quiz, alerts, flashcards,
 study materials, prep book, projects, certifications, and a full LMS.

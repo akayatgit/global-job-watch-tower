@@ -91,6 +91,100 @@ Ashok accepts the live result.
 `job_engine/tests/test_telegram_job_bot.py`,
 `job_engine/tests/test_vigil_boards_health.py`, `job_engine/.env.example`.
 
+### 12. Button-driven guest flow (GTM: Intern/Fresher only) + live access diagnostics
+
+**Trigger (2026-08-06):** the voice layer above (card 11) degraded live —
+duplicated role labels ("Product Product Manager"), a stray "YES" leaking
+in as a role keyword, and the "today" job-count gate silently dropping a
+city the guest had already given. Worse: one real guest, Supriya
+(`@supriyamk`), stopped getting any reply at all, while Ashok's own
+`/actasguest` self-test looked completely healthy.
+
+**RCA — three deterministic bugs (patched, `fdb1c37`):**
+1. `_role_label` concatenated `role_family` + `role_keywords` without
+   dedupe — fixed by stripping family words from keywords first.
+2. `FILLER` didn't include affirmative/negative words ("yes", "no",
+   "skip"...), so a bare "yes" reply parsed as a role keyword — added to
+   `FILLER` in `app/telegram_job_search.py`.
+3. `_role_count` hardcoded `days: 1` and ignored `city` entirely — now
+   accepts and threads `city` through to both the Watch Tower query and the
+   "no openings today" message.
+
+**RCA — why `/actasguest` missed the real outage:** `_sender_allowed` is
+`self._is_owner(chat_id) or is_allowed(chat_id, username)` — for
+`/actasguest`, `chat_id` is Ashok's own real owner id, so `_is_owner` is
+always `True` and `is_allowed()` (the actual guest gate) never even runs.
+The self-test can only ever validate command/reply *content*, never the
+access gate itself. Root cause of Supriya's specific outage is still
+unconfirmed (requires her live `/checkaccess` or `/guests` result — no
+ThinkPad terminal access from this session) — see Acceptance below.
+
+**Ashok's pivot instruction:** "rip that layer out for now, but instead of
+free text lets keep the user on a buttons option to filter down the search
+one by one... Family, role, experience (Intern, fresher, 1-4, 5-10, 10+)...
+for other than intern and fresher, a static message... provide your
+emailid... We are going to GTM with only freshers and interns... Dont
+disable [voice/AI], keep it as backup plan incase if they text... only if
+the button system completely gives up."
+
+**Shipped this slice:**
+- `app/telegram_buttons.py::ButtonFlow` — deterministic wizard: **Family →
+  Role → Experience → City → Results**, all via Telegram inline keyboards
+  (`callback_query`), zero typing required on the primary path. Returning
+  guests with a stored Intern/Fresher profile get a one-tap "Welcome back,
+  same search?" shortcut.
+- GTM gate: only Intern/Fresher experience buttons run a live search (both
+  query the shared "fresher" Watch Tower track). Every other band (1–4,
+  5–10, 10+) shows a static "coming soon" message and captures an email —
+  `app/telegram_waitlist.py` (new JSON store) + owner `/waitlist` command.
+- `TelegramAPI.send_keyboard` / `TelegramAPI.answer_callback` — inline
+  keyboard delivery and tap-spinner acknowledgement.
+- Poll loop now normalizes `message` and `callback_query` updates through
+  one shared shape (`JobMasterTelegramBot._normalize_update`) so button
+  taps flow through the exact same durable per-chat queue, access gate, and
+  rate limiting as typed text (a `\x00` sentinel — `BTN_PREFIX` — tags
+  button-tap text; a real Telegram message can never contain a NUL byte).
+- Free text is **not disabled** — `/start`, `/new`, and a bare greeting
+  launch the button flow, but any other typed message still falls through
+  unchanged to the existing `JobMasterEngine` + voice layer, exactly as
+  today. A stale `btn_*` onboarding stage is treated as "unknown" by the
+  legacy text engine, so it self-heals by restarting instead of getting
+  stuck.
+- `app/telegram_guests.py::describe_access` + owner-only `/checkaccess
+  <@username-or-id> [id-to-compare]` — runs the exact same allow/block/
+  binding decision `is_allowed()` makes for a real message, with a
+  plain-English reason (blocked, expired, unbound username, username bound
+  to a different numeric id, no username on the message at all, etc.) —
+  the tool `/actasguest` structurally cannot be, per the RCA above.
+
+**Evidence:** full suite green (230 tests) including new
+`test_telegram_buttons.py` (24 tests: family/role/experience navigation,
+focus-experience → city → live results incl. pagination and zero-result,
+non-focus → waitlist incl. invalid email/skip, restart/welcome-back) and
+new `NormalizeUpdateTests` in `test_telegram_job_bot.py` covering the
+message-vs-callback_query poll-loop wiring in isolation (this exact
+`_normalize_update` method was called before it was defined during
+development — caught by this test, not by a human).
+
+**Acceptance:** Ashok runs `/checkaccess @supriyamk` live and reports the
+verdict/reason; if it comes back "not on the allowlist" or a binding
+mismatch, resolve with `/allowuser` (or `/revokeuser` then `/allowuser`) and
+have her retry; then confirms the full tap-through Family → Role →
+Experience → City → Results flow live end to end for both Intern and
+Fresher, confirms a 1–4/5–10/10+ tap shows the coming-soon message and
+accepts an email (checked via `/waitlist`), and confirms typing a normal
+sentence instead of tapping still gets a real answer (backup path). Keep
+open until Ashok accepts the live result.
+
+**Files:** `job_engine/app/telegram_buttons.py`,
+`job_engine/app/telegram_waitlist.py`, `job_engine/app/telegram_guests.py`,
+`job_engine/app/telegram_job_search.py`,
+`job_engine/scripts/telegram_job_bot.py`,
+`job_engine/tests/test_telegram_buttons.py`,
+`job_engine/tests/test_telegram_job_bot.py`,
+`job_engine/tests/test_jobmaster_onboarding.py`,
+`job_engine/tests/test_jobmaster_acceptance.py`.
+
 ### 5. Public carousel — clean modern design with real tower data (Ashok 2026-08-04)
 
 **Status (2026-08-04):** Slice 1 shipped — rotating art-direction engine.

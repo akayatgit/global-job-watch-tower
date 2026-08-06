@@ -93,6 +93,16 @@ FILLER = {
     'total', 'trend', 'trends', 'want', 'which', 'with', 'compare', 'comparison',
     'count', 'currently', 'hiring', 'much', 'vs', 'versus', 'company', 'companies',
     'year', 'years', 'yr', 'yrs',
+    # RCA (2026-08-06, live guest test): a bare "yes"/"no"-style word sent at
+    # the wrong onboarding stage (e.g. right after a dead-end resets to
+    # ask_role, where AFFIRMATIVE_RE/DECLINE_RETURN_RE are never consulted)
+    # fell through to here and survived as a literal role_keyword — then
+    # _role_label's <=3-char .upper() rule rendered "I don't see verified YES
+    # openings today." These words carry no role signal on their own in any
+    # stage, so they are always safe to drop before they can leak into a label.
+    'yes', 'yeah', 'yep', 'yup', 'sure', 'okay', 'ok', 'no', 'nope', 'go', 'ahead',
+    'do', 'that', 'one', 'same', 'continue', 'different', 'something', 'new',
+    'else', 'try', 'to',
 }
 FAMILY_WORDS = {
     'ai', 'ml', 'artificial', 'intelligence', 'machine', 'learning', 'genai',
@@ -385,6 +395,13 @@ class IntentInterpreter:
             for w in (raw.get('role_keywords') or [])
             if str(w).strip()
         ][:5]
+        if family:
+            # Mirror _fallback_intent's FAMILY_WORDS stripping (line ~305) so
+            # the LLM path can't re-add a word the family already covers
+            # (e.g. family='product' + keyword 'manager') — that duplication
+            # was harmless for matching but rendered as "Product Product
+            # Manager" in every guest-facing label. See _role_label.
+            keywords = [word for word in keywords if word not in FAMILY_WORDS]
         metric = raw.get('metric') if raw.get('metric') in valid_metrics else fallback.metric
         try:
             days = int(raw.get('window_days', fallback.window_days))
@@ -450,11 +467,21 @@ def _relative_age(timestamp: float) -> str:
 
 
 def _role_label(role_family: str, role_keywords: list[str]) -> str:
+    """RCA (2026-08-06, live guest test): the LLM intent path does not run
+    role_keywords through FAMILY_WORDS (only the deterministic fallback
+    parser does, see _fallback_intent), so a family of 'product' plus
+    LLM-returned keywords ['product', 'manager'] rendered as the duplicated
+    "Product Product Manager". Stripping any keyword already implied by the
+    family label here — the single place every caller renders a label —
+    closes the bug regardless of which parser produced the keywords."""
+    family_label = ROLE_FAMILY_LABELS.get(role_family, role_family.replace('_', ' ').title()) if role_family else ''
+    family_words = set(family_label.lower().split())
+    extra_words = [word for word in (role_keywords or []) if word.lower() not in family_words]
     parts: list[str] = []
-    if role_family:
-        parts.append(ROLE_FAMILY_LABELS.get(role_family, role_family.replace('_', ' ').title()))
-    if role_keywords:
-        parts.append(' '.join(word.upper() if len(word) <= 3 else word.title() for word in role_keywords))
+    if family_label:
+        parts.append(family_label)
+    if extra_words:
+        parts.append(' '.join(word.upper() if len(word) <= 3 else word.title() for word in extra_words))
     return ' '.join(parts) if parts else 'that role'
 
 
@@ -862,11 +889,19 @@ class JobMasterEngine:
             state['cities'] = parsed.cities[:1]
             state['city_known'] = True
 
-    def _role_count(self, role_family: str, role_keywords: list[str]) -> int:
+    def _role_count(self, role_family: str, role_keywords: list[str], city: str = '') -> int:
         data = self.api_get('/api/jobs/insights', {
             'days': 1,  # "today" — matches the product's existing Today window
             'role_family': role_family,
             'title_terms': ' '.join(role_keywords),
+            # RCA (2026-08-06, live guest test): "AI jobs in Bangalore" already
+            # had the city absorbed into state before this gate ran, but the
+            # call silently ignored it — checking "any AI/ML job today,
+            # anywhere in India" instead of Bangalore specifically, and then
+            # the dead-end reply never even mentioned the city was dropped.
+            # Every other insight call in this file passes city (see
+            # _insight_reply); this one should too.
+            'city': city,
         })
         if not isinstance(data, dict):
             return 0
@@ -882,7 +917,9 @@ class JobMasterEngine:
     ) -> str:
         if not state.get('experience_known'):
             label = _role_label(state['role_family'], state['role_keywords'])
-            count = self._role_count(state['role_family'], state['role_keywords'])
+            city_key = state['cities'][0] if state.get('cities') else ''
+            city_txt = f' in {city_label(city_key)}' if city_key else ''
+            count = self._role_count(state['role_family'], state['role_keywords'], city_key)
             if count <= 0:
                 # A full restart (not just clearing the role) avoids stale
                 # experience/city absorbed from this same eager message being
@@ -898,8 +935,8 @@ class JobMasterEngine:
                 }
                 self.sessions.save_onboarding(chat_id, state)
                 reply = (
-                    f'{note}I don\u2019t see verified {label} openings today. '
-                    'Want to try a different role?'
+                    f'{note}I don\u2019t see verified {label} openings today{city_txt}. '
+                    'Want to try a different role or city?'
                 )
                 self.sessions.apply_result(chat_id, reply, update_id=update_id)
                 return reply
@@ -907,7 +944,7 @@ class JobMasterEngine:
             self.sessions.save_onboarding(chat_id, state)
             plural = 's' if count != 1 else ''
             reply = (
-                f'{note}I can get you {count} {label} job posting{plural} today, with links, '
+                f'{note}I can get you {count} {label} job posting{plural} today{city_txt}, with links, '
                 "but can you share your experience so I can match you better? "
                 '(fresher, 1-2, 3-5, 6-8, 9-12, 13+ years, or say \'any\')'
             )

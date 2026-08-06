@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import telegram_guests
+from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
     JobMasterTelegramBot,
@@ -20,9 +21,17 @@ class FakeTelegramAPI:
     def __init__(self):
         self.sent: list[tuple[str, str]] = []
         self.calls: list[tuple[str, dict]] = []
+        self.keyboards_sent: list[tuple[str, str, list | None]] = []
 
     def send(self, chat_id: str, text: str) -> None:
         self.sent.append((chat_id, text))
+
+    def send_keyboard(self, chat_id: str, text: str, keyboard: list | None) -> None:
+        self.keyboards_sent.append((chat_id, text, keyboard))
+        self.send(chat_id, text)
+
+    def answer_callback(self, callback_query_id: str, text: str = '') -> None:
+        pass
 
     def call(self, method: str, data: dict | None = None, timeout: int = 35) -> dict:
         self.calls.append((method, data or {}))
@@ -131,11 +140,9 @@ class TelegramBotContractTests(unittest.TestCase):
 
     def test_new_has_no_thinking_or_engine_metadata(self):
         self.bot.process('1221647274', '/new')
-        self.assertEqual(
-            self.api.sent,
-            [('1221647274', 'Search reset. Send a role, city, or job-market question.')],
-        )
+        self.assertEqual(len(self.api.sent), 1)
         text = self.api.sent[0][1]
+        self.assertTrue(text.startswith('Search reset. Send a role, city, or job-market question.'))
         for banned in ('qwen', 'Provider', 'Endpoint', 'terminal', 'mcp__'):
             self.assertNotIn(banned, text)
 
@@ -154,12 +161,16 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(len(self.engine.calls), 1)
 
     def test_help_is_jobmaster_not_generic_assistant(self):
-        self.bot.process('42', '/start')
+        self.bot.process('42', '/help')
         self.assertEqual(
             self.api.sent[-1][1],
             'JobMaster provides verified jobs and live job-market insights. '
             'Ask naturally in any sentence.',
         )
+
+    def test_start_launches_the_button_flow_not_the_old_text_blurb(self):
+        self.bot.process('42', '/start')
+        self.assertIn('What kind of role are you looking for?', self.api.sent[-1][1])
 
     def test_owner_board_command_bypasses_job_search_engine(self):
         rendered: list[tuple[str, int | None]] = []
@@ -511,6 +522,75 @@ class TelegramBotContractTests(unittest.TestCase):
         with self.assertRaises(telegram_guests.GuestStoreError):
             telegram_guests.is_allowed('99', 'supriyamk')
 
+    def test_checkaccess_reports_allowed_for_a_default_username(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/checkaccess @supriyamk')
+        reply = self.api.sent[-1][1]
+        self.assertIn('ALLOWED', reply)
+        self.assertIn('supriyamk', reply.lower())
+
+    def test_checkaccess_reports_blocked_with_a_reason_after_blockguest(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/blockguest @supriyamk')
+        bot.process('owner', '/checkaccess @supriyamk')
+        reply = self.api.sent[-1][1]
+        self.assertIn('BLOCKED', reply)
+        self.assertIn('blocked', reply.lower())
+
+    def test_checkaccess_explains_a_username_bound_to_a_different_telegram_id(self):
+        telegram_guests.add_username('newperson')
+        self.assertTrue(telegram_guests.is_allowed('111', 'newperson'))
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/checkaccess @newperson 222')
+        reply = self.api.sent[-1][1]
+        self.assertIn('BLOCKED', reply)
+        self.assertIn('111', reply)
+
+    def test_checkaccess_flags_a_username_with_no_telegram_id_yet(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/checkaccess 555')
+        reply = self.api.sent[-1][1]
+        self.assertIn('BLOCKED', reply)
+
+    def test_checkaccess_is_denied_to_a_non_owner_like_every_management_command(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('guest', '/checkaccess @supriyamk')
+        reply = self.api.sent[-1][1]
+        self.assertEqual(
+            reply,
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+
     def test_block_override_can_disable_default_username(self):
         bot = JobMasterTelegramBot(
             self.api,
@@ -849,7 +929,8 @@ class TelegramBotContractTests(unittest.TestCase):
             [
                 '1. AI Engineer — Acme — Fresher\n'
                 'https://www.linkedin.com/jobs/view/4448000001/',
-                'Search reset. Send a role, city, or job-market question.',
+                'Search reset. Send a role, city, or job-market question.\n\n'
+                'JobMaster here! What kind of role are you looking for?',
             ],
         )
 
@@ -1012,11 +1093,17 @@ class VoiceLayerWiringTests(unittest.TestCase):
         self.assertEqual(self.api.sent[-1][1], f'{self.voice.prefix}{expected}')
         self.assertEqual(len(self.voice.calls), 1)
 
-    def test_start_and_help_replies_are_voiced(self):
-        self.bot.process('guest', '/start')
-        self.assertTrue(self.api.sent[-1][1].startswith(self.voice.prefix))
+    def test_help_reply_is_voiced(self):
         self.bot.process('guest', '/help')
         self.assertTrue(self.api.sent[-1][1].startswith(self.voice.prefix))
+
+    def test_start_reply_is_the_deterministic_button_flow_not_voiced(self):
+        # /start now launches the button wizard — deterministic, no LLM
+        # warmth pass (kept snappy, and the fact-lock validator is one
+        # fewer moving part to reason about on a screen with no facts yet).
+        self.bot.process('guest', '/start')
+        self.assertFalse(self.api.sent[-1][1].startswith(self.voice.prefix))
+        self.assertEqual(len(self.voice.calls), 0)
 
     def test_owner_board_command_is_never_voiced(self):
         bot = JobMasterTelegramBot(
@@ -1077,6 +1164,75 @@ class VoiceLayerWiringTests(unittest.TestCase):
         self.assertTrue(self.bot._process_queued(1, 'guest', '', 'AI jobs Bangalore'))
         self.assertEqual(len(self.voice.calls), 1)
         self.assertEqual(self.api.sent[-1][1], voiced_once)
+
+
+class NormalizeUpdateTests(unittest.TestCase):
+    """`_normalize_update` folds message vs callback_query updates into one
+    shape the poll loop dispatches uniformly (see run()). Covered in
+    isolation because run()'s own polling loop is not exercised by other
+    tests — this is the exact regression that shipped once (the method was
+    called but never defined)."""
+
+    def test_a_plain_text_message_is_not_a_callback(self):
+        update = {
+            'update_id': 1,
+            'message': {
+                'chat': {'id': 42, 'type': 'private'},
+                'from': {'username': 'ashok', 'id': 42},
+                'text': 'Fresh AI jobs in Bangalore',
+            },
+        }
+        is_callback, chat, sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        self.assertFalse(is_callback)
+        self.assertEqual(chat, {'id': 42, 'type': 'private'})
+        self.assertEqual(sender['username'], 'ashok')
+        self.assertEqual(text, 'Fresh AI jobs in Bangalore')
+        self.assertIsNone(callback_id)
+
+    def test_a_button_tap_is_a_callback_encoded_with_btn_prefix(self):
+        update = {
+            'update_id': 2,
+            'callback_query': {
+                'id': 'cbq-1',
+                'from': {'username': 'guest1', 'id': 7},
+                'message': {'chat': {'id': 7, 'type': 'private'}},
+                'data': 'fam:ai_ml',
+            },
+        }
+        is_callback, chat, sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        self.assertTrue(is_callback)
+        self.assertEqual(chat, {'id': 7, 'type': 'private'})
+        self.assertEqual(sender['username'], 'guest1')
+        self.assertEqual(text, f'{BTN_PREFIX}fam:ai_ml')
+        self.assertEqual(callback_id, 'cbq-1')
+
+    def test_a_callback_query_with_no_data_yields_no_text_but_still_a_callback_id(self):
+        update = {
+            'update_id': 3,
+            'callback_query': {
+                'id': 'cbq-2',
+                'from': {'id': 7},
+                'message': {'chat': {'id': 7, 'type': 'private'}},
+            },
+        }
+        is_callback, _chat, _sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        self.assertTrue(is_callback)
+        self.assertIsNone(text)
+        self.assertEqual(callback_id, 'cbq-2')
+
+    def test_a_non_private_group_chat_message_still_normalizes_cleanly(self):
+        update = {
+            'update_id': 4,
+            'message': {
+                'chat': {'id': -100, 'type': 'group'},
+                'from': {'username': 'someone', 'id': 5},
+                'text': 'hi',
+            },
+        }
+        is_callback, chat, _sender, text, _callback_id = JobMasterTelegramBot._normalize_update(update)
+        self.assertFalse(is_callback)
+        self.assertEqual(chat['type'], 'group')
+        self.assertEqual(text, 'hi')
 
 
 if __name__ == '__main__':
