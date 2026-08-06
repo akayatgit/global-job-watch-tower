@@ -887,6 +887,38 @@ existing `ButtonFlow` grammar. Depends on nothing else in the backlog;
 pairs naturally with #15 Job Alerts (same filter vocabulary for alert
 subscriptions).
 
+### 23. Job cards — one message per job, Apply + More info buttons (kill the link wall)
+
+Ashok (2026-08-06): today's results are one text block where raw LinkedIn
+URLs make the list unreadable. Redesign: each job = its own message card.
+
+**Card layout (per job, separate message):**
+```
+Machine Learning Engineer
+Infosys · Bengaluru · 1–2 years
+[ Apply ]  [ More info ]
+```
+- **Apply** = Telegram inline URL button embedding the canonical LinkedIn
+  link — no naked URL in the text at all. (URL buttons need no callback;
+  guests jump straight to LinkedIn.)
+- **More info** = callback button (carries the job id) that reveals the
+  enrichment harvest for that job: company tagline/punchline, follower
+  count, employee size, degrees, certifications, domains, real posted date.
+  Only enriched fields are shown; missing fields are omitted, never invented.
+- Company logo (enrichment `logo_url`) can ride as the card's photo in a
+  later slice (`sendPhoto` + caption).
+
+**Batch + pagination:** send ~5 cards per page (not 10) to respect
+Telegram's ~1 msg/sec per-chat pacing and keep the thread scannable, then a
+final summary message with `[ More jobs ]` (replaces typing "more"),
+plus the #22 refinement chips (time window / degree / cert / domain) on the
+same summary message — one navigation hub under each result page.
+
+**Grounding rules unchanged:** card text is deterministically formatted from
+API rows; callbacks resolve by job id from the tower — the model never
+authors any card content. Pairs with #22 (filters live on the summary hub)
+and #15 (alert opt-in button can join the hub later).
+
 ### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
 
 **Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
