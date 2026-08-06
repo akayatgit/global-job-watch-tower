@@ -550,6 +550,11 @@ image credits or live LinkedIn searches are consumed without approval.
 
 ### 2. Verify + lock Cloudflare Access properly
 
+**Deprioritized (Ashok 2026-08-04):** "Not a high priority, I didn't share
+the URL with anyone and never will." Stays on the board (unshared URL is
+obscurity, not a lock — revisit before any public/investor share or before
+Gate 2 content goes out), but nothing blocks on it.
+
 **Problem:** `documents/remote-access-cloudflare.md` still flags Access as
 **not verified** — as of 2026-08-03, an unauthenticated GET to
 `https://tower.jobmaster.agency` served the live VIGIL dashboard directly,
