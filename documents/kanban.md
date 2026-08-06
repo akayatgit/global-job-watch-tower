@@ -859,6 +859,34 @@ day is visible by noon; #19 puts "Coverage today: N/135" on `/health`.
 Structural decision for planning: 135 roles > 73/day ceiling on one laptop —
 trim the catalogue, accept a 2-day rotation, or add the second laptop.
 
+### 22. Result-refinement buttons — time window + enrichment-powered filters
+
+Ashok (2026-08-06): after the first result set (with links) is shown, offer
+button filters so the guest can refine without typing.
+
+**Slice A — time chips:** `24h · 2 days · 7 days · This month` under the
+results. Gap found in investigation: `/api/jobs` (the list endpoint the
+button flow uses) has no `days`/window param today — only exact
+`posted_date`. Add a `days` filter (on `posted_date`, falling back to
+`scraped_at` for unenriched rows) mirroring the insights endpoint's
+`days in (0,1,2,4,7,14,30)` contract.
+
+**Slice B — enrichment chips:** the requirements backfill already stores,
+per job: experience band + min/max years, seniority level, degrees (B.Tech,
+MBA, Diploma…), certifications (AWS, Azure, CEH, ISTQB… ~18 curated),
+domains (Banking, FinTech, Healthcare, SaaS, AI/ML… 19), real posted date,
+and company profile bits (logo, tagline, punchline, followers, size). Expose
+`degree` / `certification` / `domain` as `/api/jobs` filters, then surface
+the 2–3 most discriminating as button rows (e.g. Degree, Certification)
+while browsing results. Honesty rule: these filters only see enriched rows —
+show "of enriched jobs" counts, never pretend full coverage while the
+backfill queue is pending.
+
+Keeps every fact deterministic (API-filtered rows only); buttons follow the
+existing `ButtonFlow` grammar. Depends on nothing else in the backlog;
+pairs naturally with #15 Job Alerts (same filter vocabulary for alert
+subscriptions).
+
 ### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
 
 **Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve
