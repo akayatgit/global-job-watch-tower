@@ -525,3 +525,28 @@ use — they should love opening the app, never fight it.
  binding logic a real message hits and returns a plain-English reason —
  use this first for any "a specific guest can't text" report instead of
  trusting `/actasguest`.
+- **Open Gate — public access by default (2026-08-06):** Ashok: "Allow all
+ the guests, no need for me to give allow one by one... let anyone be the
+ guest the moment they say hi." `app/telegram_guests.py::is_allowed()` is
+ now open-by-default: the owner is always in, `/blockguest`/`/blockuser` is
+ the only thing that denies access, and every other sender — with or
+ without a prior grant — is allowed the instant they message. The `/guests`
+ dashboard leads with the Blocked list (the real gate now), not a
+ named-allowlist that no longer decides anything. Do not reintroduce a
+ deny-by-default allowlist gate without Ashok's explicit sign-off; abuse
+ control is `/blockguest` + `/blockuser` going forward, not an invite list.
+ Immediate acknowledgement (`Thinking…` / instant button prompts) must keep
+ firing for this newly-open population too — a guest who never gets a
+ grant must still feel heard the moment they say hi, not silence.
+- **JobMaster is a selling engine, not a free help desk (2026-08-06):**
+ Ashok: "if we don't sell, this codebase... is merely a useless piece of
+ crap." Every guest interaction is the top of a funnel — job alerts,
+ interview insights, quizzes, links, and certification/skill
+ recommendations build the trust that later carries tasteful, relevant
+ affiliate offers (courses, books, gadgets, laptops — high-ticket = high
+ commission); any affiliate link Ashok supplies must eventually be sold
+ through this channel. **Vigil 2.0** (the monetization/ad layer) is a named
+ future phase — vision only, do not build it without an explicit go-ahead —
+ but every UX/retention decision on today's JobMaster should keep that
+ future layer viable. Full statement kept in `.cursor/rules/akay-soul.mdc`
+ ("Why this must sell — survival law").
