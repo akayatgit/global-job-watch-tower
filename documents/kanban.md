@@ -908,6 +908,135 @@ fix happens in the Cloudflare Zero Trust dashboard, not in this repo).
 
 ## Backlog
 
+*(Cards 15–20 parked here per Ashok 2026-08-06 — "add all these in backlog,
+at last we will place in iteration planning". Ordering happens in the next
+iteration-planning ritual, not here.)*
+
+### 15. Job Alerts 🔔 — SIPROG epic (specced, awaiting planning)
+
+Full Jira-style breakdown already written: epic + SIMET tasks/bugs with AC,
+DoD, t-shirt sizes, and checklists in
+[`documents/jira/page-1-siprog-epic.csv`](./jira/page-1-siprog-epic.csv) and
+[`documents/jira/page-2-simet-tasks.csv`](./jira/page-2-simet-tasks.csv).
+First retention loop: guests opt in after a search, tower pushes fresh
+matching jobs daily. Feeds the selling-engine vision (alerts = the ad space).
+
+### 16. Guest analytics — daily funnel numbers for the owner
+
+How many strangers said hi, how many finished the button flow, how many got
+jobs vs zero-result dead ends, how many hit the waitlist branch, repeat-guest
+rate. Deterministic counts from `telegram_sessions` / delivered history —
+never model-estimated. Surfaces in a `/stats` upgrade + VIGIL panel.
+
+### 17. Share hook — happy guests spread the bot
+
+After a successful result set, offer a one-tap "Share JobMaster" button
+(Telegram share deep-link with a friendly preheader). Word-of-mouth is the
+GTM engine; zero paid acquisition. Measure via guest analytics (#16).
+
+### 18. Guest feedback capture
+
+One-tap 👍/👎 after results + optional short text. Stored deterministically,
+readable via an owner command. Feeds iteration planning with real guest
+voice instead of guesses.
+
+### 19. `/health` owner board redesign — digestible in 30 seconds
+
+Ashok (2026-08-06): current board is "ugly data … for an owner". Redesign:
+verdict first (one line: healthy / degraded + why), human words, and the
+numbers an owner actually needs — searches done vs planned today
+(e.g. `4/135 roles`), jobs caught today, browser opens (true count incl.
+enrichment sessions — see #20 finding), capacity vs plan, next search.
+Detail on demand below the fold. Mock approved in the 2026-08-06 planning
+chat; build after iteration planning.
+
+### 20. Coverage + capacity monitoring — never discover "only 4 searches" by accident
+
+Findings from the 2026-08-06 investigation:
+- `browser_open` events fire only in the scrape session — the enrichment
+  backfills (every 10/15 min) open a real StealthySession browser without
+  recording it, so browser activity is undercounted.
+- 135 enabled roles vs a measured ~15 min/search on one worker = a hard
+  ceiling of ~73 Ollama searches/day — the catalogue is structurally
+  over-subscribed on one laptop; a "slow day" is invisible until Ashok asks.
+Build: a daily coverage tracker (roles run / roles enabled, jobs caught,
+time lost to heat pause / deploys / enrichment) + an alert when the day is
+falling behind pace by noon. Emit `browser_open` from enrichment sessions
+too.
+
+### 21. Fix the 4/135 coverage hole — reach the ~73 searches/day ceiling
+
+Ashok (2026-08-06): parked in backlog for iteration planning. Yesterday the
+tower ran only 4 of 135 enabled role searches (3% coverage) against a
+measured capacity of ~73/day. Work: confirm the dominant cause from the live
+ThinkPad console (heat pause vs deploy cancels vs worker contention vs cron
+shadow), then fix in that order — e.g. retrigger roles cancelled by deploys,
+make enrichment yield to due searches, and re-slot roles whose daily cron
+window was shadowed after reseed. Related: #20 gives the monitoring so a slow
+day is visible by noon; #19 puts "Coverage today: N/135" on `/health`.
+Structural decision for planning: 135 roles > 73/day ceiling on one laptop —
+trim the catalogue, accept a 2-day rotation, or add the second laptop.
+
+### 22. Result-refinement buttons — time window + enrichment-powered filters
+
+Ashok (2026-08-06): after the first result set (with links) is shown, offer
+button filters so the guest can refine without typing.
+
+**Slice A — time chips:** `24h · 2 days · 7 days · This month` under the
+results. Gap found in investigation: `/api/jobs` (the list endpoint the
+button flow uses) has no `days`/window param today — only exact
+`posted_date`. Add a `days` filter (on `posted_date`, falling back to
+`scraped_at` for unenriched rows) mirroring the insights endpoint's
+`days in (0,1,2,4,7,14,30)` contract.
+
+**Slice B — enrichment chips:** the requirements backfill already stores,
+per job: experience band + min/max years, seniority level, degrees (B.Tech,
+MBA, Diploma…), certifications (AWS, Azure, CEH, ISTQB… ~18 curated),
+domains (Banking, FinTech, Healthcare, SaaS, AI/ML… 19), real posted date,
+and company profile bits (logo, tagline, punchline, followers, size). Expose
+`degree` / `certification` / `domain` as `/api/jobs` filters, then surface
+the 2–3 most discriminating as button rows (e.g. Degree, Certification)
+while browsing results. Honesty rule: these filters only see enriched rows —
+show "of enriched jobs" counts, never pretend full coverage while the
+backfill queue is pending.
+
+Keeps every fact deterministic (API-filtered rows only); buttons follow the
+existing `ButtonFlow` grammar. Depends on nothing else in the backlog;
+pairs naturally with #15 Job Alerts (same filter vocabulary for alert
+subscriptions).
+
+### 23. Job cards — one message per job, Apply + More info buttons (kill the link wall)
+
+Ashok (2026-08-06): today's results are one text block where raw LinkedIn
+URLs make the list unreadable. Redesign: each job = its own message card.
+
+**Card layout (per job, separate message):**
+```
+Machine Learning Engineer
+Infosys · Bengaluru · 1–2 years
+[ Apply ]  [ More info ]
+```
+- **Apply** = Telegram inline URL button embedding the canonical LinkedIn
+  link — no naked URL in the text at all. (URL buttons need no callback;
+  guests jump straight to LinkedIn.)
+- **More info** = callback button (carries the job id) that reveals the
+  enrichment harvest for that job: company tagline/punchline, follower
+  count, employee size, degrees, certifications, domains, real posted date.
+  Only enriched fields are shown; missing fields are omitted, never invented.
+- Company logo (enrichment `logo_url`) can ride as the card's photo in a
+  later slice (`sendPhoto` + caption).
+
+**Batch + pagination:** send ~5 cards per page (not 10) to respect
+Telegram's ~1 msg/sec per-chat pacing and keep the thread scannable, then a
+final summary message with `[ More jobs ]` (replaces typing "more"),
+plus the #22 refinement chips (time window / degree / cert / domain) on the
+same summary message — one navigation hub under each result page.
+
+**Grounding rules unchanged:** card text is deterministically formatted from
+API rows; callbacks resolve by job id from the tower — the model never
+authors any card content. Pairs with #22 (filters live on the summary hub)
+and #15 (alert opt-in button can join the hub later).
+
 ### 10. Move Telegram session/guest state off SQLite onto Postgres+Redis (1 lakh-guest scale)
 
 **Standing target (Ashok, 2026-08-05):** JobMaster must be designed to serve

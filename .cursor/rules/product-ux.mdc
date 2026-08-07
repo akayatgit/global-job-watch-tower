@@ -538,6 +538,14 @@ use — they should love opening the app, never fight it.
  Immediate acknowledgement (`Thinking…` / instant button prompts) must keep
  firing for this newly-open population too — a guest who never gets a
  grant must still feel heard the moment they say hi, not silence.
+- **Full Agile Scrum (2026-08-06):** Ashok's call — "we move from kanban to
+ full agile." Akay = Scrum Master + Senior Developer; Ashok = Product Owner
+ (ranks the backlog, accepts live — Definition of Done unchanged). Every
+ feature slice runs inside a sprint with a named goal and a small committed
+ backlog; sprint rituals (planning, quality huddle, retro, growth check-in —
+ checklist in `.cursor/rules/akay-soul.mdc`) are mandatory and Akay calls
+ them proactively. `documents/kanban.md` continues as the product backlog;
+ the active sprint gets its own section at the top.
 - **JobMaster is a selling engine, not a free help desk (2026-08-06):**
  Ashok: "if we don't sell, this codebase... is merely a useless piece of
  crap." Every guest interaction is the top of a funnel — job alerts,

@@ -1,0 +1,39 @@
+Issue Type,Issue ID,Epic Link,Summary,Description,T-Shirt Size,Priority,Acceptance Criteria,Definition of Done,Smart Checklist,Labels
+Task,SIMET-1,Job Alerts,"Alert subscription store (SQLite, migration-safe)","New alert_subscriptions table in the existing TelegramSessionStore SQLite DB: chat_id, intent JSON (role_family/keywords/experience/city), active flag, created_at, last_sent_at, sent_job_ids JSON. Subscribe/unsubscribe/list/due APIs. One active subscription per chat (new subscribe overwrites — simplest honest model for 1.1). Must be migration-safe on an existing live DB, same pattern as guest_profiles.","S","High","Subscribe stores the exact intent the guest searched; resubscribe overwrites; unsubscribe deactivates without deleting history; due-query returns only active subs; store survives restart.","APIs unit-tested including restart persistence and overwrite semantics; suite green.","[ ] Schema + auto-migration on startup
+[ ] subscribe_alert / unsubscribe_alert / list_alerts / due_alerts APIs
+[ ] One-active-sub-per-chat overwrite rule
+[ ] sent_job_ids dedupe field round-trips
+[ ] Unit tests incl. restart + overwrite
+[ ] No PII beyond what guest_profiles already stores","sprint-1.1,backend"
+Task,SIMET-2,Job Alerts,"Subscribe/unsubscribe buttons in ButtonFlow","After any successful results screen add '🔔 Alert me daily' action. Tap = confirmation message stating exactly what was saved (role · experience · city) + '🔕 Stop alerts' button. /stopalerts text command as backup path. Buttons follow the existing deterministic ButtonFlow patterns (BTN_PREFIX callbacks, stale-button self-heal).","M","High","Button appears only after real results (not on zero-result or waitlist screens); confirmation echoes the guest's own saved search in plain words; stop works from button AND /stopalerts; stale alert buttons never dead-end.","Wired into ButtonFlow with tests for subscribe, confirm text, stop via button, stop via command, stale tap; suite green.","[ ] 🔔 button on results screen
+[ ] Confirmation with saved search echo
+[ ] 🔕 Stop alerts button
+[ ] /stopalerts command (works even mid-flow)
+[ ] Stale-button fallback covered
+[ ] ButtonFlow unit tests","sprint-1.1,ux,buttons"
+Task,SIMET-3,Job Alerts,"Daily alert dispatcher (post-scrape, dedupe, throttled)","Beat/cron job that runs once daily AFTER the scrape+enrich window completes. For each due subscription: run the exact same deterministic _job_reply with the stored intent, filter out job ids already in sent_job_ids, send up to 10 new rows with canonical links, update last_sent_at + sent_job_ids. Zero new jobs = send nothing. Throttle sends (Telegram ~30 msg/s global) and space per-chat sends.","L","Highest","Alerts contain only never-sent verified jobs; zero-new = silence; dispatcher is idempotent (re-run after crash never double-sends); never runs during scrape or Ollama-hot periods; send bursts respect Telegram limits.","Dispatcher unit-tested with fake API (dedupe, idempotency, zero-new silence, throttle); scheduled in beat after the scrape window; suite green.","[ ] Beat schedule anchored after daily scrape completes
+[ ] Reuse _job_reply — zero new fact paths
+[ ] Per-sub dedupe via sent_job_ids
+[ ] Idempotent re-run (crash-safe marker before send)
+[ ] Zero-new = no message
+[ ] Send throttling + per-chat spacing
+[ ] Dispatch trace/log line per run","sprint-1.1,backend,cron"
+Task,SIMET-4,Job Alerts,"Gone-guest handling (403 auto-pause + blocklist respect)","When Telegram returns 403 (guest blocked the bot / deleted account), auto-pause that subscription instead of retrying forever. Dispatcher also re-checks the open-gate blocklist so an Ashok-blocked id never receives an alert.","M","Medium","A 403 pauses that sub after the failed send and is visible in owner stats; blocked ids are skipped before any send; other subs in the same run are unaffected by one failure.","Tests for 403-pause, blocklist skip, and failure isolation; suite green.","[ ] Catch 403 per send, pause sub
+[ ] is_allowed re-check before each send
+[ ] One failure never aborts the whole run
+[ ] Paused subs visible to owner
+[ ] Unit tests","sprint-1.1,backend,reliability"
+Task,SIMET-5,Job Alerts,"Owner observability — /alerts command + health line","Owner-only /alerts: active subscriber count, paused count, last dispatch time + sent/skipped/failed counts, next scheduled run. One health line in /health. Same compact board style as /waitlist.","S","Medium","/alerts answers from live store data in one message; non-owner gets the standard denial; /health shows alert dispatcher status.","Command + health line tested (owner allowed, guest denied, counts correct); suite green.","[ ] /alerts owner command
+[ ] Non-owner denial test
+[ ] /health dispatcher line
+[ ] Add to OWNER_MENU + management commands","sprint-1.1,ops"
+Task,SIMET-6,Job Alerts,"Validation cases + docs + scrum board update","Add JM-2xx live acceptance cases (subscribe, next-day alert, dedupe, unsubscribe, 403-pause, /alerts) to jobmaster-telegram-validation.md; update kanban/backlog + roadmap; record sprint outcome at the retro.","S","High","Every epic acceptance criterion has a numbered JM case Ashok can run from his phone; docs merged with the code PR, not after.","Docs reviewed in the same PR; JM ids stable; suite green.","[ ] JM-2xx cases written
+[ ] kanban.md sprint section updated
+[ ] roadmap.md one-paragraph update
+[ ] Retro notes after Ashok accepts","sprint-1.1,docs"
+Bug,SIMET-B1,Job Alerts,"[Preventive] Duplicate alert after dispatcher crash/restart","Risk logged before build: if the dispatcher crashes between send and sent_job_ids persist, a re-run could double-send the same jobs. Design decision: persist a per-sub 'dispatch attempt' marker BEFORE sending, reconcile on startup — verified by a kill-mid-run test.","M","High","Kill-the-dispatcher-mid-run test proves no guest ever receives the same job id twice for the same subscription.","Regression test exists and is green before the epic closes.","[ ] Attempt-marker design implemented
+[ ] Kill-mid-run regression test
+[ ] Startup reconcile path tested","sprint-1.1,bug,reliability"
+Bug,SIMET-B2,Job Alerts,"[Preventive] Alert fires during scrape window / hot laptop","Risk logged before build: a mis-anchored schedule could dispatch while the daily scrape or Ollama enrich is running, fighting the tower for resources (heat-pacing law). Dispatcher must gate on scrape-idle + heat state, deferring (not skipping) until safe.","S","Medium","Dispatcher defers when scrape is active or heat is critical and runs later the same day; deferral is logged and visible in /alerts.","Gate + deferral covered by unit test; suite green.","[ ] Scrape-idle gate
+[ ] Heat-state gate (reuse existing heat pacing signals)
+[ ] Defer-and-retry logic + test","sprint-1.1,bug,ops"
