@@ -431,7 +431,10 @@ feature. A guest subscribes from a results screen; Ashok broadcasts to
 every guest, full stop — messaging JobMaster at all is the only condition,
 not specifically tapping `/start` (fixed 2026-08-07 after azr0099,
 supriyamk, and cryptoonz — real guests with conversation history — were
-missing from a live `/pushconfirm`; see JM-225).
+missing from a live `/pushconfirm`; see JM-225). Only a subscriber's
+FIRST-EVER push carries the hint line + `🔕 Stop notifications` button —
+every push after that is just the message + `👍 Like` (fixed 2026-08-07,
+same day; see JM-219/JM-226).
 
 | ID | Do | Expected |
 |---|---|---|
@@ -446,15 +449,16 @@ missing from a live `/pushconfirm`; see JM-225).
 | JM-214 | Tap `🔕 Stop this alert` on a delivered alert | Confirms that alert is stopped, same as JM-210. |
 | JM-215 | Ashok: `/push Quick tip — set a daily alert so you never miss an opening!` | Stages the broadcast, shows the exact text and the number of current subscribers, and asks for `/pushconfirm` within 10 minutes (or `/pushcancel`). Nothing is sent to any guest yet. |
 | JM-216 | A non-owner sends `/push anything` | Ordinary owner-command denial — same as every other VIGIL command; no staging happens. |
-| JM-217 | Ashok: `/pushconfirm` right after JM-215 | Every current subscriber receives the message with a `👍 Like` + `🔕 Stop notifications` keyboard and the hint line; Ashok gets a "Sent to N/N subscriber(s)" confirmation. |
+| JM-217 | Ashok: `/pushconfirm` right after JM-215 | Every subscriber receiving their FIRST-EVER push gets the message with a `👍 Like` + `🔕 Stop notifications` keyboard and the hint line; Ashok gets a "Sent to N/N subscriber(s)" confirmation. |
 | JM-218 | Ashok: `/pushconfirm` again immediately after JM-217 (nothing newly staged) | "No pending push" — proves the staged push cannot double-send. |
-| JM-219 | Ashok sends a photo with caption `/push New AI/ML openings just dropped!` | Stages an image+text broadcast; `/pushconfirm` delivers the photo with that caption and the same Like/Stop keyboard to every subscriber. |
+| JM-219 | Ashok sends a photo with caption `/push New AI/ML openings just dropped!` (a second broadcast to the same subscribers from JM-217) | Stages an image+text broadcast; `/pushconfirm` delivers the photo with that caption and, since these subscribers already received JM-217, only a `👍 Like` button — no repeated `🔕 Stop notifications` or hint line (2026-08-07: "only in 1st broadcast for every user is enough"). |
 | JM-220 | Ashok: `/pushstats` after JM-217 | Shows the last push's text/photo preview, how many it reached, how many 👍 likes, and the current active-subscriber count. |
 | JM-221 | A guest taps `🔕 Stop notifications` on a delivered push | Confirms they will not receive further broadcasts; a later `/push`→`/pushconfirm` does not reach them. |
 | JM-222 | That same guest sends any ordinary message afterward (e.g. a new job search) | They are automatically back on the broadcast list — no `/start` or manual re-opt-in required (`record_activity` reactivation). |
 | JM-223 | Send 3 consecutive `/push`→`/pushconfirm` broadcasts to a guest who never replies in between | That guest is silently excluded from the 4th broadcast (temporarily dropped) — `/pushstats`'s recipient count for the 4th push is one lower. |
 | JM-224 | That same silently-dropped guest sends any message | They are reachable by the next broadcast again (same reactivation as JM-222). |
 | JM-225 | A guest with pre-existing conversation history (from before this fix deployed) whose very first message was already a full query, never a `/start`/greeting/`/new` | After the next bot restart (backfill runs on startup), they appear in `/pushstats`'s active-subscriber count and receive the next `/push`→`/pushconfirm` broadcast without sending anything new. |
+| JM-226 | A brand-new guest starts AFTER JM-217/JM-219, then Ashok sends a third `/push`→`/pushconfirm` | That new guest's first-ever push still carries the hint line + `👍 Like` + `🔕 Stop notifications`, even though it's the campaign's 3rd broadcast overall — the "first push" rule is per-subscriber, not per-campaign. |
 
 ## 15. Execution log
 
@@ -505,20 +509,22 @@ Convert this suite without changing its IDs:
    `job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests`
    (8 tests). 163/163 green locally in the full suite. Still requires
    Ashok's live Telegram run to close JM-130..161 in the execution log above.
-2A. **Job alerts + owner push notifications contract tests — done, audience
-   fix 2026-08-07 same day:** JM-206..225 above are automated in
+2A. **Job alerts + owner push notifications contract tests — done, 2 same-day
+   fast-follows 2026-08-07:** JM-206..226 above are automated in
    `job_engine/tests/test_telegram_alerts.py` (12 tests), `test_telegram_
-   broadcast.py` (15 tests, incl. `BackfillFromHistoryTests`), and extended
+   broadcast.py` (18 tests, incl. `BackfillFromHistoryTests` and
+   `FirstPushOnlyHintAndStopButtonTests`), and extended
    `test_telegram_buttons.py` (9 tests) / `test_telegram_job_bot.py` (23
    tests) — subscribe/dedupe/cap, family+city+experience matching,
    dispatch-only-new-jobs, `/myalerts`, direct `alert:*`/`push:*` callbacks
    incl. cross-chat ownership refusal, the full `/push`→`/pushconfirm`/
    `/pushcancel`/`/pushstats` flow, photo staging, the 3-unanswered-push drop
-   + any-activity reactivation cycle, and (fast-follow) startup backfill of
-   pre-existing guests into the broadcast list plus enrollment on first
-   ordinary activity (not only `/start`). 285/285 green locally. Still
-   requires Ashok's live Telegram run (with a real second account to receive
-   alerts/pushes) to close JM-206..225 in the execution log above.
+   + any-activity reactivation cycle, startup backfill of pre-existing
+   guests into the broadcast list plus enrollment on first ordinary activity
+   (not only `/start`), and hint-line/Stop-button shown only on each
+   subscriber's first-ever push. 288/288 green locally. Still requires
+   Ashok's live Telegram run (with a real second account to receive
+   alerts/pushes) to close JM-206..226 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link
