@@ -95,6 +95,14 @@ callbacks incl. cross-chat ownership refusal, full `/push`→`/pushconfirm`
 staging/send/cancel/expiry/stats flow, photo-caption staging, normalize_update
 photo support). Full suite: **281/281 green.**
 
+**Deployed (2026-08-07, 10:14 UTC):** Ashok merged
+[PR #44](https://github.com/akayatgit/global-job-watch-tower/pull/44) at
+`d77f11a`. `Deploy ThinkPad` run
+[31169211435](https://github.com/akayatgit/global-job-watch-tower/actions/runs/31169211435)
+green (`test` 13s, `deploy` 47s) — `JOBMASTER_TELEGRAM_VERDICT=PASS`,
+diagnostics confirm exactly one poller, Hermes gateway off. Deploy success
+is engineering evidence only, not closure — see Acceptance below.
+
 **Acceptance:** Ashok completes a real search on Telegram, taps "🔔 Set
 alert", confirms `/myalerts` shows it and 🔕 stops it cleanly; runs `/push`
 with text-only and with a photo+caption, confirms the staged preview/
