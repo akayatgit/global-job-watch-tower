@@ -1,13 +1,18 @@
 """Owner push notifications / broadcasts (kanban card 2026-08-07).
 
-Ashok's spec: every guest who has tapped "start" is a broadcast subscriber
-(this is the retention/re-engagement list — "keep reminding them JobMaster
-exists"), reachable via an Ashok-only /push command with text, an image, or
-both. To avoid looking like a spam bot to Telegram (and to guests), a
-subscriber who receives MAX_UNANSWERED_PUSHES broadcasts in a row with zero
-interaction in between is temporarily dropped from the list — any message
-or button tap from them (anywhere in JobMaster, not just a push reply)
-brings them straight back in, no re-opt-in flow needed.
+Ashok's spec: "everyone who are guests is the only condition" — every chat
+that has ever messaged JobMaster as a guest (not only one that literally
+tapped /start) is a broadcast subscriber (this is the retention/
+re-engagement list — "keep reminding them JobMaster exists"), reachable via
+an Ashok-only /push command with text, an image, or both. Guests from
+before this feature shipped are backfilled from existing conversation/
+profile history (see TelegramSessionStore._backfill_broadcast_subscribers)
+so they don't have to message again first. To avoid looking like a spam bot
+to Telegram (and to guests), a subscriber who receives
+MAX_UNANSWERED_PUSHES broadcasts in a row with zero interaction in between
+is temporarily dropped from the list — any message or button tap from them
+(anywhere in JobMaster, not just a push reply) brings them straight back
+in, no re-opt-in flow needed.
 """
 
 from __future__ import annotations
