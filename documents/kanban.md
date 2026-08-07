@@ -140,6 +140,60 @@ broadened condition).
 `job_engine/tests/test_telegram_job_bot.py`, `documents/roadmap.md`,
 `.cursor/rules/product-ux.mdc`, `documents/jobmaster-telegram-validation.md`.
 
+### 16. Posting-window filter step ("24hr, 2d, 1w") after Experience
+
+**Request (2026-08-07):** Ashok, right after holding the [PR #47](https://github.com/akayatgit/global-job-watch-tower/pull/47) merge —
+"We need to show another layer of filters such as 24hr, 2d, 1w after
+experience." Inserted between Experience and City: Family → Role →
+Experience → **Posting window** → City → Results.
+
+**Shipped:**
+- `app/telegram_buttons.py` — new `WINDOW_BUTTONS`: "Last 24 hours" (`0`),
+  "Last 2 days" (`2`), "This week" (`7`), "Any time" (`''`) — same rolling-
+  window vocabulary already used across the VIGIL dashboard chips and
+  `/api/jobs/insights` (`0` = last 24h by `scraped_at`, N>=1 = last N
+  calendar days by `posted_date`). New `btn_window` stage renders right
+  after a focus (`Intern`/`Fresher`) experience pick, before City.
+- Fixed the back-chain while inserting the new stage: `back:experience` used
+  to (bug) jump past Experience straight to Role when tapped from the City
+  screen — it now correctly re-renders the Experience choices; the City
+  screen's own back button is `back:window` (returns to the window choices).
+  Every back button now returns to the exact previous screen, matching the
+  `back:family`/`back:role` pattern already established.
+- `app/telegram_job_search.py` — `JobMasterIntent` gained
+  `posted_within_days: int | None = None`, a field deliberately SEPARATE
+  from the existing `window_days` (which defaults to 7 and is set on every
+  free-text intent for insights — reusing it for job listings would have
+  silently started filtering every existing free-text job search to the
+  last 7 days). `_job_reply` sends `days=` to `/api/jobs` only when set.
+- `app/api/routes.py` — `GET /api/jobs` gained a real `days` rolling-window
+  param (previously only exact `posted_date=` equality existed), reusing
+  the exact `/jobs/insights` windowing semantics/values (`0,1,2,4,7,14,30`).
+- Same "never dead-end a guest" fallback already used for narrow role
+  buttons: if the chosen window (e.g. "Last 24 hours") returns zero results
+  but a wider window would not, `_run_search` automatically relaxes to "any
+  time" and says so ("No openings in that time window — showing all recent
+  matches instead") rather than showing a false "No verified jobs."
+- Alerts (`telegram_alerts.py`) and "Welcome back" repeat-search are
+  deliberately NOT affected — alert matching stays role_family + city +
+  experience only (a daily alert already only sends genuinely new jobs via
+  `sent_job_ids` dedupe, so a freshness window would double-filter for no
+  benefit), and "Welcome back" has no window to remember (guest_profiles
+  doesn't store one) so a repeat search always runs with "any time."
+
+**Evidence:** extended `test_telegram_buttons.py` (5 new tests: picking a
+window reveals City, the `days` param reaches `/api/jobs`, "Any time" sends
+no `days` param, the zero-result-in-window fallback, and the corrected
+back-chain returning to Window from City) — 3 prior tests rewritten in
+place for the new window screen and the fixed back-chain semantics. Full
+suite: **290/290 green** (on top of card #15's 285; independent of the
+still-held [PR #47](https://github.com/akayatgit/global-job-watch-tower/pull/47)).
+
+**Files:** `job_engine/app/telegram_buttons.py`,
+`job_engine/app/telegram_job_search.py`, `job_engine/app/api/routes.py`,
+`job_engine/tests/test_telegram_buttons.py`, `documents/kanban.md`,
+`.cursor/rules/product-ux.mdc`, `documents/jobmaster-telegram-validation.md`.
+
 ### 13. Open the Gate — public access, no more allow-one-by-one
 
 **Request (2026-08-06, 14:14 UTC):** Ashok, right after accepting card #11 at

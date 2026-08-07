@@ -167,7 +167,14 @@ class JobMasterIntent:
     cities: list[str] = field(default_factory=list)
     experience: str = ''
     metric: str = ''  # count | top_companies | top_roles | compare_cities | trend
-    window_days: int = 7
+    window_days: int = 7  # insight windowing only — see _insight_reply
+    # Listing-freshness filter for job_search (button-flow "How fresh should
+    # the postings be?" step, 2026-08-07): 0/2/7 days, or None = any time.
+    # Deliberately a SEPARATE field from window_days — window_days defaults
+    # to 7 and is set on every free-text intent (including job_search ones)
+    # by _fallback_intent, so reusing it here would silently start filtering
+    # every existing free-text job search to the last 7 days.
+    posted_within_days: int | None = None
 
 
 def _http_get(path: str, params: dict[str, Any] | None = None) -> dict | list:
@@ -616,6 +623,8 @@ class JobMasterEngine:
             params['track'] = 'fresher'
         elif intent.experience:
             params['experience'] = intent.experience
+        if intent.posted_within_days is not None:
+            params['days'] = intent.posted_within_days
         valid: list[dict[str, Any]] = []
         prior_seen = set(seen_ids)
         fetched_seen: set[str] = set()

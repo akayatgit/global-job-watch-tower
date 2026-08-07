@@ -565,6 +565,20 @@ use — they should love opening the app, never fight it.
  URL format as normal search results. Every delivered alert carries a 👍
  Like button next to 🔕 Stop this alert, plus a hint line ("tap 👍 if this
  is useful, or 🔕 below anytime to stop this alert").
+**Posting-window filter step (2026-08-07, "24hr, 2d, 1w after experience"):**
+the guided flow is Family → Role → Experience → **Posting window** → City →
+Results. Window chips: "Last 24 hours" / "Last 2 days" / "This week" / "Any
+time" — same rolling-window vocabulary as the VIGIL dashboard's own hiring-
+window chips (24h/Today/2d/4d/7d/14d/30d), not a new invented scale. Every
+back button returns to the exact previous screen (fixed while inserting
+this stage: `back:experience` used to skip past Experience straight to
+Role — now it correctly returns to Experience). Same "never dead-end a
+guest" rule as narrow role buttons: if the chosen window returns zero
+results but "any time" would not, the search auto-relaxes to any time and
+says so, rather than showing a false "No verified jobs." Alerts and
+"Welcome back" repeat-search deliberately ignore this window (alerts only
+ever send genuinely new jobs regardless of freshness; repeat-search has
+nothing remembered to reuse) — it is a one-off results-screen filter only.
 Separately, Ashok can broadcast a push notification (text, photo, or both)
 to **every guest who has ever messaged JobMaster** — the condition is
 "is a guest", not "specifically tapped /start" (fixed 2026-08-07: azr0099,

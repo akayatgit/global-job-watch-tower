@@ -456,6 +456,23 @@ missing from a live `/pushconfirm`; see JM-225).
 | JM-224 | That same silently-dropped guest sends any message | They are reachable by the next broadcast again (same reactivation as JM-222). |
 | JM-225 | A guest with pre-existing conversation history (from before this fix deployed) whose very first message was already a full query, never a `/start`/greeting/`/new` | After the next bot restart (backfill runs on startup), they appear in `/pushstats`'s active-subscriber count and receive the next `/push`→`/pushconfirm` broadcast without sending anything new. |
 
+## 14F. Posting-window filter step after Experience (2026-08-07)
+
+New guided step (kanban card #16): Family → Role → Experience → **Posting
+window** → City → Results.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-227 | Pick a Family, a Role, then `Fresher` (or `Intern`) | Instead of city buttons, see "How fresh should the postings be?" with `Last 24 hours` / `Last 2 days` / `This week` / `Any time` chips and a Back button. |
+| JM-228 | Tap `Last 24 hours` | Shows the city chips next (same list as before this card). |
+| JM-229 | Tap `◀ Back` on the city screen | Returns to the posting-window chips (not straight to city again, not skipping to role). |
+| JM-230 | Tap `◀ Back` on the posting-window screen | Returns to the experience chips (Intern/Fresher/1–4/5–10/10+) — not the role list. |
+| JM-231 | Complete a search picking `This week` and a real city with live openings | Results screen shows real jobs, same title+link format as before — the window only affects which jobs are eligible, not the display. |
+| JM-232 | Complete a search picking `Last 24 hours` for a role/city combo with only older (but real, live) openings | Instead of a dead "No verified jobs," see "No openings in that time window — showing all recent matches instead" followed by the real jobs anyway. |
+| JM-233 | Tap `Any time` | Search runs with no freshness filter at all (identical breadth to how the button flow behaved before this card). |
+| JM-234 | Set an alert (`🔔 Set alert`) after picking a narrow window (e.g. `Last 24 hours`) | The alert still matches on role_family + city + experience only — daily alert delivery is unaffected by whatever window was picked for that one-off search. |
+| JM-235 | Use "Welcome back, same search?" (`Yes, same search`) after a prior search that used a narrow window | Repeat search runs with no window filter ("any time") — the window preference is not remembered, only role/experience/city are. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -518,7 +535,19 @@ Convert this suite without changing its IDs:
    pre-existing guests into the broadcast list plus enrollment on first
    ordinary activity (not only `/start`). 285/285 green locally. Still
    requires Ashok's live Telegram run (with a real second account to receive
-   alerts/pushes) to close JM-206..225 in the execution log above.
+   alerts/pushes) to close JM-206..225 in the execution log above. (A second
+   same-day fast-follow — hint-line/Stop-button shown only on each
+   subscriber's first-ever push, JM-219/JM-226 — is on hold pending Ashok's
+   go-ahead to merge; see kanban card #15.)
+2B. **Posting-window filter step contract tests — done (2026-08-07):**
+   JM-227..235 above are automated in extended `test_telegram_buttons.py`
+   (5 new tests, 3 rewritten in place) — window chips shown after
+   Intern/Fresher, picking a window reveals the city chips, the `days`
+   param reaches `/api/jobs`, "Any time" sends no `days` param, the
+   zero-result-in-window fallback, and the fixed back-chain
+   (`back:experience` → Experience, `back:window` → Window). 290/290 green
+   locally. Still requires Ashok's live Telegram run to close JM-227..235
+   in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link
