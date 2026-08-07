@@ -191,6 +191,22 @@ card #15. **Vigil 2.0's actual monetization (affiliate offers riding on
 this trust) is still vision-only and not built** — this slice is purely the
 "keep JobMaster top of mind" mechanic that trust-building depends on.
 
+**Share hook + feedback capture + guest funnel analytics (2026-08-07):**
+Three retention/growth primitives, all free-tier (not Vigil 2.0
+monetization): (1) a "📤 Share JobMaster" url-button on good results —
+`https://t.me/share/url?...`, opening Telegram's native forward picker,
+which needs no inline-mode setup and produces no callback for the tap
+itself; word-of-mouth is the whole point of the Open Gate above, and this
+gives every satisfied guest a one-tap way to act on it. (2) 👍/👎 on every
+results screen (good AND zero-result), captured to `result_feedback` and
+readable by Ashok via `/feedback` — the first direct signal of guest
+satisfaction rather than inferring it from search volume alone. (3) a
+`funnel_events` table recording, per UTC day, distinct guests who said hi →
+finished the button flow → got real jobs → came back on a later day, read
+back via `/funnel` — covers both the primary button-tap path and the
+free-text fallback, so the daily numbers reflect everyone, not just one
+entry point. See kanban card #16.
+
 **Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
 tier unlocked after sustained usage, covering quiz, alerts, flashcards,
 study materials, prep book, projects, certifications, and a full LMS.

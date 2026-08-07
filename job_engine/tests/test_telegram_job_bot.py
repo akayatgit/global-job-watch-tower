@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
     JobMasterTelegramBot,
+    TelegramAPI,
     _telegram_chunks,
     _utf16_units,
 )
@@ -1523,6 +1525,182 @@ class NormalizeUpdateTests(unittest.TestCase):
         self.assertFalse(is_callback)
         self.assertIsNone(text)
         self.assertEqual(photo_file_id, 'only')
+
+
+class TelegramAPIInlineButtonTests(unittest.TestCase):
+    """The real TelegramAPI (not the FakeTelegramAPI test double used
+    everywhere else) must render a 'url:'-prefixed button as a Telegram URL
+    button and everything else as a normal callback_data button — see
+    app/telegram_share.py's "📤 Share JobMaster" hook."""
+
+    def _fake_urlopen(self, captured: dict):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps({'ok': True, 'result': {}}).encode()
+
+        def _open(req, timeout=None):
+            captured['body'] = req.data.decode()
+            return FakeResponse()
+
+        return _open
+
+    def test_send_keyboard_renders_url_and_callback_buttons_correctly(self):
+        api = TelegramAPI('fake-token')
+        captured: dict = {}
+        keyboard = [[
+            ('📤 Share JobMaster', 'url:https://t.me/share/url?url=https://t.me/bot&text=hi'),
+            ('🔄 New search', 'restart'),
+        ]]
+        with patch('urllib.request.urlopen', self._fake_urlopen(captured)):
+            api.send_keyboard('123', 'Nice results!', keyboard)
+        parsed = urllib.parse.parse_qs(captured['body'])
+        markup = json.loads(parsed['reply_markup'][0])
+        share_button, restart_button = markup['inline_keyboard'][0]
+        self.assertEqual(
+            share_button,
+            {'text': '📤 Share JobMaster', 'url': 'https://t.me/share/url?url=https://t.me/bot&text=hi'},
+        )
+        self.assertEqual(restart_button, {'text': '🔄 New search', 'callback_data': 'restart'})
+
+    def test_send_photo_also_renders_url_buttons_correctly(self):
+        api = TelegramAPI('fake-token')
+        captured: dict = {}
+        keyboard = [[('📤 Share', 'url:https://t.me/share/url?x=1'), ('👍', 'fb:up')]]
+        with patch('urllib.request.urlopen', self._fake_urlopen(captured)):
+            api.send_photo('123', 'file-id', 'caption', keyboard)
+        parsed = urllib.parse.parse_qs(captured['body'])
+        markup = json.loads(parsed['reply_markup'][0])
+        share_button, fb_button = markup['inline_keyboard'][0]
+        self.assertEqual(share_button, {'text': '📤 Share', 'url': 'https://t.me/share/url?x=1'})
+        self.assertEqual(fb_button, {'text': '👍', 'callback_data': 'fb:up'})
+
+
+class FeedbackOwnerCommandTests(unittest.TestCase):
+    """Owner-readable 👍/👎 (Ashok, 2026-08-07): /feedback [N]."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=FakeEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_no_feedback_yet_reports_zero_rated(self):
+        self.bot.process('owner', '/feedback')
+        reply = self.api.sent[-1][1]
+        self.assertIn('0 rated', reply)
+        self.assertIn('No feedback recorded yet', reply)
+
+    def test_feedback_summary_and_latest_rows_are_readable(self):
+        self.sessions.record_feedback(
+            'guest-1', rating=1, role_label='AI/ML', city='bengaluru',
+        )
+        self.sessions.record_feedback(
+            'guest-2', rating=-1, role_label='Data Analyst', city='',
+        )
+        self.bot.process('owner', '/feedback')
+        reply = self.api.sent[-1][1]
+        self.assertIn('2 rated', reply)
+        self.assertIn('1 👍', reply)
+        self.assertIn('1 👎', reply)
+        self.assertIn('AI/ML', reply)
+        self.assertIn('Data Analyst', reply)
+
+    def test_feedback_limit_argument_caps_the_listed_rows(self):
+        for i in range(5):
+            self.sessions.record_feedback(f'guest-{i}', rating=1, role_label=f'role-{i}')
+        self.bot.process('owner', '/feedback 2')
+        reply = self.api.sent[-1][1]
+        self.assertIn('Latest 2', reply)
+
+    def test_guest_cannot_run_feedback_command(self):
+        self.bot.process('guest', '/feedback')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+
+
+class FunnelOwnerCommandTests(unittest.TestCase):
+    """Owner-readable daily guest funnel (Ashok, 2026-08-07): /funnel [days]."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=FakeEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_empty_funnel_reports_all_zeros_not_a_crash(self):
+        self.bot.process('owner', '/funnel')
+        reply = self.api.sent[-1][1]
+        self.assertIn('DAILY FUNNEL', reply)
+        self.assertIn('Totals: 0 hi', reply)
+
+    def test_funnel_reflects_recorded_stages_today(self):
+        self.sessions.record_funnel_event('guest-1', 'greeted')
+        self.sessions.record_funnel_event('guest-1', 'finished_flow')
+        self.sessions.record_funnel_event('guest-1', 'got_jobs')
+        self.sessions.record_funnel_event('guest-2', 'greeted')
+        self.bot.process('owner', '/funnel')
+        reply = self.api.sent[-1][1]
+        self.assertIn('Totals: 2 hi', reply)
+        self.assertIn('1 finished', reply)
+        self.assertIn('1 got jobs', reply)
+
+    def test_days_argument_controls_the_window(self):
+        self.bot.process('owner', '/funnel 3')
+        reply = self.api.sent[-1][1]
+        self.assertIn('last 3d', reply)
+
+    def test_guest_cannot_run_funnel_command(self):
+        self.bot.process('guest', '/funnel')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
 
 
 if __name__ == '__main__':

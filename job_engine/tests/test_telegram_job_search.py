@@ -289,5 +289,50 @@ class TelegramJobSearchTests(unittest.TestCase):
         )
 
 
+class DirectSearchFunnelRecordingTests(unittest.TestCase):
+    """Guest-analytics funnel coverage for the free-text backup path
+    (Ashok, 2026-08-06: never disabled, always the fallback for whoever
+    types instead of tapping) — same stages the primary button flow records
+    (see test_telegram_buttons.py::GuestFunnelAnalyticsTests), so /funnel
+    counts a real search regardless of which path produced it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'sessions.db')
+        self.api = FakeAPI()
+        self.engine = JobMasterEngine(
+            api_get=self.api,
+            interpreter=IntentInterpreter(enabled=False),
+            sessions=self.sessions,
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_fully_specified_query_records_finished_flow_and_got_jobs(self):
+        self.engine.handle('AI jobs Bangalore', 'chat-direct-1')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 1)
+        self.assertEqual(today['got_jobs'], 1)
+
+    def test_a_zero_result_query_records_finished_flow_but_not_got_jobs(self):
+        self.api.jobs = [make_job(1, title='Finance Manager', city='mumbai')]
+        self.engine.handle('AI jobs Bangalore', 'chat-direct-2')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 1)
+        self.assertEqual(today['got_jobs'], 0)
+
+    def test_a_bare_roleless_query_never_counts_as_finished_flow(self):
+        self.engine.handle('jobs', 'chat-direct-3')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 0)
+
+    def test_an_insight_query_never_touches_the_job_search_funnel(self):
+        self.engine.handle('How many jobs are there in Bangalore?', 'chat-direct-4')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 0)
+        self.assertEqual(today['got_jobs'], 0)
+
+
 if __name__ == '__main__':
     unittest.main()

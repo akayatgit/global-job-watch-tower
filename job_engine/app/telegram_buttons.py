@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field, replace
 
-from app import telegram_broadcast
+from app import telegram_broadcast, telegram_share
 from app.cities import city_label
 from app.telegram_alerts import MAX_ACTIVE_ALERTS, create_or_get_alert
 from app.telegram_job_search import (
@@ -185,6 +185,8 @@ class ButtonFlow:
         # subscriber (Ashok, 2026-08-07) — /start, a bare greeting, and the
         # /new-triggered restart all funnel through here.
         telegram_broadcast.record_start(self.sessions, chat_id)
+        # Guest-analytics funnel, stage 1 of 4: "said hi" (Ashok, 2026-08-07).
+        self.sessions.record_funnel_event(chat_id, 'greeted')
         profile = self.sessions.get_guest_profile(chat_id)
         if profile and profile.get('role_family') and profile.get('experience') in FOCUS_EXPERIENCE:
             label = profile.get('role_label') or _role_label(
@@ -222,6 +224,10 @@ class ButtonFlow:
             return self._more(chat_id)
         if data == 'alert:set':
             return self._set_alert(chat_id)
+        if data == 'fb:up':
+            return self._feedback(chat_id, 1)
+        if data == 'fb:down':
+            return self._feedback(chat_id, -1)
         if data.startswith('fam:'):
             return self._role_step(chat_id, data[len('fam:'):])
         if data == 'back:family' or data == 'reask:family':
@@ -354,6 +360,9 @@ class ButtonFlow:
         )
         display_experience = state.get('experience_choice') or 'fresher'
         self.sessions.clear_onboarding(chat_id)
+        # Guest-analytics funnel, stage 2 of 4: reached the end of Family ->
+        # Role -> Experience -> City before results even run.
+        self.sessions.record_funnel_event(chat_id, 'finished_flow')
         return self._run_search(chat_id, intent, display_experience=display_experience)
 
     def _repeat_last_search(self, chat_id: str) -> ButtonReply:
@@ -367,6 +376,7 @@ class ButtonFlow:
         )
         display_experience = state.get('experience') or 'fresher'
         self.sessions.clear_onboarding(chat_id)
+        self.sessions.record_funnel_event(chat_id, 'finished_flow')
         return self._run_search(chat_id, intent, display_experience=display_experience)
 
     def _run_search(
@@ -421,15 +431,29 @@ class ButtonFlow:
                 f'No {broadened_from} openings right now — here are other '
                 f'{family_label} roles instead:\n\n{reply_text}'
             )
+        no_results = 'No verified jobs' in reply_text or 'No more verified jobs' in reply_text
         actions: list[tuple[str, str]] = []
-        if 'No verified jobs' in reply_text or 'No more verified jobs' in reply_text:
+        if no_results:
             actions = [('Try another role', 'reask:role'), ('Try another family', 'reask:family')]
         else:
+            # Guest-analytics funnel, stage 3 of 4: the search this guest
+            # just finished actually returned real openings.
+            self.sessions.record_funnel_event(chat_id, 'got_jobs')
             if 'Reply more' in reply_text:
                 actions.append(('More jobs ▸', 'more'))
             actions.append(('🔔 Set alert', 'alert:set'))
+            share_url = telegram_share.share_button_url(
+                self.sessions,
+                role_label=_role_label(search_intent.role_family, search_intent.role_keywords),
+            )
+            if share_url:
+                # One-tap "Share JobMaster" (Ashok, 2026-08-07) — word-of-mouth
+                # GTM. A url-type button never produces a callback_query
+                # (Telegram opens the link client-side), so no handler is
+                # needed for the tap itself — see TelegramAPI.send_keyboard.
+                actions.append(('📤 Share JobMaster', f'url:{share_url}'))
             actions.append(('🔄 New search', 'restart'))
-        return ButtonReply(reply_text, _rows(actions, per_row=1) if actions else None)
+        return ButtonReply(reply_text, self._results_keyboard(actions))
 
     def _more(self, chat_id: str) -> ButtonReply:
         reply_text = self.engine.handle('more', chat_id)
@@ -437,8 +461,55 @@ class ButtonFlow:
         if 'Reply more' in reply_text:
             actions.append(('More jobs ▸', 'more'))
         actions.append(('🔔 Set alert', 'alert:set'))
+        share_url = telegram_share.share_button_url(self.sessions, role_label=self._current_role_label(chat_id))
+        if share_url:
+            actions.append(('📤 Share JobMaster', f'url:{share_url}'))
         actions.append(('🔄 New search', 'restart'))
-        return ButtonReply(reply_text, _rows(actions, per_row=1))
+        return ButtonReply(reply_text, self._results_keyboard(actions))
+
+    def _current_role_label(self, chat_id: str) -> str:
+        saved = self.sessions.load_search(chat_id)
+        if not saved:
+            return ''
+        intent_dict, _page, _seen = saved
+        return _role_label(intent_dict.get('role_family', ''), intent_dict.get('role_keywords') or [])
+
+    @staticmethod
+    def _results_keyboard(actions: list[tuple[str, str]]) -> list[list[tuple[str, str]]]:
+        """Feedback capture (Ashok, 2026-08-07): every results/no-results
+        screen gets a compact 👍/👎 row up top — a 👎 on a dead end is exactly
+        the friction signal Ashok wants visibility into, not only on a
+        success screen — followed by whatever action buttons apply."""
+        feedback_row = [('👍', 'fb:up'), ('👎', 'fb:down')]
+        return [feedback_row, *_rows(actions, per_row=1)]
+
+    def _feedback(self, chat_id: str, rating: int) -> ButtonReply:
+        saved = self.sessions.load_search(chat_id)
+        role_label = role_family = city = experience = ''
+        had_results = False
+        if saved:
+            intent_dict, _page, seen_ids = saved
+            role_family = intent_dict.get('role_family', '')
+            role_label = _role_label(role_family, intent_dict.get('role_keywords') or [])
+            cities = intent_dict.get('cities') or []
+            city = cities[0] if cities else ''
+            experience = intent_dict.get('experience', '')
+            had_results = bool(seen_ids)
+        self.sessions.record_feedback(
+            chat_id,
+            rating=rating,
+            role_label=role_label,
+            role_family=role_family,
+            city=city,
+            experience=experience,
+            had_results=had_results,
+        )
+        if rating > 0:
+            return ButtonReply('Thanks for the feedback! 👍 Glad JobMaster helped.')
+        return ButtonReply(
+            "Thanks for letting us know. 👎 We'll use this to improve — tap "
+            '🔄 New search to try a different role or city anytime.'
+        )
 
     def _set_alert(self, chat_id: str) -> ButtonReply:
         """"Set alert every day" (Ashok, 2026-08-07) — reuses whatever

@@ -6,6 +6,7 @@ import json
 import sqlite3
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,27 @@ class TelegramSessionStore:
                     recipient_count INTEGER NOT NULL DEFAULT 0,
                     like_count INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS result_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    rating INTEGER NOT NULL,
+                    role_label TEXT NOT NULL DEFAULT '',
+                    role_family TEXT NOT NULL DEFAULT '',
+                    city TEXT NOT NULL DEFAULT '',
+                    experience TEXT NOT NULL DEFAULT '',
+                    had_results INTEGER NOT NULL DEFAULT 1,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_result_feedback_created
+                    ON result_feedback(created_at DESC);
+                CREATE TABLE IF NOT EXISTS funnel_events (
+                    chat_id TEXT NOT NULL,
+                    event TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (chat_id, event, day)
+                );
+                CREATE INDEX IF NOT EXISTS ix_funnel_events_day ON funnel_events(day);
                 """
             )
             columns = {
@@ -901,6 +923,155 @@ class TelegramSessionStore:
                 (int(push_id),),
             )
         return bool(cursor.rowcount)
+
+    # -- result feedback (2026-08-07) ---------------------------------------
+    # 👍/👎 right on a results screen — Ashok wants an honest read of guest
+    # satisfaction without opening a spreadsheet. Captured for both real
+    # results AND "no jobs found" screens (a 👎 on a dead end is exactly the
+    # friction Ashok most wants visibility into), always readable back via
+    # the owner-only /feedback command.
+
+    def record_feedback(
+        self,
+        chat_id: str,
+        *,
+        rating: int,
+        role_label: str = '',
+        role_family: str = '',
+        city: str = '',
+        experience: str = '',
+        had_results: bool = True,
+    ) -> int:
+        now = time.time()
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO result_feedback(
+                    chat_id, rating, role_label, role_family, city, experience,
+                    had_results, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(chat_id), int(rating), role_label or '', role_family or '',
+                    city or '', experience or '', 1 if had_results else 0, now,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def feedback_summary(self, *, days: int = 7) -> dict[str, Any]:
+        days = max(1, min(int(days), 365))
+        cutoff = time.time() - days * 86400
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS n,
+                    SUM(CASE WHEN rating > 0 THEN 1 ELSE 0 END) AS up,
+                    SUM(CASE WHEN rating < 0 THEN 1 ELSE 0 END) AS down
+                FROM result_feedback
+                WHERE created_at >= ?
+                """,
+                (cutoff,),
+            ).fetchone()
+        total = int(row['n'] or 0) if row else 0
+        up = int(row['up'] or 0) if row else 0
+        down = int(row['down'] or 0) if row else 0
+        return {'days': days, 'total': total, 'up': up, 'down': down}
+
+    def list_feedback(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM result_feedback
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                'id': int(row['id']),
+                'chat_id': str(row['chat_id']),
+                'rating': int(row['rating']),
+                'role_label': str(row['role_label'] or ''),
+                'role_family': str(row['role_family'] or ''),
+                'city': str(row['city'] or ''),
+                'experience': str(row['experience'] or ''),
+                'had_results': bool(row['had_results']),
+                'created_at': float(row['created_at']),
+            }
+            for row in rows
+        ]
+
+    # -- guest funnel analytics (2026-08-07) --------------------------------
+    # Daily funnel: said hi -> finished the button flow -> got real jobs ->
+    # came back on a later day. One idempotent event row per (chat, event,
+    # day) — a chat repeating the same stage twice in one day never double
+    # counts. "returned" is derived, not a separate call site: it fires the
+    # first time a chat's 'greeted' event lands on a day strictly after a
+    # day it already has ANY event on.
+
+    @staticmethod
+    def _utc_day(when: float | None = None) -> str:
+        ts = when if when is not None else time.time()
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+
+    def record_funnel_event(self, chat_id: str, event: str, *, when: float | None = None) -> None:
+        ts = when if when is not None else time.time()
+        day = self._utc_day(ts)
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO funnel_events(chat_id, event, day, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (str(chat_id), event, day, ts),
+            )
+            if event == 'greeted' and cursor.rowcount:
+                earlier = conn.execute(
+                    'SELECT 1 FROM funnel_events WHERE chat_id=? AND day<? LIMIT 1',
+                    (str(chat_id), day),
+                ).fetchone()
+                if earlier:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO funnel_events(chat_id, event, day, created_at)
+                        VALUES (?, 'returned', ?, ?)
+                        """,
+                        (str(chat_id), day, ts),
+                    )
+
+    def funnel_daily(self, *, days: int = 7) -> list[dict[str, Any]]:
+        days = max(1, min(int(days), 90))
+        today = datetime.now(tz=timezone.utc).date()
+        start_day = (today - timedelta(days=days - 1)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT day, event, COUNT(DISTINCT chat_id) AS n
+                FROM funnel_events
+                WHERE day >= ?
+                GROUP BY day, event
+                """,
+                (start_day,),
+            ).fetchall()
+        by_day: dict[str, dict[str, int]] = {}
+        for row in rows:
+            by_day.setdefault(str(row['day']), {})[str(row['event'])] = int(row['n'])
+        result: list[dict[str, Any]] = []
+        for offset in range(days):
+            day = (today - timedelta(days=days - 1 - offset)).isoformat()
+            counts = by_day.get(day, {})
+            result.append({
+                'day': day,
+                'greeted': counts.get('greeted', 0),
+                'finished_flow': counts.get('finished_flow', 0),
+                'got_jobs': counts.get('got_jobs', 0),
+                'returned': counts.get('returned', 0),
+            })
+        return result
 
     def latest_broadcast_push(self) -> dict[str, Any] | None:
         with self._connect() as conn:
