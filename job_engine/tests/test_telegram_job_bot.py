@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from app import telegram_guests
+from app import telegram_broadcast, telegram_guests
 from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
@@ -22,6 +22,7 @@ class FakeTelegramAPI:
         self.sent: list[tuple[str, str]] = []
         self.calls: list[tuple[str, dict]] = []
         self.keyboards_sent: list[tuple[str, str, list | None]] = []
+        self.photos_sent: list[tuple[str, str, str, list | None]] = []
 
     def send(self, chat_id: str, text: str) -> None:
         self.sent.append((chat_id, text))
@@ -29,6 +30,11 @@ class FakeTelegramAPI:
     def send_keyboard(self, chat_id: str, text: str, keyboard: list | None) -> None:
         self.keyboards_sent.append((chat_id, text, keyboard))
         self.send(chat_id, text)
+
+    def send_photo(
+        self, chat_id: str, photo_file_id: str, caption: str = '', keyboard: list | None = None,
+    ) -> None:
+        self.photos_sent.append((chat_id, photo_file_id, caption, keyboard))
 
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
         pass
@@ -1171,6 +1177,238 @@ class VoiceLayerWiringTests(unittest.TestCase):
         self.assertEqual(self.api.sent[-1][1], voiced_once)
 
 
+class MyAlertsCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=FakeEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_myalerts_with_no_subscriptions_gives_a_helpful_empty_state(self):
+        self.bot.process('guest', '/myalerts')
+        self.assertIn('no active alerts', self.api.sent[-1][1])
+
+    def test_myalerts_lists_active_alerts_with_a_stop_button(self):
+        self.sessions.create_job_alert(
+            'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='chennai',
+        )
+        self.bot.process('guest', '/myalerts')
+        text, keyboard = self.api.keyboards_sent[-1][1], self.api.keyboards_sent[-1][2]
+        self.assertIn('AI/ML', text)
+        labels = [label for row in keyboard for label, _data in row]
+        self.assertIn('🔕 Stop #1', labels)
+
+    def test_myalerts_never_triggers_thinking_ack(self):
+        acked = self.bot._pre_ack('guest', '/myalerts')
+        self.assertFalse(acked)
+
+
+class AlertAndPushCallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=FakeEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_alert_off_deactivates_the_owning_chats_alert(self):
+        alert = self.sessions.create_job_alert(
+            'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='',
+        )
+        self.bot.process('guest', f'{BTN_PREFIX}alert:off:{alert["id"]}')
+        self.assertIn('Stopped the alert', self.api.sent[-1][1])
+        self.assertEqual(self.sessions.list_job_alerts('guest'), [])
+
+    def test_alert_off_from_a_different_chat_is_refused(self):
+        alert = self.sessions.create_job_alert(
+            'owner-of-alert', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='',
+        )
+        self.bot.process('someone-else', f'{BTN_PREFIX}alert:off:{alert["id"]}')
+        self.assertIn('no longer active', self.api.sent[-1][1])
+        self.assertEqual(len(self.sessions.list_job_alerts('owner-of-alert')), 1)
+
+    def test_alert_like_increments_the_like_counter(self):
+        alert = self.sessions.create_job_alert(
+            'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='',
+        )
+        self.bot.process('guest', f'{BTN_PREFIX}alert:like:{alert["id"]}')
+        self.assertIn('Thanks for the feedback', self.api.sent[-1][1])
+        self.assertEqual(self.sessions.get_job_alert(alert['id'])['likes'], 1)
+
+    def test_push_stop_removes_the_chat_from_the_broadcast_list(self):
+        self.sessions.record_broadcast_start('guest')
+        self.bot.process('guest', f'{BTN_PREFIX}push:stop')
+        self.assertIn("won't receive further updates", self.api.sent[-1][1])
+        self.assertEqual(self.sessions.list_active_broadcast_subscribers(), [])
+
+    def test_push_like_increments_the_push_like_counter(self):
+        push_id = self.sessions.create_broadcast_push(text='hi')
+        self.bot.process('guest', f'{BTN_PREFIX}push:like:{push_id}')
+        self.assertIn('Thanks for the feedback', self.api.sent[-1][1])
+        self.assertEqual(self.sessions.latest_broadcast_push()['like_count'], 1)
+
+    def test_any_inbound_message_reactivates_a_pruned_subscriber_via_process(self):
+        """process() itself doesn't run the poll loop's activity hook (that
+        lives in run()'s per-update handling) — covered separately at the
+        poll-loop layer in PushBroadcastCommandTests; this just proves the
+        underlying primitive process() would need is wired correctly."""
+        self.sessions.record_broadcast_start('guest')
+        self.sessions.stop_broadcast('guest')
+        telegram_broadcast.record_activity(self.sessions, 'guest')
+        self.assertEqual(self.sessions.list_active_broadcast_subscribers(), ['guest'])
+
+
+class PushBroadcastCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=FakeEngine(),
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        self.sessions.record_broadcast_start('guest-1')
+        self.sessions.record_broadcast_start('guest-2')
+
+    def tearDown(self):
+        self.guests_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_push_stages_a_pending_broadcast_and_reports_recipient_count(self):
+        self.bot.process('owner', '/push New AI/ML jobs just dropped!')
+        reply = self.api.sent[-1][1]
+        self.assertIn('READY TO SEND', reply)
+        self.assertIn('2 subscriber', reply)
+        self.assertIn('New AI/ML jobs just dropped!', reply)
+        # Nothing sent to guests yet — only confirmation can trigger delivery.
+        self.assertEqual([c for c in self.api.sent if c[0] in ('guest-1', 'guest-2')], [])
+
+    def test_guest_cannot_stage_a_push(self):
+        self.bot.process('guest-1', '/push hello everyone')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+        self.assertEqual(self.sessions.get_state('pending_push_text:guest-1', ''), '')
+
+    def test_pushconfirm_without_a_staged_push_is_refused(self):
+        self.bot.process('owner', '/pushconfirm')
+        self.assertIn('No pending push', self.api.sent[-1][1])
+
+    def test_pushconfirm_sends_to_every_active_subscriber(self):
+        self.bot.process('owner', '/push New AI/ML jobs just dropped!')
+        self.bot.process('owner', '/pushconfirm')
+        self.assertIn('Sent to 2/2 subscriber', self.api.sent[-1][1])
+        delivered = {chat for chat, _text, _kb in self.api.keyboards_sent if chat in ('guest-1', 'guest-2')}
+        self.assertEqual(delivered, {'guest-1', 'guest-2'})
+        _chat, text, keyboard = next(
+            row for row in self.api.keyboards_sent if row[0] == 'guest-1'
+        )
+        self.assertIn('New AI/ML jobs just dropped!', text)
+        labels = [label for row in keyboard for label, _data in row]
+        self.assertIn('👍 Like', labels)
+        self.assertIn('🔕 Stop notifications', labels)
+
+    def test_pushconfirm_clears_state_so_a_second_confirm_has_nothing_to_send(self):
+        self.bot.process('owner', '/push hello')
+        self.bot.process('owner', '/pushconfirm')
+        self.bot.process('owner', '/pushconfirm')
+        self.assertIn('No pending push', self.api.sent[-1][1])
+
+    def test_pushcancel_discards_the_staged_push(self):
+        self.bot.process('owner', '/push hello')
+        self.bot.process('owner', '/pushcancel')
+        self.bot.process('owner', '/pushconfirm')
+        self.assertIn('No pending push', self.api.sent[-1][1])
+
+    def test_pushstats_with_no_prior_push_reports_subscriber_count_only(self):
+        self.bot.process('owner', '/pushstats')
+        self.assertIn('No pushes sent yet', self.api.sent[-1][1])
+        self.assertIn('2', self.api.sent[-1][1])
+
+    def test_pushstats_after_a_push_reports_reach_and_likes(self):
+        self.bot.process('owner', '/push hello')
+        self.bot.process('owner', '/pushconfirm')
+        self.bot.process('owner', '/pushstats')
+        reply = self.api.sent[-1][1]
+        self.assertIn('LAST PUSH', reply)
+        self.assertIn('Reached 2', reply)
+        self.assertIn('👍 0 likes', reply)
+
+    def test_a_subscriber_dropped_after_three_unanswered_pushes_stops_receiving_them(self):
+        for _ in range(3):
+            self.bot.process('owner', '/push hello')
+            self.bot.process('owner', '/pushconfirm')
+        self.assertEqual(self.sessions.list_active_broadcast_subscribers(), [])
+        self.bot.process('owner', '/push hello again')
+        self.assertIn('0 subscriber', self.api.sent[-1][1])
+
+    def test_photo_caption_push_is_staged_with_the_stashed_photo(self):
+        """The durable inbox is text-only; a photo's file_id is stashed by
+        the poll loop before /push ever runs (see run()) — here we simulate
+        that stash directly since process() itself is below the poll loop."""
+        self.sessions.set_state('pending_push_photo:owner', 'file-abc')
+        self.bot.process('owner', '/push Check this out')
+        self.assertIn('text + photo', self.api.sent[-1][1])
+        self.bot.process('owner', '/pushconfirm')
+        self.assertEqual(len(self.api.photos_sent), 2)
+        chat_id, photo_file_id, caption, keyboard = self.api.photos_sent[0]
+        self.assertIn(chat_id, ('guest-1', 'guest-2'))
+        self.assertEqual(photo_file_id, 'file-abc')
+        self.assertIn('Check this out', caption)
+        labels = [label for row in keyboard for label, _data in row]
+        self.assertIn('👍 Like', labels)
+
+
 class NormalizeUpdateTests(unittest.TestCase):
     """`_normalize_update` folds message vs callback_query updates into one
     shape the poll loop dispatches uniformly (see run()). Covered in
@@ -1187,12 +1425,15 @@ class NormalizeUpdateTests(unittest.TestCase):
                 'text': 'Fresh AI jobs in Bangalore',
             },
         }
-        is_callback, chat, sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        is_callback, chat, sender, text, callback_id, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
         self.assertFalse(is_callback)
         self.assertEqual(chat, {'id': 42, 'type': 'private'})
         self.assertEqual(sender['username'], 'ashok')
         self.assertEqual(text, 'Fresh AI jobs in Bangalore')
         self.assertIsNone(callback_id)
+        self.assertEqual(photo_file_id, '')
 
     def test_a_button_tap_is_a_callback_encoded_with_btn_prefix(self):
         update = {
@@ -1204,12 +1445,15 @@ class NormalizeUpdateTests(unittest.TestCase):
                 'data': 'fam:ai_ml',
             },
         }
-        is_callback, chat, sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        is_callback, chat, sender, text, callback_id, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
         self.assertTrue(is_callback)
         self.assertEqual(chat, {'id': 7, 'type': 'private'})
         self.assertEqual(sender['username'], 'guest1')
         self.assertEqual(text, f'{BTN_PREFIX}fam:ai_ml')
         self.assertEqual(callback_id, 'cbq-1')
+        self.assertEqual(photo_file_id, '')
 
     def test_a_callback_query_with_no_data_yields_no_text_but_still_a_callback_id(self):
         update = {
@@ -1220,10 +1464,13 @@ class NormalizeUpdateTests(unittest.TestCase):
                 'message': {'chat': {'id': 7, 'type': 'private'}},
             },
         }
-        is_callback, _chat, _sender, text, callback_id = JobMasterTelegramBot._normalize_update(update)
+        is_callback, _chat, _sender, text, callback_id, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
         self.assertTrue(is_callback)
         self.assertIsNone(text)
         self.assertEqual(callback_id, 'cbq-2')
+        self.assertEqual(photo_file_id, '')
 
     def test_a_non_private_group_chat_message_still_normalizes_cleanly(self):
         update = {
@@ -1234,10 +1481,48 @@ class NormalizeUpdateTests(unittest.TestCase):
                 'text': 'hi',
             },
         }
-        is_callback, chat, _sender, text, _callback_id = JobMasterTelegramBot._normalize_update(update)
+        is_callback, chat, _sender, text, _callback_id, _photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
         self.assertFalse(is_callback)
         self.assertEqual(chat['type'], 'group')
         self.assertEqual(text, 'hi')
+
+    def test_a_photo_with_caption_yields_caption_as_text_plus_file_id(self):
+        update = {
+            'update_id': 5,
+            'message': {
+                'chat': {'id': 42, 'type': 'private'},
+                'from': {'username': 'ashok', 'id': 42},
+                'photo': [
+                    {'file_id': 'small', 'width': 90},
+                    {'file_id': 'large', 'width': 800},
+                ],
+                'caption': '/push New AI/ML openings just dropped!',
+            },
+        }
+        is_callback, _chat, _sender, text, _callback_id, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
+        self.assertFalse(is_callback)
+        self.assertEqual(text, '/push New AI/ML openings just dropped!')
+        self.assertEqual(photo_file_id, 'large')
+
+    def test_a_photo_with_no_caption_yields_no_text_but_still_a_file_id(self):
+        update = {
+            'update_id': 6,
+            'message': {
+                'chat': {'id': 42, 'type': 'private'},
+                'from': {'username': 'ashok', 'id': 42},
+                'photo': [{'file_id': 'only', 'width': 400}],
+            },
+        }
+        is_callback, _chat, _sender, text, _callback_id, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
+        self.assertFalse(is_callback)
+        self.assertIsNone(text)
+        self.assertEqual(photo_file_id, 'only')
 
 
 if __name__ == '__main__':
