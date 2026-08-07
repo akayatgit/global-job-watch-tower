@@ -154,6 +154,48 @@ class TelegramSessionStore:
                 )
                 """
             )
+            self._backfill_broadcast_subscribers(conn)
+
+    def _backfill_broadcast_subscribers(self, conn: sqlite3.Connection) -> None:
+        """Ashok (2026-08-07): "everyone who are guests is the only
+        condition" for a push — not only chats that tap /start AFTER this
+        feature shipped. Guests with history from before this table existed
+        (azr0099, supriyamk, cryptoonz, ...) must show up too, without
+        having to message the bot again first. Runs on every store startup
+        (same idempotent-maintenance pattern as the history prune above);
+        INSERT OR IGNORE never touches a chat_id already tracked here, so an
+        explicit stop or an in-progress unanswered-push count is untouched —
+        this only ever adds a never-before-seen guest as freshly active."""
+        owner_row = conn.execute(
+            "SELECT value FROM bot_state WHERE key='telegram_command_owner_ids'",
+        ).fetchone()
+        owner_ids = {
+            value for value in (owner_row[0].split(',') if owner_row and owner_row[0] else [])
+            if value
+        }
+        rows = conn.execute(
+            """
+            SELECT DISTINCT chat_id FROM (
+                SELECT chat_id FROM conversation_history
+                UNION SELECT chat_id FROM guest_profiles
+                UNION SELECT chat_id FROM onboarding_sessions
+            )
+            """
+        ).fetchall()
+        now = time.time()
+        for row in rows:
+            chat_id = str(row[0])
+            if chat_id in owner_ids:
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO broadcast_subscribers(
+                    chat_id, active, pushes_since_response, started_at, last_seen_at, updated_at
+                )
+                VALUES (?, 1, 0, ?, ?, ?)
+                """,
+                (chat_id, now, now, now),
+            )
 
     def save_search(
         self,
@@ -789,18 +831,14 @@ class TelegramSessionStore:
             )
 
     def record_broadcast_activity(self, chat_id: str) -> None:
-        """Reactivate/reset an EXISTING subscriber only — a chat that has
-        never tapped start is not silently enrolled by ordinary chatter."""
-        now = time.time()
-        with self._lock, self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE broadcast_subscribers
-                SET active=1, pushes_since_response=0, last_seen_at=?, updated_at=?
-                WHERE chat_id=?
-                """,
-                (now, now, str(chat_id)),
-            )
+        """Ashok (2026-08-07): "everyone who are guests is the only
+        condition" — ANY message from a guest enrolls/reactivates them, not
+        only a literal /start tap (a guest whose first-ever message is a
+        fully specified query, e.g. "AI jobs in Bangalore", never routes
+        through ButtonFlow.start() at all). Functionally identical to
+        record_broadcast_start; kept as a separate method so call sites
+        stay self-documenting (the entry-point tap vs. "any activity")."""
+        self.record_broadcast_start(chat_id)
 
     def stop_broadcast(self, chat_id: str) -> None:
         with self._lock, self._connect() as conn:

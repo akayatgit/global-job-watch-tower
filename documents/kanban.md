@@ -71,9 +71,9 @@ this is pure retention/re-engagement.
   background daemon thread dispatches due alerts at most once per UTC day.
 
 **Design decisions (asked/answered inline, not deferred):**
-- Broadcast audience = every guest who has tapped start, not just alert
-  subscribers (Ashok's explicit call) — a stricter opt-in list was floated
-  and rejected.
+- Broadcast audience = every guest, full stop — not just alert subscribers,
+  and (fixed 2026-08-07, see fast-follow below) not only chats that
+  literally tapped `/start` either.
 - 3 consecutive unanswered pushes → `active=0` (temporarily dropped); ANY
   interaction anywhere in JobMaster (not just replying to a push) sets
   `active=1` again — no manual re-opt-in flow, per "temporarily."
@@ -102,6 +102,33 @@ recipient count, `/pushconfirm` delivers to a real second account with 👍/🔕
 buttons and the hint line, `/pushstats` reflects reach+likes; confirms a
 guest who never replies to 3 pushes stops receiving a 4th, then any message
 from them brings them back. Keep open until Ashok accepts the live result.
+
+**Fast-follow fix (2026-08-07, same day):** Ashok ran `/pushconfirm` for real
+and azr0099, supriyamk, cryptoonz — guests he has conversation history with —
+never got it. Root cause: `broadcast_subscribers` only ever got a row via
+`ButtonFlow.start()`, which only fires on a literal `/start`, a bare
+greeting, or `/new` — a guest whose very first message is already a full
+query (e.g. "AI jobs in Bangalore") never calls it, and the table itself
+didn't exist before this card shipped so nobody's pre-existing history was
+in it either. Ashok's correction: "everyone who are guests is the only
+condition" — no narrower gate than that. Fix:
+- `TelegramSessionStore._backfill_broadcast_subscribers` runs on every store
+  startup (same idempotent-maintenance pattern as the 40-row conversation
+  prune) and INSERT-OR-IGNOREs every chat_id already seen in
+  `conversation_history` / `guest_profiles` / `onboarding_sessions` as an
+  active subscriber — never touches a chat_id already tracked (so an
+  explicit stop or in-progress unanswered-push count survives), and skips
+  chat_ids in `telegram_command_owner_ids` (Ashok's own chat isn't a "guest").
+- `record_broadcast_activity` is now an upsert (delegates to
+  `record_broadcast_start`) instead of update-only, so a brand-new guest is
+  enrolled the moment they send anything — not only when they explicitly
+  start — since the bot already calls `record_activity` on every accepted
+  guest update.
+No new tables/commands; existing `/push` flow, caps, and lifecycle
+(3-unanswered-push drop, like/stop buttons, hint line) are unchanged. Full
+suite: **285/285 green** (4 new backfill tests in
+`test_telegram_broadcast.py`, 1 lifecycle test rewritten to match the
+broadened condition).
 
 **Files:** `job_engine/app/telegram_sessions.py`,
 `job_engine/app/telegram_alerts.py` (new),

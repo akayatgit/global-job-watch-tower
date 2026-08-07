@@ -1,12 +1,15 @@
 """Owner push-notification / broadcast-list tests (kanban 2026-08-07).
 
-Ashok's spec: every guest who taps "start" joins the broadcast list; 3
+Ashok's spec, clarified 2026-08-07: "everyone who are guests is the only
+condition" — every chat that has EVER messaged JobMaster as a guest joins
+the broadcast list, not only one that literally tapped /start; 3
 consecutive unanswered pushes temporarily drops them; any activity from
 them (anywhere) brings them straight back."""
 
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -22,9 +25,16 @@ class BroadcastSubscriberLifecycleTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_a_chat_that_never_started_is_not_on_the_broadcast_list(self):
-        telegram_broadcast.record_activity(self.sessions, 'never-started')
-        self.assertEqual(self.sessions.list_active_broadcast_subscribers(), [])
+    def test_any_activity_from_a_brand_new_chat_enrolls_them_too(self):
+        # Ashok (2026-08-07): a guest whose first-ever message is a fully
+        # specified query never routes through ButtonFlow.start() at all —
+        # "everyone who are guests is the only condition" means ordinary
+        # activity is enough, not only a literal /start tap.
+        telegram_broadcast.record_activity(self.sessions, 'first-message-was-a-search')
+        self.assertEqual(
+            self.sessions.list_active_broadcast_subscribers(),
+            ['first-message-was-a-search'],
+        )
 
     def test_tapping_start_adds_the_chat_to_the_broadcast_list(self):
         telegram_broadcast.record_start(self.sessions, 'chat-1')
@@ -137,6 +147,57 @@ class SendBroadcastTests(unittest.TestCase):
         self.assertEqual(latest['like_count'], 0)
         self.sessions.like_broadcast_push(latest['id'])
         self.assertEqual(self.sessions.latest_broadcast_push()['like_count'], 1)
+
+
+class BackfillFromHistoryTests(unittest.TestCase):
+    """azr0099, supriyamk, cryptoonz (2026-08-07): guests who chatted with
+    JobMaster BEFORE the broadcast table existed must be on the list from
+    the very next bot startup, without messaging again first."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmp.name) / 'bot.db'
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_reopening_the_store_backfills_guests_with_conversation_history(self):
+        sessions = TelegramSessionStore(self.db_path)
+        sessions.finalize_guest_conversation(1, 'azr0099', 'azr0099', 'hi', 'hello')
+        self.assertEqual(sessions.list_active_broadcast_subscribers(), [])
+
+        reopened = TelegramSessionStore(self.db_path)
+        self.assertIn('azr0099', reopened.list_active_broadcast_subscribers())
+
+    def test_backfill_also_picks_up_guest_profiles_and_onboarding_sessions(self):
+        sessions = TelegramSessionStore(self.db_path)
+        sessions.save_guest_profile(
+            'supriyamk', role_label='AI Engineer', role_family='ai',
+            role_keywords=['ai'], experience='fresher', city='chennai',
+        )
+        sessions.save_onboarding('cryptoonz', {'stage': 'city'})
+
+        reopened = TelegramSessionStore(self.db_path)
+        subscribers = set(reopened.list_active_broadcast_subscribers())
+        self.assertIn('supriyamk', subscribers)
+        self.assertIn('cryptoonz', subscribers)
+
+    def test_backfill_never_overrides_an_already_tracked_stopped_subscriber(self):
+        sessions = TelegramSessionStore(self.db_path)
+        sessions.finalize_guest_conversation(1, 'chat-1', '', 'hi', 'hello')
+        telegram_broadcast.record_start(sessions, 'chat-1')
+        telegram_broadcast.stop(sessions, 'chat-1')
+
+        reopened = TelegramSessionStore(self.db_path)
+        self.assertEqual(reopened.list_active_broadcast_subscribers(), [])
+
+    def test_backfill_excludes_the_owner_chat_id(self):
+        sessions = TelegramSessionStore(self.db_path)
+        sessions.set_state('telegram_command_owner_ids', 'owner-1')
+        sessions.finalize_guest_conversation(1, 'owner-1', 'ashok', 'hi', 'hello')
+
+        reopened = TelegramSessionStore(self.db_path)
+        self.assertNotIn('owner-1', reopened.list_active_broadcast_subscribers())
 
 
 if __name__ == '__main__':

@@ -565,9 +565,16 @@ use — they should love opening the app, never fight it.
  URL format as normal search results. Every delivered alert carries a 👍
  Like button next to 🔕 Stop this alert, plus a hint line ("tap 👍 if this
  is useful, or 🔕 below anytime to stop this alert").
- Separately, Ashok can broadcast a push notification (text, photo, or both)
- to **every guest who has ever tapped start** — not just alert subscribers —
- via `/push <message>` (stages it, shows recipient count) → `/pushconfirm`
+Separately, Ashok can broadcast a push notification (text, photo, or both)
+to **every guest who has ever messaged JobMaster** — the condition is
+"is a guest", not "specifically tapped /start" (fixed 2026-08-07: azr0099,
+supriyamk, cryptoonz had conversation history but their first-ever message
+skipped the greeting/`/start` path, so they were missing; the broadcast list
+now also backfills every chat_id already seen in conversation history,
+guest profiles, or onboarding sessions on bot startup, and any ordinary
+guest activity — not only a literal start — enrolls a brand-new chat
+immediately) — not just alert subscribers — via `/push <message>` (stages
+it, shows recipient count) → `/pushconfirm`
  (sends, 10-min expiry) / `/pushcancel` / `/pushstats` (reach + likes).
  **3 consecutive unanswered pushes temporarily drops a subscriber** from the
  broadcast list (spam/trust hygiene); **any interaction anywhere in

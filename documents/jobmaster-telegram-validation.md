@@ -428,7 +428,10 @@ now to be blocked.
 
 "Set alert every day" (kanban card #15): a free, non-premium retention
 feature. A guest subscribes from a results screen; Ashok broadcasts to
-every guest who has ever tapped start.
+every guest, full stop — messaging JobMaster at all is the only condition,
+not specifically tapping `/start` (fixed 2026-08-07 after azr0099,
+supriyamk, and cryptoonz — real guests with conversation history — were
+missing from a live `/pushconfirm`; see JM-225).
 
 | ID | Do | Expected |
 |---|---|---|
@@ -451,6 +454,7 @@ every guest who has ever tapped start.
 | JM-222 | That same guest sends any ordinary message afterward (e.g. a new job search) | They are automatically back on the broadcast list — no `/start` or manual re-opt-in required (`record_activity` reactivation). |
 | JM-223 | Send 3 consecutive `/push`→`/pushconfirm` broadcasts to a guest who never replies in between | That guest is silently excluded from the 4th broadcast (temporarily dropped) — `/pushstats`'s recipient count for the 4th push is one lower. |
 | JM-224 | That same silently-dropped guest sends any message | They are reachable by the next broadcast again (same reactivation as JM-222). |
+| JM-225 | A guest with pre-existing conversation history (from before this fix deployed) whose very first message was already a full query, never a `/start`/greeting/`/new` | After the next bot restart (backfill runs on startup), they appear in `/pushstats`'s active-subscriber count and receive the next `/push`→`/pushconfirm` broadcast without sending anything new. |
 
 ## 15. Execution log
 
@@ -501,18 +505,20 @@ Convert this suite without changing its IDs:
    `job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests`
    (8 tests). 163/163 green locally in the full suite. Still requires
    Ashok's live Telegram run to close JM-130..161 in the execution log above.
-2A. **Job alerts + owner push notifications contract tests — done
-   (2026-08-07):** JM-206..224 above are automated in
+2A. **Job alerts + owner push notifications contract tests — done, audience
+   fix 2026-08-07 same day:** JM-206..225 above are automated in
    `job_engine/tests/test_telegram_alerts.py` (12 tests), `test_telegram_
-   broadcast.py` (11 tests), and extended `test_telegram_buttons.py` (9
-   tests) / `test_telegram_job_bot.py` (23 tests) — subscribe/dedupe/cap,
-   family+city+experience matching, dispatch-only-new-jobs, `/myalerts`,
-   direct `alert:*`/`push:*` callbacks incl. cross-chat ownership refusal,
-   the full `/push`→`/pushconfirm`/`/pushcancel`/`/pushstats` flow, photo
-   staging, and the 3-unanswered-push drop + any-activity reactivation
-   cycle. 281/281 green locally. Still requires Ashok's live Telegram run
-   (with a real second account to receive alerts/pushes) to close
-   JM-206..224 in the execution log above.
+   broadcast.py` (15 tests, incl. `BackfillFromHistoryTests`), and extended
+   `test_telegram_buttons.py` (9 tests) / `test_telegram_job_bot.py` (23
+   tests) — subscribe/dedupe/cap, family+city+experience matching,
+   dispatch-only-new-jobs, `/myalerts`, direct `alert:*`/`push:*` callbacks
+   incl. cross-chat ownership refusal, the full `/push`→`/pushconfirm`/
+   `/pushcancel`/`/pushstats` flow, photo staging, the 3-unanswered-push drop
+   + any-activity reactivation cycle, and (fast-follow) startup backfill of
+   pre-existing guests into the broadcast list plus enrollment on first
+   ordinary activity (not only `/start`). 285/285 green locally. Still
+   requires Ashok's live Telegram run (with a real second account to receive
+   alerts/pushes) to close JM-206..225 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link
