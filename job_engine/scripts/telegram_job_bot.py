@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app import telegram_alerts, telegram_broadcast  # noqa: E402
 from app.cities import city_label  # noqa: E402
 from app.telegram_buttons import BTN_PREFIX, EXPERIENCE_LABELS, ButtonFlow, ButtonReply  # noqa: E402
 from app.telegram_job_search import (  # noqa: E402
@@ -103,7 +104,14 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'guestprofile',
     'waitlist',
     'checkaccess',
+    'push',
+    'pushconfirm',
+    'pushcancel',
+    'pushstats',
 })
+# 10 minutes to review a staged /push before it expires unconfirmed —
+# short enough that a forgotten broadcast never fires hours later.
+PENDING_PUSH_TTL_S = 600
 # Ashok-only self-test toggle: no second phone needed to see the guest
 # experience. Always dispatched off the REAL owner check (never the
 # simulated one) so this pair of commands can never lock him out of his
@@ -123,6 +131,10 @@ OWNER_MENU = [
     {'command': 'guestprofile', 'description': 'Guest role/experience/city'},
     {'command': 'checkaccess', 'description': 'Why can/can\'t a person text?'},
     {'command': 'waitlist', 'description': 'Experienced-hire email waitlist'},
+    {'command': 'push', 'description': 'Stage a broadcast (text/photo)'},
+    {'command': 'pushconfirm', 'description': 'Send the staged broadcast'},
+    {'command': 'pushcancel', 'description': 'Discard the staged broadcast'},
+    {'command': 'pushstats', 'description': 'Last broadcast reach + likes'},
     {'command': 'actasguest', 'description': 'Test this chat as a guest'},
     {'command': 'actasowner', 'description': 'Back to owner mode'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
@@ -247,6 +259,35 @@ class TelegramAPI:
             if markup is not None and index == len(chunks) - 1:
                 payload['reply_markup'] = markup
             self.call('sendMessage', payload)
+
+    def send_photo(
+        self,
+        chat_id: str,
+        photo_file_id: str,
+        caption: str = '',
+        keyboard: list[list[tuple[str, str]]] | None = None,
+    ) -> None:
+        """Broadcast image (+optional caption/keyboard). Telegram captions
+        cap at 1024 UTF-16 units — longer text ships as a separate message
+        (with the keyboard) right after the photo instead of truncating."""
+        text = (caption or '').strip()
+        markup = None
+        if keyboard:
+            markup = json.dumps({
+                'inline_keyboard': [
+                    [{'text': label, 'callback_data': data} for label, data in row]
+                    for row in keyboard
+                ]
+            })
+        if text and _utf16_units(text) <= 1024:
+            payload: dict[str, Any] = {'chat_id': str(chat_id), 'photo': photo_file_id, 'caption': text}
+            if markup is not None:
+                payload['reply_markup'] = markup
+            self.call('sendPhoto', payload)
+            return
+        self.call('sendPhoto', {'chat_id': str(chat_id), 'photo': photo_file_id})
+        if text:
+            self.send_keyboard(chat_id, text, keyboard)
 
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
         try:
@@ -423,6 +464,15 @@ class JobMasterTelegramBot:
     def _management_reply(self, chat_id: str, command: str, arg: str) -> str:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
+        if command == 'push':
+            return self._stage_push(chat_id, arg)
+        if command == 'pushcancel':
+            self._clear_pending_push(chat_id)
+            return 'Discarded the pending push.'
+        if command == 'pushconfirm':
+            return self._confirm_push(chat_id)
+        if command == 'pushstats':
+            return self._push_stats()
         if command == 'history':
             parts = (arg or '').split(maxsplit=1)
             if not parts:
@@ -636,6 +686,68 @@ class JobMasterTelegramBot:
                     f"  · {item['user_id']}{label} · {format_ttl(item['expires_in_s'])} left"
                 )
         return '\n'.join(lines)
+
+    def _clear_pending_push(self, owner_chat_id: str) -> None:
+        for suffix in ('text', 'photo', 'at'):
+            self.sessions.set_state(f'pending_push_{suffix}:{owner_chat_id}', '')
+
+    def _stage_push(self, owner_chat_id: str, arg: str) -> str:
+        text = (arg or '').strip()
+        photo_file_id = self.sessions.get_state(f'pending_push_photo:{owner_chat_id}', '')
+        if not text and not photo_file_id:
+            return (
+                'Usage: /push <message> — or send a photo with caption '
+                '"/push <message>" for an image broadcast.'
+            )
+        self.sessions.set_state(f'pending_push_text:{owner_chat_id}', text)
+        self.sessions.set_state(f'pending_push_at:{owner_chat_id}', time.time())
+        count = self.sessions.count_active_broadcast_subscribers()
+        kind = 'text + photo' if (text and photo_file_id) else ('photo' if photo_file_id else 'text')
+        preview = text or '(no caption)'
+        return (
+            f'READY TO SEND ({kind}) to {count} subscriber(s):\n\n{preview}\n\n'
+            'Reply /pushconfirm within 10 minutes to send, or /pushcancel to discard.'
+        )
+
+    def _confirm_push(self, owner_chat_id: str) -> str:
+        at_raw = self.sessions.get_state(f'pending_push_at:{owner_chat_id}', '')
+        if not at_raw:
+            return 'No pending push. Start with /push <message>.'
+        try:
+            staged_at = float(at_raw)
+        except ValueError:
+            staged_at = 0.0
+        if time.time() - staged_at > PENDING_PUSH_TTL_S:
+            self._clear_pending_push(owner_chat_id)
+            return 'That pending push expired after 10 minutes. Start again with /push <message>.'
+        text = self.sessions.get_state(f'pending_push_text:{owner_chat_id}', '')
+        photo_file_id = self.sessions.get_state(f'pending_push_photo:{owner_chat_id}', '')
+        self._clear_pending_push(owner_chat_id)
+
+        def _send(target_chat_id: str, message_text: str, image_id: str, keyboard) -> None:
+            if image_id:
+                self.api.send_photo(target_chat_id, image_id, message_text, keyboard)
+            else:
+                self.api.send_keyboard(target_chat_id, message_text, keyboard)
+
+        result = telegram_broadcast.send_broadcast(
+            self.sessions, _send, text=text, photo_file_id=photo_file_id,
+        )
+        tail = f", {result['failed']} failed" if result['failed'] else ''
+        return f"Sent to {result['sent']}/{result['total']} subscriber(s){tail}."
+
+    def _push_stats(self) -> str:
+        active = self.sessions.count_active_broadcast_subscribers()
+        latest = self.sessions.latest_broadcast_push()
+        if not latest:
+            return f'No pushes sent yet. Active subscribers: {active}.'
+        age = self._relative_age(latest['sent_at'])
+        preview = _truncate_utf16(latest['text'] or '(photo only)', 200)
+        return (
+            f'LAST PUSH · {age}\n{preview}\n\n'
+            f"Reached {latest['recipient_count']} · 👍 {latest['like_count']} likes\n"
+            f'Active subscribers now: {active}'
+        )
 
     def _configure_command_menu(self) -> bool:
         """Remove global commands and expose VIGIL operations only to Ashok."""
@@ -902,7 +1014,7 @@ class JobMasterTelegramBot:
             not clean
             or clean.startswith(BTN_PREFIX)  # button taps reply instantly — no "Thinking…"
             or RESET_RE.match(clean)
-            or clean.lower() in {'/start', '/help', 'help'}
+            or clean.lower() in {'/start', '/help', 'help', '/myalerts'}
             or (parsed and parsed[0] in OWNER_COMMANDS)
         ):
             return False
@@ -912,6 +1024,36 @@ class JobMasterTelegramBot:
         except Exception:
             LOG.exception('immediate acknowledgement failed chat=%s', chat_id)
             return False
+
+    def _handle_alert_or_push_callback(self, chat_id: str, payload: str) -> ButtonReply | None:
+        """Alert/push taps can arrive from a delivered alert or broadcast at
+        ANY time — independent of wherever the guest's own button-flow
+        session currently is — so these are handled here, before
+        ButtonFlow ever sees them, rather than as one more ButtonFlow stage.
+        Returns None for anything else so the caller falls through."""
+        if payload.startswith('alert:off:'):
+            raw_id = payload[len('alert:off:'):]
+            alert = self.sessions.get_job_alert(int(raw_id)) if raw_id.isdigit() else None
+            if alert is None or str(alert['chat_id']) != str(chat_id):
+                return ButtonReply('That alert is no longer active.')
+            self.sessions.deactivate_job_alert(alert['id'], chat_id)
+            return ButtonReply(f"🔕 Stopped the alert for {alert['role_label']}.")
+        if payload.startswith('alert:like:'):
+            raw_id = payload[len('alert:like:'):]
+            if raw_id.isdigit():
+                self.sessions.like_job_alert(int(raw_id))
+            return ButtonReply('Thanks for the feedback! 👍')
+        if payload == 'push:stop':
+            telegram_broadcast.stop(self.sessions, chat_id)
+            return ButtonReply(
+                "🔕 You won't receive further updates from JobMaster. Send /start anytime to come back."
+            )
+        if payload.startswith('push:like:'):
+            raw_id = payload[len('push:like:'):]
+            if raw_id.isdigit():
+                self.sessions.like_broadcast_push(int(raw_id))
+            return ButtonReply('Thanks for the feedback! 👍')
+        return None
 
     def _send_button_reply(
         self,
@@ -958,7 +1100,11 @@ class JobMasterTelegramBot:
             # durable per-chat pipeline as typed text (see the poll loop) —
             # a NUL prefix can never appear in a real Telegram text message,
             # so this can never collide with anything a guest actually types.
-            button_reply = self.button_flow.handle_callback(chat_id, clean[len(BTN_PREFIX):])
+            payload = clean[len(BTN_PREFIX):]
+            button_reply = (
+                self._handle_alert_or_push_callback(chat_id, payload)
+                or self.button_flow.handle_callback(chat_id, payload)
+            )
             self._send_button_reply(chat_id, button_reply, update_id=update_id)
             if self.health_enabled:
                 self._write_health(
@@ -1004,6 +1150,13 @@ class JobMasterTelegramBot:
             # primary button-driven flow, overwriting any stale state.
             button_reply = self.button_flow.start(chat_id)
             self._send_button_reply(chat_id, button_reply, update_id=update_id)
+            return
+        if clean.lower() == '/myalerts':
+            text, keyboard = telegram_alerts.format_my_alerts(self.sessions.list_job_alerts(chat_id))
+            reply = ButtonReply(text, keyboard)
+            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                self.sessions.save_update_reply(update_id, reply.text)
+            self._send_button_reply(chat_id, reply, update_id=update_id)
             return
         if clean.lower() in {'/help', 'help'}:
             reply = self.voice.speak(
@@ -1090,13 +1243,18 @@ class JobMasterTelegramBot:
             )
 
     @staticmethod
-    def _normalize_update(update: dict) -> tuple[bool, dict, dict, str | None, str | None]:
+    def _normalize_update(update: dict) -> tuple[bool, dict, dict, str | None, str | None, str]:
         """Fold a raw Telegram update (a `message` or a `callback_query`,
         see `allowed_updates` in `TelegramAPI.updates`) into one common
         shape the poll loop can dispatch uniformly. A button tap is
         re-encoded as BTN_PREFIX-tagged text so it flows through the exact
         same durable per-chat queue as typed messages (see queue_update) —
-        callers never need a second code path for it."""
+        callers never need a second code path for it.
+
+        A photo message's caption stands in for `text` (so "/push <msg>" as
+        a photo caption parses exactly like a typed command), and the
+        largest photo size's file_id is returned separately — used only by
+        the owner /push flow (see run()); guests never send photos here."""
         callback = update.get('callback_query')
         if callback:
             message = callback.get('message') or {}
@@ -1104,12 +1262,16 @@ class JobMasterTelegramBot:
             sender = callback.get('from') or {}
             data = callback.get('data')
             text = f'{BTN_PREFIX}{data}' if isinstance(data, str) else None
-            return True, chat, sender, text, callback.get('id')
+            return True, chat, sender, text, callback.get('id'), ''
         message = update.get('message') or {}
         chat = message.get('chat') or {}
         sender = message.get('from') or {}
+        photo_sizes = message.get('photo') or []
+        photo_file_id = str(photo_sizes[-1].get('file_id') or '') if photo_sizes else ''
         text = message.get('text')
-        return False, chat, sender, text, None
+        if text is None and photo_file_id:
+            text = message.get('caption')
+        return False, chat, sender, text, None, photo_file_id
 
     def run(self) -> int:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
@@ -1169,7 +1331,9 @@ class JobMasterTelegramBot:
                     for update in updates:
                         update_id = int(update.get('update_id', -1))
                         offset = max(offset, update_id + 1)
-                        is_callback, chat, sender, text, callback_id = self._normalize_update(update)
+                        is_callback, chat, sender, text, callback_id, photo_file_id = (
+                            self._normalize_update(update)
+                        )
                         if chat.get('type') == 'private' and chat.get('id'):
                             if isinstance(text, str):
                                 chat_id = str(chat['id'])
@@ -1194,6 +1358,18 @@ class JobMasterTelegramBot:
                                     self.api.answer_callback(callback_id)
                                 if not self._is_owner(chat_id):
                                     observe_identity(chat_id, username)
+                                    telegram_broadcast.record_activity(self.sessions, chat_id)
+                                elif photo_file_id:
+                                    # Owner-only /push-with-image path: the
+                                    # durable inbox is text-only, so the photo
+                                    # itself is stashed out of band and
+                                    # consumed once by /push (see
+                                    # _management_reply). A stray photo
+                                    # without a matching /push command is
+                                    # simply overwritten by the next one.
+                                    self.sessions.set_state(
+                                        f'pending_push_photo:{chat_id}', photo_file_id,
+                                    )
                                 if self.sessions.queue_update(
                                     update_id,
                                     chat_id,
@@ -1282,6 +1458,33 @@ def _stop(_signum, _frame) -> None:
     STOP = True
 
 
+ALERT_DISPATCH_CHECK_S = 1800  # wake every 30 min; actually dispatches at most once/UTC day
+
+
+def _run_alert_dispatch_loop(bot: 'JobMasterTelegramBot') -> None:
+    """Background "set alert" scheduler living in this same process — the
+    only process that already holds the Telegram credentials and the exact
+    matching/formatting code (JobMasterEngine's HTTP client + _matches_role)
+    an alert needs, so this avoids wiring Telegram sending into a second
+    process (the Celery worker) just for this."""
+    while not STOP:
+        try:
+            if telegram_alerts.should_dispatch_today(bot.sessions):
+                sent = telegram_alerts.dispatch_due_alerts(
+                    bot.sessions,
+                    bot.engine.api_get,
+                    lambda cid, text, kb: bot.api.send_keyboard(cid, text, kb),
+                )
+                telegram_alerts.mark_dispatched_today(bot.sessions)
+                LOG.info('job alert dispatch complete: %s alert(s) sent', sent)
+        except Exception:
+            LOG.exception('job alert dispatch failed')
+        for _ in range(ALERT_DISPATCH_CHECK_S // 10):
+            if STOP:
+                return
+            time.sleep(10)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='JobMaster Telegram service')
     parser.add_argument('command', nargs='?', default='run', choices=['run', 'smoke'])
@@ -1312,6 +1515,10 @@ def main(argv: list[str] | None = None) -> int:
             return 8
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    dispatch_thread = threading.Thread(
+        target=_run_alert_dispatch_loop, args=(bot,), daemon=True, name='jobmaster-alert-dispatch',
+    )
+    dispatch_thread.start()
     return bot.run()
 
 

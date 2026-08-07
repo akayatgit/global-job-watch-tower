@@ -22,6 +22,97 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 15. Job alerts ("Set alert every day") + owner push notifications
+
+**Request (2026-08-07):** Ashok — "job alerts is all the guests who search
+for a particular job once they land on job listings... right next to more
+options we need to have another button called set alert every day... in
+every time when vigil scraps the same job role for the same city... whoever
+subscribes to that search has to receive that job alert... standard list of
+title with the LinkedIn URLs." Plus owner-side: "`/push` ... can send an
+alert or an announcement or a push notification with image or text or with
+both image and text together ... everybody who has subscribed to our vigil
+bot." Follow-ups: broadcast reaches "every guest who clicked on start", 3
+consecutive unanswered pushes temporarily drops a subscriber, add a 👍 Like
+button next to every stop button, and a small hint line explaining how to
+stop. Not a premium feature — Vigil 2.0 monetization stays out of scope,
+this is pure retention/re-engagement.
+
+**Shipped:**
+- `app/telegram_sessions.py` — 3 new SQLite tables: `job_alerts` (one row
+  per guest+role_family+city+experience subscription, `sent_job_ids_json`
+  dedupe list, `likes` counter, max 3 active per guest), `broadcast_subscribers`
+  (every chat that ever tapped start, `pushes_since_response` counter),
+  `broadcast_pushes` (audit trail: text/photo, recipient + like counts).
+- `app/telegram_alerts.py` (new) — subscribe/dedupe/cap logic, reuses
+  `JobMasterEngine`'s own `_matches_role`/`_matches_city` + `/api/jobs` HTTP
+  client (never a second notion of "is this a match"), matches at
+  role_family + city + experience (not the narrow button keyword — same
+  class of gap already fixed for live search), formats up to 10 new jobs/
+  message with a 👍 Like + 🔕 Stop this alert keyboard and a hint line.
+- `app/telegram_broadcast.py` (new) — broadcast-subscriber lifecycle
+  (`record_start`/`record_activity`/`stop`) and `send_broadcast` fan-out with
+  injectable send function (testable without a real bot token).
+- `app/telegram_buttons.py` — "🔔 Set alert" button on every results screen
+  next to "🔄 New search"; `ButtonFlow.start()` now also registers the chat
+  as a broadcast subscriber (covers `/start`, greeting, and `/new`-triggered
+  restart, since all three call `start()`).
+- `scripts/telegram_job_bot.py` — new guest command `/myalerts` (list +
+  per-row 🔕 stop, same rendering as the underlying data everywhere);
+  Ashok-only `/push <text>` (stage) → `/pushconfirm` (send, 10-min TTL) /
+  `/pushcancel` / `/pushstats`; photo+caption `/push ...` supported via
+  `TelegramAPI.send_photo` and an out-of-band `pending_push_photo:<chat>`
+  stash (the durable inbox stays text-only by design); `alert:off:<id>` /
+  `alert:like:<id>` / `push:stop` / `push:like:<id>` callbacks handled
+  directly (independent of wherever the guest's own button-flow session
+  currently is) before falling through to `ButtonFlow`; every accepted
+  inbound update from a non-owner chat calls `telegram_broadcast.
+  record_activity` (any interaction reactivates a pruned subscriber); a
+  background daemon thread dispatches due alerts at most once per UTC day.
+
+**Design decisions (asked/answered inline, not deferred):**
+- Broadcast audience = every guest who has tapped start, not just alert
+  subscribers (Ashok's explicit call) — a stricter opt-in list was floated
+  and rejected.
+- 3 consecutive unanswered pushes → `active=0` (temporarily dropped); ANY
+  interaction anywhere in JobMaster (not just replying to a push) sets
+  `active=1` again — no manual re-opt-in flow, per "temporarily."
+  Explicitly tapping 🔕 Stop notifications does the same `active=0` and is
+  reversible the same way, kept as one unified mechanism for simplicity.
+- Alert matching is family + city + experience (fresher-only for now,
+  matching GTM scope), not the exact role_keywords a button chose.
+
+**Evidence:** new `test_telegram_alerts.py` (12 tests: create/dedupe/cap,
+seeding sent-ids from what's already shown, dispatch only sends genuinely
+new matches, family-level matching, city exclusivity) + new
+`test_telegram_broadcast.py` (11 tests: start/stop/reactivate lifecycle,
+3-unanswered-push drop + reset-on-activity, fan-out with like/stop buttons,
+partial-failure resilience, push stats) + extended `test_telegram_buttons.py`
+(9 new tests: Set alert button present, subscribe/dedupe/cap/seed behavior,
+graceful no-prior-search case, broadcast start registration) + extended
+`test_telegram_job_bot.py` (23 new tests: `/myalerts`, direct alert/push
+callbacks incl. cross-chat ownership refusal, full `/push`→`/pushconfirm`
+staging/send/cancel/expiry/stats flow, photo-caption staging, normalize_update
+photo support). Full suite: **281/281 green.**
+
+**Acceptance:** Ashok completes a real search on Telegram, taps "🔔 Set
+alert", confirms `/myalerts` shows it and 🔕 stops it cleanly; runs `/push`
+with text-only and with a photo+caption, confirms the staged preview/
+recipient count, `/pushconfirm` delivers to a real second account with 👍/🔕
+buttons and the hint line, `/pushstats` reflects reach+likes; confirms a
+guest who never replies to 3 pushes stops receiving a 4th, then any message
+from them brings them back. Keep open until Ashok accepts the live result.
+
+**Files:** `job_engine/app/telegram_sessions.py`,
+`job_engine/app/telegram_alerts.py` (new),
+`job_engine/app/telegram_broadcast.py` (new),
+`job_engine/app/telegram_buttons.py`, `job_engine/scripts/telegram_job_bot.py`,
+`job_engine/tests/test_telegram_alerts.py` (new),
+`job_engine/tests/test_telegram_broadcast.py` (new),
+`job_engine/tests/test_telegram_buttons.py`,
+`job_engine/tests/test_telegram_job_bot.py`, `documents/roadmap.md`,
+`.cursor/rules/product-ux.mdc`, `documents/jobmaster-telegram-validation.md`.
+
 ### 13. Open the Gate — public access, no more allow-one-by-one
 
 **Request (2026-08-06, 14:14 UTC):** Ashok, right after accepting card #11 at

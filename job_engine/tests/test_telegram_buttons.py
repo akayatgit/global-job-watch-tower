@@ -180,6 +180,16 @@ class FocusExperienceReachesCityAndResultsTests(BaseButtonFlowTest):
         labels = [label for label, _data in _flatten(reply.keyboard)]
         self.assertIn('🔄 New search', labels)
 
+    def test_results_screen_also_offers_a_set_alert_button(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self.flow.handle_callback('chat-13b', 'fam:software')
+        self.flow.handle_callback('chat-13b', 'role:software:0')
+        self.flow.handle_callback('chat-13b', 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        reply = self.flow.handle_callback('chat-13b', f'city:{any_idx}')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('🔔 Set alert', labels)
+
     def test_zero_result_search_offers_try_another_role_or_family(self):
         self.api.jobs = []
         self.flow.handle_callback('chat-14', 'fam:software')
@@ -249,6 +259,73 @@ class FocusExperienceReachesCityAndResultsTests(BaseButtonFlowTest):
         profile = self.sessions.get_guest_profile('chat-17')
         self.assertEqual(profile['experience'], 'intern')
         self.assertEqual(profile['role_family'], 'software')
+
+
+class SetAlertButtonTests(BaseButtonFlowTest):
+    """"Set alert every day" (Ashok, 2026-08-07): a button right next to
+    the results actions row that subscribes the guest to daily matches for
+    the exact search they just ran."""
+
+    def _run_to_results(self, chat_id: str, *, city_idx: int | None = None) -> None:
+        self.flow.handle_callback(chat_id, 'fam:ai_ml')
+        self.flow.handle_callback(chat_id, 'role:ai_ml:0')
+        self.flow.handle_callback(chat_id, 'exp:fresher')
+        idx = city_idx if city_idx is not None else next(
+            i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == 'bengaluru'
+        )
+        self.flow.handle_callback(chat_id, f'city:{idx}')
+
+    def test_tapping_set_alert_creates_a_subscription(self):
+        self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
+        self._run_to_results('chat-alert-1')
+        reply = self.flow.handle_callback('chat-alert-1', 'alert:set')
+        self.assertIn('🔔 Alert set', reply.text)
+        alerts = self.sessions.list_job_alerts('chat-alert-1')
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]['city'], 'bengaluru')
+
+    def test_setting_the_same_alert_twice_says_it_is_already_on(self):
+        self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
+        self._run_to_results('chat-alert-2')
+        self.flow.handle_callback('chat-alert-2', 'alert:set')
+        reply = self.flow.handle_callback('chat-alert-2', 'alert:set')
+        self.assertIn('already ON', reply.text)
+        self.assertEqual(len(self.sessions.list_job_alerts('chat-alert-2')), 1)
+
+    def test_alert_seeds_already_seen_jobs_so_they_are_never_re_alerted(self):
+        self.api.jobs = [make_job(i, title='Machine Learning Engineer', city='bengaluru') for i in range(1, 3)]
+        self._run_to_results('chat-alert-3')
+        self.flow.handle_callback('chat-alert-3', 'alert:set')
+        alert = self.sessions.list_job_alerts('chat-alert-3')[0]
+        self.assertTrue(alert['sent_job_ids'])
+
+    def test_a_fourth_alert_is_refused_with_the_cap_message(self):
+        chat = 'chat-alert-cap'
+        for family in ('ai_ml', 'data', 'software'):
+            self.flow.handle_callback(chat, f'fam:{family}')
+            self.flow.handle_callback(chat, f'role:{family}:0')
+            self.flow.handle_callback(chat, 'exp:fresher')
+            any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+            self.flow.handle_callback(chat, f'city:{any_idx}')
+            self.flow.handle_callback(chat, 'alert:set')
+        self.flow.handle_callback(chat, 'fam:design')
+        self.flow.handle_callback(chat, 'role:design:0')
+        self.flow.handle_callback(chat, 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        self.flow.handle_callback(chat, f'city:{any_idx}')
+        reply = self.flow.handle_callback(chat, 'alert:set')
+        self.assertIn('/myalerts', reply.text)
+        self.assertEqual(len(self.sessions.list_job_alerts(chat)), 3)
+
+    def test_tapping_set_alert_with_no_prior_search_is_handled_gracefully(self):
+        reply = self.flow.handle_callback('chat-alert-none', 'alert:set')
+        self.assertIn('Search for a role first', reply.text)
+
+
+class BroadcastStartRecordingTests(BaseButtonFlowTest):
+    def test_start_registers_the_chat_as_a_broadcast_subscriber(self):
+        self.flow.start('chat-bc-1')
+        self.assertEqual(self.sessions.list_active_broadcast_subscribers(), ['chat-bc-1'])
 
 
 class NonFocusExperienceWaitlistTests(BaseButtonFlowTest):

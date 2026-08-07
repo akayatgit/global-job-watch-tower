@@ -80,6 +80,42 @@ class TelegramSessionStore:
                     city TEXT NOT NULL DEFAULT '',
                     updated_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS job_alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    role_family TEXT NOT NULL DEFAULT '',
+                    role_keywords_json TEXT NOT NULL DEFAULT '[]',
+                    role_label TEXT NOT NULL DEFAULT '',
+                    city TEXT NOT NULL DEFAULT '',
+                    experience TEXT NOT NULL DEFAULT 'fresher',
+                    active INTEGER NOT NULL DEFAULT 1,
+                    sent_job_ids_json TEXT NOT NULL DEFAULT '[]',
+                    likes INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_job_alerts_chat_active
+                    ON job_alerts(chat_id, active);
+                CREATE INDEX IF NOT EXISTS ix_job_alerts_active
+                    ON job_alerts(active);
+                CREATE TABLE IF NOT EXISTS broadcast_subscribers (
+                    chat_id TEXT PRIMARY KEY,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    pushes_since_response INTEGER NOT NULL DEFAULT 0,
+                    started_at REAL NOT NULL,
+                    last_seen_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_broadcast_subscribers_active
+                    ON broadcast_subscribers(active);
+                CREATE TABLE IF NOT EXISTS broadcast_pushes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL DEFAULT '',
+                    photo_file_id TEXT NOT NULL DEFAULT '',
+                    sent_at REAL NOT NULL,
+                    recipient_count INTEGER NOT NULL DEFAULT 0,
+                    like_count INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
             columns = {
@@ -558,3 +594,288 @@ class TelegramSessionStore:
             }
             for row in reversed(rows)
         ]
+
+    # -- job alerts (2026-08-07) -------------------------------------------
+    # "Set alert every day" on a completed search: remember the criteria,
+    # and only ever notify about jobs not already in sent_job_ids_json —
+    # subscribing seeds that list with whatever the guest already saw, so
+    # the very next daily check never re-announces old results.
+
+    @staticmethod
+    def _job_alert_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            keywords = json.loads(row['role_keywords_json'] or '[]')
+        except (TypeError, json.JSONDecodeError):
+            keywords = []
+        try:
+            sent_ids = json.loads(row['sent_job_ids_json'] or '[]')
+        except (TypeError, json.JSONDecodeError):
+            sent_ids = []
+        return {
+            'id': int(row['id']),
+            'chat_id': str(row['chat_id']),
+            'role_family': str(row['role_family'] or ''),
+            'role_keywords': [str(w) for w in keywords] if isinstance(keywords, list) else [],
+            'role_label': str(row['role_label'] or ''),
+            'city': str(row['city'] or ''),
+            'experience': str(row['experience'] or 'fresher'),
+            'active': bool(row['active']),
+            'sent_job_ids': [str(x) for x in sent_ids] if isinstance(sent_ids, list) else [],
+            'likes': int(row['likes']),
+            'created_at': float(row['created_at']),
+            'updated_at': float(row['updated_at']),
+        }
+
+    def find_job_alert(
+        self,
+        chat_id: str,
+        *,
+        role_family: str,
+        role_keywords: list[str] | None,
+        city: str,
+        experience: str,
+    ) -> dict[str, Any] | None:
+        key = json.dumps(
+            sorted({str(w).strip().lower() for w in (role_keywords or []) if str(w).strip()}),
+            separators=(',', ':'),
+        )
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM job_alerts
+                WHERE chat_id=? AND active=1 AND role_family=? AND city=? AND experience=?
+                """,
+                (str(chat_id), role_family or '', city or '', experience or 'fresher'),
+            ).fetchall()
+        for row in rows:
+            existing_key = json.dumps(
+                sorted({
+                    str(w).strip().lower()
+                    for w in (json.loads(row['role_keywords_json'] or '[]') or [])
+                    if str(w).strip()
+                }),
+                separators=(',', ':'),
+            )
+            if existing_key == key:
+                return self._job_alert_row_to_dict(row)
+        return None
+
+    def count_active_job_alerts(self, chat_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT COUNT(*) AS n FROM job_alerts WHERE chat_id=? AND active=1',
+                (str(chat_id),),
+            ).fetchone()
+        return int(row['n']) if row else 0
+
+    def create_job_alert(
+        self,
+        chat_id: str,
+        *,
+        role_family: str = '',
+        role_keywords: list[str] | None = None,
+        role_label: str = '',
+        city: str = '',
+        experience: str = 'fresher',
+        seen_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        now = time.time()
+        payload = json.dumps(list(role_keywords or []), separators=(',', ':'))
+        sent_payload = json.dumps(
+            list(dict.fromkeys(str(x) for x in (seen_ids or []))),
+            separators=(',', ':'),
+        )
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO job_alerts(
+                    chat_id, role_family, role_keywords_json, role_label, city,
+                    experience, active, sent_job_ids_json, likes, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?)
+                """,
+                (
+                    str(chat_id), role_family or '', payload, role_label or '',
+                    city or '', experience or 'fresher', sent_payload, now, now,
+                ),
+            )
+            alert_id = int(cursor.lastrowid)
+        alert = self.get_job_alert(alert_id)
+        assert alert is not None
+        return alert
+
+    def get_job_alert(self, alert_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT * FROM job_alerts WHERE id=?', (int(alert_id),),
+            ).fetchone()
+        return self._job_alert_row_to_dict(row) if row is not None else None
+
+    def list_job_alerts(self, chat_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM job_alerts WHERE chat_id=? AND active=1
+                ORDER BY created_at ASC
+                """,
+                (str(chat_id),),
+            ).fetchall()
+        return [self._job_alert_row_to_dict(row) for row in rows]
+
+    def list_active_job_alerts_all(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                'SELECT * FROM job_alerts WHERE active=1 ORDER BY id ASC',
+            ).fetchall()
+        return [self._job_alert_row_to_dict(row) for row in rows]
+
+    def deactivate_job_alert(self, alert_id: int, chat_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE job_alerts SET active=0, updated_at=?
+                WHERE id=? AND chat_id=? AND active=1
+                """,
+                (time.time(), int(alert_id), str(chat_id)),
+            )
+        return bool(cursor.rowcount)
+
+    def like_job_alert(self, alert_id: int) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                'UPDATE job_alerts SET likes=likes+1, updated_at=? WHERE id=?',
+                (time.time(), int(alert_id)),
+            )
+        return bool(cursor.rowcount)
+
+    def mark_job_alert_sent(self, alert_id: int, job_ids: list[str], *, cap: int = 300) -> None:
+        alert = self.get_job_alert(alert_id)
+        if alert is None:
+            return
+        merged = list(dict.fromkeys([*alert['sent_job_ids'], *[str(x) for x in job_ids]]))
+        if len(merged) > cap:
+            merged = merged[-cap:]
+        payload = json.dumps(merged, separators=(',', ':'))
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'UPDATE job_alerts SET sent_job_ids_json=?, updated_at=? WHERE id=?',
+                (payload, time.time(), int(alert_id)),
+            )
+
+    # -- broadcast / push notifications (2026-08-07) -----------------------
+    # Everyone who has tapped "start" is a broadcast subscriber. Any
+    # interaction with the bot marks them responsive again; 3 consecutive
+    # unanswered pushes temporarily removes them (see record_broadcast_sent)
+    # so JobMaster never looks like a spammy dead-air bot on Telegram's own
+    # abuse radar — but the very next message they send brings them right
+    # back (record_broadcast_activity), no manual re-opt-in needed.
+
+    def record_broadcast_start(self, chat_id: str) -> None:
+        now = time.time()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO broadcast_subscribers(
+                    chat_id, active, pushes_since_response, started_at, last_seen_at, updated_at
+                )
+                VALUES (?, 1, 0, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    active=1,
+                    pushes_since_response=0,
+                    last_seen_at=excluded.last_seen_at,
+                    updated_at=excluded.updated_at
+                """,
+                (str(chat_id), now, now, now),
+            )
+
+    def record_broadcast_activity(self, chat_id: str) -> None:
+        """Reactivate/reset an EXISTING subscriber only — a chat that has
+        never tapped start is not silently enrolled by ordinary chatter."""
+        now = time.time()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE broadcast_subscribers
+                SET active=1, pushes_since_response=0, last_seen_at=?, updated_at=?
+                WHERE chat_id=?
+                """,
+                (now, now, str(chat_id)),
+            )
+
+    def stop_broadcast(self, chat_id: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'UPDATE broadcast_subscribers SET active=0, updated_at=? WHERE chat_id=?',
+                (time.time(), str(chat_id)),
+            )
+
+    def list_active_broadcast_subscribers(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                'SELECT chat_id FROM broadcast_subscribers WHERE active=1 ORDER BY started_at ASC',
+            ).fetchall()
+        return [str(row['chat_id']) for row in rows]
+
+    def count_active_broadcast_subscribers(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT COUNT(*) AS n FROM broadcast_subscribers WHERE active=1',
+            ).fetchone()
+        return int(row['n']) if row else 0
+
+    def create_broadcast_push(self, *, text: str = '', photo_file_id: str = '') -> int:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO broadcast_pushes(text, photo_file_id, sent_at, recipient_count, like_count)
+                VALUES (?, ?, ?, 0, 0)
+                """,
+                (text or '', photo_file_id or '', time.time()),
+            )
+            return int(cursor.lastrowid)
+
+    def record_broadcast_sent(self, push_id: int, chat_id: str, *, max_unanswered: int = 3) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'UPDATE broadcast_pushes SET recipient_count=recipient_count+1 WHERE id=?',
+                (int(push_id),),
+            )
+            conn.execute(
+                """
+                UPDATE broadcast_subscribers
+                SET pushes_since_response=pushes_since_response+1, updated_at=?
+                WHERE chat_id=?
+                """,
+                (time.time(), str(chat_id)),
+            )
+            conn.execute(
+                """
+                UPDATE broadcast_subscribers SET active=0, updated_at=?
+                WHERE chat_id=? AND pushes_since_response>=?
+                """,
+                (time.time(), str(chat_id), int(max_unanswered)),
+            )
+
+    def like_broadcast_push(self, push_id: int) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                'UPDATE broadcast_pushes SET like_count=like_count+1 WHERE id=?',
+                (int(push_id),),
+            )
+        return bool(cursor.rowcount)
+
+    def latest_broadcast_push(self) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT * FROM broadcast_pushes ORDER BY id DESC LIMIT 1',
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            'id': int(row['id']),
+            'text': str(row['text'] or ''),
+            'photo_file_id': str(row['photo_file_id'] or ''),
+            'sent_at': float(row['sent_at']),
+            'recipient_count': int(row['recipient_count']),
+            'like_count': int(row['like_count']),
+        }
