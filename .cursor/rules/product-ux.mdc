@@ -550,3 +550,30 @@ use — they should love opening the app, never fight it.
  but every UX/retention decision on today's JobMaster should keep that
  future layer viable. Full statement kept in `.cursor/rules/akay-soul.mdc`
  ("Why this must sell — survival law").
+- **Job alerts + owner push notifications (2026-08-07, free retention
+ feature — NOT Vigil 2.0 monetization):** every results screen shows a
+ "🔔 Set alert" button next to "🔄 New search" (`app/telegram_buttons.py`).
+ Tapping it subscribes the guest to daily Telegram notifications for that
+ exact search — matched at **role_family + city + experience** (fresher-
+ only, matching current GTM scope), not the narrow role_keywords a specific
+ button chose, so a niche keyword going quiet for a day never silently
+ starves the alert. Cap: **3 active alerts per guest**; `/myalerts` lists
+ them with a per-row 🔕 stop button. Alerts fire at most once/UTC day, only
+ for jobs genuinely never sent before (`sent_job_ids` dedupe, seeded from
+ whatever the guest already saw so subscribing never re-announces old
+ results), capped at **10 new jobs per alert message**, same title+LinkedIn-
+ URL format as normal search results. Every delivered alert carries a 👍
+ Like button next to 🔕 Stop this alert, plus a hint line ("tap 👍 if this
+ is useful, or 🔕 below anytime to stop this alert").
+ Separately, Ashok can broadcast a push notification (text, photo, or both)
+ to **every guest who has ever tapped start** — not just alert subscribers —
+ via `/push <message>` (stages it, shows recipient count) → `/pushconfirm`
+ (sends, 10-min expiry) / `/pushcancel` / `/pushstats` (reach + likes).
+ **3 consecutive unanswered pushes temporarily drops a subscriber** from the
+ broadcast list (spam/trust hygiene); **any interaction anywhere in
+ JobMaster** (not just replying to a push) brings them straight back — no
+ manual re-opt-in flow, "temporarily" is the operative word. Every broadcast
+ also carries a 👍 Like + 🔕 Stop notifications button and the same hint-
+ line pattern. This is a day-one retention mechanic available to every
+ guest, never a premium/paid feature. `app/telegram_alerts.py` and
+ `app/telegram_broadcast.py` own this logic; kanban card #15.

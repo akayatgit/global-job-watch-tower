@@ -424,6 +424,34 @@ now to be blocked.
 | JM-204 | Ashok: `/allowguest <that id>` after JM-203, then the account sends "hi" again | Access restored — immediate button-flow greeting again, same as JM-201. |
 | JM-205 | Ashok: `/guests` | Dashboard now leads with **Blocked** (the real gate) instead of a "people with access" allow-list; shows "Blocked: nobody." when clean. |
 
+## 14E. Job alerts + owner push notifications (2026-08-07)
+
+"Set alert every day" (kanban card #15): a free, non-premium retention
+feature. A guest subscribes from a results screen; Ashok broadcasts to
+every guest who has ever tapped start.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-206 | Complete any Intern/Fresher search to a results screen | Actions row shows `More jobs ▸` (if applicable), `🔔 Set alert`, and `🔄 New search`. |
+| JM-207 | Tap `🔔 Set alert` | Confirms the alert is set for that role + city, mentions "about once a day", and points to `/myalerts` to manage it. |
+| JM-208 | Tap `🔔 Set alert` again on the identical search | Says the alert is already ON — does not create a duplicate. |
+| JM-209 | Send `/myalerts` | Lists every active alert (role + city) each with its own `🔕 Stop #N` button; empty state suggests running a search first if you have none. |
+| JM-210 | Tap `🔕 Stop #1` from JM-209 | Confirms that specific alert is stopped; `/myalerts` no longer lists it. |
+| JM-211 | Set 3 different alerts (different role families), then try a 4th | 4th attempt is refused with a message pointing to `/myalerts` — 3 is the max. |
+| JM-212 | Wait for (or trigger) the daily alert dispatch with a genuinely new matching job live | Receive a message "🔔 New {role} openings..." with up to 10 rows (title/company/experience + LinkedIn link), a `👍 Like` + `🔕 Stop this alert` keyboard, and a hint line about tapping 🔕 to stop. |
+| JM-213 | Tap `👍 Like` on a delivered alert | Thanks you for the feedback; does not stop the alert. |
+| JM-214 | Tap `🔕 Stop this alert` on a delivered alert | Confirms that alert is stopped, same as JM-210. |
+| JM-215 | Ashok: `/push Quick tip — set a daily alert so you never miss an opening!` | Stages the broadcast, shows the exact text and the number of current subscribers, and asks for `/pushconfirm` within 10 minutes (or `/pushcancel`). Nothing is sent to any guest yet. |
+| JM-216 | A non-owner sends `/push anything` | Ordinary owner-command denial — same as every other VIGIL command; no staging happens. |
+| JM-217 | Ashok: `/pushconfirm` right after JM-215 | Every current subscriber receives the message with a `👍 Like` + `🔕 Stop notifications` keyboard and the hint line; Ashok gets a "Sent to N/N subscriber(s)" confirmation. |
+| JM-218 | Ashok: `/pushconfirm` again immediately after JM-217 (nothing newly staged) | "No pending push" — proves the staged push cannot double-send. |
+| JM-219 | Ashok sends a photo with caption `/push New AI/ML openings just dropped!` | Stages an image+text broadcast; `/pushconfirm` delivers the photo with that caption and the same Like/Stop keyboard to every subscriber. |
+| JM-220 | Ashok: `/pushstats` after JM-217 | Shows the last push's text/photo preview, how many it reached, how many 👍 likes, and the current active-subscriber count. |
+| JM-221 | A guest taps `🔕 Stop notifications` on a delivered push | Confirms they will not receive further broadcasts; a later `/push`→`/pushconfirm` does not reach them. |
+| JM-222 | That same guest sends any ordinary message afterward (e.g. a new job search) | They are automatically back on the broadcast list — no `/start` or manual re-opt-in required (`record_activity` reactivation). |
+| JM-223 | Send 3 consecutive `/push`→`/pushconfirm` broadcasts to a guest who never replies in between | That guest is silently excluded from the 4th broadcast (temporarily dropped) — `/pushstats`'s recipient count for the 4th push is one lower. |
+| JM-224 | That same silently-dropped guest sends any message | They are reachable by the next broadcast again (same reactivation as JM-222). |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -473,6 +501,18 @@ Convert this suite without changing its IDs:
    `job_engine/tests/test_telegram_job_bot.py::RoleSwitchSelfTestTests`
    (8 tests). 163/163 green locally in the full suite. Still requires
    Ashok's live Telegram run to close JM-130..161 in the execution log above.
+2A. **Job alerts + owner push notifications contract tests — done
+   (2026-08-07):** JM-206..224 above are automated in
+   `job_engine/tests/test_telegram_alerts.py` (12 tests), `test_telegram_
+   broadcast.py` (11 tests), and extended `test_telegram_buttons.py` (9
+   tests) / `test_telegram_job_bot.py` (23 tests) — subscribe/dedupe/cap,
+   family+city+experience matching, dispatch-only-new-jobs, `/myalerts`,
+   direct `alert:*`/`push:*` callbacks incl. cross-chat ownership refusal,
+   the full `/push`→`/pushconfirm`/`/pushcancel`/`/pushstats` flow, photo
+   staging, and the 3-unanswered-push drop + any-activity reactivation
+   cycle. 281/281 green locally. Still requires Ashok's live Telegram run
+   (with a real second account to receive alerts/pushes) to close
+   JM-206..224 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link

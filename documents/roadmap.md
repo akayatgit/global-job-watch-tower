@@ -177,6 +177,20 @@ Open Gate public access, full owner command deck, 230/230 tests green. This
 is the safe point to `git reset --hard` back to if anything ever regresses
 (kanban card #14); never delete this tag.
 
+**Job alerts + owner push notifications (2026-08-07):** Ashok pulled the
+"job alerts" idea forward out of the Vigil 2.0 vision note above — but as a
+**free retention feature**, not the paid/monetization layer Vigil 2.0 still
+is. A guest can tap "🔔 Set alert" on any results screen to get told, about
+once a day, about genuinely new jobs matching the same role family + city +
+experience (cap: 3 active alerts/guest, `/myalerts` to manage). Separately,
+Ashok can broadcast a text/photo push to every guest who has ever tapped
+start via `/push` → `/pushconfirm` (Ashok-only); 3 consecutive unanswered
+pushes temporarily drops a subscriber, and any activity brings them back.
+Both surfaces carry a 👍 Like + 🔕 Stop button and a hint line. See kanban
+card #15. **Vigil 2.0's actual monetization (affiliate offers riding on
+this trust) is still vision-only and not built** — this slice is purely the
+"keep JobMaster top of mind" mechanic that trust-building depends on.
+
 **Subscriber/premium — deferred (Ashok 2026-08-05):** "Subscriber" = a paid
 tier unlocked after sustained usage, covering quiz, alerts, flashcards,
 study materials, prep book, projects, certifications, and a full LMS.
