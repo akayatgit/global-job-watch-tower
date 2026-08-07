@@ -27,7 +27,9 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field, replace
 
+from app import telegram_broadcast
 from app.cities import city_label
+from app.telegram_alerts import MAX_ACTIVE_ALERTS, create_or_get_alert
 from app.telegram_job_search import (
     ROLE_FAMILY_LABELS,
     JobMasterEngine,
@@ -179,6 +181,10 @@ class ButtonFlow:
     # -- entry points ---------------------------------------------------
 
     def start(self, chat_id: str) -> ButtonReply:
+        # Every guest who reaches the primary entry point is a broadcast
+        # subscriber (Ashok, 2026-08-07) — /start, a bare greeting, and the
+        # /new-triggered restart all funnel through here.
+        telegram_broadcast.record_start(self.sessions, chat_id)
         profile = self.sessions.get_guest_profile(chat_id)
         if profile and profile.get('role_family') and profile.get('experience') in FOCUS_EXPERIENCE:
             label = profile.get('role_label') or _role_label(
@@ -214,6 +220,8 @@ class ButtonFlow:
             return self._family_step()
         if data == 'more':
             return self._more(chat_id)
+        if data == 'alert:set':
+            return self._set_alert(chat_id)
         if data.startswith('fam:'):
             return self._role_step(chat_id, data[len('fam:'):])
         if data == 'back:family' or data == 'reask:family':
@@ -419,6 +427,7 @@ class ButtonFlow:
         else:
             if 'Reply more' in reply_text:
                 actions.append(('More jobs ▸', 'more'))
+            actions.append(('🔔 Set alert', 'alert:set'))
             actions.append(('🔄 New search', 'restart'))
         return ButtonReply(reply_text, _rows(actions, per_row=1) if actions else None)
 
@@ -427,8 +436,49 @@ class ButtonFlow:
         actions: list[tuple[str, str]] = []
         if 'Reply more' in reply_text:
             actions.append(('More jobs ▸', 'more'))
+        actions.append(('🔔 Set alert', 'alert:set'))
         actions.append(('🔄 New search', 'restart'))
         return ButtonReply(reply_text, _rows(actions, per_row=1))
+
+    def _set_alert(self, chat_id: str) -> ButtonReply:
+        """"Set alert every day" (Ashok, 2026-08-07) — reuses whatever
+        search_intent produced the results the guest is currently looking
+        at (the same thing 'more' paginates), so the alert always matches
+        what they actually just saw, including any narrow->family
+        broadening _run_search already applied."""
+        saved = self.sessions.load_search(chat_id)
+        if not saved:
+            return ButtonReply('Search for a role first, then tap "Set alert" on the results.')
+        intent_dict, _page, seen_ids = saved
+        intent = JobMasterIntent(**intent_dict)
+        role_label = _role_label(intent.role_family, intent.role_keywords)
+        city = intent.cities[0] if intent.cities else ''
+        _alert, status = create_or_get_alert(
+            self.sessions,
+            chat_id,
+            role_family=intent.role_family,
+            role_keywords=intent.role_keywords,
+            role_label=role_label,
+            city=city,
+            experience='fresher',
+            seen_ids=seen_ids,
+        )
+        city_txt = f' in {city_label(city)}' if city else ''
+        if status == 'limit':
+            return ButtonReply(
+                f"You're already tracking {MAX_ACTIVE_ALERTS} alerts — the max for now. "
+                'Send /myalerts to see or stop one.'
+            )
+        if status == 'exists':
+            return ButtonReply(
+                f'🔔 Alert for {role_label}{city_txt} is already ON — you\'ll hear '
+                'about new matches here about once a day.'
+            )
+        return ButtonReply(
+            f'🔔 Alert set for {role_label}{city_txt}. '
+            "I'll message you here whenever new matching jobs appear (about once a day). "
+            'Send /myalerts anytime to manage or stop it.'
+        )
 
     def _state(self, chat_id: str) -> dict:
         return self.sessions.load_onboarding(chat_id) or {}
