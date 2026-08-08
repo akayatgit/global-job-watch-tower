@@ -591,11 +591,15 @@ guest activity — not only a literal start — enrolls a brand-new chat
 immediately) — not just alert subscribers — via `/push <message>` (stages
 it, shows recipient count) → `/pushconfirm`
  (sends, 10-min expiry) / `/pushcancel` / `/pushstats` (reach + likes).
- **3 consecutive unanswered pushes temporarily drops a subscriber** from the
- broadcast list (spam/trust hygiene); **any interaction anywhere in
- JobMaster** (not just replying to a push) brings them straight back — no
- manual re-opt-in flow, "temporarily" is the operative word. Every broadcast
- also carries a 👍 Like + 🔕 Stop notifications button and the same hint-
- line pattern. This is a day-one retention mechanic available to every
+**3 consecutive unanswered pushes temporarily drops a subscriber** from the
+broadcast list (spam/trust hygiene); **any interaction anywhere in
+JobMaster** (not just replying to a push) brings them straight back — no
+manual re-opt-in flow, "temporarily" is the operative word. **Only a
+subscriber's first-ever push** carries the 👍 Like + 🔕 Stop notifications
+buttons and the hint line (2026-08-07: repeating them on every message in a
+live thread looked spammy/cluttered — "only in 1st broadcast for every user
+is enough"); every push after that carries only 👍 Like — the Stop button
+from the first message stays clickable forever, so opting out is never
+actually lost. This is a day-one retention mechanic available to every
  guest, never a premium/paid feature. `app/telegram_alerts.py` and
  `app/telegram_broadcast.py` own this logic; kanban card #15.

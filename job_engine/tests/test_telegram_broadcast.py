@@ -149,6 +149,65 @@ class SendBroadcastTests(unittest.TestCase):
         self.assertEqual(self.sessions.latest_broadcast_push()['like_count'], 1)
 
 
+class FirstPushOnlyHintAndStopButtonTests(unittest.TestCase):
+    """Ashok (2026-08-07): repeating the 🔕 Stop notifications button and
+    the hint line on every single push looked cluttered/spammy in a live
+    thread — only the subscriber's first-ever push should carry them."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.sent: list[tuple[str, str, str, list]] = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _send(self, chat_id, text, photo_file_id, keyboard):
+        self.sent.append((chat_id, text, photo_file_id, keyboard))
+
+    def test_first_push_ever_carries_the_hint_and_stop_button(self):
+        telegram_broadcast.record_start(self.sessions, 'a')
+        telegram_broadcast.send_broadcast(
+            self.sessions, self._send, text='hello', sleep=lambda _s: None,
+        )
+        _chat, text, _photo, keyboard = self.sent[0]
+        self.assertIn('Tip: tap 👍', text)
+        labels = [label for row in keyboard for label, _data in row]
+        self.assertIn('👍 Like', labels)
+        self.assertIn('🔕 Stop notifications', labels)
+
+    def test_second_push_to_the_same_chat_drops_the_hint_and_stop_button(self):
+        telegram_broadcast.record_start(self.sessions, 'a')
+        telegram_broadcast.send_broadcast(
+            self.sessions, self._send, text='first', sleep=lambda _s: None,
+        )
+        telegram_broadcast.record_activity(self.sessions, 'a')  # stays under the unanswered cap
+        telegram_broadcast.send_broadcast(
+            self.sessions, self._send, text='second', sleep=lambda _s: None,
+        )
+        _chat, text, _photo, keyboard = self.sent[1]
+        self.assertEqual(text, 'second')
+        self.assertNotIn('Tip: tap 👍', text)
+        labels = [label for row in keyboard for label, _data in row]
+        self.assertEqual(labels, ['👍 Like'])
+
+    def test_a_new_subscriber_still_gets_the_first_push_treatment_even_mid_campaign(self):
+        telegram_broadcast.record_start(self.sessions, 'a')
+        telegram_broadcast.send_broadcast(
+            self.sessions, self._send, text='first', sleep=lambda _s: None,
+        )
+        telegram_broadcast.record_start(self.sessions, 'b')  # joins after push #1
+        telegram_broadcast.send_broadcast(
+            self.sessions, self._send, text='second', sleep=lambda _s: None,
+        )
+        by_chat = {chat: (text, keyboard) for chat, text, _photo, keyboard in self.sent}
+        _a_text, a_keyboard = by_chat['a']
+        b_text, b_keyboard = by_chat['b']
+        self.assertEqual([label for row in a_keyboard for label, _ in row], ['👍 Like'])
+        self.assertIn('🔕 Stop notifications', [label for row in b_keyboard for label, _ in row])
+        self.assertIn('Tip: tap 👍', b_text)
+
+
 class BackfillFromHistoryTests(unittest.TestCase):
     """azr0099, supriyamk, cryptoonz (2026-08-07): guests who chatted with
     JobMaster BEFORE the broadcast table existed must be on the list from

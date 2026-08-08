@@ -12,7 +12,9 @@ to Telegram (and to guests), a subscriber who receives
 MAX_UNANSWERED_PUSHES broadcasts in a row with zero interaction in between
 is temporarily dropped from the list — any message or button tap from them
 (anywhere in JobMaster, not just a push reply) brings them straight back
-in, no re-opt-in flow needed.
+in, no re-opt-in flow needed. The 🔕 Stop notifications button and the hint
+line only appear on a subscriber's first-ever push (2026-08-07: repeating
+them on every message looked spammy) — every push has 👍 Like.
 """
 
 from __future__ import annotations
@@ -48,19 +50,34 @@ def send_broadcast(
 ) -> dict[str, Any]:
     """Fan out one push to every currently active broadcast subscriber.
 
+    Ashok (2026-08-07): repeating "🔕 Stop notifications" + the hint line on
+    every single push looked spammy/cluttered in a live chat thread — "only
+    in 1st broadcast for every user is enough". So a subscriber's very
+    FIRST push ever carries the hint + Stop button; every push after that
+    carries only 👍 Like. The Stop button on that first message stays
+    clickable forever (Telegram doesn't expire old inline keyboards), so
+    nobody actually loses the ability to opt out.
+
     send_fn(chat_id, text, photo_file_id, keyboard) is the caller's actual
     Telegram delivery — kept injectable so this stays unit-testable without
     a real bot token.
     """
     subscribers = sessions.list_active_broadcast_subscribers()
     push_id = sessions.create_broadcast_push(text=text, photo_file_id=photo_file_id)
-    keyboard = [[('👍 Like', f'push:like:{push_id}'), ('🔕 Stop notifications', 'push:stop')]]
-    full_text = f'{text}{BROADCAST_HINT}'
+    received_before = sessions.broadcast_pushes_received_map(subscribers)
+    first_time_text = f'{text}{BROADCAST_HINT}'
+    first_time_keyboard = [
+        [('👍 Like', f'push:like:{push_id}'), ('🔕 Stop notifications', 'push:stop')]
+    ]
+    repeat_keyboard = [[('👍 Like', f'push:like:{push_id}')]]
     sent = 0
     failed = 0
     for index, chat_id in enumerate(subscribers):
+        is_first_push = received_before.get(chat_id, 0) == 0
+        message_text = first_time_text if is_first_push else text
+        keyboard = first_time_keyboard if is_first_push else repeat_keyboard
         try:
-            send_fn(chat_id, full_text, photo_file_id, keyboard)
+            send_fn(chat_id, message_text, photo_file_id, keyboard)
             sessions.record_broadcast_sent(push_id, chat_id, max_unanswered=MAX_UNANSWERED_PUSHES)
             sent += 1
         except Exception:

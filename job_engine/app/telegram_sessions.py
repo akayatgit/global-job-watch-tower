@@ -102,6 +102,7 @@ class TelegramSessionStore:
                     chat_id TEXT PRIMARY KEY,
                     active INTEGER NOT NULL DEFAULT 1,
                     pushes_since_response INTEGER NOT NULL DEFAULT 0,
+                    pushes_received INTEGER NOT NULL DEFAULT 0,
                     started_at REAL NOT NULL,
                     last_seen_at REAL NOT NULL,
                     updated_at REAL NOT NULL
@@ -133,6 +134,15 @@ class TelegramSessionStore:
             if 'username' not in inbox_columns:
                 conn.execute(
                     "ALTER TABLE telegram_inbox ADD COLUMN username TEXT NOT NULL DEFAULT ''"
+                )
+            broadcast_columns = {
+                row[1]
+                for row in conn.execute('PRAGMA table_info(broadcast_subscribers)').fetchall()
+            }
+            if 'pushes_received' not in broadcast_columns:
+                conn.execute(
+                    'ALTER TABLE broadcast_subscribers ADD COLUMN '
+                    'pushes_received INTEGER NOT NULL DEFAULT 0'
                 )
             # Enforce the product's strict privacy cap for databases created by
             # older builds, not only when the next conversation arrives.
@@ -892,6 +902,26 @@ class TelegramSessionStore:
             ).fetchone()
         return int(row['n']) if row else 0
 
+    def broadcast_pushes_received_map(self, chat_ids: list[str]) -> dict[str, int]:
+        """How many pushes each chat has already received, lifetime — used
+        to decide who is first-timer (gets the 🔕 Stop notifications button
+        + hint line) vs. a repeat recipient (Ashok, 2026-08-07: "only in 1st
+        broadcast for every user is enough" — the button stays clickable
+        forever on that first message, so nobody loses the ability to stop,
+        it just isn't repeated on every push)."""
+        if not chat_ids:
+            return {}
+        placeholders = ','.join('?' for _ in chat_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT chat_id, pushes_received FROM broadcast_subscribers
+                WHERE chat_id IN ({placeholders})
+                """,
+                [str(c) for c in chat_ids],
+            ).fetchall()
+        return {str(row['chat_id']): int(row['pushes_received']) for row in rows}
+
     def create_broadcast_push(self, *, text: str = '', photo_file_id: str = '') -> int:
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
@@ -912,7 +942,9 @@ class TelegramSessionStore:
             conn.execute(
                 """
                 UPDATE broadcast_subscribers
-                SET pushes_since_response=pushes_since_response+1, updated_at=?
+                SET pushes_since_response=pushes_since_response+1,
+                    pushes_received=pushes_received+1,
+                    updated_at=?
                 WHERE chat_id=?
                 """,
                 (time.time(), str(chat_id)),

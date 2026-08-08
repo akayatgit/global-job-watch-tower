@@ -130,6 +130,17 @@ suite: **285/285 green** (4 new backfill tests in
 `test_telegram_broadcast.py`, 1 lifecycle test rewritten to match the
 broadened condition).
 
+**Fast-follow #2 (2026-08-07, same day):** Ashok, after seeing a live thread
+with the hint line + 🔕 Stop notifications repeated on every single push —
+"only in 1st broadcast for every user is enough." Fix: `broadcast_
+subscribers` gained a `pushes_received` lifetime counter; `send_broadcast`
+now looks each recipient up before sending — a subscriber's first-ever push
+still carries the hint line + 👍 Like + 🔕 Stop notifications, every push
+after that carries only 👍 Like. Nobody loses the ability to opt out —
+Telegram keeps old inline keyboards clickable forever, so the Stop button on
+that first message still works any time. Full suite: **288/288 green** (3
+new tests in `test_telegram_broadcast.py::FirstPushOnlyHintAndStopButtonTests`).
+
 **Files:** `job_engine/app/telegram_sessions.py`,
 `job_engine/app/telegram_alerts.py` (new),
 `job_engine/app/telegram_broadcast.py` (new),
