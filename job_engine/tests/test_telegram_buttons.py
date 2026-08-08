@@ -19,6 +19,7 @@ from app.telegram_buttons import (
     FAMILY_BUTTONS,
     ROLE_BUTTONS,
     ButtonFlow,
+    ButtonReply,
 )
 from app.telegram_job_search import IntentInterpreter, JobMasterEngine
 from app.telegram_sessions import TelegramSessionStore
@@ -326,6 +327,150 @@ class BroadcastStartRecordingTests(BaseButtonFlowTest):
     def test_start_registers_the_chat_as_a_broadcast_subscriber(self):
         self.flow.start('chat-bc-1')
         self.assertEqual(self.sessions.list_active_broadcast_subscribers(), ['chat-bc-1'])
+
+
+class ShareButtonTests(BaseButtonFlowTest):
+    """One-tap "Share JobMaster" (Ashok, 2026-08-07) — a url-type button on
+    the results screen, built from the bot username getMe() stores at
+    startup (app/telegram_share.py). No handler needed for the tap itself."""
+
+    def _run_to_results(self, chat_id: str) -> ButtonReply:
+        self.flow.handle_callback(chat_id, 'fam:software')
+        self.flow.handle_callback(chat_id, 'role:software:0')
+        self.flow.handle_callback(chat_id, 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        return self.flow.handle_callback(chat_id, f'city:{any_idx}')
+
+    def test_no_share_button_when_bot_username_is_unknown(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        reply = self._run_to_results('chat-share-1')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertNotIn('📤 Share JobMaster', labels)
+
+    def test_share_button_appears_on_good_results_once_bot_username_is_known(self):
+        self.sessions.set_state('telegram_bot_username', 'vigil_akay_bot')
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        reply = self._run_to_results('chat-share-2')
+        share = next(
+            (data for label, data in _flatten(reply.keyboard) if label == '📤 Share JobMaster'),
+            None,
+        )
+        self.assertIsNotNone(share)
+        self.assertTrue(share.startswith('url:https://t.me/share/url?'))
+        self.assertIn('vigil_akay_bot', share)
+
+    def test_no_share_button_on_a_zero_result_screen(self):
+        self.sessions.set_state('telegram_bot_username', 'vigil_akay_bot')
+        self.api.jobs = []
+        reply = self._run_to_results('chat-share-3')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertNotIn('📤 Share JobMaster', labels)
+
+    def test_share_button_also_appears_after_more(self):
+        self.sessions.set_state('telegram_bot_username', 'vigil_akay_bot')
+        self.api.jobs = [make_job(i, title='Java Developer', city='bengaluru') for i in range(1, 26)]
+        self._run_to_results('chat-share-4')
+        reply = self.flow.handle_callback('chat-share-4', 'more')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('📤 Share JobMaster', labels)
+
+
+class FeedbackButtonTests(BaseButtonFlowTest):
+    """👍/👎 on every results screen, readable back by Ashok via /feedback
+    (Ashok, 2026-08-07)."""
+
+    def _run_to_results(self, chat_id: str) -> ButtonReply:
+        self.flow.handle_callback(chat_id, 'fam:software')
+        self.flow.handle_callback(chat_id, 'role:software:0')
+        self.flow.handle_callback(chat_id, 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        return self.flow.handle_callback(chat_id, f'city:{any_idx}')
+
+    def test_feedback_row_present_on_good_results(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        reply = self._run_to_results('chat-fb-1')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('👍', labels)
+        self.assertIn('👎', labels)
+
+    def test_feedback_row_present_on_zero_result_screen_too(self):
+        self.api.jobs = []
+        reply = self._run_to_results('chat-fb-2')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('👍', labels)
+        self.assertIn('👎', labels)
+
+    def test_tapping_thumbs_up_records_feedback_with_search_context(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self._run_to_results('chat-fb-3')
+        reply = self.flow.handle_callback('chat-fb-3', 'fb:up')
+        self.assertIn('Thanks for the feedback', reply.text)
+        entries = self.sessions.list_feedback()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]['rating'], 1)
+        self.assertEqual(entries[0]['role_family'], 'software')
+        self.assertTrue(entries[0]['had_results'])
+
+    def test_tapping_thumbs_down_records_negative_feedback(self):
+        self.api.jobs = []
+        self._run_to_results('chat-fb-4')
+        reply = self.flow.handle_callback('chat-fb-4', 'fb:down')
+        self.assertIn('👎', reply.text)
+        entries = self.sessions.list_feedback()
+        self.assertEqual(entries[0]['rating'], -1)
+        self.assertFalse(entries[0]['had_results'])
+
+    def test_feedback_with_no_prior_search_still_records_gracefully(self):
+        reply = self.flow.handle_callback('chat-fb-5', 'fb:up')
+        self.assertIn('Thanks', reply.text)
+        entries = self.sessions.list_feedback()
+        self.assertEqual(entries[0]['role_label'], '')
+
+
+class GuestFunnelAnalyticsTests(BaseButtonFlowTest):
+    """Daily funnel: said hi -> finished flow -> got jobs -> came back
+    (Ashok, 2026-08-07), recorded from the primary button-driven path."""
+
+    def test_start_records_said_hi(self):
+        self.flow.start('chat-funnel-1')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['greeted'], 1)
+
+    def test_reaching_city_step_records_finished_flow_before_search_runs(self):
+        self.api.jobs = []
+        self.flow.start('chat-funnel-2')
+        self.flow.handle_callback('chat-funnel-2', 'fam:software')
+        self.flow.handle_callback('chat-funnel-2', 'role:software:0')
+        self.flow.handle_callback('chat-funnel-2', 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        self.flow.handle_callback('chat-funnel-2', f'city:{any_idx}')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 1)
+        # Zero results this time — "got jobs" must not be counted.
+        self.assertEqual(today['got_jobs'], 0)
+
+    def test_real_results_record_got_jobs(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self.flow.start('chat-funnel-3')
+        self.flow.handle_callback('chat-funnel-3', 'fam:software')
+        self.flow.handle_callback('chat-funnel-3', 'role:software:0')
+        self.flow.handle_callback('chat-funnel-3', 'exp:fresher')
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        self.flow.handle_callback('chat-funnel-3', f'city:{any_idx}')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['got_jobs'], 1)
+
+    def test_repeat_search_via_welcome_back_also_counts_finished_flow(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self.sessions.save_guest_profile(
+            'chat-funnel-4', role_label='Java Software', role_family='software',
+            role_keywords=['java'], experience='fresher', city='bengaluru',
+        )
+        self.flow.start('chat-funnel-4')
+        self.flow.handle_callback('chat-funnel-4', 'wb_yes')
+        today = self.sessions.funnel_daily(days=1)[0]
+        self.assertEqual(today['finished_flow'], 1)
+        self.assertEqual(today['got_jobs'], 1)
 
 
 class NonFocusExperienceWaitlistTests(BaseButtonFlowTest):

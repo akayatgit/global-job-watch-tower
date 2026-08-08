@@ -580,7 +580,22 @@ class JobMasterEngine:
         # not only the guided-onboarding path, so /guestprofile reflects what
         # a returning guest is actually looking for right now.
         self._maybe_save_guest_profile(chat_id, intent)
+        self._record_search_funnel(chat_id, intent, reply)
         return reply
+
+    def _record_search_funnel(self, chat_id: str, intent: 'JobMasterIntent', reply: str) -> None:
+        """Guest-analytics funnel coverage for the free-text backup path
+        (Ashok, 2026-08-06: never disabled, always available for whoever
+        types instead of tapping) — same stages the button flow records in
+        app/telegram_buttons.py, so /funnel counts every real search, not
+        only the primary button-driven one. A bare, roleless query (e.g.
+        "jobs") never counts as "finished the flow", same gate already used
+        for the guest_profile save above."""
+        if not intent.role_family and not intent.role_keywords:
+            return
+        self.sessions.record_funnel_event(chat_id, 'finished_flow')
+        if 'No verified jobs' not in reply and 'No more verified jobs' not in reply:
+            self.sessions.record_funnel_event(chat_id, 'got_jobs')
 
     def _maybe_save_guest_profile(self, chat_id: str, intent: JobMasterIntent) -> None:
         if not intent.role_family and not intent.role_keywords:
@@ -747,6 +762,7 @@ class JobMasterEngine:
         This recall is a deterministic template over stored structured
         fields; no LLM ever summarizes or invents what a guest searched for.
         """
+        self.sessions.record_funnel_event(chat_id, 'greeted')
         profile = self.sessions.get_guest_profile(chat_id)
         if profile and (profile.get('role_family') or profile.get('role_keywords')):
             return self._welcome_back_with_profile(profile, chat_id, update_id=update_id)
@@ -974,10 +990,13 @@ class JobMasterEngine:
             experience=state.get('experience') or '',
         )
         reply, seen_ids = self._job_reply(intent, seen_ids=[])
+        self.sessions.record_funnel_event(chat_id, 'finished_flow')
         no_match = reply in (
             'No verified jobs match that search right now.',
             'No more verified jobs match that search right now.',
         )
+        if not no_match:
+            self.sessions.record_funnel_event(chat_id, 'got_jobs')
         if no_match:
             suggestion = 'Want to try a different role, experience, or city? Just tell me.'
         elif 'Reply more' in reply:

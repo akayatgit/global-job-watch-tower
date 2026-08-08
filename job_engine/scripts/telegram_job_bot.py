@@ -74,6 +74,17 @@ SMOKE_LINK_RE = re.compile(r'https://www\.linkedin\.com/jobs/view/\d+/')
 SMOKE_ROW_RE = re.compile(r'^\d+\. .+ — .+ — .+$', re.MULTILINE)
 SMOKE_BANNED = ('mcp__', 'provider:', 'model:', 'endpoint:', 'watch tower data')
 COMMAND_RE = re.compile(r'^/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$', re.I)
+# A button whose callback_data starts with this is rendered as a Telegram
+# URL button (opens the link client-side) instead of a callback_data button
+# — used by the "📤 Share JobMaster" hook (app/telegram_share.py). Tapping a
+# url button never produces a callback_query, so it needs no server handler.
+URL_BUTTON_PREFIX = 'url:'
+
+
+def _inline_button(label: str, data: str) -> dict[str, str]:
+    if data.startswith(URL_BUTTON_PREFIX):
+        return {'text': label, 'url': data[len(URL_BUTTON_PREFIX):]}
+    return {'text': label, 'callback_data': data}
 OWNER_BOARD_COMMANDS = {
     'towerinsights': 'tower',
     'health': 'health',
@@ -108,6 +119,8 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'pushconfirm',
     'pushcancel',
     'pushstats',
+    'feedback',
+    'funnel',
 })
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
@@ -135,6 +148,8 @@ OWNER_MENU = [
     {'command': 'pushconfirm', 'description': 'Send the staged broadcast'},
     {'command': 'pushcancel', 'description': 'Discard the staged broadcast'},
     {'command': 'pushstats', 'description': 'Last broadcast reach + likes'},
+    {'command': 'feedback', 'description': '👍/👎 guests left on results'},
+    {'command': 'funnel', 'description': 'Daily guest funnel'},
     {'command': 'actasguest', 'description': 'Test this chat as a guest'},
     {'command': 'actasowner', 'description': 'Back to owner mode'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
@@ -246,7 +261,7 @@ class TelegramAPI:
         if keyboard:
             markup = json.dumps({
                 'inline_keyboard': [
-                    [{'text': label, 'callback_data': data} for label, data in row]
+                    [_inline_button(label, data) for label, data in row]
                     for row in keyboard
                 ]
             })
@@ -275,7 +290,7 @@ class TelegramAPI:
         if keyboard:
             markup = json.dumps({
                 'inline_keyboard': [
-                    [{'text': label, 'callback_data': data} for label, data in row]
+                    [_inline_button(label, data) for label, data in row]
                     for row in keyboard
                 ]
             })
@@ -583,6 +598,10 @@ class JobMasterTelegramBot:
             result = describe_access(user_id, username)
             verdict = 'ALLOWED ✅' if result['allowed'] else 'BLOCKED ⛔'
             return f'ACCESS CHECK · {lookup}\n{verdict}\n{result["reason"]}'
+        if command == 'feedback':
+            return self._feedback_report(arg)
+        if command == 'funnel':
+            return self._funnel_report(arg)
         if command == 'waitlist':
             limit = 20
             if arg.strip():
@@ -748,6 +767,71 @@ class JobMasterTelegramBot:
             f"Reached {latest['recipient_count']} · 👍 {latest['like_count']} likes\n"
             f'Active subscribers now: {active}'
         )
+
+    def _feedback_report(self, arg: str) -> str:
+        """Owner-readable 👍/👎 that guests leave on results screens (Ashok,
+        2026-08-07) — a 7-day satisfaction summary plus the latest N rows."""
+        limit = 10
+        if arg.strip():
+            try:
+                limit = max(1, min(int(arg.strip().split()[0]), 50))
+            except ValueError:
+                limit = 10
+        summary = self.sessions.feedback_summary(days=7)
+        entries = self.sessions.list_feedback(limit=limit)
+        total, up, down = summary['total'], summary['up'], summary['down']
+        pct = f'{round(100 * up / total)}%' if total else 'n/a'
+        lines = [
+            f'FEEDBACK · last {summary["days"]}d: {total} rated '
+            f'({up} 👍 / {down} 👎, {pct} positive)',
+            '',
+        ]
+        if not entries:
+            lines.append('No feedback recorded yet.')
+            return '\n'.join(lines)
+        lines.append(f'Latest {len(entries)}')
+        for item in entries:
+            icon = '👍' if item['rating'] > 0 else '👎'
+            role = item['role_label'] or 'no role stated'
+            city = city_label(item['city']) if item['city'] else 'any city'
+            age = self._relative_age(item['created_at'])
+            lines.append(f'{icon} {role} · {city} · {age}')
+        return _truncate_utf16('\n'.join(lines), 3700)
+
+    def _funnel_report(self, arg: str) -> str:
+        """Owner-readable daily guest funnel (Ashok, 2026-08-07): how many
+        said hi -> finished the button flow -> got real jobs -> came back
+        on a later day, per UTC day, over the requested window."""
+        days = 7
+        if arg.strip():
+            try:
+                days = max(1, min(int(arg.strip().split()[0]), 30))
+            except ValueError:
+                days = 7
+        rows = self.sessions.funnel_daily(days=days)
+        lines = [
+            f'DAILY FUNNEL · last {days}d',
+            'Said hi → Finished flow → Got jobs → Came back',
+            '',
+        ]
+        total_hi = total_finished = total_jobs = total_returned = 0
+        for row in rows:
+            total_hi += row['greeted']
+            total_finished += row['finished_flow']
+            total_jobs += row['got_jobs']
+            total_returned += row['returned']
+            lines.append(
+                f"{row['day']}: {row['greeted']} hi → {row['finished_flow']} finished → "
+                f"{row['got_jobs']} got jobs → {row['returned']} came back"
+            )
+        lines.append('')
+        finish_pct = f'{round(100 * total_finished / total_hi)}%' if total_hi else 'n/a'
+        jobs_pct = f'{round(100 * total_jobs / total_finished)}%' if total_finished else 'n/a'
+        lines.append(
+            f'Totals: {total_hi} hi → {total_finished} finished ({finish_pct}) → '
+            f'{total_jobs} got jobs ({jobs_pct}) → {total_returned} came back'
+        )
+        return _truncate_utf16('\n'.join(lines), 3700)
 
     def _configure_command_menu(self) -> bool:
         """Remove global commands and expose VIGIL operations only to Ashok."""
@@ -1277,6 +1361,10 @@ class JobMasterTelegramBot:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
         me = self.api.call('getMe').get('result') or {}
         LOG.info('JobMaster Telegram started bot=@%s', me.get('username', 'unknown'))
+        if me.get('username'):
+            # Lets app/telegram_share.py build a "📤 Share JobMaster" link
+            # without ever hardcoding which bot account is live.
+            self.sessions.set_state('telegram_bot_username', me['username'])
         owner_commands_ready = self._configure_command_menu()
         offset_raw = self.sessions.get_state('telegram_update_offset', '')
         if offset_raw.isdigit():

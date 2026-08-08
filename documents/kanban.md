@@ -22,6 +22,94 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 16. Share hook + feedback capture + guest funnel analytics
+
+**Request (2026-08-07):** Ashok, as a 3-item slice:
+- **Share hook** — one-tap "Share JobMaster" after good results, for
+  word-of-mouth GTM.
+- **Feedback capture** — 👍/👎 after results, readable by Ashok.
+- **Guest analytics** — daily funnel: how many said hi → finished the flow →
+  got jobs → came back.
+
+**Shipped:**
+- `app/telegram_share.py` (new) — builds a `https://t.me/share/url?...`
+  link (Telegram's client-side "Forward to..." picker for arbitrary text —
+  no inline-mode bot setup required, and tapping it never produces a
+  `callback_query`, so no backend handler is needed for the tap itself).
+  Bot username is captured from `getMe()` at startup
+  (`telegram_bot_username` bot_state key) so the link is never hardcoded;
+  falls back to `TELEGRAM_BOT_USERNAME` env for local/dev. Message is
+  personalized with the guest's role family when known.
+- `app/telegram_buttons.py` — every results screen (`_run_search` and
+  `_more`) now renders a `👍`/`👎` row (`fb:up` / `fb:down`) — shown on BOTH
+  a successful results screen and a "no verified jobs" dead end, since a 👎
+  on a dead end is exactly the friction signal Ashok wants visibility into.
+  A "📤 Share JobMaster" url-button appears only on good results (or a
+  results page reached via `more`), and only once the bot username is
+  known — never a dead link. New `_feedback`/`_results_keyboard` helpers;
+  feedback context (role/city/experience/had_results) comes from the
+  guest's just-run search session, same pattern `_set_alert` already uses.
+- `app/telegram_sessions.py` — two new tables: `result_feedback` (rating,
+  role/city/experience snapshot, `had_results`) and `funnel_events`
+  (`chat_id, event, day` primary key — one idempotent row per chat+event+day,
+  so a repeat tap the same day never double-counts). New methods:
+  `record_feedback` / `feedback_summary` / `list_feedback`;
+  `record_funnel_event` / `funnel_daily`. "Came back" is derived, not a
+  separate call site: the first time a chat's `greeted` event lands on a
+  day strictly after a day it already has ANY event on, a `returned` event
+  is also recorded for that day.
+- Funnel stages recorded at: `ButtonFlow.start()` → `greeted`;
+  `ButtonFlow._on_city` / `_repeat_last_search` (before the search even
+  runs) → `finished_flow`; `ButtonFlow._run_search` → `got_jobs` only when
+  real openings are returned. The free-text fallback path
+  (`JobMasterEngine.handle`'s direct one-shot branch and the legacy
+  ask-role/experience/city flow in `app/telegram_job_search.py`) records the
+  same stages, so `/funnel` counts a real search regardless of which path
+  (button tap or typed text) produced it — a bare roleless query (e.g.
+  "jobs") never counts as "finished the flow", same gate `_maybe_save_guest_profile`
+  already uses.
+- `scripts/telegram_job_bot.py` — `TelegramAPI.send_keyboard`/`send_photo`
+  render a `url:`-prefixed button as a Telegram URL button
+  (`_inline_button`) instead of `callback_data`; bot username stored to
+  session state right after `getMe()` in `run()`. New Ashok-only commands:
+  `/feedback [N]` (7-day 👍/👎 summary + latest N rated rows, role/city/age)
+  and `/funnel [days]` (per-UTC-day said-hi → finished-flow → got-jobs →
+  came-back counts, default 7 days, plus totals with conversion %).
+
+**Evidence:** new `tests/test_telegram_share.py` (6 tests: link building,
+env/state fallback, role personalization) + new
+`tests/test_telegram_feedback_funnel.py` (13 tests: feedback record/summary/
+list, funnel idempotency, "returned" derivation incl. the "same-day activity
+before any greeting" false-positive guard, zero-activity days filled with
+zeros) + extended `tests/test_telegram_buttons.py` (16 new tests: share
+button presence/absence incl. zero-result and `more`, feedback row on both
+good and zero-result screens, feedback callback records context, funnel
+stage recording through the real button flow incl. welcome-back repeat) +
+extended `tests/test_telegram_job_bot.py` (13 new tests: URL vs
+callback_data button rendering on the real `TelegramAPI`, `/feedback` and
+`/funnel` owner commands incl. guest denial) + extended
+`tests/test_telegram_job_search.py` (4 new tests: free-text path funnel
+parity, insight queries never touching the job-search funnel). Full suite:
+**329/329 green.**
+
+**Acceptance:** Ashok completes a real search on Telegram and sees the 👍/👎
+row plus a "📤 Share JobMaster" button that opens Telegram's real forward
+picker pointed at the live bot; taps 👍 and 👎 on different searches and
+confirms `/feedback` shows both with the right role/city; runs `/funnel` and
+confirms today's row reflects his own live taps; on a later day, greets the
+bot again and confirms that day's `/funnel` row counts him under "came
+back." Keep open until Ashok accepts the live result.
+
+**Files:** `job_engine/app/telegram_share.py` (new),
+`job_engine/app/telegram_buttons.py`, `job_engine/app/telegram_sessions.py`,
+`job_engine/app/telegram_job_search.py`,
+`job_engine/scripts/telegram_job_bot.py`,
+`job_engine/tests/test_telegram_share.py` (new),
+`job_engine/tests/test_telegram_feedback_funnel.py` (new),
+`job_engine/tests/test_telegram_buttons.py`,
+`job_engine/tests/test_telegram_job_bot.py`,
+`job_engine/tests/test_telegram_job_search.py`, `documents/kanban.md`.
+
 ### 15. Job alerts ("Set alert every day") + owner push notifications
 
 **Request (2026-08-07):** Ashok — "job alerts is all the guests who search
