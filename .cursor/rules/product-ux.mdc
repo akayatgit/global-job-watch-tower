@@ -550,6 +550,21 @@ use — they should love opening the app, never fight it.
  but every UX/retention decision on today's JobMaster should keep that
  future layer viable. Full statement kept in `.cursor/rules/akay-soul.mdc`
  ("Why this must sell — survival law").
+- **Discovery-first browser lane — Plan B detail enrich (2026-08-08):**
+ Ashok: "We need more jobs than details… meet the maximum scrape data job
+ roles and links needed." The single `-c 1` browser lane belongs to search
+ scrapes; per-job detail pages are a lower class of work (a detail page
+ costs ~35 s per job vs ~4–5 s per job on a results page). Standing
+ architecture: `DETAIL_ENRICH_MODE` (`off | light | full`, default
+ **light**) — light mode stores experience bands free from card text at
+ insert (`app/tasks.py::card_requirements`; fresher-track silence stamped
+ `Fresher` from LinkedIn's own `f_E=1,2`, stated years never overwritten),
+ kills the post-run 40-detail burst, and lets details trickle only through
+ `app/detail_budget.py::trickle_gate` — budget left (60 pages/UTC-day
+ Redis ledger) · no run active · nothing due within 15 min · host fully
+ Cool — in batches of ≤6, guest-seen jobs first, then fresher-track, then
+ rest. Never reintroduce unconditional per-job detail scraping without
+ Ashok's explicit sign-off; `full` exists only as legacy/rollback.
 - **Job alerts + owner push notifications (2026-08-07, free retention
  feature — NOT Vigil 2.0 monetization):** every results screen shows a
  "🔔 Set alert" button next to "🔄 New search" (`app/telegram_buttons.py`).

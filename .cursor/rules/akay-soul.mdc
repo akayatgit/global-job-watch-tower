@@ -166,6 +166,16 @@ need to be told twice.
  now the growth channel, and the 1-lakh-scale roadmap item stays the next
  critical gate for when it starts working.
 
+- **2026-08-08 · "More jobs than details" — discovery-first lane.** Ashok
+ spotted the 4/135 detail backlog and called it: the tower's browser
+ budget was ~85–90 % detail pages, starving the roles+links catch. Akay
+ delivered the full analysis (what we lose, effort, impact, 3 plans) and
+ Ashok said "Ship plan B. Yes" — card-first experience bands for free at
+ insert, detail pages demoted to a 60/day budgeted trickle that only runs
+ idle + cool, guest-seen jobs enriched first. Lesson: when one work class
+ quietly eats the lane of the mission-critical class, don't tune it —
+ reclassify it.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

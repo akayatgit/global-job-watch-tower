@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
@@ -97,6 +97,11 @@ def _vitals_json(v) -> dict:
         'countdown_role': v.countdown_role,
         'scrape_started_at': _iso(v.scrape_started_at),
         'avg_search_secs': v.avg_search_secs,
+        # Detail enrich (Plan B, discovery-first)
+        'detail_mode': v.detail_mode,
+        'detail_used_today': v.detail_used_today,
+        'detail_budget_per_day': v.detail_budget_per_day,
+        'detail_pending': v.detail_pending,
         # Build version — bumped once per push (scripts/bump_version.sh).
         # Drives the rail footer number and the orb's dot-color signal.
         'version': get_version(),
@@ -619,6 +624,25 @@ async def ultron_toggle_headless():
         'headless': val,
         'label': 'Hidden (cooler)' if val else 'Visible window',
     }
+
+
+@router.post('/api/ultron/detail-enrich-mode')
+async def ultron_detail_enrich_mode(payload: dict):
+    """Set the Plan B detail-enrich mode (off | light | full) from VIGIL."""
+    from app.runtime_settings import (
+        DETAIL_ENRICH_MODE_LABELS, set_detail_enrich_mode,
+    )
+
+    try:
+        mode = set_detail_enrich_mode(str(payload.get('mode') or ''))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await hub.broadcast({
+        'type': 'ultron.command',
+        'command': 'detail_enrich_mode',
+        'mode': mode,
+    })
+    return {'mode': mode, 'label': DETAIL_ENRICH_MODE_LABELS[mode]}
 
 
 @router.post('/api/ultron/dismiss-alert')

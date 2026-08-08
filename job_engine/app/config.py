@@ -46,6 +46,21 @@ OLLAMA_TIMEOUT_S = float(os.getenv('OLLAMA_TIMEOUT_S', '45'))
 # auto = same as ollama (legacy alias).
 RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'ollama').strip().lower()
 
+# --- Detail-page enrich — Plan B, discovery-first (2026-08-08) ---
+# Search scrapes own the browser lane; per-job detail pages are a lower
+# class of work. Modes:
+#   off   = no detail pages at all (jobs stay pending, resumable)
+#   light = budgeted trickle, only in idle + cool windows (default)
+#   full  = legacy behavior (post-run bursts + 10-min backfill)
+DETAIL_ENRICH_MODE = os.getenv('DETAIL_ENRICH_MODE', 'light').strip().lower()
+# Max detail pages fetched per UTC day in light mode (~35-45 min of lane)
+DETAIL_BUDGET_PER_DAY = int(os.getenv('DETAIL_BUDGET_PER_DAY', '60'))
+# Jobs per trickle batch — small so a mistimed batch delays a search by
+# minutes, never a half-hour burst
+DETAIL_BATCH_SIZE = int(os.getenv('DETAIL_BATCH_SIZE', '6'))
+# Trickle never starts when any search is due within this look-ahead
+DETAIL_IDLE_LOOKAHEAD_MIN = int(os.getenv('DETAIL_IDLE_LOOKAHEAD_MIN', '15'))
+
 # Transient page-fetch retries inside one browser session
 FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))
 

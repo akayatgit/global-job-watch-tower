@@ -56,6 +56,40 @@ def set_headless(headless: bool) -> bool:
     return bool(headless)
 
 
+VALID_DETAIL_ENRICH_MODES = ('off', 'light', 'full')
+
+DETAIL_ENRICH_MODE_LABELS = {
+    'off': 'Details paused',
+    'light': 'Details trickle (idle only)',
+    'full': 'Details always (legacy)',
+}
+
+
+def get_detail_enrich_mode() -> str:
+    """off | light | full — VIGIL override first, then .env, default light."""
+    with _LOCK:
+        data = _read()
+    mode = str(data.get('detail_enrich_mode') or '').strip().lower()
+    if mode in VALID_DETAIL_ENRICH_MODES:
+        return mode
+    env = app_config.DETAIL_ENRICH_MODE
+    return env if env in VALID_DETAIL_ENRICH_MODES else 'light'
+
+
+def set_detail_enrich_mode(mode: str) -> str:
+    value = (mode or '').strip().lower()
+    if value not in VALID_DETAIL_ENRICH_MODES:
+        raise ValueError(
+            f'detail enrich mode must be one of {VALID_DETAIL_ENRICH_MODES}, got {mode!r}'
+        )
+    with _LOCK:
+        data = _read()
+        data['detail_enrich_mode'] = value
+        data['detail_enrich_mode_updated_at'] = _utcnow_iso()
+        _write(data)
+    return value
+
+
 def raise_linkedin_block(
     *,
     reason: str,

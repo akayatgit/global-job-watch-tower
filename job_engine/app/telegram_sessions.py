@@ -245,6 +245,37 @@ class TelegramSessionStore:
         with self._lock, self._connect() as conn:
             conn.execute('DELETE FROM search_sessions WHERE chat_id=?', (str(chat_id),))
 
+    def recently_delivered_job_ids(self, cap: int = 300) -> set[str]:
+        """LinkedIn job ids recently shown to guests (search results pages
+        and dispatched alerts). Used by the Plan B detail trickle to enrich
+        customer-visible jobs first."""
+        ids: list[str] = []
+        with self._connect() as conn:
+            for row in conn.execute(
+                'SELECT seen_json FROM search_sessions '
+                'ORDER BY updated_at DESC LIMIT 60'
+            ).fetchall():
+                if len(ids) >= cap:
+                    break
+                try:
+                    ids.extend(str(x) for x in json.loads(row['seen_json'] or '[]'))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+            if len(ids) < cap:
+                for row in conn.execute(
+                    'SELECT sent_job_ids_json FROM job_alerts WHERE active=1 '
+                    'ORDER BY updated_at DESC LIMIT 60'
+                ).fetchall():
+                    if len(ids) >= cap:
+                        break
+                    try:
+                        ids.extend(
+                            str(x) for x in json.loads(row['sent_job_ids_json'] or '[]')
+                        )
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+        return set(ids[:cap])
+
     def get_state(self, key: str, default: str = '') -> str:
         with self._connect() as conn:
             row = conn.execute('SELECT value FROM bot_state WHERE key=?', (key,)).fetchone()

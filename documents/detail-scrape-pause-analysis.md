@@ -1,6 +1,7 @@
 # Detail-scrape pause — analysis & 3 implementation plans
 
-**Date:** 2026-08-08 · **Author:** Akay · **Status:** Decision pending (Ashok)
+**Date:** 2026-08-08 · **Author:** Akay ·
+**Status:** ✅ Plan B accepted by Ashok (2026-08-08) — **implemented**, see §8
 
 **Ask (Ashok):** stop the "4/135" issue — the tower must catch the maximum
 job roles + links per day; per-job detail scraping must not starve discovery.
@@ -447,7 +448,48 @@ slice 3 (later, separate YES) = Plan C night window.
 
 ---
 
-## 7. Standing facts recorded
+## 7. Plan B implementation record (shipped 2026-08-08)
+
+Everything from §5 Plan B landed in one slice (both sub-slices together):
+
+- **Mode flag:** `DETAIL_ENRICH_MODE` (`off | light | full`, default
+  **light**) in `app/config.py`; VIGIL-controllable runtime override via
+  `app/runtime_settings.py::get/set_detail_enrich_mode` (survives reboot)
+  and `POST /api/ultron/detail-enrich-mode`.
+- **Card-first extraction:** `app/tasks.py::card_requirements` — every
+  stored job now gets experience years/label/band from the search-card text
+  at insert, zero browser cost. Fresher-track cards with no stated band are
+  stamped `Fresher` (LinkedIn's own `f_E=1,2` filter = ground truth); a
+  card that states senior years keeps the stated truth — the stamp only
+  fills silence. `requirements_enriched_at` stays NULL so description-level
+  enrich remains pending/resumable.
+- **Post-run enrich burst removed** except in `full` (legacy) mode; the run
+  console logs the deferral so Activity stays honest.
+- **Budget ledger:** `app/detail_budget.py` — Redis counter
+  `detail_budget:<UTC day>` (48 h TTL), `DETAIL_BUDGET_PER_DAY=60`,
+  consumed per fetched detail page inside `enrich_jobs_by_ids` (spent even
+  when a page fails — browser time is browser time).
+- **Trickle gate:** `detail_budget.trickle_gate` — light-mode beat backfill
+  runs only when ALL hold: budget left · no run dispatched/running · no
+  cron/one-off due within `DETAIL_IDLE_LOOKAHEAD_MIN=15` · host fully
+  **Cool**. Batch ≤ `DETAIL_BATCH_SIZE=6` (≈ ≤4 min lane occupancy).
+  (Note: the next-due helper lives in `detail_budget.py`, not
+  `schedule.py` as §5 sketched — keeps the gate self-contained.)
+- **Priority queue:** `enrichment.pending_requirement_ids` now orders
+  guest-seen jobs first (ids read from the Telegram store —
+  `TelegramSessionStore.recently_delivered_job_ids`, results pages +
+  alerts), then fresher-track, then rest, newest-first per tier.
+- **Ops surface:** Tower Health vitals carry
+  `detail_mode / detail_used_today / detail_budget_per_day /
+  detail_pending`; HealthPanel shows a "Details" row
+  ("trickle · 23/60 today · N pending").
+- **Tests:** 27 new in `tests/test_detail_enrich_plan_b.py` (card
+  extraction + honest stamping, budget ledger, every gate condition,
+  priority order, task guards, mode toggle). Full suite 312 green.
+- **Rollback:** set mode `full` (exact legacy behavior) or `off`
+  (hard pause) — from VIGIL, no redeploy.
+
+## 8. Standing facts recorded
 
 - Detail enrich is ~8–10× more browser-expensive per job than discovery;
   discovery-first is now the standing lane priority.
