@@ -44,6 +44,13 @@ export function HealthPanel() {
             <div>Capacity</div>
             <div className="meta">{v.ollama_capacity_estimate ?? '—'}</div>
           </div>
+          <div className="list-row" title="Per-job detail pages (experience / degrees / certs). Discovery-first: searches own the browser; details trickle only in idle, cool windows.">
+            <div>Details</div>
+            <div className="meta">
+              {v.detail_mode === 'off' ? 'paused' : v.detail_mode === 'light' ? `trickle · ${v.detail_used_today}/${v.detail_budget_per_day} today` : 'always (legacy)'}
+              {' · '}{v.detail_pending} pending
+            </div>
+          </div>
           <div className="muted" style={{ marginTop: 10 }}>Recent pulses</div>
           {(data.recent_events || []).slice(0, 12).map((e: any) => (
             <div className="list-row" key={e.id}>

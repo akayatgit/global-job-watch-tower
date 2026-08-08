@@ -34,6 +34,16 @@ LogFn = Callable[[str], None]
 ENRICH_FAILED_RETRY_AFTER = timedelta(hours=6)
 
 
+def _spend_detail_budget() -> None:
+    """Record one detail page against the Plan B daily ledger (best-effort)."""
+    try:
+        from app.detail_budget import consume_page
+
+        consume_page()
+    except Exception:
+        pass
+
+
 def _apply_requirements(job: JobMaster, detail) -> None:
     req = detail.requirements
     job.experience_min_years = req.experience_min_years
@@ -60,9 +70,43 @@ def _apply_company_from_detail(db: Session, job: JobMaster, detail) -> None:
     apply_job_page_company_bits(company, detail.company)
 
 
-def pending_requirement_ids(db: Session, limit: int = 20) -> list[int]:
-    """Never-enriched rows, plus enrich_failed old enough to retry."""
+def recently_delivered_job_ids(cap: int = 300) -> set[str]:
+    """LinkedIn job ids actually shown to guests (results pages + alerts).
+
+    These rows deserve real requirement data first — customers are looking
+    at them. Read defensively from the Telegram store; any failure means
+    an empty set and the ordering quietly falls back to track/recency.
+    """
+    try:
+        from app.telegram_sessions import TelegramSessionStore
+
+        return TelegramSessionStore().recently_delivered_job_ids(cap=cap)
+    except Exception:
+        return set()
+
+
+def pending_requirement_ids(
+    db: Session,
+    limit: int = 20,
+    *,
+    delivered_ids: set[str] | None = None,
+) -> list[int]:
+    """Never-enriched rows, plus enrich_failed old enough to retry.
+
+    Priority (Plan B, 2026-08-08): jobs guests actually saw first, then
+    fresher-track (GTM scope, freshest postings still alive), then the
+    rest — always newest-first inside each tier.
+    """
     retry_before = utcnow() - ENRICH_FAILED_RETRY_AFTER
+    if delivered_ids is None:
+        delivered_ids = recently_delivered_job_ids()
+    ordering = []
+    if delivered_ids:
+        ordering.append(
+            JobMaster.linkedin_job_id.in_(list(delivered_ids)[:400]).desc()
+        )
+    ordering.append((JobMaster.source_track == 'fresher').desc())
+    ordering.append(JobMaster.id.desc())
     rows = db.execute(
         select(JobMaster.id)
         .where(
@@ -74,7 +118,7 @@ def pending_requirement_ids(db: Session, limit: int = 20) -> list[int]:
                 ),
             )
         )
-        .order_by(JobMaster.id.desc())
+        .order_by(*ordering)
         .limit(max(1, min(limit, 40)))
     ).scalars().all()
     return list(rows)
@@ -161,7 +205,11 @@ def enrich_jobs_by_ids(
                 job.experience_label = None
                 job.requirements_enriched_at = None
             try:
-                response = engine.fetch(url)
+                try:
+                    response = engine.fetch(url)
+                finally:
+                    # Browser time was spent whether or not the page parsed
+                    _spend_detail_budget()
                 detail = parse_job_detail(response, card_text=job.raw_text)
                 _apply_requirements(job, detail)
                 _apply_company_from_detail(db, job, detail)

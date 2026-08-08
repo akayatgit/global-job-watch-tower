@@ -14,7 +14,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app import config, thermal
-from app.models import ScrapeRun, SearchConfig, TowerEvent
+from app.models import JobMaster, ScrapeRun, SearchConfig, TowerEvent
 
 
 def utcnow() -> datetime:
@@ -90,6 +90,11 @@ class TowerVitals:
     countdown_role: str
     scrape_started_at: datetime | None
     avg_search_secs: int
+    # Detail enrich (Plan B, discovery-first)
+    detail_mode: str  # off | light | full
+    detail_used_today: int
+    detail_budget_per_day: int
+    detail_pending: int
 
 
 def _mem() -> tuple[int, int, float]:
@@ -417,9 +422,23 @@ def compute_vitals(db: Session) -> TowerVitals:
         kw_ts = _aware(last_kw)
         planb_recent = (now - kw_ts).total_seconds() < 1800
 
-    from app.runtime_settings import tower_alert_state, get_headless
+    from app.runtime_settings import (
+        get_detail_enrich_mode, get_headless, tower_alert_state,
+    )
     alert = tower_alert_state(planb_recent=planb_recent)
     allow_new, _heat = thermal.allow_new_scrape()
+
+    detail_mode = get_detail_enrich_mode()
+    try:
+        from app.detail_budget import used_today
+        detail_used = used_today()
+    except Exception:
+        detail_used = 0
+    detail_pending = db.execute(
+        select(func.count(JobMaster.id)).where(
+            JobMaster.requirements_enriched_at.is_(None)
+        )
+    ).scalar() or 0
 
     ollama_at, ollama_live, ollama_lbl = _last_ollama_pulse(db, now)
     if ollama_live:
@@ -488,6 +507,10 @@ def compute_vitals(db: Session) -> TowerVitals:
         countdown_role=cd_role,
         scrape_started_at=scrape_started,
         avg_search_secs=avg_secs,
+        detail_mode=detail_mode,
+        detail_used_today=detail_used,
+        detail_budget_per_day=config.DETAIL_BUDGET_PER_DAY,
+        detail_pending=int(detail_pending),
     )
 
 

@@ -11,7 +11,9 @@ from app.console import console_log
 from app.db import SessionLocal
 from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig
 from app.relevance import filter_relevant
+from app.runtime_settings import get_detail_enrich_mode
 from app.scraper.linkedin import PageResult, TransientFetchError, scrape_search
+from app.scraper.requirements import JobRequirements, extract_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,27 @@ NON_RETRYABLE_MARKERS = (
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def card_requirements(
+    raw_text: str | None,
+    track: str | None,
+) -> tuple[JobRequirements, str | None, str | None]:
+    """Browser-free requirements from the search-card text (Plan B).
+
+    Returns (requirements, experience_band, experience_label). Fresher-track
+    cards with no stated band are stamped 'Fresher' — that is LinkedIn's own
+    f_E=1,2 (Internship + Entry) search filter, ground-truth provenance, not
+    a guess. ``requirements_enriched_at`` is NOT set by this path: the job
+    stays pending for description-level enrich (degrees/certs/domains).
+    """
+    req = extract_requirements('', card_text=raw_text or '')
+    band = req.experience_band
+    label = req.experience_label
+    if (track or '') == 'fresher' and not band:
+        band = 'Fresher'
+        label = label or 'Fresher track (LinkedIn Internship/Entry)'
+    return req, band, label
 
 
 def _get_or_create_company(
@@ -314,6 +337,10 @@ def run_scrape(self, scrape_run_id: int):
                         linkedin_url=getattr(job, 'company_linkedin_url', None),
                         logo_url=getattr(job, 'company_logo_url', None),
                     )
+                    # Card-first requirements (Plan B): free extraction from
+                    # the card text so experience data exists even before any
+                    # detail page is ever visited.
+                    req, band, exp_label = card_requirements(job.raw_text, cfg.track)
                     row = JobMaster(
                         linkedin_job_id=job.linkedin_job_id,
                         title=job.title,
@@ -327,6 +354,11 @@ def run_scrape(self, scrape_run_id: int):
                         source_track=cfg.track,
                         search_config_id=cfg.id,
                         scrape_run_id=run.id,
+                        experience_min_years=req.experience_min_years,
+                        experience_max_years=req.experience_max_years,
+                        experience_label=exp_label,
+                        experience_band=band,
+                        seniority_level=req.seniority_level,
                     )
                     db.add(row)
                     db.flush()
@@ -413,8 +445,12 @@ def run_scrape(self, scrape_run_id: int):
         console_log('worker', f'Run #{run.id} {final_status}: {run.pages_scraped} page(s), '
                               f'{found} seen, {inserted} stored, {rejected_total} rejected by AI.',
                     run_id=run.id)
-        # Queue detail-page requirements enrich (experience / degrees / certs / domains)
-        if final_status == 'success' and new_job_ids:
+        # Detail-page requirements enrich: only 'full' (legacy) mode queues
+        # the post-run burst. Plan B (light/off) leaves jobs pending — the
+        # idle-gated trickle / a later re-enable picks them up. Discovery
+        # owns the browser lane.
+        detail_mode = get_detail_enrich_mode()
+        if final_status == 'success' and new_job_ids and detail_mode == 'full':
             try:
                 enrich_job_requirements.delay(
                     job_ids=new_job_ids[:40],
@@ -432,6 +468,15 @@ def run_scrape(self, scrape_run_id: int):
                     f'Run #{run.id}: could not queue enrich — {str(exc)[:160]}',
                     run_id=run.id, level='warn',
                 )
+        elif final_status == 'success' and new_job_ids:
+            console_log(
+                'worker',
+                f'Run #{run.id}: detail enrich deferred ({detail_mode} mode, '
+                f'discovery-first) — {len(new_job_ids)} job(s) stay pending '
+                f'for the idle trickle.',
+                run_id=run.id,
+            )
+        if final_status == 'success' and new_job_ids:
             # Company logos / followers / punchlines (dedupe ids from new jobs)
             try:
                 co_ids = db.execute(
@@ -467,19 +512,41 @@ def run_scrape(self, scrape_run_id: int):
             'found': found,
             'inserted': inserted,
             'rejected_by_ai': rejected_total,
-            'enrich_queued': len(new_job_ids[:40]) if final_status == 'success' else 0,
+            'enrich_queued': (
+                len(new_job_ids[:40])
+                if final_status == 'success' and detail_mode == 'full' else 0
+            ),
+            'detail_mode': detail_mode,
         }
 
 
 @celery.task(name='app.tasks.enrich_job_requirements', bind=True, max_retries=1)
 def enrich_job_requirements(self, job_ids: list[int] | None = None, run_id: int | None = None):
     """Open LinkedIn job views and store experience / degree / cert / domain."""
+    from app import detail_budget
     from app.enrichment import enrich_jobs_by_ids, pending_requirement_ids
+
+    mode = get_detail_enrich_mode()
+    if mode == 'off':
+        # Also swallows stale tasks queued before a mode flip
+        return {'enriched': 0, 'paused': True, 'mode': 'off'}
+    batch_cap = 12
+    if mode == 'light':
+        left = detail_budget.remaining_today()
+        if left <= 0:
+            return {
+                'enriched': 0,
+                'skipped': 'daily detail budget exhausted',
+                'mode': 'light',
+            }
+        batch_cap = min(left, app_config.DETAIL_BATCH_SIZE)
 
     with SessionLocal() as db:
         ids = list(job_ids or [])
+        if ids and mode == 'light':
+            ids = ids[:batch_cap]
         if not ids:
-            ids = pending_requirement_ids(db, limit=12)
+            ids = pending_requirement_ids(db, limit=batch_cap)
         if not ids:
             return {'enriched': 0, 'note': 'nothing pending'}
         try:
@@ -500,7 +567,25 @@ def enrich_job_requirements(self, job_ids: list[int] | None = None, run_id: int 
 
 @celery.task(name='app.tasks.enrich_pending_requirements')
 def enrich_pending_requirements():
-    """Beat: backfill jobs still missing requirements (critical employability data)."""
+    """Beat: budgeted, idle-gated backfill of requirement details (Plan B).
+
+    off   → no-op (jobs stay pending, resumable).
+    light → runs a small batch only when the trickle gate says the browser
+            lane is truly free: budget left, no run active/queued, no search
+            due within the look-ahead, host Cool.
+    full  → legacy unconditional backfill.
+    """
+    from app import detail_budget
+
+    mode = get_detail_enrich_mode()
+    if mode == 'off':
+        return {'paused': True, 'mode': 'off'}
+    if mode == 'light':
+        with SessionLocal() as db:
+            ok, reason = detail_budget.trickle_gate(db)
+        if not ok:
+            return {'skipped': reason, 'mode': 'light'}
+        console_log('enrich', f'Detail trickle window open — {reason}.')
     return enrich_job_requirements(job_ids=None, run_id=None)
 
 
