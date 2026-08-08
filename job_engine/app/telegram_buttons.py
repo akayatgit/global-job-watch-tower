@@ -2,8 +2,11 @@
 
 2026-08-06 pivot: Ashok reported the free-text/AI onboarding path was fragile
 and confusing for real guests. Rather than parsing natural language, guests
-now tap through Family -> Role -> Experience -> City -> Results using
-Telegram inline keyboards — no typing required for the primary path.
+now tap through Family -> Role -> Experience -> Posting window -> City ->
+Results using Telegram inline keyboards — no typing required for the
+primary path. The posting-window step (2026-08-07: "24hr, 2d, 1w" filter
+layer after experience) lets a guest choose how fresh the postings must be
+before picking a city.
 
 GTM focus: only Intern and Fresher lead to a live search (Watch Tower's
 "fresher" track already covers Internship + Entry-level LinkedIn postings —
@@ -117,6 +120,18 @@ ROLE_BUTTONS: dict[str, list[tuple[str, list[str]]]] = {
     ],
 }
 
+# Posting-freshness filter (Ashok, 2026-08-07: "another layer of filters
+# such as 24hr, 2d, 1w after experience"). Values are calendar-day windows
+# matching the same rolling-window vocabulary already used across the VIGIL
+# dashboard (product-ux.mdc) and /api/jobs/insights: '0' = last 24 hours
+# (freshest catches), '2'/'7' = last N calendar days, '' = no filter.
+WINDOW_BUTTONS: list[tuple[str, str]] = [
+    ('Last 24 hours', '0'),
+    ('Last 2 days', '2'),
+    ('This week', '7'),
+    ('Any time', ''),
+]
+
 # Favourites first, matching the web dashboard's standing city-chip order
 # (product-ux.mdc, 2026-08-02), then the rest, then Remote and Any city.
 CITY_BUTTONS: list[tuple[str, str]] = [
@@ -163,7 +178,8 @@ def _back_row(data: str) -> list[tuple[str, str]]:
 
 
 class ButtonFlow:
-    """Owns the Family -> Role -> Experience -> City -> Results wizard.
+    """Owns the Family -> Role -> Experience -> Window -> City -> Results
+    wizard.
 
     Deliberately stateless between calls except for what is durably stored
     via TelegramSessionStore.save_onboarding/load_onboarding, under stage
@@ -237,9 +253,11 @@ class ButtonFlow:
         if data.startswith('exp:'):
             return self._on_experience(chat_id, data[len('exp:'):])
         if data == 'back:experience':
-            state = self._state(chat_id)
-            family = state.get('role_family', '')
-            return self._role_step(chat_id, family) if family else self._family_step()
+            return self._back_to_experience(chat_id)
+        if data.startswith('window:'):
+            return self._on_window(chat_id, data[len('window:'):])
+        if data == 'back:window':
+            return self._back_to_window(chat_id)
         if data.startswith('city:') or data == 'reask:city':
             idx_raw = data[len('city:'):] if data.startswith('city:') else ''
             return self._on_city(chat_id, idx_raw)
@@ -302,9 +320,12 @@ class ButtonFlow:
             'role_keywords': keywords,
             'role_label_choice': label,
         })
+        return self._render_experience_step(label)
+
+    def _render_experience_step(self, role_label: str) -> ButtonReply:
         buttons = [(label, f'exp:{code}') for label, code in EXPERIENCE_BUTTONS]
         return ButtonReply(
-            f'Got it — {label}. What is your experience level?',
+            f'Got it — {role_label}. What is your experience level?',
             _rows(buttons, per_row=3) + [_back_row('back:role')],
         )
 
@@ -323,14 +344,51 @@ class ButtonFlow:
             return ButtonReply(WAITLIST_MESSAGE.format(label=label))
         self.sessions.save_onboarding(chat_id, {
             **state,
-            'stage': 'btn_city',
+            'stage': 'btn_window',
             'experience_choice': code,
         })
+        return self._render_window_step(label)
+
+    def _render_window_step(self, experience_label: str) -> ButtonReply:
+        buttons = [(label, f'window:{code}') for label, code in WINDOW_BUTTONS]
+        return ButtonReply(
+            f'Got it — {experience_label}. How fresh should the postings be?',
+            _rows(buttons) + [_back_row('back:experience')],
+        )
+
+    def _back_to_experience(self, chat_id: str) -> ButtonReply:
+        state = self._state(chat_id)
+        family = state.get('role_family', '')
+        if not family:
+            return self._family_step()
+        return self._render_experience_step(state.get('role_label_choice', ''))
+
+    def _on_window(self, chat_id: str, code: str) -> ButtonReply:
+        state = self._state(chat_id)
+        family = state.get('role_family', '')
+        if not family:
+            return self._family_step()
+        self.sessions.save_onboarding(chat_id, {
+            **state,
+            'stage': 'btn_city',
+            'window_choice': code,
+        })
+        return self._render_city_step()
+
+    def _render_city_step(self) -> ButtonReply:
         buttons = [(label, f'city:{idx}') for idx, (label, _key) in enumerate(CITY_BUTTONS)]
         return ButtonReply(
             'Any city preference?',
-            _rows(buttons) + [_back_row('back:experience')],
+            _rows(buttons) + [_back_row('back:window')],
         )
+
+    def _back_to_window(self, chat_id: str) -> ButtonReply:
+        state = self._state(chat_id)
+        family = state.get('role_family', '')
+        if not family:
+            return self._family_step()
+        code = state.get('experience_choice', '')
+        return self._render_window_step(EXPERIENCE_LABELS.get(code, code))
 
     def _on_city(self, chat_id: str, idx_raw: str) -> ButtonReply:
         state = self._state(chat_id)
@@ -342,6 +400,8 @@ class ButtonFlow:
             city_key = CITY_BUTTONS[idx][1]
         except (ValueError, IndexError):
             city_key = ''
+        window_choice = state.get('window_choice', '')
+        posted_within_days = int(window_choice) if window_choice not in ('', None) else None
         intent = JobMasterIntent(
             kind='job_search',
             role_family=family,
@@ -351,6 +411,7 @@ class ButtonFlow:
                                     # live "fresher" track (LinkedIn
                                     # Internship + Entry level) — see
                                     # documents/roadmap.md.
+            posted_within_days=posted_within_days,
         )
         display_experience = state.get('experience_choice') or 'fresher'
         self.sessions.clear_onboarding(chat_id)
@@ -364,6 +425,10 @@ class ButtonFlow:
             role_keywords=state.get('role_keywords') or [],
             cities=[state['city']] if state.get('city') else [],
             experience='fresher',
+            # guest_profiles doesn't remember a freshness preference (only
+            # role/experience/city) — "Welcome back" repeats with no window
+            # filter (any time) rather than guessing a stale one.
+            posted_within_days=None,
         )
         display_experience = state.get('experience') or 'fresher'
         self.sessions.clear_onboarding(chat_id)
@@ -392,6 +457,19 @@ class ButtonFlow:
                 broadened_from = _role_label(intent.role_family, intent.role_keywords)
                 search_intent = broader_intent
                 reply_text, seen_ids = broader_reply, broader_seen
+        window_relaxed = False
+        if search_intent.posted_within_days is not None and 'No verified jobs' in reply_text:
+            # A tight freshness filter (2026-08-07, e.g. "Last 24 hours") is
+            # the single most likely reason for an otherwise-real search to
+            # dead-end — never let it silently zero out a guest's results
+            # when older-but-still-live postings exist. Same "never dead-end
+            # a guest" philosophy as the role-widening step above.
+            wider_intent = replace(search_intent, posted_within_days=None)
+            wider_reply, wider_seen = self.engine._job_reply(wider_intent, seen_ids=[])
+            if 'No verified jobs' not in wider_reply:
+                window_relaxed = True
+                search_intent = wider_intent
+                reply_text, seen_ids = wider_reply, wider_seen
         self.sessions.apply_result(
             chat_id,
             reply_text,
@@ -413,14 +491,19 @@ class ButtonFlow:
             experience=display_experience,
             city=chosen_intent.cities[0] if chosen_intent.cities else '',
         )
+        prefix_lines: list[str] = []
         if broadened_from:
             family_label = ROLE_FAMILY_LABELS.get(
                 search_intent.role_family, search_intent.role_family.replace('_', ' ').title(),
             )
-            reply_text = (
+            prefix_lines.append(
                 f'No {broadened_from} openings right now — here are other '
-                f'{family_label} roles instead:\n\n{reply_text}'
+                f'{family_label} roles instead.'
             )
+        if window_relaxed:
+            prefix_lines.append('No openings in that time window — showing all recent matches instead.')
+        if prefix_lines:
+            reply_text = '\n'.join(prefix_lines) + f'\n\n{reply_text}'
         actions: list[tuple[str, str]] = []
         if 'No verified jobs' in reply_text or 'No more verified jobs' in reply_text:
             actions = [('Try another role', 'reask:role'), ('Try another family', 'reask:family')]

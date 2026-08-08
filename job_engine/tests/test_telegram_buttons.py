@@ -18,6 +18,7 @@ from app.telegram_buttons import (
     EXPERIENCE_BUTTONS,
     FAMILY_BUTTONS,
     ROLE_BUTTONS,
+    WINDOW_BUTTONS,
     ButtonFlow,
 )
 from app.telegram_job_search import IntentInterpreter, JobMasterEngine
@@ -64,6 +65,13 @@ class FakeAPI:
                     row for row in rows
                     if any(term in str(row.get('title') or '').lower() for term in terms)
                 ]
+            if 'days' in params and params.get('days') is not None:
+                # Simulate real posting-freshness filtering: fixtures default
+                # to "old" (999) unless a test explicitly tags a job fresh
+                # via _days_old, so a 'days' filter can genuinely zero out a
+                # search (used to test the window-relax fallback).
+                window = int(params['days'])
+                rows = [row for row in rows if int(row.get('_days_old', 999)) <= window]
             offset = int(params.get('offset') or 0)
             limit = int(params.get('limit') or len(rows))
             return rows[offset:offset + limit]
@@ -129,12 +137,28 @@ class FamilyRoleExperienceNavigationTests(BaseButtonFlowTest):
         labels = [label for label, _data in _flatten(reply.keyboard)]
         self.assertIn('AI/ML', labels)
 
-    def test_back_from_experience_screen_returns_to_role_list(self):
+    def test_back_from_window_screen_returns_to_the_experience_choices(self):
+        # Fixed 2026-08-07 while inserting the posting-window step: every
+        # other back button returns to the exact previous screen (back:family
+        # -> family, back:role -> role) — back:experience must do the same
+        # (return to the experience choices), not skip past it to role.
         self.flow.handle_callback('chat-5', 'fam:data')
         self.flow.handle_callback('chat-5', 'role:data:0')
+        self.flow.handle_callback('chat-5', 'exp:fresher')
         reply = self.flow.handle_callback('chat-5', 'back:experience')
         labels = [label for label, _data in _flatten(reply.keyboard)]
-        self.assertIn('Data Analyst', labels)
+        for label, _code in EXPERIENCE_BUTTONS:
+            self.assertIn(label, labels)
+
+    def test_back_from_city_screen_returns_to_the_window_choices(self):
+        self.flow.handle_callback('chat-5b', 'fam:data')
+        self.flow.handle_callback('chat-5b', 'role:data:0')
+        self.flow.handle_callback('chat-5b', 'exp:fresher')
+        self.flow.handle_callback('chat-5b', 'window:0')
+        reply = self.flow.handle_callback('chat-5b', 'back:window')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        for label, _code in WINDOW_BUTTONS:
+            self.assertIn(label, labels)
 
     def test_unknown_or_stale_callback_never_leaves_a_dead_end(self):
         reply = self.flow.handle_callback('chat-6', 'role:software:99')
@@ -143,21 +167,73 @@ class FamilyRoleExperienceNavigationTests(BaseButtonFlowTest):
         self.assertTrue(labels)
 
 
-class FocusExperienceReachesCityAndResultsTests(BaseButtonFlowTest):
-    def test_fresher_experience_shows_city_buttons(self):
+class FocusExperienceReachesWindowCityAndResultsTests(BaseButtonFlowTest):
+    def test_fresher_experience_shows_window_buttons(self):
         self.flow.handle_callback('chat-10', 'fam:software')
         self.flow.handle_callback('chat-10', 'role:software:0')
         reply = self.flow.handle_callback('chat-10', 'exp:fresher')
         labels = [label for label, _data in _flatten(reply.keyboard)]
-        for label, _key in CITY_BUTTONS:
+        for label, _code in WINDOW_BUTTONS:
             self.assertIn(label, labels)
 
-    def test_intern_experience_also_reaches_city_step(self):
+    def test_intern_experience_also_reaches_window_step(self):
         self.flow.handle_callback('chat-11', 'fam:software')
         self.flow.handle_callback('chat-11', 'role:software:0')
         reply = self.flow.handle_callback('chat-11', 'exp:intern')
         labels = [label for label, _data in _flatten(reply.keyboard)]
-        self.assertIn('Bengaluru', labels)
+        self.assertIn('Last 24 hours', labels)
+
+    def test_picking_a_window_then_shows_city_buttons(self):
+        self.flow.handle_callback('chat-10b', 'fam:software')
+        self.flow.handle_callback('chat-10b', 'role:software:0')
+        self.flow.handle_callback('chat-10b', 'exp:fresher')
+        reply = self.flow.handle_callback('chat-10b', 'window:0')
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        for label, _key in CITY_BUTTONS:
+            self.assertIn(label, labels)
+
+    def test_picking_a_window_then_a_city_sends_the_days_param_to_the_api(self):
+        self.api.jobs = [
+            {**make_job(i, title='Java Developer', city='bengaluru'), '_days_old': 0}
+            for i in range(1, 4)
+        ]
+        self.flow.handle_callback('chat-10c', 'fam:software')
+        self.flow.handle_callback('chat-10c', 'role:software:0')
+        self.flow.handle_callback('chat-10c', 'exp:fresher')
+        self.flow.handle_callback('chat-10c', 'window:2')  # "Last 2 days"
+        bengaluru_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == 'bengaluru')
+        self.flow.handle_callback('chat-10c', f'city:{bengaluru_idx}')
+        job_calls = [params for path, params in self.api.calls if path == '/api/jobs']
+        self.assertTrue(job_calls)
+        self.assertTrue(all(params.get('days') == 2 for params in job_calls))
+
+    def test_any_time_sends_no_days_param(self):
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self.flow.handle_callback('chat-10d', 'fam:software')
+        self.flow.handle_callback('chat-10d', 'role:software:0')
+        self.flow.handle_callback('chat-10d', 'exp:fresher')
+        self.flow.handle_callback('chat-10d', 'window:')  # "Any time"
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        self.flow.handle_callback('chat-10d', f'city:{any_idx}')
+        job_calls = [params for path, params in self.api.calls if path == '/api/jobs']
+        self.assertTrue(job_calls)
+        self.assertTrue(all('days' not in params for params in job_calls))
+
+    def test_a_dead_end_time_window_falls_back_to_any_time(self):
+        """Same 'never dead-end a guest' philosophy as the narrow-role
+        fallback: a live job exists, but not within the aggressive 24h
+        window the guest picked — show it anyway rather than 'No verified
+        jobs'."""
+        self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
+        self.flow.handle_callback('chat-10e', 'fam:software')
+        self.flow.handle_callback('chat-10e', 'role:software:0')
+        self.flow.handle_callback('chat-10e', 'exp:fresher')
+        self.flow.handle_callback('chat-10e', 'window:0')  # "Last 24 hours"
+        any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
+        reply = self.flow.handle_callback('chat-10e', f'city:{any_idx}')
+        self.assertNotIn('No verified jobs', reply.text)
+        self.assertIn('No openings in that time window', reply.text)
+        self.assertIn('Company 1', reply.text)
 
     def test_picking_a_city_runs_a_real_grounded_search(self):
         self.api.jobs = [make_job(i, title='Java Developer', city='bengaluru') for i in range(1, 4)]
