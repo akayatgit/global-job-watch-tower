@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from app import telegram_broadcast, telegram_guests
+from app import telegram_alerts, telegram_broadcast, telegram_guests
 from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
@@ -1255,6 +1255,26 @@ class AlertAndPushCallbackTests(unittest.TestCase):
         self.bot.process('guest', f'{BTN_PREFIX}alert:off:{alert["id"]}')
         self.assertIn('Stopped the alert', self.api.sent[-1][1])
         self.assertEqual(self.sessions.list_job_alerts('guest'), [])
+
+    def test_alert_off_on_an_auto_alert_opts_the_guest_out_of_auto_alerts(self):
+        """🔕 on an AUTO alert must be a real opt-out (Ashok, 2026-08-09):
+        no future search silently re-enrols someone who just said stop."""
+        alert = self.sessions.create_job_alert(
+            'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML',
+            city='', source='auto',
+        )
+        self.bot.process('guest', f'{BTN_PREFIX}alert:off:{alert["id"]}')
+        self.assertIn("won't set alerts from your searches automatically", self.api.sent[-1][1])
+        self.assertEqual(self.sessions.list_job_alerts('guest'), [])
+        self.assertTrue(telegram_alerts.is_auto_opted_out(self.sessions, 'guest'))
+
+    def test_alert_off_on_a_manual_alert_does_not_opt_out_of_auto_alerts(self):
+        alert = self.sessions.create_job_alert(
+            'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='',
+        )
+        self.bot.process('guest', f'{BTN_PREFIX}alert:off:{alert["id"]}')
+        self.assertIn('Stopped the alert', self.api.sent[-1][1])
+        self.assertFalse(telegram_alerts.is_auto_opted_out(self.sessions, 'guest'))
 
     def test_alert_off_from_a_different_chat_is_refused(self):
         alert = self.sessions.create_job_alert(

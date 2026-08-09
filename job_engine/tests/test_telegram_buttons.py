@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import telegram_waitlist
+from app import telegram_alerts, telegram_waitlist
 from app.job_role_families import title_matches_role_family
 from app.telegram_buttons import (
     CITY_BUTTONS,
@@ -180,15 +180,22 @@ class FocusExperienceReachesCityAndResultsTests(BaseButtonFlowTest):
         labels = [label for label, _data in _flatten(reply.keyboard)]
         self.assertIn('🔄 New search', labels)
 
-    def test_results_screen_also_offers_a_set_alert_button(self):
+    def test_results_screen_auto_subscribes_instead_of_offering_set_alert(self):
+        """Ashok (2026-08-09): don't wait for the few who tap "Set alert" —
+        results auto-subscribe a daily alert, announce it honestly in the
+        reply, and drop the now-redundant 🔔 button."""
         self.api.jobs = [make_job(1, title='Java Developer', city='bengaluru')]
         self.flow.handle_callback('chat-13b', 'fam:software')
         self.flow.handle_callback('chat-13b', 'role:software:0')
         self.flow.handle_callback('chat-13b', 'exp:fresher')
         any_idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == '')
         reply = self.flow.handle_callback('chat-13b', f'city:{any_idx}')
+        self.assertIn("I'll also check this search daily", reply.text)
         labels = [label for label, _data in _flatten(reply.keyboard)]
-        self.assertIn('🔔 Set alert', labels)
+        self.assertNotIn('🔔 Set alert', labels)
+        alerts = self.sessions.list_job_alerts('chat-13b')
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]['source'], 'auto')
 
     def test_zero_result_search_offers_try_another_role_or_family(self):
         self.api.jobs = []
@@ -275,14 +282,69 @@ class SetAlertButtonTests(BaseButtonFlowTest):
         )
         self.flow.handle_callback(chat_id, f'city:{idx}')
 
-    def test_tapping_set_alert_creates_a_subscription(self):
+    def test_tapping_set_alert_promotes_the_auto_alert_to_manual(self):
+        """The search already auto-subscribed this exact alert, so an
+        explicit tap makes it permanent (a later search can never
+        replace it) instead of creating a duplicate."""
         self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
         self._run_to_results('chat-alert-1')
         reply = self.flow.handle_callback('chat-alert-1', 'alert:set')
-        self.assertIn('🔔 Alert set', reply.text)
+        self.assertIn('already ON', reply.text)
         alerts = self.sessions.list_job_alerts('chat-alert-1')
         self.assertEqual(len(alerts), 1)
         self.assertEqual(alerts[0]['city'], 'bengaluru')
+        self.assertEqual(alerts[0]['source'], 'manual')
+
+    def test_tapping_set_alert_after_opting_out_creates_and_re_enables(self):
+        telegram_alerts.set_auto_opt_out(self.sessions, 'chat-alert-oo', True)
+        self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
+        self._run_to_results('chat-alert-oo')
+        # Opted out, so the search did NOT auto-subscribe — the 🔔 button
+        # is back and tapping it is the explicit opt-back-in.
+        self.assertEqual(self.sessions.list_job_alerts('chat-alert-oo'), [])
+        reply = self.flow.handle_callback('chat-alert-oo', 'alert:set')
+        self.assertIn('🔔 Alert set', reply.text)
+        self.assertEqual(len(self.sessions.list_job_alerts('chat-alert-oo')), 1)
+        self.assertFalse(telegram_alerts.is_auto_opted_out(self.sessions, 'chat-alert-oo'))
+
+    def test_opted_out_guest_sees_the_set_alert_button_again(self):
+        telegram_alerts.set_auto_opt_out(self.sessions, 'chat-alert-btn', True)
+        self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]
+        self.flow.handle_callback('chat-alert-btn', 'fam:ai_ml')
+        self.flow.handle_callback('chat-alert-btn', 'role:ai_ml:0')
+        self.flow.handle_callback('chat-alert-btn', 'exp:fresher')
+        idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == 'bengaluru')
+        reply = self.flow.handle_callback('chat-alert-btn', f'city:{idx}')
+        self.assertNotIn("I'll also check this search daily", reply.text)
+        labels = [label for label, _data in _flatten(reply.keyboard)]
+        self.assertIn('🔔 Set alert', labels)
+
+    def test_a_new_search_replaces_the_previous_auto_alert(self):
+        self.api.jobs = [
+            make_job(1, title='Machine Learning Engineer', city='bengaluru'),
+            make_job(2, title='Java Developer', city='bengaluru'),
+        ]
+        self._run_to_results('chat-alert-swap')
+        self.flow.handle_callback('chat-alert-swap', 'fam:software')
+        self.flow.handle_callback('chat-alert-swap', 'role:software:0')
+        self.flow.handle_callback('chat-alert-swap', 'exp:fresher')
+        idx = next(i for i, (_l, key) in enumerate(CITY_BUTTONS) if key == 'bengaluru')
+        self.flow.handle_callback('chat-alert-swap', f'city:{idx}')
+        alerts = self.sessions.list_job_alerts('chat-alert-swap')
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]['role_family'], 'software')
+
+    def test_paging_with_more_reseeds_the_auto_alert(self):
+        """Jobs the guest scrolled past via "More jobs ▸" must never be
+        re-announced by tomorrow's auto alert."""
+        self.api.jobs = [
+            make_job(i, title='Machine Learning Engineer', city='bengaluru')
+            for i in range(1, 26)
+        ]
+        self._run_to_results('chat-alert-page')
+        self.flow.handle_callback('chat-alert-page', 'more')
+        alert = self.sessions.list_job_alerts('chat-alert-page')[0]
+        self.assertGreaterEqual(len(alert['sent_job_ids']), 20)
 
     def test_setting_the_same_alert_twice_says_it_is_already_on(self):
         self.api.jobs = [make_job(1, title='Machine Learning Engineer', city='bengaluru')]

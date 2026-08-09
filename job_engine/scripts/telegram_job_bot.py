@@ -1037,6 +1037,16 @@ class JobMasterTelegramBot:
             if alert is None or str(alert['chat_id']) != str(chat_id):
                 return ButtonReply('That alert is no longer active.')
             self.sessions.deactivate_job_alert(alert['id'], chat_id)
+            if alert.get('source') == 'auto':
+                # 🔕 on an auto alert is a real opt-out: future searches stop
+                # auto-subscribing until the guest taps "🔔 Set alert" again —
+                # never silently re-enrol someone who just said stop.
+                telegram_alerts.set_auto_opt_out(self.sessions, chat_id, True)
+                return ButtonReply(
+                    f"🔕 Stopped the daily alert for {alert['role_label']}. "
+                    "I won't set alerts from your searches automatically anymore — "
+                    'tap "🔔 Set alert" on any results to turn them back on.'
+                )
             return ButtonReply(f"🔕 Stopped the alert for {alert['role_label']}.")
         if payload.startswith('alert:like:'):
             raw_id = payload[len('alert:like:'):]

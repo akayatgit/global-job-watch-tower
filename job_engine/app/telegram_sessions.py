@@ -91,6 +91,7 @@ class TelegramSessionStore:
                     active INTEGER NOT NULL DEFAULT 1,
                     sent_job_ids_json TEXT NOT NULL DEFAULT '[]',
                     likes INTEGER NOT NULL DEFAULT 0,
+                    source TEXT NOT NULL DEFAULT 'manual',
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 );
@@ -133,6 +134,14 @@ class TelegramSessionStore:
             if 'username' not in inbox_columns:
                 conn.execute(
                     "ALTER TABLE telegram_inbox ADD COLUMN username TEXT NOT NULL DEFAULT ''"
+                )
+            alert_columns = {
+                row[1] for row in conn.execute('PRAGMA table_info(job_alerts)').fetchall()
+            }
+            if 'source' not in alert_columns:
+                # Alerts from before auto-alerts existed were all explicit taps.
+                conn.execute(
+                    "ALTER TABLE job_alerts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
                 )
             # Enforce the product's strict privacy cap for databases created by
             # older builds, not only when the next conversation arrives.
@@ -695,6 +704,7 @@ class TelegramSessionStore:
             'active': bool(row['active']),
             'sent_job_ids': [str(x) for x in sent_ids] if isinstance(sent_ids, list) else [],
             'likes': int(row['likes']),
+            'source': str(row['source'] or 'manual'),
             'created_at': float(row['created_at']),
             'updated_at': float(row['updated_at']),
         }
@@ -751,6 +761,7 @@ class TelegramSessionStore:
         city: str = '',
         experience: str = 'fresher',
         seen_ids: list[str] | None = None,
+        source: str = 'manual',
     ) -> dict[str, Any]:
         now = time.time()
         payload = json.dumps(list(role_keywords or []), separators=(',', ':'))
@@ -763,13 +774,15 @@ class TelegramSessionStore:
                 """
                 INSERT INTO job_alerts(
                     chat_id, role_family, role_keywords_json, role_label, city,
-                    experience, active, sent_job_ids_json, likes, created_at, updated_at
+                    experience, active, sent_job_ids_json, likes, source,
+                    created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?, ?)
                 """,
                 (
                     str(chat_id), role_family or '', payload, role_label or '',
-                    city or '', experience or 'fresher', sent_payload, now, now,
+                    city or '', experience or 'fresher', sent_payload,
+                    source or 'manual', now, now,
                 ),
             )
             alert_id = int(cursor.lastrowid)
@@ -794,6 +807,26 @@ class TelegramSessionStore:
                 (str(chat_id),),
             ).fetchall()
         return [self._job_alert_row_to_dict(row) for row in rows]
+
+    def list_active_auto_job_alerts(self, chat_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM job_alerts
+                WHERE chat_id=? AND active=1 AND source='auto'
+                ORDER BY created_at ASC
+                """,
+                (str(chat_id),),
+            ).fetchall()
+        return [self._job_alert_row_to_dict(row) for row in rows]
+
+    def set_job_alert_source(self, alert_id: int, source: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                'UPDATE job_alerts SET source=?, updated_at=? WHERE id=?',
+                (source or 'manual', time.time(), int(alert_id)),
+            )
+        return bool(cursor.rowcount)
 
     def list_active_job_alerts_all(self) -> list[dict[str, Any]]:
         with self._connect() as conn:

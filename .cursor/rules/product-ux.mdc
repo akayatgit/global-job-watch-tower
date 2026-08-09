@@ -599,3 +599,22 @@ it, shows recipient count) → `/pushconfirm`
  line pattern. This is a day-one retention mechanic available to every
  guest, never a premium/paid feature. `app/telegram_alerts.py` and
  `app/telegram_broadcast.py` own this logic; kanban card #15.
+- **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
+ "very few will click on set alert option... why can't we automatically
+ send one alert per day on the telegram guest's last search, so we can
+ retain them and be proactive." Every search that shows results now
+ auto-subscribes a daily alert on that exact search
+ (`telegram_alerts.auto_subscribe_last_search`, `source='auto'`), announced
+ honestly in the results reply ("I'll also check this search daily...") —
+ never a surprise DM. Laws: **one auto slot per guest** — a new search
+ replaces the previous auto alert (last search wins); explicit
+ "🔔 Set alert" taps are `source='manual'`, are never replaced by a later
+ search, and an explicit tap on an auto-covered search promotes it to
+ manual; **🔕 on an auto alert is a real opt-out** — no future search
+ auto-subscribes again until the guest explicitly taps "🔔 Set alert"
+ (which also clears the opt-out); the 🔔 button is hidden when the search
+ is already auto-covered and shown again for opted-out/at-cap guests; the
+ 3-alert cap, once/UTC-day cadence, sent-ids dedupe (reseeded on every
+ "More jobs ▸" page), and deterministic job rows all hold unchanged; auto
+ alert messages say "— from your last search" so the guest knows why they
+ got it. Never silently re-enrol someone who said stop.

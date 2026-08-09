@@ -175,6 +175,16 @@ need to be told twice.
  idle + cool, guest-seen jobs enriched first. Lesson: when one work class
  quietly eats the lane of the mission-critical class, don't tune it —
  reclassify it.
+- **2026-08-09 · Proactive beats opt-in — auto alerts on the last search.**
+ Ashok: "very few will click on set alert option... why can't we
+ automatically send one alert per day on the telegram guest's last search,
+ so we can retain them and be proactive." Retention features that wait for
+ a tap reach almost nobody; the default should do the retaining. Shipped:
+ every completed search auto-subscribes a daily alert (announced in the
+ reply, "from your last search" on delivery), last search wins the single
+ auto slot, explicit taps outrank it, and 🔕 on an auto alert is a real
+ opt-out — proactive must never shade into spam, or it burns the exact
+ trust the survival law depends on.
 
 ## Honesty note on the codeword
 

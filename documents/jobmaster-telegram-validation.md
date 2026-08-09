@@ -435,8 +435,8 @@ missing from a live `/pushconfirm`; see JM-225).
 
 | ID | Do | Expected |
 |---|---|---|
-| JM-206 | Complete any Intern/Fresher search to a results screen | Actions row shows `More jobs ▸` (if applicable), `🔔 Set alert`, and `🔄 New search`. |
-| JM-207 | Tap `🔔 Set alert` | Confirms the alert is set for that role + city, mentions "about once a day", and points to `/myalerts` to manage it. |
+| JM-206 | Complete any Intern/Fresher search to a results screen | **Amended 2026-08-09 (auto alerts, 14F):** actions row shows `More jobs ▸` (if applicable) and `🔄 New search`; the search auto-subscribes a daily alert and the reply says so ("I'll also check this search daily..."). `🔔 Set alert` only appears when the guest previously opted out of auto alerts (or is at the 3-alert cap). |
+| JM-207 | Tap `🔔 Set alert` (visible after an auto-alert opt-out, or from a `More jobs ▸` screen) | Confirms the alert is set (or already ON) for that role + city, mentions "about once a day", and points to `/myalerts` to manage it. Also re-enables auto alerts for future searches. |
 | JM-208 | Tap `🔔 Set alert` again on the identical search | Says the alert is already ON — does not create a duplicate. |
 | JM-209 | Send `/myalerts` | Lists every active alert (role + city) each with its own `🔕 Stop #N` button; empty state suggests running a search first if you have none. |
 | JM-210 | Tap `🔕 Stop #1` from JM-209 | Confirms that specific alert is stopped; `/myalerts` no longer lists it. |
@@ -455,6 +455,26 @@ missing from a live `/pushconfirm`; see JM-225).
 | JM-223 | Send 3 consecutive `/push`→`/pushconfirm` broadcasts to a guest who never replies in between | That guest is silently excluded from the 4th broadcast (temporarily dropped) — `/pushstats`'s recipient count for the 4th push is one lower. |
 | JM-224 | That same silently-dropped guest sends any message | They are reachable by the next broadcast again (same reactivation as JM-222). |
 | JM-225 | A guest with pre-existing conversation history (from before this fix deployed) whose very first message was already a full query, never a `/start`/greeting/`/new` | After the next bot restart (backfill runs on startup), they appear in `/pushstats`'s active-subscriber count and receive the next `/push`→`/pushconfirm` broadcast without sending anything new. |
+
+## 14F. Auto daily alert on the guest's last search (2026-08-09)
+
+Ashok: "very few will click on set alert option... why can't we
+automatically send one alert per day on the telegram guest's last search,
+so we can retain them and be proactive." Every completed search now
+auto-subscribes a daily alert on that exact search — one auto slot per
+guest, last search wins, explicit taps outrank it, and 🔕 on an auto alert
+is a real opt-out (never silently re-enrolled).
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-226 | Complete an Intern/Fresher search to a results screen | Reply ends with "🔔 I'll also check this search daily and message you when new jobs appear. Tap 🔕 in any alert to stop." — no tap needed; `/myalerts` shows the alert marked "daily (from your last search)". |
+| JM-227 | Run a second, different search (new role family or city) | `/myalerts` shows only the NEW search as the auto alert — the previous auto alert was replaced (last search wins), never two auto alerts stacking up. |
+| JM-228 | Tap `🔔 Set alert` was never tapped; wait for the daily dispatch with a genuinely new matching job live | Alert message header reads "🔔 New {role} openings... — from your last search:" with the usual up-to-10 grounded rows, `👍 Like` + `🔕 Stop this alert` keyboard, and the hint line — the guest always knows WHY they got it. |
+| JM-229 | Tap `🔕 Stop this alert` on a delivered AUTO alert | Confirms the stop AND says future searches won't set alerts automatically anymore ("tap 🔔 Set alert on any results to turn them back on"). |
+| JM-230 | After JM-229, run another search to results | No auto-subscribe note, no new alert in `/myalerts`; the `🔔 Set alert` button is back on the results screen — opt-out is respected. |
+| JM-231 | After JM-230, tap `🔔 Set alert` | Alert created AND auto alerts re-enabled — the next new search auto-subscribes again. |
+| JM-232 | Repeat the exact same search that already has the auto alert, page with `More jobs ▸`, wait for dispatch | Jobs already shown on any page today are never re-announced by tomorrow's alert (seen ids fold into the alert on every page). |
+| JM-233 | With 3 explicit (manual) alerts active, run a new search | Results still work; no auto alert is force-created past the cap and no error shown. A `🔔 Set alert` tap on that search evicts the auto slot only if one exists, else politely refuses with `/myalerts`. |
 
 ## 15. Execution log
 
@@ -519,6 +539,19 @@ Convert this suite without changing its IDs:
    ordinary activity (not only `/start`). 285/285 green locally. Still
    requires Ashok's live Telegram run (with a real second account to receive
    alerts/pushes) to close JM-206..225 in the execution log above.
+2B. **Auto daily alert on last search contract tests — done (2026-08-09):**
+   JM-226..233 above are automated in
+   `job_engine/tests/test_telegram_alerts.py::AutoAlertTests` (11 tests:
+   auto-subscribe + seed, last-search-wins replacement, reuse/reseed on the
+   identical search, manual alerts surviving new searches, opt-out blocking
+   + explicit-tap re-enable, promotion of an auto alert to manual, cap
+   back-off, explicit-tap auto-slot eviction, "from your last search"
+   dispatch labelling, `/myalerts` marker) plus extended
+   `test_telegram_buttons.py` (results auto-subscribe/note/button-hiding,
+   opt-out button return, replacement at flow level, `More jobs ▸`
+   reseeding) and `test_telegram_job_bot.py` (🔕 on auto = opt-out with the
+   honest copy; 🔕 on manual does NOT opt out). 329/329 green locally.
+   Still requires Ashok's live Telegram run to close JM-226..233 above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link

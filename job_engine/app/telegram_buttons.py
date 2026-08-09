@@ -29,7 +29,11 @@ from dataclasses import asdict, dataclass, field, replace
 
 from app import telegram_broadcast
 from app.cities import city_label
-from app.telegram_alerts import MAX_ACTIVE_ALERTS, create_or_get_alert
+from app.telegram_alerts import (
+    MAX_ACTIVE_ALERTS,
+    auto_subscribe_last_search,
+    create_or_get_alert,
+)
 from app.telegram_job_search import (
     ROLE_FAMILY_LABELS,
     JobMasterEngine,
@@ -425,20 +429,67 @@ class ButtonFlow:
         if 'No verified jobs' in reply_text or 'No more verified jobs' in reply_text:
             actions = [('Try another role', 'reask:role'), ('Try another family', 'reask:family')]
         else:
+            # Proactive retention (Ashok, 2026-08-09): don't wait for the few
+            # who tap "Set alert" — every search that actually shows results
+            # auto-subscribes a daily alert on that exact search (the guest's
+            # LAST search always wins; 🔕 on an auto alert opts out for good).
+            _alert, auto_status = auto_subscribe_last_search(
+                self.sessions,
+                chat_id,
+                role_family=search_intent.role_family,
+                role_keywords=search_intent.role_keywords,
+                role_label=_role_label(search_intent.role_family, search_intent.role_keywords),
+                city=search_intent.cities[0] if search_intent.cities else '',
+                experience='fresher',
+                seen_ids=seen_ids,
+            )
             if 'Reply more' in reply_text:
                 actions.append(('More jobs ▸', 'more'))
-            actions.append(('🔔 Set alert', 'alert:set'))
+            if auto_status == 'created':
+                # Tell the guest up front — a surprise DM tomorrow with no
+                # warning reads as spam; an announced daily check reads as help.
+                reply_text += (
+                    "\n\n🔔 I'll also check this search daily and message you "
+                    'when new jobs appear. Tap 🔕 in any alert to stop.'
+                )
+            if auto_status in {'optout', 'limit'}:
+                # Only offer the manual tap when the search is NOT already
+                # covered by an alert — tapping it re-enables auto alerts too.
+                actions.append(('🔔 Set alert', 'alert:set'))
             actions.append(('🔄 New search', 'restart'))
         return ButtonReply(reply_text, _rows(actions, per_row=1) if actions else None)
 
     def _more(self, chat_id: str) -> ButtonReply:
         reply_text = self.engine.handle('more', chat_id)
+        self._mark_paged_jobs_seen(chat_id)
         actions: list[tuple[str, str]] = []
         if 'Reply more' in reply_text:
             actions.append(('More jobs ▸', 'more'))
         actions.append(('🔔 Set alert', 'alert:set'))
         actions.append(('🔄 New search', 'restart'))
         return ButtonReply(reply_text, _rows(actions, per_row=1))
+
+    def _mark_paged_jobs_seen(self, chat_id: str) -> None:
+        """After "More jobs ▸", fold the newly-paged job ids into the alert
+        covering this search (auto alerts especially — every guest has one
+        now), so tomorrow's dispatch never re-announces a job the guest
+        already scrolled past today."""
+        saved = self.sessions.load_search(chat_id)
+        if not saved:
+            return
+        intent_dict, _page, seen_ids = saved
+        if not seen_ids:
+            return
+        intent = JobMasterIntent(**intent_dict)
+        alert = self.sessions.find_job_alert(
+            chat_id,
+            role_family=intent.role_family,
+            role_keywords=intent.role_keywords,
+            city=intent.cities[0] if intent.cities else '',
+            experience='fresher',
+        )
+        if alert is not None:
+            self.sessions.mark_job_alert_sent(alert['id'], seen_ids)
 
     def _set_alert(self, chat_id: str) -> ButtonReply:
         """"Set alert every day" (Ashok, 2026-08-07) — reuses whatever
