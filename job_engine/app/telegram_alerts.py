@@ -11,6 +11,21 @@ Matching key is role_family + city + experience — deliberately NOT the
 narrow role_keywords a specific button chose (e.g. "NLP Engineer"), because
 a narrow keyword can go quiet for days even though its family has plenty of
 openings (same class of gap fixed for live search in telegram_buttons.py).
+
+Auto alerts (Ashok, 2026-08-09): "very few will click on set alert...
+why can't we automatically send one alert per day on the guest's last
+search". Every completed search now auto-subscribes a daily alert on that
+exact search — proactive retention instead of waiting for a tap. Rules that
+keep it trustworthy rather than spammy:
+
+- One auto slot per guest: a new search REPLACES the previous auto alert
+  (last search wins). Explicit "Set alert" taps are 'manual' and are never
+  replaced by a later search.
+- Tapping 🔕 on an auto alert is a real opt-out: no future search
+  auto-subscribes again until the guest explicitly taps "🔔 Set alert".
+- Auto alerts respect the same MAX_ACTIVE_ALERTS cap, same once/UTC-day
+  cadence, same sent_job_ids dedupe (seeded from what the guest already
+  saw), and the same deterministic job rows — nothing model-authored.
 """
 
 from __future__ import annotations
@@ -33,9 +48,19 @@ CANDIDATE_FETCH_LIMIT = 30
 
 ALERT_HINT = '\n\nTip: tap 👍 if this is useful, or 🔕 below anytime to stop this alert.'
 
+AUTO_OPTOUT_STATE_PREFIX = 'auto_alert_optout:'
+
 
 def _job_id(job: dict[str, Any]) -> str:
     return str(job.get('linkedin_job_id') or job.get('id') or '').strip()
+
+
+def is_auto_opted_out(sessions, chat_id: str) -> bool:
+    return sessions.get_state(f'{AUTO_OPTOUT_STATE_PREFIX}{chat_id}', '') == '1'
+
+
+def set_auto_opt_out(sessions, chat_id: str, opted_out: bool) -> None:
+    sessions.set_state(f'{AUTO_OPTOUT_STATE_PREFIX}{chat_id}', '1' if opted_out else '0')
 
 
 def create_or_get_alert(
@@ -49,7 +74,15 @@ def create_or_get_alert(
     experience: str = 'fresher',
     seen_ids: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str]:
-    """Returns (alert_or_None, status) where status is 'created' | 'exists' | 'limit'."""
+    """Explicit "🔔 Set alert" tap. Returns (alert_or_None, status) where
+    status is 'created' | 'exists' | 'limit'.
+
+    An explicit tap always outranks the auto slot: it re-enables
+    auto-subscription for future searches, promotes an identical auto alert
+    to 'manual' (so the next search never replaces it), and — at the cap —
+    evicts the auto alert to make room rather than refusing the guest's
+    explicit ask."""
+    set_auto_opt_out(sessions, chat_id, False)
     existing = sessions.find_job_alert(
         chat_id,
         role_family=role_family,
@@ -58,7 +91,61 @@ def create_or_get_alert(
         experience=experience,
     )
     if existing is not None:
+        if existing.get('source') == 'auto':
+            sessions.set_job_alert_source(existing['id'], 'manual')
+            existing = dict(existing, source='manual')
         return existing, 'exists'
+    if sessions.count_active_job_alerts(chat_id) >= MAX_ACTIVE_ALERTS:
+        autos = sessions.list_active_auto_job_alerts(chat_id)
+        if not autos:
+            return None, 'limit'
+        sessions.deactivate_job_alert(autos[0]['id'], chat_id)
+    alert = sessions.create_job_alert(
+        chat_id,
+        role_family=role_family,
+        role_keywords=role_keywords or [],
+        role_label=role_label,
+        city=city,
+        experience=experience,
+        seen_ids=seen_ids or [],
+        source='manual',
+    )
+    return alert, 'created'
+
+
+def auto_subscribe_last_search(
+    sessions,
+    chat_id: str,
+    *,
+    role_family: str,
+    role_keywords: list[str] | None,
+    role_label: str,
+    city: str,
+    experience: str = 'fresher',
+    seen_ids: list[str] | None = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Silently subscribe the guest's LAST completed search to the daily
+    alert dispatch (Ashok, 2026-08-09 — proactive retention). Returns
+    (alert_or_None, status): 'created' | 'exists' | 'optout' | 'limit'.
+
+    Last search wins: any previous auto alert is replaced. An identical
+    already-active alert (auto or manual) is only re-seeded with what the
+    guest just saw so tomorrow's dispatch never re-announces it."""
+    if is_auto_opted_out(sessions, chat_id):
+        return None, 'optout'
+    existing = sessions.find_job_alert(
+        chat_id,
+        role_family=role_family,
+        role_keywords=role_keywords,
+        city=city,
+        experience=experience,
+    )
+    if existing is not None:
+        if seen_ids:
+            sessions.mark_job_alert_sent(existing['id'], list(seen_ids))
+        return existing, 'exists'
+    for auto_alert in sessions.list_active_auto_job_alerts(chat_id):
+        sessions.deactivate_job_alert(auto_alert['id'], chat_id)
     if sessions.count_active_job_alerts(chat_id) >= MAX_ACTIVE_ALERTS:
         return None, 'limit'
     alert = sessions.create_job_alert(
@@ -69,6 +156,7 @@ def create_or_get_alert(
         city=city,
         experience=experience,
         seen_ids=seen_ids or [],
+        source='auto',
     )
     return alert, 'created'
 
@@ -84,7 +172,8 @@ def format_my_alerts(alerts: list[dict[str, Any]]) -> tuple[str, list[list[tuple
     keyboard: list[list[tuple[str, str]]] = []
     for index, alert in enumerate(alerts, 1):
         city_txt = f' in {city_label(alert["city"])}' if alert['city'] else ''
-        lines.append(f"{index}. {alert['role_label']}{city_txt}")
+        auto_txt = ' · daily (from your last search)' if alert.get('source') == 'auto' else ''
+        lines.append(f"{index}. {alert['role_label']}{city_txt}{auto_txt}")
         keyboard.append([(f'🔕 Stop #{index}', f"alert:off:{alert['id']}")])
     return '\n'.join(lines), keyboard
 
@@ -99,9 +188,14 @@ def _format_alert_jobs(jobs: list[dict[str, Any]]) -> str:
     return '\n\n'.join(lines)
 
 
-def format_alert_message(role_label: str, city: str, jobs: list[dict[str, Any]]) -> str:
+def format_alert_message(
+    role_label: str, city: str, jobs: list[dict[str, Any]], *, source: str = 'manual',
+) -> str:
     city_txt = f' in {city_label(city)}' if city else ''
-    header = f'🔔 New {role_label} openings{city_txt}:\n\n'
+    # An auto alert says WHY the guest is hearing from us — a surprise DM
+    # with no context reads as spam; "from your last search" reads as help.
+    origin = ' — from your last search' if source == 'auto' else ''
+    header = f'🔔 New {role_label} openings{city_txt}{origin}:\n\n'
     return header + _format_alert_jobs(jobs) + ALERT_HINT
 
 
@@ -184,7 +278,10 @@ def dispatch_due_alerts(
         matches = _new_matches(jobs, intent, alert['sent_job_ids'])[:ALERT_JOB_CAP]
         if not matches:
             continue
-        text = format_alert_message(alert['role_label'], alert['city'], matches)
+        text = format_alert_message(
+            alert['role_label'], alert['city'], matches,
+            source=alert.get('source', 'manual'),
+        )
         keyboard = [[
             ('👍 Like', f"alert:like:{alert['id']}"),
             ('🔕 Stop this alert', f"alert:off:{alert['id']}"),
