@@ -599,6 +599,17 @@ it, shows recipient count) → `/pushconfirm`
  line pattern. This is a day-one retention mechanic available to every
  guest, never a premium/paid feature. `app/telegram_alerts.py` and
  `app/telegram_broadcast.py` own this logic; kanban card #15.
+- **Tower health must alarm on a dead engine (2026-08-13):** the header
+ traffic light has a fourth state — `stalled` (red) — raised when a run
+ sits in "running" past the reaper window or an overdue backlog is not
+ dispatched while the host is cool. "Now:" says "Stuck · <role> — engine
+ down?" instead of "Searching…", and the Telegram `/health` board prints a
+ plain-English `Stalled:` reason plus a relative age (`· 26h ago`) on every
+ recent pulse so stale activity can never masquerade as live. Root cause
+ class: worker dead while beat queues ticks nobody executes. Also: a CI
+ test-gate failure on main blocks the ThinkPad deploy job — treat any
+ failed `Deploy ThinkPad` run as a same-day incident (it is also the only
+ remote restart lever when Ashok has no laptop access).
 - **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
  "very few will click on set alert option... why can't we automatically
  send one alert per day on the telegram guest's last search, so we can
