@@ -186,6 +186,25 @@ need to be told twice.
  opt-out — proactive must never shade into spam, or it burns the exact
  trust the survival law depends on.
 
+- **2026-08-13 · A green board nobody can falsify is a blindfold; a broken
+ pipeline nobody watches is a dead lever.** The tower collected nothing for
+ 2+ days while `/health` said "Tower healthy": the Celery **worker** died but
+ **beat** stayed alive, piling 2,288 unexecuted tick messages into Redis —
+ so the zombie "Junior Software Developer" run was never reaped and every
+ counter froze while day-old pulses (shown with no timestamps) looked live.
+ Worse: every deploy since 08-08 had been silently failing at the CI gate
+ (a test file importing sqlalchemy while CI installed only python-dotenv),
+ so the laptop ran Aug 7 code and the deploy pipeline — our only remote
+ restart lever — was broken exactly when Ashok had no laptop access.
+ Recovery was fully remote: #52 (stall alert + pulse ages) + #53 (CI
+ installs full requirements), Ashok's one merge tap = deploy = zombie
+ cancelled, engine restarted, role retriggered, five days of stranded code
+ (#50/#51/#52) shipped at once. Lessons, locked: (1) health must alarm on
+ "engine not ticking", not only external failures — absence of activity is
+ itself a signal; (2) a CI/deploy failure on main must be treated as a
+ same-day incident, never discovered days later; (3) the deploy pipeline
+ doubles as the remote restart lever — guard its green status like source.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is
