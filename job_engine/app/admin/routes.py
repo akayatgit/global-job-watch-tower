@@ -112,6 +112,8 @@ def _vitals_json(v) -> dict:
         'countdown_role': v.countdown_role,
         'scrape_started_at': iso(v.scrape_started_at),
         'avg_search_secs': v.avg_search_secs,
+        'stalled': v.stalled,
+        'stall_detail': v.stall_detail,
     }
 
 

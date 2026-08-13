@@ -95,6 +95,9 @@ class TowerVitals:
     detail_used_today: int
     detail_budget_per_day: int
     detail_pending: int
+    # Engine stall — the tower must never say "healthy" while collection is dead
+    stalled: bool
+    stall_detail: str
 
 
 def _mem() -> tuple[int, int, float]:
@@ -351,6 +354,58 @@ def _countdown_clock(
     return 'idle', 0, 'Tower idle', '—', None
 
 
+def _age_label(delta: timedelta) -> str:
+    secs = max(0, int(delta.total_seconds()))
+    if secs < 3600:
+        return f'{secs // 60}m'
+    hours = secs // 3600
+    if hours < 48:
+        return f'{hours}h'
+    return f'{hours // 24}d {hours % 24}h'
+
+
+def _detect_stall(
+    *,
+    running_started_at: datetime | None,
+    running_name: str,
+    newest_started_at: datetime | None,
+    backlog: int,
+    allow_new: bool,
+    now: datetime,
+) -> tuple[bool, str]:
+    """Is the collection engine (Celery worker + beat) actually alive?
+
+    A healthy beat tick reaps any run stuck in running/dispatched within
+    STALE_RUN_MINUTES — so a run "running" far past that means no tick has
+    happened. Likewise an overdue backlog nobody dispatches for a long time
+    while the host is cool means beat is down. Without this check the header
+    said "Tower healthy" through a full engine outage (2026-08-13 incident:
+    a Junior Software Developer run sat "running" 24h+ with all counters 0).
+    """
+    reap_grace = timedelta(minutes=config.STALE_RUN_MINUTES + 15)
+    if running_started_at is not None:
+        age = now - _aware(running_started_at)
+        if age > reap_grace:
+            return True, (
+                f'"{running_name}" has shown as running for {_age_label(age)} '
+                f'— the engine should finish or reap it within '
+                f'{config.STALE_RUN_MINUTES} min. Worker/beat looks down; '
+                f'restart the tower stack on the ThinkPad.'
+            )
+        return False, ''
+
+    if backlog and allow_new and newest_started_at is not None:
+        idle = now - _aware(newest_started_at)
+        if idle > timedelta(minutes=30):
+            plural = 'es' if backlog != 1 else ''
+            return True, (
+                f'{backlog} search{plural} overdue but nothing has started '
+                f'for {_age_label(idle)} — the scheduler (beat) is not '
+                f'dispatching. Restart the tower stack on the ThinkPad.'
+            )
+    return False, ''
+
+
 def _capacity_estimate(db: Session, ollama_24h: int) -> tuple[int, str]:
     """Estimate sustainable Ollama-filtered searches / day on this laptop."""
     avg = float(_avg_search_secs(db))
@@ -440,6 +495,24 @@ def compute_vitals(db: Session) -> TowerVitals:
         )
     ).scalar() or 0
 
+    newest_started = db.execute(
+        select(func.max(ScrapeRun.started_at)).where(
+            ScrapeRun.started_at.is_not(None)
+        )
+    ).scalar()
+    stalled, stall_detail = _detect_stall(
+        running_started_at=running.started_at if running else None,
+        running_name=running_name,
+        newest_started_at=newest_started,
+        backlog=int(sched.get('backlog') or 0),
+        allow_new=allow_new,
+        now=now,
+    )
+    if stalled and alert.get('level') != 'blocked':
+        alert = dict(alert)
+        alert['level'] = 'stalled'
+        alert['label'] = 'Collection stalled — engine not running'
+
     ollama_at, ollama_live, ollama_lbl = _last_ollama_pulse(db, now)
     if ollama_live:
         phase = 'filtering'
@@ -461,6 +534,16 @@ def compute_vitals(db: Session) -> TowerVitals:
         avg_secs=avg_secs,
         now=now,
     )
+    if stalled:
+        # Never keep claiming "Searching X" for a run the dead engine abandoned
+        cd_mode, cd_secs = 'stalled', 0
+        if running is not None:
+            short = running_name if len(running_name) <= 36 else running_name[:33] + '…'
+            cd_title = f'Stuck · {short} — engine down?'
+            next_label = f'Stalled · {short}'
+        else:
+            cd_title = 'Stalled · engine not running'
+            next_label = 'Stalled · engine not running'
 
     return TowerVitals(
         heat_c=snap.cpu_c if snap.cpu_c is not None else snap.gpu_c,
@@ -511,6 +594,8 @@ def compute_vitals(db: Session) -> TowerVitals:
         detail_used_today=detail_used,
         detail_budget_per_day=config.DETAIL_BUDGET_PER_DAY,
         detail_pending=int(detail_pending),
+        stalled=stalled,
+        stall_detail=stall_detail,
     )
 
 

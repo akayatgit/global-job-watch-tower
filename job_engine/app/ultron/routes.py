@@ -102,6 +102,9 @@ def _vitals_json(v) -> dict:
         'detail_used_today': v.detail_used_today,
         'detail_budget_per_day': v.detail_budget_per_day,
         'detail_pending': v.detail_pending,
+        # Engine stall — honest header when worker/beat is dead
+        'stalled': v.stalled,
+        'stall_detail': v.stall_detail,
         # Build version — bumped once per push (scripts/bump_version.sh).
         # Drives the rail footer number and the orb's dot-color signal.
         'version': get_version(),
