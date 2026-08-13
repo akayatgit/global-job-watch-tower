@@ -10,6 +10,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.telegram_voice import VoiceLayer
@@ -151,6 +152,31 @@ def _voice_status_label() -> str:
     return 'OFF (no OPENAI_API_KEY)'
 
 
+def _rel_age(iso: str | None) -> str:
+    """'26h ago' style age so a stale pulse can never masquerade as live.
+
+    The 2026-08-13 stall looked alive on Telegram exactly because /health
+    printed day-old ollama pulses with no timestamps.
+    """
+    if not iso:
+        return ''
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return ''
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    secs = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+    if secs < 90:
+        return 'just now'
+    if secs < 5400:
+        return f'{int(secs // 60)}m ago'
+    hours = secs / 3600
+    if hours < 48:
+        return f'{int(hours)}h ago'
+    return f'{int(hours // 24)}d ago'
+
+
 def _board_health() -> str:
     d = _get('/api/ultron/health')
     v = d.get('vitals') or d
@@ -168,6 +194,8 @@ def _board_health() -> str:
         f"Alert: {v.get('alert_label') or '—'}",
         f"JobMaster voice AI: {_voice_status_label()}",
     ]
+    if v.get('stall_detail'):
+        lines.append(f"Stalled: {v['stall_detail']}")
     if v.get('planb_detail'):
         lines.append(f"Plan B: {v['planb_detail']}")
     events = d.get('recent_events') or []
@@ -175,7 +203,9 @@ def _board_health() -> str:
         lines.append('')
         lines.append('Recent pulses')
         for e in events[:8]:
-            lines.append(f"  · {e.get('kind')}: {(e.get('message') or '')[:80]}")
+            age = _rel_age(e.get('created_at'))
+            suffix = f' · {age}' if age else ''
+            lines.append(f"  · {e.get('kind')}: {(e.get('message') or '')[:80]}{suffix}")
     return '\n'.join(lines)
 
 

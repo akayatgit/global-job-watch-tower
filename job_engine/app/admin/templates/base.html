@@ -593,7 +593,7 @@
     </nav>
     <div class="header-controls">
       <span class="status-chip" id="tower-status" title="{{ vitals.alert_label if vitals else 'Tower' }}">
-        <span class="live-dot {% if vitals and vitals.alert_level == 'blocked' %}bad{% elif vitals and vitals.alert_level == 'planb' %}warn{% endif %}" id="status-dot" aria-hidden="true"></span>
+        <span class="live-dot {% if vitals and vitals.alert_level in ('blocked', 'stalled') %}bad{% elif vitals and vitals.alert_level == 'planb' %}warn{% endif %}" id="status-dot" aria-hidden="true"></span>
         <span class="lbl" id="status-label">{% if vitals %}{{ vitals.alert_label }}{% else %}Tower{% endif %}</span>
       </span>
       <button type="button" class="toggle-btn {% if vitals and not vitals.headless %}on{% endif %}" id="headless-toggle"
@@ -834,7 +834,7 @@ function applyAlert(v) {
   const label = document.getElementById('status-label');
   if (dot) {
     dot.classList.remove('bad', 'warn');
-    if (v.alert_level === 'blocked') dot.classList.add('bad');
+    if (v.alert_level === 'blocked' || v.alert_level === 'stalled') dot.classList.add('bad');
     else if (v.alert_level === 'planb') dot.classList.add('warn');
   }
   if (label) label.textContent = v.alert_label || 'Tower healthy';

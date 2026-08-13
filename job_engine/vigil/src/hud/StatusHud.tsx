@@ -5,7 +5,7 @@ import { IconBrowser, IconTrain, IconVigil } from './ModuleIcons'
 import { stepCampusFocus } from '../scene/campusNav'
 
 function chipTone(level?: string) {
-  if (level === 'red' || level === 'blocked') return 'fail'
+  if (level === 'red' || level === 'blocked' || level === 'stalled') return 'fail'
   if (level === 'orange' || level === 'planb' || level === 'warn') return 'warn'
   return 'ok'
 }
@@ -392,6 +392,10 @@ export function StatusHud() {
           >
             Dismiss
           </button>
+        </div>
+      ) : v?.alert_level === 'stalled' ? (
+        <div className="alert-strip interactive" title={v?.stall_detail || ''}>
+          <span>Collection stalled — tower engine not running. Restart the stack.</span>
         </div>
       ) : v?.filter_mode_policy === 'keyword' || v?.alert_level === 'planb' ? (
         <div className="alert-strip planb">Plan B keyword filter — heat/GPU recovery</div>

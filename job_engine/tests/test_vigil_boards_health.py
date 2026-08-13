@@ -49,5 +49,56 @@ class BoardHealthIncludesVoiceStatusTests(unittest.TestCase):
         self.assertIn('JobMaster voice AI: OFF (no OPENAI_API_KEY)', text)
 
 
+class BoardHealthStallHonestyTests(unittest.TestCase):
+    """2026-08-13: day-old pulses with no timestamps + 'Tower healthy' hid a
+    full engine outage. The board must show pulse ages and the stall reason."""
+
+    def _render(self, payload):
+        with patch.object(vigil_boards, '_get', return_value=payload):
+            with patch.dict('os.environ', {'JOBMASTER_VOICE_LLM': 'false'}):
+                return vigil_boards._board_health()
+
+    def test_recent_pulses_carry_relative_age(self):
+        from datetime import datetime, timedelta, timezone
+
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=26)).isoformat()
+        text = self._render({
+            'vitals': {'heat_c': 47, 'heat_label': 'Cool'},
+            'recent_events': [{
+                'id': 1,
+                'kind': 'ollama_filter',
+                'message': 'kept 4/7 for junior software developer',
+                'created_at': old_ts,
+            }],
+        })
+        self.assertIn('ollama_filter: kept 4/7 for junior software developer · 26h ago', text)
+
+    def test_stall_detail_line_shown_when_engine_dead(self):
+        text = self._render({
+            'vitals': {
+                'heat_c': 47,
+                'heat_label': 'Cool',
+                'alert_label': 'Collection stalled — engine not running',
+                'stall_detail': '"Junior Software Developer" has shown as running for 26h',
+            },
+            'recent_events': [],
+        })
+        self.assertIn('Alert: Collection stalled — engine not running', text)
+        self.assertIn('Stalled: "Junior Software Developer" has shown as running for 26h', text)
+
+
+class RelAgeTests(unittest.TestCase):
+    def test_rel_age_buckets(self):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        self.assertEqual(vigil_boards._rel_age(now.isoformat()), 'just now')
+        self.assertEqual(vigil_boards._rel_age((now - timedelta(minutes=20)).isoformat()), '20m ago')
+        self.assertEqual(vigil_boards._rel_age((now - timedelta(hours=26)).isoformat()), '26h ago')
+        self.assertEqual(vigil_boards._rel_age((now - timedelta(days=3)).isoformat()), '3d ago')
+        self.assertEqual(vigil_boards._rel_age(None), '')
+        self.assertEqual(vigil_boards._rel_age('not-a-date'), '')
+
+
 if __name__ == '__main__':
     unittest.main()
