@@ -22,8 +22,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: job_engine/requirements.txt
+      # Full app dependencies — test modules import app code (sqlalchemy,
+      # celery, fastapi). Installing only python-dotenv made every test file
+      # with a real import fail as unittest.loader._FailedTest, which gated
+      # ALL deploys from 2026-08-08 to 2026-08-13 (the tower ran Aug 7 code
+      # while the engine outage could not be recovered remotely).
       - name: Install test dependencies
-        run: pip install python-dotenv
+        run: pip install -r job_engine/requirements.txt
       - name: Run JobMaster contract suite
         run: |
           cd job_engine
