@@ -590,6 +590,7 @@ broad catch gets wiped and rebuilt on the new base.
 | JM-253 | Ashok: `/resetdata` | Staged preview with honest counts (jobs / unwatched companies wiped · watched companies + every search definition + guests/alerts/history kept) and a disturbance warning naming any live search that will be cancelled. Expires in 10 minutes; `/resetcancel` discards. |
 | JM-254 | Ashok: `/resetconfirm` within 10 minutes | "🧹 Reset done — wiped …" and the rebuild starts by itself: every search becomes immediately due and re-runs one by one (no empty tower waiting for tomorrow's crons). A second `/resetconfirm` says "No reset staged." Guests sending these commands get the ordinary denial. |
 | JM-255 | After a company run, open any new job later | Detail-page verification ran (full mode): real experience years / degrees / certifications on the record — the Omniverse-class lie cannot survive to the next day. |
+| JM-256 | Ashok: `/companies` | Full MNC roster, NEVER truncated (long lists chunk into multiple messages): `MNC WATCHLIST · N companies · N on [· N paused]`, then numbered rows `1. Deloitte — 12 jobs (5 in 24h) · scraped 2h ago` sorted most-jobs-first; paused companies flagged `· paused`, never-scraped show `scraped never`. Empty watchlist points to `/addcompany <name>`. Guests sending `/companies` get the ordinary denial. |
 
 ## 15. Execution log
 

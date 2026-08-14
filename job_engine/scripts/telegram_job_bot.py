@@ -116,6 +116,7 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     # MNC-first collection (2026-08-14): grow the giant watchlist from the
     # phone; reset the tower's caught data behind a two-step confirm.
     'addcompany',
+    'companies',
     'resetdata',
     'resetconfirm',
     'resetcancel',
@@ -140,6 +141,7 @@ OWNER_COMMANDS = frozenset((
 ))
 OWNER_MENU = [
     {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
+    {'command': 'companies', 'description': 'Full MNC watchlist roster'},
     {'command': 'resetdata', 'description': 'Stage a tower data reset'},
     {'command': 'resetconfirm', 'description': 'Execute the staged reset'},
     {'command': 'resetcancel', 'description': 'Discard the staged reset'},
@@ -531,6 +533,8 @@ class JobMasterTelegramBot:
             return self._push_stats()
         if command == 'addcompany':
             return self._add_company_reply(arg)
+        if command == 'companies':
+            return self._companies_reply()
         if command == 'resetdata':
             return self._stage_reset(chat_id)
         if command == 'resetconfirm':
@@ -800,6 +804,57 @@ class JobMasterTelegramBot:
         )
         tail = f", {result['failed']} failed" if result['failed'] else ''
         return f"Sent to {result['sent']}/{result['total']} subscriber(s){tail}."
+
+    @staticmethod
+    def _ago(iso: str | None) -> str:
+        """Relative time for roster rows ('2h ago'), per the timestamp law."""
+        from datetime import datetime, timezone
+        if not iso:
+            return 'never'
+        try:
+            stamp = datetime.fromisoformat(str(iso))
+        except ValueError:
+            return 'never'
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        seconds = max(0, int((datetime.now(timezone.utc) - stamp).total_seconds()))
+        if seconds < 90:
+            return 'just now'
+        minutes = seconds // 60
+        if minutes < 60:
+            return f'{minutes}m ago'
+        hours = minutes // 60
+        if hours < 48:
+            return f'{hours}h ago'
+        return f'{hours // 24}d ago'
+
+    def _companies_reply(self) -> str:
+        """/companies — the full MNC roster, never truncated (long replies
+        are already chunked by the send path)."""
+        try:
+            data = self.engine.api_get('/api/watchlist/companies', None)
+        except Exception:
+            return 'Tower is unreachable right now — try /companies again in a minute.'
+        rows = data.get('companies') if isinstance(data, dict) else None
+        if not rows:
+            return (
+                'No companies on the watchlist yet — add the first giant '
+                'with /addcompany <name>.'
+            )
+        on = sum(1 for row in rows if row.get('enabled'))
+        paused = len(rows) - on
+        header = f'MNC WATCHLIST · {len(rows)} companies · {on} on'
+        if paused:
+            header += f' · {paused} paused'
+        lines = [header, '']
+        for i, row in enumerate(rows, 1):
+            state = '' if row.get('enabled') else ' · paused'
+            lines.append(
+                f"{i}. {row.get('company')} — {row.get('jobs_total', 0)} jobs "
+                f"({row.get('jobs_24h', 0)} in 24h) · "
+                f"scraped {self._ago(row.get('last_run_at'))}{state}"
+            )
+        return '\n'.join(lines)
 
     def _add_company_reply(self, arg: str) -> str:
         """/addcompany <name> — grow the MNC watchlist from the phone."""

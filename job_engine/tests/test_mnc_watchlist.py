@@ -21,8 +21,9 @@ from app.mnc_watchlist import (
     display_name,
     needles,
     seed_watchlist,
+    watchlist_roster,
 )
-from app.models import Company, SearchConfig
+from app.models import Company, JobMaster, SearchConfig
 
 
 def make_session():
@@ -175,6 +176,58 @@ class AddWatchCompanyTests(unittest.TestCase):
         cfg, created = add_watch_company(self.db, '   ')
         self.assertIsNone(cfg)
         self.assertFalse(created)
+
+
+class WatchlistRosterTests(unittest.TestCase):
+    """Full roster for the owner /companies command."""
+
+    def setUp(self):
+        from datetime import datetime, timedelta, timezone
+
+        self.db = make_session()
+        self.now = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
+        self.deloitte, _ = add_watch_company(self.db, 'Deloitte')
+        self.oracle, _ = add_watch_company(self.db, 'Oracle')
+        self.apple, _ = add_watch_company(self.db, 'Apple')
+        self.apple.enabled = False
+        self.deloitte.last_run_at = self.now - timedelta(hours=2)
+        self.db.commit()
+        for i, (cfg, when) in enumerate([
+            (self.deloitte, self.now - timedelta(hours=1)),
+            (self.deloitte, self.now - timedelta(hours=30)),
+            (self.oracle, self.now - timedelta(hours=3)),
+        ]):
+            self.db.add(JobMaster(
+                linkedin_job_id=str(1000 + i),
+                title='Analyst',
+                job_url=f'https://www.linkedin.com/jobs/view/{1000 + i}/',
+                search_config_id=cfg.id,
+                scraped_at=when,
+            ))
+        self.db.commit()
+
+    def test_roster_counts_sorts_and_flags(self):
+        rows = watchlist_roster(self.db, now=self.now)
+        self.assertEqual(
+            [r['company'] for r in rows], ['Deloitte', 'Oracle', 'Apple'],
+        )
+        deloitte, oracle, apple = rows
+        self.assertEqual(deloitte['jobs_total'], 2)
+        self.assertEqual(deloitte['jobs_24h'], 1)
+        self.assertIn('2026-08-15T10:00', deloitte['last_run_at'])
+        self.assertEqual(oracle['jobs_total'], 1)
+        self.assertEqual(oracle['jobs_24h'], 1)
+        self.assertFalse(apple['enabled'])
+        self.assertIsNone(apple['last_run_at'])
+
+    def test_roster_ignores_role_keyword_searches(self):
+        self.db.add(SearchConfig(
+            name='Junior Data Analyst', keywords='junior data analyst',
+            enabled=True, schedule_cron='0 5 * * *',
+        ))
+        self.db.commit()
+        rows = watchlist_roster(self.db, now=self.now)
+        self.assertEqual(len(rows), 3)
 
 
 if __name__ == '__main__':

@@ -206,6 +206,40 @@ def add_watch_company(
     return cfg, True
 
 
+def watchlist_roster(db, *, now=None) -> list[dict]:
+    """Full roster for the owner /companies command — every company-scoped
+    search with catch counts, never truncated (unlike the boards)."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import JobMaster
+
+    now = now or datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+    rows: list[dict] = []
+    for cfg in db.execute(select(SearchConfig)).scalars():
+        target = (cfg.target_company or '').strip()
+        if not target:
+            continue
+        jobs_total = db.query(JobMaster).filter(
+            JobMaster.search_config_id == cfg.id
+        ).count()
+        jobs_24h = db.query(JobMaster).filter(
+            JobMaster.search_config_id == cfg.id,
+            JobMaster.scraped_at >= day_ago,
+        ).count()
+        rows.append({
+            'company': display_name(target),
+            'enabled': bool(cfg.enabled),
+            'jobs_total': jobs_total,
+            'jobs_24h': jobs_24h,
+            'last_run_at': (
+                cfg.last_run_at.isoformat() if cfg.last_run_at else None
+            ),
+        })
+    rows.sort(key=lambda r: (-r['jobs_total'], r['company'].lower()))
+    return rows
+
+
 def seed_watchlist(db) -> dict[str, int]:
     """Upsert the curated catalogue and put role-keyword searches to sleep.
 
