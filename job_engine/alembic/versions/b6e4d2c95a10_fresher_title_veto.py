@@ -41,7 +41,13 @@ FRESHER_TITLE_SQL = (
 
 
 def upgrade() -> None:
-    op.execute(
+    # exec_driver_sql, NOT op.execute: op.execute wraps the string in
+    # sqlalchemy.text(), which read every regex "(?:" group as a bind
+    # parameter (":seniors", ":team", …) and aborted with
+    # InvalidRequestError — this single migration blocked ALL ThinkPad
+    # deploys on 2026-08-14 until fixed. Driver-level execution passes the
+    # SQL to psycopg2 verbatim.
+    op.get_bind().exec_driver_sql(
         "UPDATE jobs_master "
         "SET experience_band = NULL, "
         "    experience_label = 'Seniority in title — pending verification' "
