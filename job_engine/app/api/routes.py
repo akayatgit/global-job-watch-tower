@@ -21,6 +21,16 @@ class WatchCompanyIn(BaseModel):
     name: str
 
 
+@router.get('/watchlist/companies')
+def list_watchlist_companies(db: Session = Depends(get_db)):
+    """Full MNC roster (owner /companies): every company-scoped search with
+    catch counts — most jobs first, never truncated."""
+    from app.mnc_watchlist import watchlist_roster
+
+    rows = watchlist_roster(db)
+    return {'total': len(rows), 'companies': rows}
+
+
 @router.post('/watchlist/companies', status_code=201)
 def add_watchlist_company(payload: WatchCompanyIn, db: Session = Depends(get_db)):
     """Add a giant to the MNC watchlist: watched company + company-scoped

@@ -59,6 +59,7 @@ class FakeEngine:
             'enabled_searches': 55,
             'active_searches': ['MNC · Deloitte — Fresher'],
         }
+        self.companies_roster: dict = {'total': 0, 'companies': []}
 
     def handle(self, text: str, chat_id: str) -> str:
         self.calls.append((text, chat_id))
@@ -70,6 +71,8 @@ class FakeEngine:
         self.api_calls.append((path, params))
         if path == '/api/tower/reset-preview':
             return self.reset_preview
+        if path == '/api/watchlist/companies':
+            return self.companies_roster
         return {}
 
     def company_jobs(self, company: str, days: int, chat_id: str) -> str:
@@ -359,6 +362,45 @@ class TelegramBotContractTests(unittest.TestCase):
         bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
         bot.process('guest', '/addcompany nvidia')
         self.assertEqual(posts, [])
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
+
+    def test_owner_companies_lists_the_full_roster_untruncated(self):
+        from datetime import datetime, timedelta, timezone
+
+        recent = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        self.engine.companies_roster = {
+            'total': 55,
+            'companies': [
+                {
+                    'company': f'Giant {i}',
+                    'enabled': i != 55,
+                    'jobs_total': 100 - i,
+                    'jobs_24h': 3,
+                    'last_run_at': recent if i == 1 else None,
+                }
+                for i in range(1, 56)
+            ],
+        }
+        bot = self._mnc_bot()
+        bot.process('owner', '/companies')
+        reply = '\n'.join(text for _chat, text in self.api.sent)
+        self.assertIn('MNC WATCHLIST · 55 companies · 54 on · 1 paused', reply)
+        self.assertIn('1. Giant 1 — 99 jobs (3 in 24h) · scraped 2h ago', reply)
+        # Never truncated: the last giant renders too, with honest flags.
+        self.assertIn('55. Giant 55 — 45 jobs (3 in 24h) · scraped never · paused', reply)
+
+    def test_owner_companies_empty_watchlist_points_to_addcompany(self):
+        self.engine.companies_roster = {'total': 0, 'companies': []}
+        bot = self._mnc_bot()
+        bot.process('owner', '/companies')
+        self.assertIn('/addcompany <name>', self.api.sent[-1][1])
+
+    def test_guest_companies_is_denied(self):
+        bot = self._mnc_bot()
+        bot.process('guest', '/companies')
         self.assertEqual(
             self.api.sent,
             [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
