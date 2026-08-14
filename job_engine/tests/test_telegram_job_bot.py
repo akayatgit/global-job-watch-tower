@@ -48,12 +48,29 @@ class FakeEngine:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
         self.company_calls: list[tuple[str, int, str]] = []
+        self.api_calls: list[tuple[str, dict | None]] = []
+        self.reset_preview = {
+            'jobs': 4120,
+            'runs': 890,
+            'request_logs': 3000,
+            'companies': 310,
+            'companies_watched_kept': 12,
+            'companies_unwatched_wiped': 298,
+            'enabled_searches': 55,
+            'active_searches': ['MNC · Deloitte — Fresher'],
+        }
 
     def handle(self, text: str, chat_id: str) -> str:
         self.calls.append((text, chat_id))
         if text == '/new':
             return 'Search reset. Send a role, city, or job-market question.'
         return '1. AI Engineer — Acme — Fresher\nhttps://www.linkedin.com/jobs/view/4448000001/'
+
+    def api_get(self, path: str, params: dict | None = None):
+        self.api_calls.append((path, params))
+        if path == '/api/tower/reset-preview':
+            return self.reset_preview
+        return {}
 
     def company_jobs(self, company: str, days: int, chat_id: str) -> str:
         self.company_calls.append((company, days, chat_id))
@@ -292,6 +309,135 @@ class TelegramBotContractTests(unittest.TestCase):
         )
         bot.process('guest', '/companyjobs deloitte 7')
         self.assertEqual(self.engine.company_calls, [])
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
+
+    def _mnc_bot(self, tower_post=None):
+        return JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            tower_post=tower_post,
+        )
+
+    def test_owner_addcompany_adds_to_watchlist_and_queues_first_scrape(self):
+        posts: list[tuple[str, dict | None]] = []
+
+        def tower_post(path, payload=None):
+            posts.append((path, payload))
+            return {
+                'company': 'Nvidia',
+                'created': True,
+                'first_scrape_queued': True,
+            }
+
+        bot = self._mnc_bot(tower_post)
+        bot.process('owner', '/addcompany nvidia')
+        self.assertEqual(posts, [('/api/watchlist/companies', {'name': 'nvidia'})])
+        reply = self.api.sent[-1][1]
+        self.assertIn('✅ Nvidia added to the MNC watchlist', reply)
+        self.assertIn('First scrape is queued now', reply)
+
+    def test_owner_addcompany_existing_company_is_honest(self):
+        bot = self._mnc_bot(lambda _p, _b=None: {'company': 'Deloitte', 'created': False})
+        bot.process('owner', '/addcompany Deloitte')
+        self.assertIn('already on the watchlist', self.api.sent[-1][1])
+
+    def test_owner_addcompany_without_name_shows_usage(self):
+        posts: list = []
+        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
+        bot.process('owner', '/addcompany')
+        self.assertEqual(posts, [])
+        self.assertIn('Usage: /addcompany <company name>', self.api.sent[-1][1])
+
+    def test_guest_addcompany_is_denied(self):
+        posts: list = []
+        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
+        bot.process('guest', '/addcompany nvidia')
+        self.assertEqual(posts, [])
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
+
+    def test_resetdata_stages_with_counts_and_disturbance_warning(self):
+        bot = self._mnc_bot()
+        bot.process('owner', '/resetdata')
+        reply = self.api.sent[-1][1]
+        self.assertIn('⚠️ TOWER DATA RESET — staged', reply)
+        self.assertIn('4120 jobs · 298 unwatched companies · 890 run records', reply)
+        self.assertIn('12 watched companies', reply)
+        self.assertIn('1 live search(es) will be cancelled — MNC · Deloitte — Fresher', reply)
+        self.assertIn('/resetconfirm within 10 minutes', reply)
+
+    def test_resetconfirm_without_staging_refuses(self):
+        posts: list = []
+        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
+        bot.process('owner', '/resetconfirm')
+        self.assertEqual(posts, [])
+        self.assertIn('No reset staged', self.api.sent[-1][1])
+
+    def test_staged_reset_confirm_executes_the_wipe(self):
+        posts: list[tuple[str, dict | None]] = []
+
+        def tower_post(path, payload=None):
+            posts.append((path, payload))
+            return {
+                'jobs': 4120,
+                'companies_unwatched_wiped': 298,
+                'runs': 890,
+                'cancelled_active': ['MNC · Deloitte — Fresher'],
+                'done': True,
+            }
+
+        bot = self._mnc_bot(tower_post)
+        bot.process('owner', '/resetdata')
+        bot.process('owner', '/resetconfirm')
+        self.assertEqual(posts, [('/api/tower/reset', {})])
+        reply = self.api.sent[-1][1]
+        self.assertIn('🧹 Reset done — wiped 4120 jobs', reply)
+        self.assertIn('cancelled 1 live search(es)', reply)
+        self.assertIn('re-runs automatically', reply)
+        # Confirm consumed the staging — a second confirm cannot re-fire.
+        bot.process('owner', '/resetconfirm')
+        self.assertEqual(len(posts), 1)
+        self.assertIn('No reset staged', self.api.sent[-1][1])
+
+    def test_stale_staged_reset_expires_instead_of_firing(self):
+        posts: list = []
+        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
+        bot.process('owner', '/resetdata')
+        self.sessions.set_state('pending_reset_at:owner', '1000.0')
+        bot.process('owner', '/resetconfirm')
+        self.assertEqual(posts, [])
+        self.assertIn('expired after 10 minutes', self.api.sent[-1][1])
+
+    def test_resetcancel_discards_the_staging(self):
+        posts: list = []
+        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
+        bot.process('owner', '/resetdata')
+        bot.process('owner', '/resetcancel')
+        self.assertIn('nothing was wiped', self.api.sent[-1][1])
+        bot.process('owner', '/resetconfirm')
+        self.assertEqual(posts, [])
+        self.assertIn('No reset staged', self.api.sent[-1][1])
+
+    def test_reset_confirm_reports_tower_failure_honestly(self):
+        def tower_post(_path, _payload=None):
+            raise OSError('tower down')
+
+        bot = self._mnc_bot(tower_post)
+        bot.process('owner', '/resetdata')
+        bot.process('owner', '/resetconfirm')
+        self.assertIn('did NOT execute', self.api.sent[-1][1])
+
+    def test_guest_resetdata_is_denied(self):
+        bot = self._mnc_bot()
+        bot.process('guest', '/resetdata')
         self.assertEqual(
             self.api.sent,
             [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],

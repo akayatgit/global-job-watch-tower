@@ -305,6 +305,18 @@ def _http_get(path: str, params: dict[str, Any] | None = None) -> dict | list:
         return json.loads(resp.read().decode('utf-8'))
 
 
+def _http_post(path: str, payload: dict[str, Any] | None = None) -> dict:
+    """JSON POST to the local tower API (owner actions: watchlist, reset)."""
+    req = urllib.request.Request(
+        BASE + path,
+        data=json.dumps(payload or {}).encode('utf-8'),
+        headers={'Accept': 'application/json', 'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
 def _extract_cities(text: str) -> list[str]:
     low = (text or '').lower()
     found: list[tuple[int, str]] = []

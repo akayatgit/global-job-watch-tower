@@ -5,12 +5,68 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from app.api.schemas import ConfigIn, ConfigOut, JobOut, RunOut, RunRequest
 from app.db import get_db
 from app.models import Company, ConsoleLog, JobMaster, ScrapeRun, SearchConfig
 from app.tasks import _config_busy, run_scrape
 
 router = APIRouter(prefix='/api')
+
+
+# ---------- MNC watchlist (company-first collection, 2026-08-14) ----------
+
+class WatchCompanyIn(BaseModel):
+    name: str
+
+
+@router.post('/watchlist/companies', status_code=201)
+def add_watchlist_company(payload: WatchCompanyIn, db: Session = Depends(get_db)):
+    """Add a giant to the MNC watchlist: watched company + company-scoped
+    fresher search + immediate first scrape. Idempotent by match needle."""
+    from app.mnc_watchlist import add_watch_company, display_name
+
+    cfg, created = add_watch_company(db, payload.name)
+    if cfg is None:
+        raise HTTPException(422, 'company name required')
+    db.commit()
+    db.refresh(cfg)
+    first_scrape_queued = False
+    if created and not _config_busy(db, cfg.id):
+        run = ScrapeRun(
+            search_config_id=cfg.id,
+            run_type='one_off',
+            target_date=datetime.now(timezone.utc).date(),
+            status='dispatched',
+        )
+        db.add(run)
+        db.commit()
+        run_scrape.delay(run.id)
+        first_scrape_queued = True
+    return {
+        'company': display_name(cfg.target_company or ''),
+        'created': created,
+        'search_name': cfg.name,
+        'enabled': cfg.enabled,
+        'first_scrape_queued': first_scrape_queued,
+    }
+
+
+# ---------- Tower data reset (base rebuild, 2026-08-14) ----------
+
+@router.get('/tower/reset-preview')
+def tower_reset_preview(db: Session = Depends(get_db)):
+    from app.tower_reset import reset_preview
+
+    return reset_preview(db)
+
+
+@router.post('/tower/reset')
+def tower_reset(db: Session = Depends(get_db)):
+    from app.tower_reset import reset_tower_data
+
+    return reset_tower_data(db)
 
 
 # ---------- search configs ----------
