@@ -640,6 +640,20 @@ it, shows recipient count) → `/pushconfirm`
  band-NULL clean titles stay pending verification). Headers must say what
  they count ("N fresher openings"). Never reintroduce an all-experience
  guest listing without Ashok's explicit sign-off.
+- **/topfreshers video gems + owner /help (2026-08-14):** Owner command
+ `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
+ video gems: detail-verified jobs whose employer EXPLICITLY said fresher /
+ fresh graduate / no experience / 0 years in the title or details (or a
+ parsed stated minimum of 0 years / stated fresher label). Explicit means
+ stated — LinkedIn's Entry tag and the `Fresher track (LinkedIn
+ Internship/Entry)` silence-stamp label NEVER qualify
+ (`app/seniority.py::explicit_fresher_clause`, exposed as
+ `/api/jobs?explicit_fresher=1`; `skill=` is a word-bounded match on title
+ + details so `sql` never matches "MySQL"). Only 0 is supported — any other
+ trailing number gets an honest refusal + usage, never a loosened result.
+ Lists cap at 30 with an honest "…and N more gems" line. Owner `/help`
+ shows the full command sheet with options; guests keep the simple
+ JobMaster help line — the ops deck stays invisible to customer chats.
 - **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
  "very few will click on set alert option... why can't we automatically
  send one alert per day on the telegram guest's last search, so we can

@@ -60,6 +60,22 @@ class FakeEngine:
             'active_searches': ['MNC · Deloitte — Fresher'],
         }
         self.companies_roster: dict = {'total': 0, 'companies': []}
+        self.jobs_rows: list[dict] = [
+            {
+                'title': 'Data Analyst (Fresher)',
+                'company': 'Deloitte',
+                'city_key': None,
+                'location': 'Bengaluru, Karnataka, India',
+                'job_url': 'https://www.linkedin.com/jobs/view/4448000301/',
+            },
+            {
+                'title': 'SQL Developer — 0-1 years',
+                'company': 'Oracle',
+                'city_key': None,
+                'location': 'Hyderabad, Telangana, India',
+                'job_url': 'https://www.linkedin.com/jobs/view/4448000302/',
+            },
+        ]
 
     def handle(self, text: str, chat_id: str) -> str:
         self.calls.append((text, chat_id))
@@ -73,6 +89,8 @@ class FakeEngine:
             return self.reset_preview
         if path == '/api/watchlist/companies':
             return self.companies_roster
+        if path == '/api/jobs':
+            return self.jobs_rows
         return {}
 
     def company_jobs(self, company: str, days: int, chat_id: str) -> str:
@@ -196,12 +214,31 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(len(self.engine.calls), 1)
 
     def test_help_is_jobmaster_not_generic_assistant(self):
-        self.bot.process('42', '/help')
+        # Guests keep the simple JobMaster line — never the ops sheet.
+        self.bot.process('guest-77', '/help')
         self.assertEqual(
             self.api.sent[-1][1],
             'JobMaster provides verified jobs and live job-market insights. '
             'Ask naturally in any sentence.',
         )
+
+    def test_owner_help_lists_every_command_with_options(self):
+        # Chat '42' is the owner — /help shows the full command sheet.
+        self.bot.process('42', '/help')
+        text = self.api.sent[-1][1]
+        self.assertIn('JOBMASTER · ALL COMMANDS', text)
+        for fragment in (
+            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0',
+            '/companyjobs <company> [24h | 7 | 30]',
+            '/addcompany <name>',
+            '/history <@username or ID> [1–40]',
+            '-unfiltered',
+        ):
+            self.assertIn(fragment, text)
+        from scripts.telegram_job_bot import OWNER_MENU
+
+        for item in OWNER_MENU:
+            self.assertIn(f"/{item['command']}", text)
 
     def test_start_launches_the_button_flow_not_the_old_text_blurb(self):
         self.bot.process('42', '/start')
@@ -1817,6 +1854,127 @@ class NormalizeUpdateTests(unittest.TestCase):
         self.assertFalse(is_callback)
         self.assertIsNone(text)
         self.assertEqual(photo_file_id, 'only')
+
+
+class TopFreshersCommandTests(unittest.TestCase):
+    """/topfreshers — video gems: verified + explicitly-stated fresher/0-exp
+    only, with company: / skill: / role: filters (owner-only)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.engine = FakeEngine()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'42'},
+        )
+
+    def tearDown(self):
+        self.env_patch.stop()
+        self.guests_patch.stop()
+        self.tmp.cleanup()
+
+    def _last_jobs_params(self) -> dict:
+        calls = [p for path, p in self.engine.api_calls if path == '/api/jobs']
+        self.assertTrue(calls, 'expected an /api/jobs call')
+        return calls[-1] or {}
+
+    def test_bare_zero_lists_all_verified_explicit_gems(self):
+        self.bot.process('42', '/topfreshers 0')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('verified'), 1)
+        self.assertEqual(params.get('explicit_fresher'), 1)
+        self.assertNotIn('company', params)
+        self.assertNotIn('skill', params)
+        text = self.api.sent[-1][1]
+        self.assertIn('TOP FRESHER GEMS', text)
+        self.assertIn('Data Analyst (Fresher) — Deloitte — Bengaluru', text)
+        self.assertIn('https://www.linkedin.com/jobs/view/4448000301/', text)
+
+    def test_company_filter_reaches_the_api(self):
+        self.bot.process('42', '/topfreshers company:Deloitte 0')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('company'), 'Deloitte')
+        self.assertEqual(params.get('verified'), 1)
+        self.assertEqual(params.get('explicit_fresher'), 1)
+        self.assertIn('Filters: company: Deloitte', self.api.sent[-1][1])
+
+    def test_multi_word_company_parses_whole(self):
+        self.bot.process('42', '/topfreshers company:Tata Consultancy Services 0')
+        self.assertEqual(self._last_jobs_params().get('company'), 'Tata Consultancy Services')
+
+    def test_skill_filter_reaches_the_api(self):
+        self.bot.process('42', '/topfreshers skill:sql 0')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('skill'), 'sql')
+        self.assertEqual(params.get('explicit_fresher'), 1)
+
+    def test_role_maps_to_family_when_known_else_title_terms(self):
+        self.bot.process('42', '/topfreshers role:data 0')
+        self.assertEqual(self._last_jobs_params().get('role_family'), 'data')
+        self.bot.process('42', '/topfreshers role:tester 0')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('title_terms'), 'tester')
+        self.assertNotIn('role_family', params)
+
+    def test_combined_filters(self):
+        self.bot.process('42', '/topfreshers company:Deloitte skill:sql 0')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('company'), 'Deloitte')
+        self.assertEqual(params.get('skill'), 'sql')
+
+    def test_nonzero_level_is_refused_honestly(self):
+        self.bot.process('42', '/topfreshers 2')
+        text = self.api.sent[-1][1]
+        self.assertIn('Only 0 is supported', text)
+        self.assertIn('Usage: /topfreshers', text)
+        self.assertEqual(
+            [p for path, p in self.engine.api_calls if path == '/api/jobs'], [],
+        )
+
+    def test_empty_result_mentions_the_verification_queue(self):
+        self.engine.jobs_rows = []
+        self.bot.process('42', '/topfreshers company:Nvidia 0')
+        text = self.api.sent[-1][1]
+        self.assertIn('No checked explicit-fresher gems', text)
+        self.assertIn('/health', text)
+
+    def test_long_lists_cap_with_an_honest_more_line(self):
+        self.engine.jobs_rows = [
+            {
+                'title': f'Fresher Analyst {i}',
+                'company': 'Deloitte',
+                'city_key': None,
+                'location': 'Bengaluru',
+                'job_url': f'https://www.linkedin.com/jobs/view/{4448001000 + i}/',
+            }
+            for i in range(35)
+        ]
+        self.bot.process('42', '/topfreshers 0')
+        text = self.api.sent[-1][1]
+        self.assertIn('Fresher Analyst 29', text)
+        self.assertNotIn('Fresher Analyst 30', text)
+        self.assertIn('…and 5 more gems', text)
+
+    def test_guests_never_reach_topfreshers(self):
+        self.bot.process('guest-9', '/topfreshers 0')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+        self.assertEqual(self.engine.api_calls, [])
 
 
 if __name__ == '__main__':

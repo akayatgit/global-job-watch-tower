@@ -16,7 +16,7 @@ from app.relevance import filter_relevant
 from app.runtime_settings import get_detail_enrich_mode
 from app.scraper.linkedin import PageResult, TransientFetchError, scrape_search
 from app.scraper.requirements import JobRequirements, extract_requirements
-from app.seniority import title_seniority_veto
+from app.seniority import FRESHER_TRACK_SILENCE_LABEL, title_seniority_veto
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def card_requirements(
             label = label or 'Seniority in title — pending verification'
         else:
             band = 'Fresher'
-            label = label or 'Fresher track (LinkedIn Internship/Entry)'
+            label = label or FRESHER_TRACK_SILENCE_LABEL
     return req, band, label
 
 
