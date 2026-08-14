@@ -750,6 +750,19 @@ class JobMasterEngine:
         if GREETING_RE.match(raw):
             return self._start_onboarding(chat_id, update_id=update_id)
 
+        company_query = _company_query(raw)
+        if company_query is not None:
+            name, days, stated_outright = company_query
+            company_result = self._company_search(
+                name,
+                days,
+                chat_id,
+                stated_outright=stated_outright,
+                update_id=update_id,
+            )
+            if company_result is not None:
+                return company_result
+
         intent = self.interpreter.parse(raw)
         if intent.kind == 'insight':
             reply = self._insight_reply(intent)
