@@ -211,6 +211,21 @@ need to be told twice.
  Cloudflare tunnel — not Tailscale, not Vercel. Job cards render tower
  rows verbatim (no-invented-facts law extends to marketing content).
  Full contract: `documents/avatarpitch-integration-plan.md`.
+- **2026-08-14 · AvatarPitch v3 (final architecture) — Vercel app, ThinkPad
+ files.** Ashok's final ruling, same day: AvatarPitch runs **only on
+ Vercel** (supersedes the run-on-ThinkPad plan); every file it touches
+ (Pinterest background mirrors, rendered reels, render-status docs) lives
+ on the ThinkPad via the tower's asset storage API — `PUT` (token-gated,
+ ≤100 MB, strict key whitelist, atomic overwrite) and `GET` (**public by
+ design** — media tags can't send bearer headers; security = unguessable
+ capability URLs + no listing endpoint) at `/api/partner/v1/assets/{key}`,
+ served with Range/206 for iOS Safari. GC is **48h tower-owned** (was 72h
+ safety-net). Operational consequence: Cloudflare Access needs a bypass
+ policy on `/api/partner/*` — Vercel and iPhones can't pass the OTP gate;
+ everything else stays OTP-locked. Partner API went live same day
+ (health: 5,090 jobs). Lesson: the partner surface is now internet-facing
+ — every future partner endpoint must assume hostile traffic, not
+ localhost.
 
 ## Honesty note on the codeword
 

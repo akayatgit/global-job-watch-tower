@@ -5,12 +5,18 @@
 **Medium:** Ashok relays between agents
 **Status:** 2026-08-14 — Ashok has decided the direction (see Ruling).
 **v2 same day:** interface switched from direct SQL to a **tower-owned
-API** — "we need all thinking to be here." **Accepted by AvatarPitch same
-day; tower side §5.1 is BUILT** (`job_engine/app/api/partner.py`, tests in
-`job_engine/tests/test_partner_api.py`, host setup in
-`scripts/setup_avatarpitch_host.sh`) — pending Ashok's deploy + token.
-This document is the tower-side contract answering AvatarPitch's
-integration request in full.
+API** — "we need all thinking to be here." Accepted by AvatarPitch;
+tower side §5.1 BUILT, deployed, and verified live (`{"ok":true,
+"jobs_total":5090,...}` on the ThinkPad).
+**v3 same day (final architecture):** AvatarPitch runs **only on Vercel**
+— it never runs on the ThinkPad. All its files (Pinterest background
+mirrors, rendered reels, render-status docs) live on the ThinkPad through
+a new tower **asset storage API** (§2.2b) over
+`https://tower.jobmaster.agency`, with **48h garbage collection**
+(retention is now tower-owned; the earlier 72h "safety net" framing and
+the §2.4 ThinkPad-runtime / §2.5 LAN-hosting sections are superseded —
+the guest data-flow is Vercel ↔ tunnel ↔ tower). This requires a
+**Cloudflare Access bypass** for `/api/partner/*` (see §2.5b).
 
 ---
 
@@ -119,6 +125,44 @@ this week." Params: `fresh_days` (default 7), `min_jobs` (default 4),
 **`GET /api/partner/v1/health`** — `200` + `{ "ok": true, "jobs_total": N,
 "freshest_scrape_at": "..." }` so AvatarPitch can show a truthful "live
 data" indicator.
+
+### 2.2b Asset storage API (v3 ruling — AvatarPitch on Vercel)
+
+Implemented in `job_engine/app/api/partner_assets.py`; tests in
+`job_engine/tests/test_partner_assets.py`.
+
+**`PUT /api/partner/v1/assets/{key}`** — token-gated upload (same bearer
+gate: 503 unset / 401 mismatch). Raw body streamed to disk (atomic
+replace; overwrite = idempotent), max **100 MB** (413 above), request
+`Content-Type` stored for serving back. Keys must match
+`^[a-z0-9][a-z0-9/_.-]{2,180}$` with every `/`-segment starting
+alphanumeric — this rejects `..`, dot-leading segments, `//`, uppercase.
+Files land under `PARTNER_ASSETS_DIR` (default `/srv/avatarpitch/uploads`).
+Response: `{"ok": true, "url": "<PARTNER_PUBLIC_BASE_URL>/api/partner/v1/assets/<key>", "size": N}`.
+
+**`GET /api/partner/v1/assets/{key}`** — **public, no token** (iPhone
+`<video>` tags and browsers cannot send Authorization headers on media
+elements). Security = capability URLs: keys carry client-generated random
+components, no listing endpoint exists, strict key validation + resolved
+path confined to the assets root. Serves stored Content-Type, supports
+**HTTP Range → 206** (iOS Safari seek/play requirement), and
+`Cache-Control: public, max-age=3600`. 404 on missing.
+
+**Retention:** the GC timer in `scripts/setup_avatarpitch_host.sh` is
+**48h** (Ashok's ruling) and is the primary GC — everything under the
+assets root is re-renderable. Render-status JSON overwrites refresh mtime,
+so an active render's status doc never ages out mid-render.
+
+### 2.5b Cloudflare Access bypass (required for v3)
+
+`tower.jobmaster.agency` is behind Cloudflare Access (email OTP), which
+Vercel functions and iPhone media fetches cannot pass. Ashok must add a
+**Bypass policy for the path `/api/partner/*`** on that hostname
+(Cloudflare Zero Trust → Access → Applications → add an application for
+`tower.jobmaster.agency/api/partner` with a Bypass/Everyone policy).
+Security on that path is then the partner API's own gates: bearer token on
+everything except public asset GETs, which are unguessable capability
+URLs. The VIGIL UI and every other path stay OTP-locked exactly as today.
 
 Guarantees: stable job `id`s (LinkedIn job ids, never re-keyed), normalized
 unique company names (one-per-company is meaningful), `posted_at` (what
