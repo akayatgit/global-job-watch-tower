@@ -501,6 +501,29 @@ disagree.
 | JM-242 | A guest sends `/companyjobs deloitte` | Ordinary owner-command denial ("JobMaster can help you find verified jobs...") — the natural-chat path (JM-234) is the guest surface. |
 | JM-243 | Reproduce the live 2026-08-14 loop: dead-end the text onboarding so the chat is parked at the role prompt ("Want to try a different role or city?"), THEN send `Jobin Deloitte` | Company reply (JM-234 shape), never "I don't see verified Jobin Deloitte openings today" again — a resolved company question answers AND clears the stuck onboarding state, so `more` and normal chat work right after. |
 
+## 14H. Fresher truthfulness — qualification & experience guarantee (2026-08-14)
+
+Live incident: "Omniverse – Software Engineer II" at Deloitte (detail page:
+Bachelor's + 3–6 years) reached a guest labelled **Fresher**, because
+LinkedIn's own Internship/Entry search tag (`f_E=1,2`) lied and the
+silence-stamp trusted it without reading the title. Ashok: "Its not for
+freshers, we definitely needs to be sure about the qualification &
+experience." The fix is a trust ladder: detail-verified years > stated card
+years / explicit fresher wording > silence-stamp only on a clean title;
+a title carrying seniority evidence (II/III/IV, Senior, Sr., Lead, Principal,
+Staff, Manager, Head, Director, VP, Chief, Architect, Experienced, Expert)
+gets NO Fresher label, is excluded from every fresher search/count, and
+waits for detail verification. Explicit fresher wording in the title
+(intern / trainee / graduate / fresher / junior / apprentice) always defeats
+the veto, so "Management Trainee" stays a fresher result.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-244 | Guest runs a fresher search (button flow or chat, e.g. `AI jobs Bangalore for freshers`) over data known to contain seniority-titled fresher-track catches | No row with a seniority-signalling title (`... II`, `Senior ...`, `Lead Engineer`, `Manager`, ...) ever renders. Counts in insight replies match the cleaned rows. |
+| JM-245 | Guest types `jobs at deloitte` while Deloitte has an unverified seniority-titled catch (e.g. the live Omniverse job) | The job IS visible in the company lens (all-experience view) but labelled honestly — `Not stated` until detail-verified, real years (e.g. `3-5 years`) after — never `Fresher`. |
+| JM-246 | After the backfill migration deploys, spot-check the exact live incident row (`Omniverse – Software Engineer II`) in the tower DB / `jobs at deloitte` | `experience_band` is NULL with label "Seniority in title — pending verification" (or already detail-verified real years); it no longer appears in any fresher search or fresher count. |
+| JM-247 | Guest searches for trainee/intern roles (e.g. `graduate engineer trainee jobs`) and inspects rows like `Management Trainee` | Employer-declared fresher wording defeats the seniority veto — these titles still stamp and render as Fresher; "Lead Generation Executive"-shaped titles are also never mistaken for seniority. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -591,6 +614,23 @@ Convert this suite without changing its IDs:
    `/companyjobs` window-arg routing, multi-word names, usage reply, guest
    denial). 360/360 green locally. Still requires Ashok's live Telegram run
    to close JM-234..243 in the execution log above.
+2D. **Fresher truthfulness contract tests — done (2026-08-14):**
+   JM-244..247 above are automated in `job_engine/tests/test_seniority.py`
+   (the title-veto corpus incl. the three exact live Deloitte titles,
+   fresher-wording overrides, Lead-Generation false-positive guards,
+   Postgres-portability checks, and a pin that the backfill migration's
+   frozen regex copy matches the live module),
+   `test_detail_enrich_plan_b.py::CardRequirementsTests` (veto blocks the
+   fresher-track silence stamp; clean titles still stamp; trainee wording
+   defeats the veto; stated card years outrank everything), and
+   `test_telegram_job_search.py` (fresher search client guard never renders
+   a seniority title even if the API serves one; the company lens keeps the
+   job visible with the honest `Not stated` label, never `Fresher`).
+   373/373 green locally. The API-side gate lives in
+   `app/api/routes.py` (`fresher_title_safe_clause` on `/api/jobs` +
+   `/api/jobs/insights` whenever the effective experience scope is fresher)
+   and the backfill in alembic `b6e4d2c95a10_fresher_title_veto`. Still
+   requires Ashok's live Telegram run to close JM-244..247 above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link

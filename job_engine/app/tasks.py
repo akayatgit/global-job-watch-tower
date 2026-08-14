@@ -14,6 +14,7 @@ from app.relevance import filter_relevant
 from app.runtime_settings import get_detail_enrich_mode
 from app.scraper.linkedin import PageResult, TransientFetchError, scrape_search
 from app.scraper.requirements import JobRequirements, extract_requirements
+from app.seniority import title_seniority_veto
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +41,31 @@ def utcnow() -> datetime:
 def card_requirements(
     raw_text: str | None,
     track: str | None,
+    title: str | None = None,
 ) -> tuple[JobRequirements, str | None, str | None]:
     """Browser-free requirements from the search-card text (Plan B).
 
     Returns (requirements, experience_band, experience_label). Fresher-track
-    cards with no stated band are stamped 'Fresher' — that is LinkedIn's own
-    f_E=1,2 (Internship + Entry) search filter, ground-truth provenance, not
-    a guess. ``requirements_enriched_at`` is NOT set by this path: the job
-    stays pending for description-level enrich (degrees/certs/domains).
+    cards with no stated band are stamped 'Fresher' from LinkedIn's own
+    f_E=1,2 (Internship + Entry) search filter — but only when the TITLE
+    carries no seniority signal. Live incident (2026-08-14): "Omniverse –
+    Software Engineer II" (detail page: Bachelor's + 3–6 years) got the
+    Fresher stamp because LinkedIn's Entry tag lied and nothing read the
+    title. A vetoed title stays band-NULL, marked pending verification, and
+    is excluded from fresher results until the detail page states the real
+    years. Stated card years always win (unchanged law).
+    ``requirements_enriched_at`` is NOT set by this path: the job stays
+    pending for description-level enrich (degrees/certs/domains).
     """
     req = extract_requirements('', card_text=raw_text or '')
     band = req.experience_band
     label = req.experience_label
     if (track or '') == 'fresher' and not band:
-        band = 'Fresher'
-        label = label or 'Fresher track (LinkedIn Internship/Entry)'
+        if title_seniority_veto(title):
+            label = label or 'Seniority in title — pending verification'
+        else:
+            band = 'Fresher'
+            label = label or 'Fresher track (LinkedIn Internship/Entry)'
     return req, band, label
 
 
@@ -340,7 +351,9 @@ def run_scrape(self, scrape_run_id: int):
                     # Card-first requirements (Plan B): free extraction from
                     # the card text so experience data exists even before any
                     # detail page is ever visited.
-                    req, band, exp_label = card_requirements(job.raw_text, cfg.track)
+                    req, band, exp_label = card_requirements(
+                        job.raw_text, cfg.track, title=job.title,
+                    )
                     row = JobMaster(
                         linkedin_job_id=job.linkedin_job_id,
                         title=job.title,
