@@ -93,9 +93,16 @@ HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
 OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 
 # Partner API (/api/partner/v1/ — AvatarPitch integration, 2026-08-14).
-# Static bearer token shared server-to-server on this machine only.
-# Unset = the partner surface answers 503 (disabled by default).
+# Static bearer token; AvatarPitch (Vercel) calls over the Cloudflare
+# tunnel. Unset = the partner surface answers 503 (disabled by default).
 PARTNER_API_TOKEN = os.getenv('PARTNER_API_TOKEN', '').strip()
+# Asset storage root (PUT/GET /api/partner/v1/assets/{key}) — created by
+# scripts/setup_avatarpitch_host.sh; 48h GC timer owns retention.
+PARTNER_ASSETS_DIR = os.getenv('PARTNER_ASSETS_DIR', '/srv/avatarpitch/uploads').strip()
+# Public base used in upload responses' url field (the tunnel hostname).
+PARTNER_PUBLIC_BASE_URL = os.getenv(
+    'PARTNER_PUBLIC_BASE_URL', 'https://tower.jobmaster.agency',
+).strip()
 
 # Replicate — Telegram image chat + Carousel (Gate 1)
 # Must include :version hash (bare owner/name returns "No adapter found").

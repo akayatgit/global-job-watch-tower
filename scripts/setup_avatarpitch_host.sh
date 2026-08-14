@@ -4,9 +4,10 @@
 #
 # What it does (idempotent, safe to re-run):
 #   1. Creates /srv/avatarpitch/{uploads,data} owned by the current user.
-#   2. Installs a systemd --user timer: 72h SAFETY-NET garbage collection
-#      of /srv/avatarpitch/uploads (AvatarPitch's own 48h GC is primary;
-#      this only guarantees the disk can never fill if that breaks).
+#   2. Installs a systemd --user timer: 48h garbage collection of
+#      /srv/avatarpitch/uploads (Ashok's ruling — AvatarPitch runs on
+#      Vercel now, so the tower owns retention; everything under uploads
+#      is re-renderable, nothing is precious).
 #   3. Installs a systemd --user timer: nightly pg_dump of the tower db
 #      into ~/backups/pg (keeps the newest 7 dumps).
 #
@@ -26,20 +27,20 @@ sudo mkdir -p "${AVATAR_ROOT}/uploads" "${AVATAR_ROOT}/data"
 sudo chown -R "$(id -un):$(id -gn)" "${AVATAR_ROOT}"
 mkdir -p "${UNIT_DIR}" "${BACKUP_DIR}"
 
-echo "==> Safety-net GC units (72h = 4320 min; primary 48h GC is AvatarPitch's)"
+echo "==> GC units (48h = 2880 min — Ashok's retention ruling)"
 cat > "${UNIT_DIR}/avatarpitch-gc.service" <<EOF
 [Unit]
-Description=AvatarPitch uploads 72h safety-net GC (tower-side backstop)
+Description=AvatarPitch uploads 48h GC (tower owns retention)
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/find ${AVATAR_ROOT}/uploads -mindepth 1 -type f -mmin +4320 -delete
+ExecStart=/usr/bin/find ${AVATAR_ROOT}/uploads -mindepth 1 -type f -mmin +2880 -delete
 ExecStartPost=/usr/bin/find ${AVATAR_ROOT}/uploads -mindepth 1 -type d -empty -delete
 EOF
 
 cat > "${UNIT_DIR}/avatarpitch-gc.timer" <<EOF
 [Unit]
-Description=Hourly AvatarPitch safety-net GC
+Description=Hourly AvatarPitch 48h GC
 
 [Timer]
 OnCalendar=hourly
