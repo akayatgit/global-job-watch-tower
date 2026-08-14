@@ -599,6 +599,28 @@ it, shows recipient count) → `/pushconfirm`
  line pattern. This is a day-one retention mechanic available to every
  guest, never a premium/paid feature. `app/telegram_alerts.py` and
  `app/telegram_broadcast.py` own this logic; kanban card #15.
+- **MNC-first collection base (2026-08-14, meeting):** The niche is
+ graduates chasing the MNC dream — high pay, big brand, tall buildings,
+ lifestyle change. Collection is company-first: a curated growing watchlist
+ of giants (`app/mnc_watchlist.py` = catalogue of record) with one
+ company-scoped fresher search per giant; insert keeps only the target
+ company's rows (word-boundary needles, pipe-aliases for naming drift) and
+ skips the AI relevance filter on company runs. Role-keyword searches are
+ asleep, not deleted — never re-enable the wide net without Ashok's word.
+ `/addcompany <name>` (owner) grows the list from the phone with an
+ immediate first scrape. **Detail enrich = full again** (Ashok's explicit
+ sign-off 2026-08-14, reversing the 2026-08-08 discovery-first
+ restriction): every job gets detail-page verification — complete data on
+ the outliers beats shallow data on everything. Deploy seed
+ (`scripts/seed_mnc_watchlist.py`) asserts all of this idempotently.
+- **Tower data reset from the phone (2026-08-14):** `/resetdata` stages an
+ honest preview (what's wiped / kept / which live searches get cancelled),
+ `/resetconfirm` within 10 minutes executes, `/resetcancel` discards —
+ same two-step law as `/push`. The wipe keeps every search definition,
+ watched companies + profiles, guests, alerts, and chat history; it clears
+ `last_run_at` so the whole catalogue re-scrapes automatically one by one.
+ Running workers are cancelled gracefully (their run rows kept — deleting
+ them crashes the worker mid-page).
 - **Every guest job surface is fresher-only (2026-08-14):** After the
  fresher-truthfulness gate shipped, Ashok's second live test ("Still im
  getting senior and II cant you see?") showed the company lens (`jobs at

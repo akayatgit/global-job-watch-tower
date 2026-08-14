@@ -64,6 +64,11 @@ class SearchConfig(Base):
     experience_filter: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # fresher = graduate flywheel; signal = experienced / economy hiring signals
     track: Mapped[str] = mapped_column(String(20), default='fresher', index=True)
+    # MNC-first collection (2026-08-14): when set, this search is scoped to
+    # ONE watched company — pipe-separated match needles, first = display
+    # name. Insert keeps only jobs whose card company matches; the AI
+    # relevance filter is skipped (see app/mnc_watchlist.py).
+    target_company: Mapped[str | None] = mapped_column(String(300), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     schedule_cron: Mapped[str] = mapped_column(String(100), default='0 * * * *')  # hourly
     priority: Mapped[int] = mapped_column(Integer, default=5)

@@ -571,6 +571,26 @@ never to an invented city, role, or company.
    stamps those jobs as Kerala/Pune. Table completed; the JM-300 drift guard
    makes a future divergence a CI failure, not a live guest incident.
 
+## 14I. MNC-first collection base — watchlist, /addcompany, data reset (2026-08-14)
+
+Ashok's base-level pivot (meeting, 2026-08-14): the niche is graduates
+chasing the MNC dream — high pay, big brand, tall buildings, lifestyle
+change. Collection flips from role keywords ("all the data") to a curated,
+growing watchlist of giants ("complete data on the outliers"). Detail-page
+verification returns to full for every job (explicit sign-off reversing the
+2026-08-08 discovery-first restriction — volume is focused now). The old
+broad catch gets wiped and rebuilt on the new base.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-249 | Deploy lands; check `/searches` board / VIGIL Searches | One `MNC · <Giant> — Fresher` search per catalogue company (Deloitte, Oracle, Apple, Google, ~55 total), daily staggered; old role-keyword searches disabled but still listed (asleep, not deleted). |
+| JM-250 | Ashok: `/addcompany Nvidia` | "✅ NVIDIA added to the MNC watchlist. First scrape is queued now…" — a new daily search + watched company exist; the first scrape starts without waiting for tomorrow. Re-sending gives "👀 … already on the watchlist" and never duplicates. `/addcompany TCS` also refuses to duplicate `Tata Consultancy Services\|TCS`. |
+| JM-251 | A company-scoped run completes; inspect its catches | ONLY that company's rows stored (subsidiaries like "Deloitte USI" kept; "Visakha Industries" never stored for target "Visa"); every role at the giant kept — no AI relevance rejects on company runs. |
+| JM-252 | Any guest search after the rebuild | Results are exclusively watchlist giants — the MNC-dream promise. Fresher truthfulness gates (title veto, honest bands) unchanged on top. |
+| JM-253 | Ashok: `/resetdata` | Staged preview with honest counts (jobs / unwatched companies wiped · watched companies + every search definition + guests/alerts/history kept) and a disturbance warning naming any live search that will be cancelled. Expires in 10 minutes; `/resetcancel` discards. |
+| JM-254 | Ashok: `/resetconfirm` within 10 minutes | "🧹 Reset done — wiped …" and the rebuild starts by itself: every search becomes immediately due and re-runs one by one (no empty tower waiting for tomorrow's crons). A second `/resetconfirm` says "No reset staged." Guests sending these commands get the ordinary denial. |
+| JM-255 | After a company run, open any new job later | Detail-page verification ran (full mode): real experience years / degrees / certifications on the record — the Omniverse-class lie cannot survive to the next day. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because

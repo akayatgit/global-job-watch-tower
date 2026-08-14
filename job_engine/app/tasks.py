@@ -9,6 +9,7 @@ from app.celery_app import celery
 from app.cities import normalize_city
 from app.console import console_log
 from app.db import SessionLocal
+from app.mnc_watchlist import company_matches_target
 from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig
 from app.relevance import filter_relevant
 from app.runtime_settings import get_detail_enrich_mode
@@ -394,14 +395,27 @@ def run_scrape(self, scrape_run_id: int):
                         run_id=run.id,
                     )
 
-            # Keep only titles that actually match the searched role.
-            # Persist after each batch so the Jobs panel is not empty for 10+ min.
-            relevant, rejected = filter_relevant(
-                page_result.jobs, cfg.keywords, run_id=run.id, on_kept=persist_kept,
-            )
-            rejected_total += len(rejected)
-            # Safety net for any kept rows the callback missed (e.g. keyword path)
-            persist_kept(relevant)
+            target = (getattr(cfg, 'target_company', None) or '').strip()
+            if target:
+                # MNC-first company search (2026-08-14): the company match IS
+                # the relevance — keep EVERY role at the target company,
+                # reject everything else, and skip the AI filter entirely
+                # (deterministic precision, zero Ollama heat).
+                relevant = [
+                    job for job in page_result.jobs
+                    if company_matches_target(job.company, target)
+                ]
+                rejected_total += len(page_result.jobs) - len(relevant)
+                persist_kept(relevant)
+            else:
+                # Keep only titles that actually match the searched role.
+                # Persist after each batch so the Jobs panel is not empty for 10+ min.
+                relevant, rejected = filter_relevant(
+                    page_result.jobs, cfg.keywords, run_id=run.id, on_kept=persist_kept,
+                )
+                rejected_total += len(rejected)
+                # Safety net for any kept rows the callback missed (e.g. keyword path)
+                persist_kept(relevant)
             run.jobs_found = found
             run.jobs_inserted = inserted
             db.commit()

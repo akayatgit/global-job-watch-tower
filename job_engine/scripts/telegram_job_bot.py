@@ -40,6 +40,7 @@ from app.telegram_job_search import (  # noqa: E402
     RESET_RE,
     ROLE_FAMILY_LABELS,
     JobMasterEngine,
+    _http_post,
     parse_window_token,
 )
 from app.telegram_waitlist import list_waitlist, waitlist_count  # noqa: E402
@@ -112,10 +113,19 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'pushconfirm',
     'pushcancel',
     'pushstats',
+    # MNC-first collection (2026-08-14): grow the giant watchlist from the
+    # phone; reset the tower's caught data behind a two-step confirm.
+    'addcompany',
+    'resetdata',
+    'resetconfirm',
+    'resetcancel',
 })
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
 PENDING_PUSH_TTL_S = 600
+# Same review window for a staged /resetdata — a destructive action must
+# never fire from a stale confirmation.
+PENDING_RESET_TTL_S = 600
 # Ashok-only self-test toggle: no second phone needed to see the guest
 # experience. Always dispatched off the REAL owner check (never the
 # simulated one) so this pair of commands can never lock him out of his
@@ -129,6 +139,10 @@ OWNER_COMMANDS = frozenset((
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
 OWNER_MENU = [
+    {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
+    {'command': 'resetdata', 'description': 'Stage a tower data reset'},
+    {'command': 'resetconfirm', 'description': 'Execute the staged reset'},
+    {'command': 'resetcancel', 'description': 'Discard the staged reset'},
     {'command': 'allowguest', 'description': 'Un-block / VIP a person'},
     {'command': 'blockguest', 'description': 'Block a person (public by default)'},
     {'command': 'guests', 'description': 'Access dashboard'},
@@ -330,10 +344,14 @@ class JobMasterTelegramBot:
         owner_chat_ids: set[str] | None = None,
         board_renderer=None,
         voice: VoiceLayer | None = None,
+        tower_post=None,
     ):
         self.api = api
         self.sessions = sessions or TelegramSessionStore()
         self.engine = engine or JobMasterEngine(sessions=self.sessions)
+        # JSON POST to the tower API (watchlist add, data reset) —
+        # injectable for tests, same base URL as the engine's reads.
+        self.tower_post = tower_post or _http_post
         self.voice = voice or VoiceLayer()
         self.button_flow = ButtonFlow(self.engine, self.sessions)
         self.health_enabled = health_enabled
@@ -511,6 +529,15 @@ class JobMasterTelegramBot:
             return self._confirm_push(chat_id)
         if command == 'pushstats':
             return self._push_stats()
+        if command == 'addcompany':
+            return self._add_company_reply(arg)
+        if command == 'resetdata':
+            return self._stage_reset(chat_id)
+        if command == 'resetconfirm':
+            return self._confirm_reset(chat_id)
+        if command == 'resetcancel':
+            self.sessions.set_state(f'pending_reset_at:{chat_id}', '')
+            return 'Reset cancelled — nothing was wiped.'
         if command == 'history':
             parts = (arg or '').split(maxsplit=1)
             if not parts:
@@ -773,6 +800,91 @@ class JobMasterTelegramBot:
         )
         tail = f", {result['failed']} failed" if result['failed'] else ''
         return f"Sent to {result['sent']}/{result['total']} subscriber(s){tail}."
+
+    def _add_company_reply(self, arg: str) -> str:
+        """/addcompany <name> — grow the MNC watchlist from the phone."""
+        name = (arg or '').strip()
+        if not name:
+            return (
+                'Usage: /addcompany <company name> — e.g. /addcompany Nvidia\n'
+                'Adds the company to the MNC watchlist: daily fresher watch '
+                '+ first scrape right away.'
+            )
+        try:
+            result = self.tower_post('/api/watchlist/companies', {'name': name})
+        except Exception:
+            return 'Tower is unreachable right now — try /addcompany again in a minute.'
+        display = str(result.get('company') or name)
+        if result.get('created'):
+            first = (
+                'First scrape is queued now'
+                if result.get('first_scrape_queued')
+                else 'First scrape joins the next free slot'
+            )
+            return (
+                f'✅ {display} added to the MNC watchlist. {first}; '
+                'its fresher openings are watched daily from here.'
+            )
+        return f'👀 {display} is already on the watchlist — daily watch continues.'
+
+    def _stage_reset(self, chat_id: str) -> str:
+        """/resetdata — stage the base-level wipe with an honest preview."""
+        try:
+            preview = self.engine.api_get('/api/tower/reset-preview', None)
+        except Exception:
+            return 'Tower is unreachable right now — cannot stage a reset.'
+        if not isinstance(preview, dict):
+            return 'Tower is unreachable right now — cannot stage a reset.'
+        self.sessions.set_state(f'pending_reset_at:{chat_id}', time.time())
+        active = [str(name) for name in (preview.get('active_searches') or [])]
+        if active:
+            shown = ', '.join(active[:3]) + ('…' if len(active) > 3 else '')
+            disturb = f'Disturbs: {len(active)} live search(es) will be cancelled — {shown}'
+        else:
+            disturb = 'Disturbs: no search is running right now'
+        return (
+            '⚠️ TOWER DATA RESET — staged\n\n'
+            f"Wipes: {preview.get('jobs', 0)} jobs · "
+            f"{preview.get('companies_unwatched_wiped', 0)} unwatched companies · "
+            f"{preview.get('runs', 0)} run records\n"
+            f"Keeps: every search definition, "
+            f"{preview.get('companies_watched_kept', 0)} watched companies, "
+            'guests, alerts, chat history\n'
+            f'{disturb}\n'
+            'After the wipe, every search re-runs automatically one by one.\n\n'
+            'Reply /resetconfirm within 10 minutes to execute, or /resetcancel.'
+        )
+
+    def _confirm_reset(self, chat_id: str) -> str:
+        at_raw = self.sessions.get_state(f'pending_reset_at:{chat_id}', '')
+        if not at_raw:
+            return 'No reset staged. Start with /resetdata.'
+        try:
+            staged_at = float(at_raw)
+        except ValueError:
+            staged_at = 0.0
+        if time.time() - staged_at > PENDING_RESET_TTL_S:
+            self.sessions.set_state(f'pending_reset_at:{chat_id}', '')
+            return 'That staged reset expired after 10 minutes. Start again with /resetdata.'
+        self.sessions.set_state(f'pending_reset_at:{chat_id}', '')
+        try:
+            result = self.tower_post('/api/tower/reset', {})
+        except Exception:
+            return (
+                'Tower reset did NOT execute — the tower did not respond. '
+                'Nothing was wiped; check /health and try /resetdata again.'
+            )
+        cancelled = result.get('cancelled_active') or []
+        disturbed = (
+            f"; cancelled {len(cancelled)} live search(es)" if cancelled else ''
+        )
+        return (
+            f"🧹 Reset done — wiped {result.get('jobs', 0)} jobs · "
+            f"{result.get('companies_unwatched_wiped', 0)} unwatched companies · "
+            f"{result.get('runs', 0)} run records{disturbed}.\n"
+            'Rebuild is already running: every search re-runs automatically, '
+            'one by one, and each new catch gets full detail verification.'
+        )
 
     def _push_stats(self) -> str:
         active = self.sessions.count_active_broadcast_subscribers()

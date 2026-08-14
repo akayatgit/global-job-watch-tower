@@ -330,6 +330,11 @@ cd "$JOB_ENGINE"
 log "applying migrations..."
 alembic upgrade head
 
+# MNC-first collection base (2026-08-14): idempotent — upserts the giant
+# catalogue, sleeps role-keyword searches, asserts detail enrich = full.
+log "seeding MNC watchlist..."
+python scripts/seed_mnc_watchlist.py | tee -a "$DEPLOY_LOG"
+
 log "restarting api/worker/beat..."
 bash "$JOB_ENGINE/restart_app.sh" | tee -a "$DEPLOY_LOG"
 
