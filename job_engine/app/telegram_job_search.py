@@ -678,21 +678,23 @@ def _company_header(
     count_7d: int,
     count_month: int,
 ) -> str:
-    """Tri-window count line — instant insight before the rows."""
+    """Tri-window count line — instant insight before the rows. Counts are
+    fresher openings only (the company lens serves the same fresher audience
+    as every other JobMaster search), and the copy says so."""
     def plural(n: int) -> str:
         return '' if n == 1 else 's'
 
     if days == 0:
-        main = f'{count_24h} opening{plural(count_24h)} caught in the last 24 hours'
+        main = f'{count_24h} fresher opening{plural(count_24h)} caught in the last 24 hours'
         extras = f'{count_7d} in 7 days · {count_month} this month'
     elif days == 30:
-        main = f'{count_month} opening{plural(count_month)} posted this month'
+        main = f'{count_month} fresher opening{plural(count_month)} posted this month'
         extras = f'{count_7d} in 7 days · {count_24h} caught in 24h'
     elif days == 7:
-        main = f'{count_7d} opening{plural(count_7d)} posted in the last 7 days'
+        main = f'{count_7d} fresher opening{plural(count_7d)} posted in the last 7 days'
         extras = f'{count_month} this month · {count_24h} caught in 24h'
     else:
-        main = f'{count_window} opening{plural(count_window)} posted {window_phrase(days)}'
+        main = f'{count_window} fresher opening{plural(count_window)} posted {window_phrase(days)}'
         extras = f'{count_7d} in 7 days · {count_month} this month · {count_24h} caught in 24h'
     return f'{display} — {main} ({extras})'
 
@@ -911,7 +913,10 @@ class JobMasterEngine:
         )
         # stated_outright=True guarantees a reply (honest zero instead of
         # falling through), so this is only defensive.
-        return reply or f"I don't see verified {name} openings in the {window_phrase(days)}."
+        return reply or (
+            f"I don't see verified fresher openings at {name} "
+            f'in the {window_phrase(days)}.'
+        )
 
     def _company_search(
         self,
@@ -933,7 +938,8 @@ class JobMasterEngine:
                 return None
             display = self._company_display(name, rows_month, rows_24h)
             reply = (
-                f"I don't see verified {display} openings in the {window_phrase(days)}. "
+                f"I don't see verified fresher openings at {display} "
+                f'in the {window_phrase(days)}. '
                 "Try 'top companies hiring' to see who's active right now."
             )
             self.sessions.apply_result(chat_id, reply, update_id=update_id)
@@ -1000,7 +1006,10 @@ class JobMasterEngine:
             # Continuation page — header already delivered on page one.
             return body, new_ids
         if not picked:
-            base = f"I don't see verified {display} openings in the {window_phrase(days)}"
+            base = (
+                f"I don't see verified fresher openings at {display} "
+                f'in the {window_phrase(days)}'
+            )
             if count_month:
                 reply = (
                     f'{base} — this month has {count_month}. '
@@ -1020,11 +1029,18 @@ class JobMasterEngine:
         return f'{header}\n\n{body}', new_ids
 
     def _fetch_company_rows(self, company: str, days: int | None) -> list[dict[str, Any]]:
-        """All verified jobs for a company in a window, oldest scan capped at
-        MAX_SCAN. The API's company filter is a substring ILIKE; a whole-word
-        re-check here keeps short names honest ('ai' must never count
-        'Air India' rows) — header counts and rows share this exact list, so
-        the numbers can never disagree with what the guest is shown."""
+        """Fresher-safe verified jobs for a company in a window, oldest scan
+        capped at MAX_SCAN. The API's company filter is a substring ILIKE; a
+        whole-word re-check here keeps short names honest ('ai' must never
+        count 'Air India' rows) — header counts and rows share this exact
+        list, so the numbers can never disagree with what the guest is shown.
+
+        Fresher-only lens (Ashok, 2026-08-14 second live test): the company
+        view serves the same fresher audience as every other search — a
+        seniority-signalling title (Engineer II, Senior ...) or a stated
+        non-fresher band never appears here either, even with an honest
+        label. Band-NULL rows with clean titles stay (pending verification,
+        most cards are silent)."""
         word = re.compile(rf'(?<![a-z0-9]){re.escape(company.lower())}(?![a-z0-9])')
         params: dict[str, Any] = {'limit': API_PAGE_SIZE, 'company': company}
         if days is not None:
@@ -1040,6 +1056,13 @@ class JobMasterEngine:
                 title = str(job.get('title') or '').strip()
                 company_name = str(job.get('company') or '')
                 if not title or not link or not word.search(company_name.lower()):
+                    continue
+                band = normalize_experience_value(
+                    str(job.get('experience_band') or '')
+                )
+                if band and band != 'fresher':
+                    continue
+                if title_seniority_veto(title):
                     continue
                 key = str(job.get('linkedin_job_id') or link)
                 if key in seen:

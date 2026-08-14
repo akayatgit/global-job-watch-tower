@@ -488,12 +488,17 @@ own posted date. Header counts are computed from the exact same
 whole-word-matched rows shown below them, so numbers and rows can never
 disagree.
 
+**Fresher-only since 2026-08-14 (second live test, JM-248):** the company
+lens shows only fresher-safe rows — same audience as every other JobMaster
+search. Headers therefore read "N **fresher** openings" and zeros read
+"I don't see verified **fresher** openings at <Name>...".
+
 | ID | Do | Expected |
 |---|---|---|
-| JM-234 | Guest types `jobs at Deloitte` | Tri-window header (`Deloitte — N openings posted in the last 7 days (M this month · K caught in 24h)`) then up to 10 rows `Title — Experience` + canonical LinkedIn link. Default window is 7 days. |
+| JM-234 | Guest types `jobs at Deloitte` | Tri-window header (`Deloitte — N fresher openings posted in the last 7 days (M this month · K caught in 24h)`) then up to 10 rows `Title — Experience` + canonical LinkedIn link. Default window is 7 days. |
 | JM-235 | Guest types `Jobin Deloitte 24` (the live-seen typo) | Understood as "job in Deloitte, last 24 hours" — header leads with the 24h caught count; never "I don't understand". |
 | JM-236 | Guest types `deloitte jobs this month` | Same shape with the this-month (posted, last 30 days) count leading. |
-| JM-237 | Guest types `jobs at <company the tower has never seen>` | Honest zero: "I don't see verified <Name> openings in the last 7 days. Try 'top companies hiring' to see who's active right now." — never invented rows. |
+| JM-237 | Guest types `jobs at <company the tower has never seen>` | Honest zero: "I don't see verified fresher openings at <Name> in the last 7 days. Try 'top companies hiring' to see who's active right now." — never invented rows. |
 | JM-238 | Guest types `python jobs` / `ai jobs` / `jobs in bangalore` | NOT treated as a company — falls through to the normal role/city search exactly as before (ambiguous phrasing only becomes a company query when the name is a tracked company). |
 | JM-239 | Guest types `jobs at deloitte 24h` when Deloitte has month activity but nothing in 24h | Honest zero for the window plus a pointer: "— this month has N. Say 'jobs at Deloitte this month' to see them." |
 | JM-240 | After JM-234 with more than 10 matches, reply `more` | Next page of the same company search — numbering continues, no duplicate links, no repeated header. |
@@ -520,9 +525,10 @@ the veto, so "Management Trainee" stays a fresher result.
 | ID | Do | Expected |
 |---|---|---|
 | JM-244 | Guest runs a fresher search (button flow or chat, e.g. `AI jobs Bangalore for freshers`) over data known to contain seniority-titled fresher-track catches | No row with a seniority-signalling title (`... II`, `Senior ...`, `Lead Engineer`, `Manager`, ...) ever renders. Counts in insight replies match the cleaned rows. |
-| JM-245 | Guest types `jobs at deloitte` while Deloitte has an unverified seniority-titled catch (e.g. the live Omniverse job) | The job IS visible in the company lens (all-experience view) but labelled honestly — `Not stated` until detail-verified, real years (e.g. `3-5 years`) after — never `Fresher`. |
-| JM-246 | After the backfill migration deploys, spot-check the exact live incident row (`Omniverse – Software Engineer II`) in the tower DB / `jobs at deloitte` | `experience_band` is NULL with label "Seniority in title — pending verification" (or already detail-verified real years); it no longer appears in any fresher search or fresher count. |
+| JM-245 | Guest types `jobs at deloitte` while Deloitte has unverified seniority-titled catches (e.g. the live Omniverse job) | ~~Visible with honest label~~ **Superseded by JM-248 the same day:** those rows do NOT appear in the company lens at all — it is fresher-only, like every other search. |
+| JM-246 | After the backfill migration deploys, spot-check the exact live incident row (`Omniverse – Software Engineer II`) in the tower DB / `jobs at deloitte` | `experience_band` is NULL with label "Seniority in title — pending verification" (or already detail-verified real years); it no longer appears in any fresher search, fresher count, or company-lens reply. |
 | JM-247 | Guest searches for trainee/intern roles (e.g. `graduate engineer trainee jobs`) and inspects rows like `Management Trainee` | Employer-declared fresher wording defeats the seniority veto — these titles still stamp and render as Fresher; "Lead Generation Executive"-shaped titles are also never mistaken for seniority. |
+| JM-248 | Ashok's second live test (2026-08-14 screenshot): `Jobs in Deloitte 24hrs` over data containing `Software Engineer II`, `Senior Consultant-IT`, and stated-years rows | Header says `Deloitte — N **fresher** openings caught in the last 24 hours (...)` and ONLY fresher-safe rows render: no seniority-signalling title, no stated non-fresher band — not even with an honest `Not stated` label. Counts match the shown rows. `Junior Tax Consultant` / clean-titled pending rows stay. |
 
 ## 14H. Nightly regression corpus — automated (2026-08-14)
 
@@ -665,9 +671,14 @@ Convert this suite without changing its IDs:
    fresher-track silence stamp; clean titles still stamp; trainee wording
    defeats the veto; stated card years outrank everything), and
    `test_telegram_job_search.py` (fresher search client guard never renders
-   a seniority title even if the API serves one; the company lens keeps the
-   job visible with the honest `Not stated` label, never `Fresher`).
-   373/373 green locally. The API-side gate lives in
+   a seniority title even if the API serves one). **Amended same day
+   (JM-248):** after Ashok's second live test, the company lens became
+   fresher-only too — `_fetch_company_rows` drops seniority-titled and
+   stated-non-fresher rows before counting, headers say "fresher openings",
+   and `CompanyJobsTests` locks the screenshot scenario (Engineer II /
+   Senior Consultant / 3-5-years rows never render; honest fresher-zero
+   when nothing safe remains). 418/418 green locally.
+   The API-side gate lives in
    `app/api/routes.py` (`fresher_title_safe_clause` on `/api/jobs` +
    `/api/jobs/insights` whenever the effective experience scope is fresher)
    and the backfill in alembic `b6e4d2c95a10_fresher_title_veto`. Still
