@@ -84,7 +84,7 @@ def resolve_board(name: str) -> str | None:
     return ALIASES.get(key)
 
 
-def render_board(board: str, *, days: int | None = None) -> str:
+def render_board(board: str, *, days: int | None = None, unfiltered: bool = False) -> str:
     bid = resolve_board(board) or (board or '').strip().lower()
     try:
         if bid == 'help':
@@ -100,7 +100,7 @@ def render_board(board: str, *, days: int | None = None) -> str:
         if bid == 'watchlist':
             return _board_watchlist(days if days is not None else 7)
         if bid == 'fresh':
-            return _board_fresh()
+            return _board_fresh(unfiltered=unfiltered)
         if bid == 'brief':
             return _board_brief()
     except urllib.error.URLError as e:
@@ -272,12 +272,24 @@ def _board_watchlist(days: int) -> str:
     return '\n'.join(lines)
 
 
-def _board_fresh() -> str:
-    d = _get('/api/ultron/tower')
-    latest = d.get('latest_jobs') or []
-    lines = ['FRESHEST CATCHES', '']
+def _board_fresh(unfiltered: bool = False) -> str:
+    # Checked-only law (2026-08-14): the board lists detail-verified jobs
+    # unless the command carried '-unfiltered'.
+    if unfiltered:
+        d = _get('/api/ultron/tower')
+        latest = d.get('latest_jobs') or []
+    else:
+        latest = _get('/api/jobs', {'limit': 12, 'verified': 1})
+        latest = latest if isinstance(latest, list) else []
+    title = 'FRESHEST CATCHES' + ('' if unfiltered else ' · checked')
+    lines = [title, '']
     if not latest:
-        lines.append('No catches yet — tower is still collecting.')
+        lines.append(
+            'No catches yet — tower is still collecting.'
+            if unfiltered else
+            'No checked catches yet — verification is catching up. '
+            'Send /fresh -unfiltered to see raw catches.'
+        )
         return '\n'.join(lines)
     for i, j in enumerate(latest[:12], 1):
         lines.append(f"{i}. {j.get('title')}")

@@ -126,6 +126,32 @@ class AlertSubscriptionTests(unittest.TestCase):
         self.assertIsNone(keyboard)
 
 
+class AlertCheckedOnlyTests(unittest.TestCase):
+    """Checked-only law (2026-08-14): proactive alerts never carry an
+    unverified job — there is no '-unfiltered' override for alerts."""
+
+    def test_candidate_fetch_always_requires_verified_jobs(self):
+        from app.telegram_alerts import _fetch_candidates
+
+        calls: list[tuple[str, dict]] = []
+
+        def api_get(path, params=None):
+            calls.append((path, dict(params or {})))
+            return []
+
+        _fetch_candidates(
+            api_get,
+            role_family='ai_ml',
+            role_keywords=[],
+            city='bengaluru',
+            experience='fresher',
+        )
+        self.assertEqual(len(calls), 1)
+        path, params = calls[0]
+        self.assertEqual(path, '/api/jobs')
+        self.assertEqual(params.get('verified'), 1)
+
+
 class AlertDispatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

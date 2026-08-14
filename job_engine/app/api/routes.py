@@ -200,6 +200,7 @@ def list_jobs(
     days: int | None = None,
     search_config_id: int | None = None,
     company_id: int | None = None,
+    verified: bool = False,
     db: Session = Depends(get_db),
 ):
     from app.cities import normalize_city_filter
@@ -244,6 +245,10 @@ def list_jobs(
         # fresher, even while its band is unverified NULL — LinkedIn's
         # Entry tag alone is not proof. See app/seniority.py.
         query = query.where(fresher_title_safe_clause())
+    if verified:
+        # Checked-only law (2026-08-14): only jobs whose LinkedIn detail
+        # page has been read (experience/degrees/certs verified) qualify.
+        query = query.where(JobMaster.requirements_enriched_at.is_not(None))
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         query = query.where(JobMaster.title.op('~*')(pattern))
@@ -302,6 +307,7 @@ def job_insights(
     track: str | None = None,
     role_family: str | None = None,
     title_terms: str | None = None,
+    verified: bool = False,
     db: Session = Depends(get_db),
 ):
     """Grounded count/ranking primitive for JobMaster market questions."""
@@ -352,6 +358,8 @@ def job_insights(
         # Fresher truthfulness: counts must match what fresher searches
         # actually show — seniority-titled rows are excluded from both.
         filters.append(fresher_title_safe_clause())
+    if verified:
+        filters.append(JobMaster.requirements_enriched_at.is_not(None))
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         filters.append(JobMaster.title.op('~*')(pattern))
