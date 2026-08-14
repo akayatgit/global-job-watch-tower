@@ -16,6 +16,7 @@ import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from app import config
@@ -112,6 +113,112 @@ FAMILY_WORDS = {
     'frontend', 'product', 'manager', 'owner', 'design', 'designer', 'ui', 'ux',
 }
 
+# ---- Jobs by company (24h · 7d · this month) --------------------------------
+# One shared token vocabulary for the owner command (/companyjobs deloitte 24)
+# and free-text guest windows ("deloitte jobs this month"). Values follow the
+# product-wide convention: 0 = rolling 24 hours by catch time, any other value
+# = LinkedIn posted_date over the last N days (30 is the "this month" lens).
+WINDOW_TOKEN_MAP = {
+    '0': 0, '24': 0, '24h': 0, '24hr': 0, '24hrs': 0, '24hour': 0, '24hours': 0,
+    '1': 1, 'today': 1,
+    '2d': 2, '2days': 2,
+    '4d': 4, '4days': 4,
+    '7': 7, '7d': 7, '7days': 7, 'week': 7,
+    '14': 14, '14d': 14, '14days': 14,
+    '30': 30, '30d': 30, '30days': 30, 'month': 30,
+}
+COMPANY_WINDOW_RES: tuple[tuple[re.Pattern, int | None], ...] = (
+    (re.compile(r'\b(?:last\s+|past\s+)?24(?:\s*h(?:ou)?rs?|\s*h)?\b'), 0),
+    (re.compile(r'\b(?:this\s+)?month\b'), 30),
+    (re.compile(r'\b(?:last\s+|past\s+)?30(?:\s*d(?:ays?)?)?\b'), 30),
+    (re.compile(r'\b(?:this\s+)?week\b'), 7),
+    (re.compile(r'\btoday\b'), 1),
+    (re.compile(r'\b(?:last\s+|past\s+)?(?P<n>1|2|4|7|14)\s*d(?:ays?)?\b'), None),
+    (re.compile(r'\b(?:last\s+|past\s+)?7\b'), 7),
+)
+_COMPANY_LEAD = (
+    r"(?:please\s+|pls\s+|can\s+you\s+|could\s+you\s+|show\s+me\s+|show\s+|"
+    r'give\s+me\s+|get\s+me\s+|find\s+me\s+|find\s+|any\s+|latest\s+|fresh\s+|'
+    r'verified\s+|new\s+)*'
+)
+_JOB_WORDS = r'(?:jobs?|openings?|opportunit(?:y|ies)|vacanc(?:y|ies)|positions?|postings?|roles?)'
+_COMPANY_NAME = r"(?P<name>[a-z0-9][a-z0-9&.'\- ]*?)"
+# "jobs at/with/from X" states a company outright; "jobs in X" and "X jobs"
+# are ambiguous (city / domain / technology) and only become a company query
+# when X is verifiably a tracked company — see JobMasterEngine._company_reply.
+COMPANY_AT_RE = re.compile(
+    rf'^{_COMPANY_LEAD}{_JOB_WORDS}\s+(?:at|with|from)\s+{_COMPANY_NAME}$', re.I,
+)
+COMPANY_IN_RE = re.compile(
+    rf'^{_COMPANY_LEAD}{_JOB_WORDS}\s+(?:in|inside)\s+{_COMPANY_NAME}$', re.I,
+)
+COMPANY_SUFFIX_RE = re.compile(
+    rf'^{_COMPANY_LEAD}{_COMPANY_NAME}\s+{_JOB_WORDS}$', re.I,
+)
+
+
+def parse_window_token(token: str | None) -> int | None:
+    key = re.sub(r'\s+', '', str(token or '').strip().lower())
+    return WINDOW_TOKEN_MAP.get(key)
+
+
+def window_phrase(days: int) -> str:
+    if days == 0:
+        return 'last 24 hours'
+    if days == 1:
+        return 'today'
+    if days == 30:
+        return 'this month'
+    return f'last {days} days'
+
+
+def _clean_company_name(raw: str) -> str:
+    name = re.sub(r'\s+', ' ', str(raw or '')).strip(" .'&-")
+    # "jobs at deloitte in chennai" — the company lens is India-wide, so a
+    # stated city is scrubbed rather than silently misread as company text.
+    for aliases in CITY_ALIASES.values():
+        for alias in aliases:
+            name = re.sub(rf'\b{re.escape(alias)}\b', ' ', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    name = re.sub(r'\s*\b(?:in|at|near|around)\b$', '', name).strip(" .'&-")
+    words = name.split()
+    if not words:
+        return ''
+    if all(word in FILLER or word in FAMILY_WORDS for word in words):
+        # "fresher jobs" / "ai jobs" are role searches, never company names.
+        return ''
+    return name
+
+
+def _company_query(text: str) -> tuple[str, int, bool] | None:
+    """Deterministically detect a jobs-at-company question.
+
+    Returns (company_candidate, window_days, stated_outright) or None. No
+    LLM is involved: the same regexes run for every guest and for Ashok.
+    """
+    low = re.sub(r'\s+', ' ', str(text or '').strip().lower()).strip(' ?!.,')
+    # Live-seen typo (2026-08-14 guest test): "jobin deloitte" = "job in".
+    low = re.sub(r'\bjobs?in\b', 'job in', low)
+    days = 7
+    for pattern, value in COMPANY_WINDOW_RES:
+        match = pattern.search(low)
+        if match:
+            days = int(match.group('n')) if value is None else value
+            low = f'{low[:match.start()]} {low[match.end():]}'
+            break
+    low = re.sub(r'\s+', ' ', low).strip(' ?!.,-')
+    for pattern, stated_outright in (
+        (COMPANY_AT_RE, True),
+        (COMPANY_IN_RE, False),
+        (COMPANY_SUFFIX_RE, False),
+    ):
+        match = pattern.match(low)
+        if not match:
+            continue
+        name = _clean_company_name(match.group('name'))
+        return (name, days, stated_outright) if name else None
+    return None
+
 
 def normalize_experience_value(raw: str | None) -> str:
     key = (raw or '').strip().lower().replace(' ', '').replace('–', '-').replace('—', '-')
@@ -161,13 +268,14 @@ def experience_display(raw: str | None) -> str:
 
 @dataclass
 class JobMasterIntent:
-    kind: str = 'job_search'  # job_search | insight | help
+    kind: str = 'job_search'  # job_search | insight | help | company_jobs
     role_family: str = ''
     role_keywords: list[str] = field(default_factory=list)
     cities: list[str] = field(default_factory=list)
     experience: str = ''
     metric: str = ''  # count | top_companies | top_roles | compare_cities | trend
     window_days: int = 7
+    company: str = ''
 
 
 def _http_get(path: str, params: dict[str, Any] | None = None) -> dict | list:
@@ -510,6 +618,68 @@ def _format_jobs(
     return '\n\n'.join(lines)
 
 
+def _posted_within(job: dict[str, Any], days: int) -> bool:
+    """posted_date (LinkedIn's own date) falls inside the last N days (UTC)."""
+    raw = str(job.get('posted_date') or '')
+    try:
+        posted = date.fromisoformat(raw)
+    except ValueError:
+        return False
+    today = datetime.now(timezone.utc).date()
+    return today - timedelta(days=days - 1) <= posted <= today
+
+
+def _format_company_jobs(
+    jobs: list[dict[str, Any]],
+    *,
+    start_number: int,
+    has_more: bool,
+) -> str:
+    """Company already lives in the header, so rows are Title — Experience."""
+    if not jobs:
+        return 'No more verified jobs match that search right now.' if start_number > 1 else (
+            'No verified jobs match that search right now.'
+        )
+    lines: list[str] = []
+    for idx, job in enumerate(jobs, start=start_number):
+        title = re.sub(r'\s+', ' ', str(job.get('title') or '')).strip()[:140]
+        experience = re.sub(
+            r'\s+', ' ', experience_display(job.get('experience_band')),
+        ).strip()[:40]
+        lines.append(f'{idx}. {title} — {experience}\n{canonical_link(job)}')
+    if has_more:
+        lines.append('Reply more for 10 more jobs.')
+    return '\n\n'.join(lines)
+
+
+def _company_header(
+    display: str,
+    days: int,
+    *,
+    count_window: int,
+    count_24h: int,
+    count_7d: int,
+    count_month: int,
+) -> str:
+    """Tri-window count line — instant insight before the rows."""
+    def plural(n: int) -> str:
+        return '' if n == 1 else 's'
+
+    if days == 0:
+        main = f'{count_24h} opening{plural(count_24h)} caught in the last 24 hours'
+        extras = f'{count_7d} in 7 days · {count_month} this month'
+    elif days == 30:
+        main = f'{count_month} opening{plural(count_month)} posted this month'
+        extras = f'{count_7d} in 7 days · {count_24h} caught in 24h'
+    elif days == 7:
+        main = f'{count_7d} opening{plural(count_7d)} posted in the last 7 days'
+        extras = f'{count_month} this month · {count_24h} caught in 24h'
+    else:
+        main = f'{count_window} opening{plural(count_window)} posted {window_phrase(days)}'
+        extras = f'{count_7d} in 7 days · {count_month} this month · {count_24h} caught in 24h'
+    return f'{display} — {main} ({extras})'
+
+
 class JobMasterEngine:
     def __init__(
         self,
@@ -540,7 +710,10 @@ class JobMasterEngine:
                 return 'Send a job search first, then reply more.'
             intent_dict, page, seen_ids = saved
             intent = JobMasterIntent(**intent_dict)
-            reply, new_ids = self._job_reply(intent, seen_ids=seen_ids)
+            if intent.kind == 'company_jobs':
+                reply, new_ids = self._company_page(intent, seen_ids=seen_ids)
+            else:
+                reply, new_ids = self._job_reply(intent, seen_ids=seen_ids)
             self.sessions.apply_result(
                 chat_id,
                 reply,
@@ -556,6 +729,19 @@ class JobMasterEngine:
             return self._continue_onboarding(onboarding, raw, chat_id, update_id=update_id)
         if GREETING_RE.match(raw):
             return self._start_onboarding(chat_id, update_id=update_id)
+
+        company_query = _company_query(raw)
+        if company_query is not None:
+            name, days, stated_outright = company_query
+            company_result = self._company_search(
+                name,
+                days,
+                chat_id,
+                stated_outright=stated_outright,
+                update_id=update_id,
+            )
+            if company_result is not None:
+                return company_result
 
         intent = self.interpreter.parse(raw)
         if intent.kind == 'insight':
@@ -657,6 +843,198 @@ class JobMasterEngine:
             has_more=len(valid) > PAGE_SIZE,
         )
         return reply, new_ids
+
+    # -- Jobs by company (24h · 7d · this month) ---------------------------
+
+    def company_jobs(
+        self,
+        company: str,
+        days: int,
+        chat_id: str,
+        *,
+        update_id: int | None = None,
+    ) -> str:
+        """Owner /companyjobs entry point — same formatter as guest chat."""
+        days = days if days in ALLOWED_WINDOWS else 7
+        name = re.sub(r'\s+', ' ', str(company or '')).strip()
+        if not name:
+            return 'Usage: /companyjobs <company> [24h | 7 | 30]'
+        reply = self._company_search(
+            name.lower(),
+            days,
+            chat_id,
+            stated_outright=True,
+            update_id=update_id,
+        )
+        # stated_outright=True guarantees a reply (honest zero instead of
+        # falling through), so this is only defensive.
+        return reply or f"I don't see verified {name} openings in the {window_phrase(days)}."
+
+    def _company_search(
+        self,
+        name: str,
+        days: int,
+        chat_id: str,
+        *,
+        stated_outright: bool,
+        update_id: int | None,
+    ) -> str | None:
+        """Run a company-window search; None = not actually a company query
+        (ambiguous phrasing and no tracked company matches), so the caller
+        falls through to the normal role/insight path."""
+        intent = JobMasterIntent(kind='company_jobs', company=name, window_days=days)
+        rows_month = self._fetch_company_rows(name, 30)
+        rows_24h = self._fetch_company_rows(name, 0)
+        if not rows_month and not rows_24h:
+            if not stated_outright and not self._company_exists(name):
+                return None
+            display = self._company_display(name, rows_month, rows_24h)
+            reply = (
+                f"I don't see verified {display} openings in the {window_phrase(days)}. "
+                "Try 'top companies hiring' to see who's active right now."
+            )
+            self.sessions.apply_result(chat_id, reply, update_id=update_id)
+            return reply
+        reply, seen_ids = self._company_reply(
+            intent, rows_month=rows_month, rows_24h=rows_24h, seen_ids=[],
+        )
+        self.sessions.apply_result(
+            chat_id,
+            reply,
+            update_id=update_id,
+            intent=asdict(intent),
+            page=0,
+            seen_ids=seen_ids,
+        )
+        return reply
+
+    def _company_page(
+        self,
+        intent: JobMasterIntent,
+        *,
+        seen_ids: list[str],
+    ) -> tuple[str, list[str]]:
+        rows_month = self._fetch_company_rows(intent.company, 30)
+        rows_24h = self._fetch_company_rows(intent.company, 0)
+        return self._company_reply(
+            intent, rows_month=rows_month, rows_24h=rows_24h, seen_ids=seen_ids,
+        )
+
+    def _company_reply(
+        self,
+        intent: JobMasterIntent,
+        *,
+        rows_month: list[dict[str, Any]],
+        rows_24h: list[dict[str, Any]],
+        seen_ids: list[str],
+    ) -> tuple[str, list[str]]:
+        days = intent.window_days if intent.window_days in ALLOWED_WINDOWS else 7
+        count_24h = len(rows_24h)
+        count_month = len(rows_month)
+        count_7d = sum(1 for job in rows_month if _posted_within(job, 7))
+        if days == 0:
+            pool = rows_24h
+        elif days == 30:
+            pool = rows_month
+        else:
+            pool = [job for job in rows_month if _posted_within(job, days)]
+
+        prior_seen = set(seen_ids)
+        fresh = [
+            job for job in pool
+            if str(job.get('linkedin_job_id') or job.get('job_url')) not in prior_seen
+        ]
+        picked = fresh[:PAGE_SIZE]
+        new_ids = [str(job.get('linkedin_job_id') or job.get('job_url')) for job in picked]
+        display = self._company_display(intent.company, rows_month, rows_24h)
+
+        body = _format_company_jobs(
+            picked,
+            start_number=len(seen_ids) + 1,
+            has_more=len(fresh) > PAGE_SIZE,
+        )
+        if seen_ids:
+            # Continuation page — header already delivered on page one.
+            return body, new_ids
+        if not picked:
+            base = f"I don't see verified {display} openings in the {window_phrase(days)}"
+            if count_month:
+                reply = (
+                    f'{base} — this month has {count_month}. '
+                    f"Say 'jobs at {display} this month' to see them."
+                )
+            else:
+                reply = f"{base}. Try 'top companies hiring' to see who's active right now."
+            return reply, new_ids
+        header = _company_header(
+            display,
+            days,
+            count_window=len(pool),
+            count_24h=count_24h,
+            count_7d=count_7d,
+            count_month=count_month,
+        )
+        return f'{header}\n\n{body}', new_ids
+
+    def _fetch_company_rows(self, company: str, days: int | None) -> list[dict[str, Any]]:
+        """All verified jobs for a company in a window, oldest scan capped at
+        MAX_SCAN. The API's company filter is a substring ILIKE; a whole-word
+        re-check here keeps short names honest ('ai' must never count
+        'Air India' rows) — header counts and rows share this exact list, so
+        the numbers can never disagree with what the guest is shown."""
+        word = re.compile(rf'(?<![a-z0-9]){re.escape(company.lower())}(?![a-z0-9])')
+        params: dict[str, Any] = {'limit': API_PAGE_SIZE, 'company': company}
+        if days is not None:
+            params['days'] = days
+        rows_out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        offset = 0
+        while offset < MAX_SCAN:
+            data = self.api_get('/api/jobs', {**params, 'offset': offset})
+            rows = data if isinstance(data, list) else []
+            for job in rows:
+                link = canonical_link(job)
+                title = str(job.get('title') or '').strip()
+                company_name = str(job.get('company') or '')
+                if not title or not link or not word.search(company_name.lower()):
+                    continue
+                key = str(job.get('linkedin_job_id') or link)
+                if key in seen:
+                    continue
+                seen.add(key)
+                copied = dict(job)
+                copied['job_url'] = link
+                rows_out.append(copied)
+            if len(rows) < API_PAGE_SIZE:
+                break
+            offset += len(rows)
+        return rows_out
+
+    def _company_exists(self, company: str) -> bool:
+        """Is this a company the tower has EVER tracked (any window)? Used
+        only to decide whether ambiguous phrasing ('X jobs') was really a
+        company question before answering with a company-shaped reply."""
+        word = re.compile(rf'(?<![a-z0-9]){re.escape(company.lower())}(?![a-z0-9])')
+        data = self.api_get('/api/jobs', {'limit': API_PAGE_SIZE, 'company': company})
+        rows = data if isinstance(data, list) else []
+        return any(word.search(str(job.get('company') or '').lower()) for job in rows)
+
+    @staticmethod
+    def _company_display(
+        typed: str,
+        rows_month: list[dict[str, Any]],
+        rows_24h: list[dict[str, Any]],
+    ) -> str:
+        names = {
+            str(job.get('company') or '').strip()
+            for job in (*rows_month, *rows_24h)
+            if str(job.get('company') or '').strip()
+        }
+        if len(names) == 1:
+            return next(iter(names))
+        # Several legal entities match (e.g. Deloitte + Deloitte USI) or no
+        # rows at all — present the guest's own words, tidied.
+        return typed.title()
 
     def _insight_reply(self, intent: JobMasterIntent) -> str:
         params: dict[str, Any] = {

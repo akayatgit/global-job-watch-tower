@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.job_role_families import title_matches_role_family
@@ -9,25 +10,41 @@ from app.telegram_job_search import (
     IntentInterpreter,
     JobMasterIntent,
     JobMasterEngine,
+    _company_query,
     _fallback_intent,
     canonical_link,
     experience_display,
+    parse_window_token,
 )
 from app.telegram_sessions import TelegramSessionStore
 
 
-def make_job(i: int, *, title: str = 'Machine Learning Engineer', city: str = 'bengaluru') -> dict:
+def make_job(
+    i: int,
+    *,
+    title: str = 'Machine Learning Engineer',
+    city: str = 'bengaluru',
+    company: str | None = None,
+    posted_days_ago: int | None = None,
+    scraped_hours_ago: int | None = None,
+) -> dict:
     job_id = str(4448000000 + i)
-    return {
+    job = {
         'id': i,
         'linkedin_job_id': job_id,
         'title': title,
-        'company': f'Company {i}',
+        'company': company if company is not None else f'Company {i}',
         'city_key': city,
         'experience_band': 'Fresher' if i % 2 else None,
         'source_track': 'fresher',
         'job_url': f'https://www.linkedin.com/jobs/view/broken-title-{job_id}/?tracking=x',
     }
+    now = datetime.now(timezone.utc)
+    if posted_days_ago is not None:
+        job['posted_date'] = (now.date() - timedelta(days=posted_days_ago)).isoformat()
+    if scraped_hours_ago is not None:
+        job['scraped_at'] = (now - timedelta(hours=scraped_hours_ago)).isoformat()
+    return job
 
 
 class FakeAPI:
@@ -44,6 +61,30 @@ class FakeAPI:
                 raise OSError('tower unavailable')
             params = params or {}
             rows = list(self.jobs)
+            if params.get('company'):
+                needle = str(params['company']).lower()
+                rows = [
+                    row for row in rows
+                    if needle in str(row.get('company') or '').lower()
+                ]
+            if params.get('days') is not None:
+                # Mirrors /api/jobs semantics: 0 = scraped_at rolling 24h,
+                # else posted_date over the last N days.
+                days = int(params['days'])
+                now = datetime.now(timezone.utc)
+                if days == 0:
+                    rows = [
+                        row for row in rows
+                        if row.get('scraped_at')
+                        and datetime.fromisoformat(row['scraped_at']) >= now - timedelta(hours=24)
+                    ]
+                else:
+                    start = now.date() - timedelta(days=days - 1)
+                    rows = [
+                        row for row in rows
+                        if row.get('posted_date')
+                        and date.fromisoformat(row['posted_date']) >= start
+                    ]
             if params.get('city'):
                 rows = [row for row in rows if row.get('city_key') == params['city']]
             if params.get('track'):
@@ -287,6 +328,155 @@ class TelegramJobSearchTests(unittest.TestCase):
             'Difference — 40 jobs\n'
             'Window — past 7 days',
         )
+
+
+class CompanyJobsTests(unittest.TestCase):
+    """Jobs by company with time windows (24h · 7d · this month)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'sessions.db')
+        self.api = FakeAPI()
+        # Deloitte: 2 caught in 24h (posted today), 1 posted 3 days ago,
+        # 2 posted 20 days ago → 24h=2 · 7d=3 · month=5.
+        self.api.jobs = [
+            make_job(201, title='Audit Analyst', company='Deloitte',
+                     posted_days_ago=0, scraped_hours_ago=1),
+            make_job(202, title='Risk Advisory Intern', company='Deloitte',
+                     posted_days_ago=0, scraped_hours_ago=2),
+            make_job(203, title='Tax Consultant', company='Deloitte',
+                     posted_days_ago=3, scraped_hours_ago=72),
+            make_job(204, title='Data Engineer', company='Deloitte',
+                     posted_days_ago=20, scraped_hours_ago=480),
+            make_job(205, title='Java Developer', company='Deloitte',
+                     posted_days_ago=20, scraped_hours_ago=481),
+        ]
+        self.engine = JobMasterEngine(
+            api_get=self.api,
+            interpreter=IntentInterpreter(enabled=False),
+            sessions=self.sessions,
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_company_query_detection(self):
+        self.assertEqual(_company_query('jobs at deloitte'), ('deloitte', 7, True))
+        self.assertEqual(_company_query('Jobin Deloitte 24'), ('deloitte', 0, False))
+        self.assertEqual(_company_query('deloitte jobs this month'), ('deloitte', 30, False))
+        self.assertEqual(_company_query('openings with JPMorganChase this week'), ('jpmorganchase', 7, True))
+        self.assertEqual(
+            _company_query('jobs at tata consultancy services in chennai'),
+            ('tata consultancy services', 7, True),
+        )
+        # Cities, role families, and filler words are never company names.
+        self.assertIsNone(_company_query('jobs in bangalore'))
+        self.assertIsNone(_company_query('ai jobs'))
+        self.assertIsNone(_company_query('fresher jobs'))
+        self.assertIsNone(_company_query('How many jobs today?'))
+
+    def test_window_tokens(self):
+        self.assertEqual(parse_window_token('24h'), 0)
+        self.assertEqual(parse_window_token('24'), 0)
+        self.assertEqual(parse_window_token('today'), 1)
+        self.assertEqual(parse_window_token('7'), 7)
+        self.assertEqual(parse_window_token('week'), 7)
+        self.assertEqual(parse_window_token('30'), 30)
+        self.assertEqual(parse_window_token('month'), 30)
+        self.assertIsNone(parse_window_token('deloitte'))
+
+    def test_default_window_is_7_days_with_tri_window_header(self):
+        reply = self.engine.handle('jobs at deloitte', '42')
+        self.assertIn(
+            'Deloitte — 3 openings posted in the last 7 days (5 this month · 2 caught in 24h)',
+            reply,
+        )
+        self.assertIn('1. Audit Analyst — Fresher', reply)
+        self.assertIn('3. Tax Consultant — Fresher', reply)
+        self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 3)
+        self.assertNotIn('Data Engineer', reply)
+
+    def test_live_seen_typo_jobin_and_24h_window(self):
+        reply = self.engine.handle('Jobin Deloitte 24', '42')
+        self.assertIn(
+            'Deloitte — 2 openings caught in the last 24 hours (3 in 7 days · 5 this month)',
+            reply,
+        )
+        self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 2)
+
+    def test_this_month_window(self):
+        reply = self.engine.handle('deloitte jobs this month', '42')
+        self.assertIn(
+            'Deloitte — 5 openings posted this month (3 in 7 days · 2 caught in 24h)',
+            reply,
+        )
+        self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 5)
+
+    def test_unknown_company_stated_outright_gets_honest_zero(self):
+        reply = self.engine.handle('jobs at hogwarts', '42')
+        self.assertEqual(
+            reply,
+            "I don't see verified Hogwarts openings in the last 7 days. "
+            "Try 'top companies hiring' to see who's active right now.",
+        )
+
+    def test_ambiguous_non_company_falls_through_to_role_search(self):
+        reply = self.engine.handle('python jobs', '42')
+        self.assertNotIn('openings posted', reply)
+        self.assertEqual(reply, 'No verified jobs match that search right now.')
+
+    def test_short_name_matches_whole_word_only(self):
+        self.api.jobs = [
+            make_job(301, title='Assurance Associate', company='EY',
+                     posted_days_ago=1, scraped_hours_ago=30),
+            make_job(302, title='Sensor Engineer', company='Keyence',
+                     posted_days_ago=1, scraped_hours_ago=30),
+        ]
+        reply = self.engine.handle('jobs at ey', '42')
+        self.assertIn('EY — 1 opening posted in the last 7 days', reply)
+        self.assertIn('Assurance Associate', reply)
+        self.assertNotIn('Keyence', reply)
+        self.assertNotIn('Sensor Engineer', reply)
+
+    def test_empty_window_with_month_activity_suggests_month(self):
+        self.api.jobs = [
+            make_job(401, title='Old Role', company='Deloitte',
+                     posted_days_ago=20, scraped_hours_ago=480),
+        ]
+        reply = self.engine.handle('jobs at deloitte 24h', '42')
+        self.assertEqual(
+            reply,
+            "I don't see verified Deloitte openings in the last 24 hours — "
+            "this month has 1. Say 'jobs at Deloitte this month' to see them.",
+        )
+
+    def test_company_pagination_continues_without_duplicates(self):
+        self.api.jobs = [
+            make_job(500 + i, title=f'Consultant {i}', company='Deloitte',
+                     posted_days_ago=1, scraped_hours_ago=30)
+            for i in range(1, 16)
+        ]
+        first = self.engine.handle('jobs at deloitte', '42')
+        second = self.engine.handle('more', '42')
+        self.assertIn('openings posted in the last 7 days', first)
+        self.assertIn('Reply more for 10 more jobs.', first)
+        self.assertNotIn('openings posted', second)
+        self.assertIn('11. Consultant', second)
+        first_links = {line for line in first.splitlines() if line.startswith('https://')}
+        second_links = {line for line in second.splitlines() if line.startswith('https://')}
+        self.assertEqual(len(first_links), 10)
+        self.assertEqual(len(second_links), 5)
+        self.assertFalse(first_links & second_links)
+
+    def test_owner_company_jobs_entry_point_matches_guest_reply(self):
+        via_command = self.engine.company_jobs('deloitte', 7, 'owner-chat')
+        self.sessions.clear_onboarding('42')
+        via_chat = self.engine.handle('jobs at deloitte', '42')
+        self.assertEqual(via_command, via_chat)
+
+    def test_company_search_does_not_overwrite_guest_role_profile(self):
+        self.engine.handle('jobs at deloitte', '42')
+        self.assertIsNone(self.sessions.get_guest_profile('42'))
 
 
 if __name__ == '__main__':

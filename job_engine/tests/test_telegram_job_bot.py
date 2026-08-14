@@ -47,12 +47,21 @@ class FakeTelegramAPI:
 class FakeEngine:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
+        self.company_calls: list[tuple[str, int, str]] = []
 
     def handle(self, text: str, chat_id: str) -> str:
         self.calls.append((text, chat_id))
         if text == '/new':
             return 'Search reset. Send a role, city, or job-market question.'
         return '1. AI Engineer — Acme — Fresher\nhttps://www.linkedin.com/jobs/view/4448000001/'
+
+    def company_jobs(self, company: str, days: int, chat_id: str) -> str:
+        self.company_calls.append((company, days, chat_id))
+        return (
+            f'{company.title()} — 3 openings posted in the last 7 days '
+            '(5 this month · 2 caught in 24h)\n\n'
+            '1. Audit Analyst — Fresher\nhttps://www.linkedin.com/jobs/view/4448000201/'
+        )
 
 
 class SmokeEngine:
@@ -230,6 +239,63 @@ class TelegramBotContractTests(unittest.TestCase):
             [('How many ai jobs in the past 24 hours?', 'owner')],
         )
         self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
+
+    def test_owner_companyjobs_routes_to_engine_with_window(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/companyjobs deloitte 24h')
+        self.assertEqual(self.engine.company_calls, [('deloitte', 0, 'owner')])
+        self.assertIn('openings posted in the last 7 days', self.api.sent[-1][1])
+
+    def test_owner_companyjobs_defaults_to_7_days_and_keeps_multiword_names(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/companyjobs tata consultancy services')
+        bot.process('owner', '/companyjobs tata consultancy services 30')
+        self.assertEqual(
+            self.engine.company_calls,
+            [
+                ('tata consultancy services', 7, 'owner'),
+                ('tata consultancy services', 30, 'owner'),
+            ],
+        )
+
+    def test_owner_companyjobs_without_company_shows_usage(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('owner', '/companyjobs')
+        self.assertEqual(self.engine.company_calls, [])
+        self.assertIn('Usage: /companyjobs <company> [24h | 7 | 30]', self.api.sent[-1][1])
+
+    def test_guest_companyjobs_is_denied_like_every_owner_command(self):
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+        )
+        bot.process('guest', '/companyjobs deloitte 7')
+        self.assertEqual(self.engine.company_calls, [])
+        self.assertEqual(
+            self.api.sent,
+            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+        )
 
     def test_guest_cannot_run_owner_command(self):
         bot = JobMasterTelegramBot(

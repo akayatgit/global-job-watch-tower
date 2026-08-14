@@ -131,6 +131,7 @@ def list_jobs(
     company: str | None = None,
     title: str | None = None,
     posted_date: str | None = None,
+    days: int | None = None,
     search_config_id: int | None = None,
     company_id: int | None = None,
     db: Session = Depends(get_db),
@@ -181,6 +182,19 @@ def list_jobs(
         query = query.where(JobMaster.title.ilike(f'%{title}%'))
     if posted_date:
         query = query.where(JobMaster.posted_date == posted_date)
+    if days in (0, 1, 2, 4, 7, 14, 30):
+        # Same window convention as /api/jobs/insights: 0 = rolling 24 hours
+        # by catch time (scraped_at); any other value = LinkedIn's own
+        # posted_date over the last N calendar days.
+        now = datetime.now(timezone.utc)
+        if days == 0:
+            query = query.where(JobMaster.scraped_at >= now - timedelta(hours=24))
+        else:
+            today = now.date()
+            query = query.where(
+                JobMaster.posted_date >= today - timedelta(days=days - 1),
+                JobMaster.posted_date < today + timedelta(days=1),
+            )
     if search_config_id:
         query = query.where(JobMaster.search_config_id == search_config_id)
     if company_id:
