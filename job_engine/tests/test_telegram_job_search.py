@@ -478,6 +478,43 @@ class CompanyJobsTests(unittest.TestCase):
         self.engine.handle('jobs at deloitte', '42')
         self.assertIsNone(self.sessions.get_guest_profile('42'))
 
+    def test_company_query_rescues_a_chat_stuck_at_ask_role(self):
+        """Live-seen 2026-08-14: a dead-ended role prompt parks the chat at
+        ask_role, where 'Jobin Deloitte' was re-parsed as a role forever
+        ("I don't see verified Jobin Deloitte openings today" on loop). A
+        resolved company question must answer AND clear that stuck state."""
+        self.sessions.save_onboarding('42', {
+            'stage': 'ask_role',
+            'role_family': '',
+            'role_keywords': [],
+            'experience': '',
+            'experience_known': False,
+            'cities': [],
+            'city_known': False,
+        })
+        reply = self.engine.handle('Jobin Deloitte', '42')
+        self.assertIn('Deloitte — 3 openings posted in the last 7 days', reply)
+        self.assertNotIn("I don't see verified Jobin Deloitte openings", reply)
+        self.assertIsNone(self.sessions.load_onboarding('42'))
+        more = self.engine.handle('more', '42')
+        self.assertNotIn('Send a job search first', more)
+
+    def test_non_company_text_mid_onboarding_still_continues_onboarding(self):
+        self.sessions.save_onboarding('42', {
+            'stage': 'ask_role',
+            'role_family': '',
+            'role_keywords': [],
+            'experience': '',
+            'experience_known': False,
+            'cities': [],
+            'city_known': False,
+        })
+        # 'python' is not a tracked company, so the ambiguous phrasing must
+        # stay a role answer inside the onboarding flow, not a company reply.
+        reply = self.engine.handle('python jobs', '42')
+        self.assertNotIn('openings posted', reply)
+        self.assertIsNotNone(self.sessions.load_onboarding('42'))
+
 
 if __name__ == '__main__':
     unittest.main()
