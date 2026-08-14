@@ -52,7 +52,9 @@ RELEVANCE_MODE = os.getenv('RELEVANCE_MODE', 'ollama').strip().lower()
 #   off   = no detail pages at all (jobs stay pending, resumable)
 #   light = budgeted trickle, only in idle + cool windows (default)
 #   full  = legacy behavior (post-run bursts + 10-min backfill)
-DETAIL_ENRICH_MODE = os.getenv('DETAIL_ENRICH_MODE', 'light').strip().lower()
+# Default 'full' since the MNC-first pivot (Ashok, 2026-08-14): collection
+# is focused on watched giants, so every job affords a detail-page visit.
+DETAIL_ENRICH_MODE = os.getenv('DETAIL_ENRICH_MODE', 'full').strip().lower()
 # Max detail pages fetched per UTC day in light mode (~35-45 min of lane)
 DETAIL_BUDGET_PER_DAY = int(os.getenv('DETAIL_BUDGET_PER_DAY', '60'))
 # Jobs per trickle batch — small so a mistimed batch delays a search by

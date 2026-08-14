@@ -142,8 +142,13 @@ def main() -> None:
                 else:
                     unchanged += 1
 
-        # Disable leftovers not in the new catalogue (seed owns truth)
+        # Disable leftovers not in the new catalogue (seed owns truth) —
+        # but NEVER touch MNC company-scoped configs (2026-08-14 pivot):
+        # the company watchlist is owned by seed_mnc_watchlist.py and
+        # /addcompany, not by this legacy role catalogue.
         for cfg in db.execute(select(SearchConfig)).scalars():
+            if (getattr(cfg, 'target_company', None) or '').strip():
+                continue
             if cfg.name.strip().lower() not in catalogue_names:
                 if cfg.enabled:
                     cfg.enabled = False
