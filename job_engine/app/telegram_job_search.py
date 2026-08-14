@@ -724,6 +724,26 @@ class JobMasterEngine:
             )
             return reply
 
+        # Company questions outrank the legacy text onboarding: a dead-ended
+        # role prompt keeps the chat parked at ask_role, and (live-seen
+        # 2026-08-14) "Jobin Deloitte 24" was then re-parsed as a role there
+        # forever — "I don't see verified Jobin Deloitte openings today" on
+        # loop. A resolved company query answers AND clears that state so
+        # the guest is rescued out of the loop, not stuck beside it.
+        company_query = _company_query(raw)
+        if company_query is not None:
+            name, days, stated_outright = company_query
+            company_result = self._company_search(
+                name,
+                days,
+                chat_id,
+                stated_outright=stated_outright,
+                update_id=update_id,
+            )
+            if company_result is not None:
+                self.sessions.clear_onboarding(chat_id)
+                return company_result
+
         onboarding = self.sessions.load_onboarding(chat_id)
         if onboarding is not None:
             return self._continue_onboarding(onboarding, raw, chat_id, update_id=update_id)

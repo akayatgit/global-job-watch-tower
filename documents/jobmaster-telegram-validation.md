@@ -499,6 +499,7 @@ disagree.
 | JM-240 | After JM-234 with more than 10 matches, reply `more` | Next page of the same company search — numbering continues, no duplicate links, no repeated header. |
 | JM-241 | Ashok: `/companyjobs deloitte 24h` (also `7`, `30`, or no window = 7 days) | Exact same reply a guest would get through chat for that company + window; `/companyjobs` alone shows usage with the window vocabulary. |
 | JM-242 | A guest sends `/companyjobs deloitte` | Ordinary owner-command denial ("JobMaster can help you find verified jobs...") — the natural-chat path (JM-234) is the guest surface. |
+| JM-243 | Reproduce the live 2026-08-14 loop: dead-end the text onboarding so the chat is parked at the role prompt ("Want to try a different role or city?"), THEN send `Jobin Deloitte` | Company reply (JM-234 shape), never "I don't see verified Jobin Deloitte openings today" again — a resolved company question answers AND clears the stuck onboarding state, so `more` and normal chat work right after. |
 
 ## 15. Execution log
 
@@ -577,17 +578,19 @@ Convert this suite without changing its IDs:
    honest copy; 🔕 on manual does NOT opt out). 329/329 green locally.
    Still requires Ashok's live Telegram run to close JM-226..233 above.
 2C. **Jobs by company with time windows contract tests — done (2026-08-14):**
-   JM-234..242 above are automated in
-   `job_engine/tests/test_telegram_job_search.py::CompanyJobsTests` (12
+   JM-234..243 above are automated in
+   `job_engine/tests/test_telegram_job_search.py::CompanyJobsTests` (14
    tests: deterministic company/window detection incl. the "jobin" typo and
    the city/role-family/filler rejections, tri-window header counts, whole-
    word short-name matching so "ai"/"ey" never count substring companies,
    honest zero replies for unknown companies and empty windows, pagination
-   continuity, owner-entry-point parity with guest chat, and no guest-
-   profile overwrite) plus `test_telegram_job_bot.py` (4 tests: `/companyjobs`
-   window-arg routing, multi-word names, usage reply, guest denial).
-   358/358 green locally. Still requires Ashok's live Telegram run to close
-   JM-234..242 in the execution log above.
+   continuity, owner-entry-point parity with guest chat, no guest-profile
+   overwrite, and the stuck-at-ask-role rescue from Ashok's live 2026-08-14
+   screenshot — with the inverse guard that non-company text mid-onboarding
+   still continues onboarding) plus `test_telegram_job_bot.py` (4 tests:
+   `/companyjobs` window-arg routing, multi-word names, usage reply, guest
+   denial). 360/360 green locally. Still requires Ashok's live Telegram run
+   to close JM-234..243 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link
