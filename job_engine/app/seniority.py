@@ -53,6 +53,27 @@ SENIORITY_TITLE_REGEX = (
 FRESHER_TITLE_PATTERN = re.compile(FRESHER_TITLE_REGEX)
 SENIORITY_TITLE_PATTERN = re.compile(SENIORITY_TITLE_REGEX)
 
+# The label card_requirements stamps when LinkedIn's Internship/Entry filter
+# is the ONLY fresher evidence (nothing stated by the employer). /topfreshers
+# must never treat this inferred label as an explicit fresher statement.
+FRESHER_TRACK_SILENCE_LABEL = 'Fresher track (LinkedIn Internship/Entry)'
+
+# Explicitly-declared fresher / zero-experience wording. Deliberately tighter
+# than FRESHER_TITLE_REGEX: "Junior" or an internship tag is early-career
+# evidence, but only the employer literally saying fresher / fresh graduate /
+# no experience / 0 years makes a row a /topfreshers video gem. The wrapper
+# uses [^a-z0-9] so "10 years" can never match the "0 years" alternative and
+# "refresher" can never match "fresher".
+EXPLICIT_FRESHER_REGEX = (
+    r'(?i)(^|[^a-z0-9])(?:'
+    r'freshers?|fresh\s+graduates?|'
+    r'no\s+(?:prior\s+|work\s+)?experience|'
+    r'zero\s+experience|'
+    r'0\s*(?:-|–|to\s+)?\s*\d*\s*\+?\s*(?:years?|yrs?)'
+    r')([^a-z]|$)'
+)
+EXPLICIT_FRESHER_PATTERN = re.compile(EXPLICIT_FRESHER_REGEX)
+
 
 def title_seniority_veto(title: str | None) -> bool:
     """True when the title itself contradicts a Fresher label.
@@ -84,3 +105,27 @@ def fresher_title_safe_clause():
         FRESHER_TITLE_REGEX.removeprefix('(?i)')
     )
     return or_(~seniority, fresher_words)
+
+
+def explicit_fresher_clause():
+    """SQLAlchemy WHERE fragment for /topfreshers gems: the employer
+    explicitly said fresher / 0 experience — in the title, in the card
+    details text, as a parsed minimum of 0 stated years, or as a stated
+    fresher experience label. LinkedIn's Internship/Entry silence-stamp
+    label never qualifies (that is inference, not a statement).
+    """
+    from sqlalchemy import and_, or_
+
+    from app.models import JobMaster
+
+    pg = EXPLICIT_FRESHER_REGEX.removeprefix('(?i)')
+    stated_fresher_label = and_(
+        JobMaster.experience_label.op('~*')('(^|[^a-z])freshers?([^a-z]|$)'),
+        JobMaster.experience_label != FRESHER_TRACK_SILENCE_LABEL,
+    )
+    return or_(
+        JobMaster.title.op('~*')(pg),
+        JobMaster.raw_text.op('~*')(pg),
+        JobMaster.experience_min_years == 0,
+        stated_fresher_label,
+    )

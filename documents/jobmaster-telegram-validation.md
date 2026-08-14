@@ -594,6 +594,25 @@ broad catch gets wiped and rebuilt on the new base.
 | JM-258 | Same query ending in `-unfiltered` (e.g. `jobs at Deloitte -unfiltered`, `/fresh -unfiltered`) | The gate lifts for that reply: unverified rows appear too. `more` after an unfiltered search stays unfiltered; `more` after a normal search stays checked. Daily alerts NEVER include unverified jobs — no override exists for alerts. |
 | JM-256 | Ashok: `/companies` | Full MNC roster, NEVER truncated (long lists chunk into multiple messages): `MNC WATCHLIST · N companies · N on [· N paused]`, then numbered rows `1. Deloitte — 12 jobs (5 in 24h) · scraped 2h ago` sorted most-jobs-first; paused companies flagged `· paused`, never-scraped show `scraped never`. Empty watchlist points to `/addcompany <name>`. Guests sending `/companies` get the ordinary denial. |
 
+## 14J. /topfreshers video gems + owner /help (2026-08-14)
+
+Ashok's ask: the gems for making video are jobs that EXPLICITLY say fresher
+or 0 experience in the title/details — verified (detail-checked) only, never
+LinkedIn's Entry-tag inference and never the silence-stamped band. Owner-only
+command with `company:` / `skill:` / `role:` filters; `/help` shows every
+command with its options.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-259 | Ashok: `/topfreshers 0` | `🎬 TOP FRESHER GEMS · N checked · explicitly fresher/0-exp` then numbered rows `Title — Company — City` + LinkedIn link. Every row is detail-verified AND explicitly says fresher / fresh graduate / no experience / 0 years in its title or details (or parsed stated 0 min years). A silence-stamped `Fresher track (LinkedIn Internship/Entry)` row never appears. Lists longer than 30 cap with `…and N more gems`. |
+| JM-260 | Ashok: `/topfreshers company:Deloitte 0` | Only Deloitte gems (multi-word companies parse whole: `company:Tata Consultancy Services 0`). Header shows `Filters: company: Deloitte`. |
+| JM-261 | Ashok: `/topfreshers skill:sql 0` | Only gems whose title or details mention `sql` as a whole word — "MySQL" alone never matches `skill:sql`. |
+| JM-262 | Ashok: `/topfreshers role:data 0` / `role:tester 0` | Known families (ai_ml, data, software, cybersecurity, cloud_devops, product, design) filter by family; anything else matches the title. Filters combine: `company:Deloitte skill:sql 0`. |
+| JM-263 | Ashok: `/topfreshers 2` | Honest refusal: "Only 0 is supported — /topfreshers lists jobs that explicitly say fresher or 0 experience." + usage. No API call fires. |
+| JM-264 | Zero gems match | "No checked explicit-fresher gems… Verification may still be draining — /health shows the queue." — never invented rows. |
+| JM-265 | Ashok: `/help` | Full `JOBMASTER · ALL COMMANDS` sheet: options-first section (`/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0`, `/companyjobs <company> [24h \| 7 \| 30]`, `-unfiltered`, …) then every menu command with its description. |
+| JM-266 | Any guest: `/topfreshers 0` or `/help` | `/topfreshers` gets the ordinary owner-command denial; `/help` keeps the simple "JobMaster provides verified jobs…" line — the ops sheet is never exposed to customer chats. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because

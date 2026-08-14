@@ -12,7 +12,10 @@ import re
 import unittest
 
 from app.seniority import (
+    EXPLICIT_FRESHER_PATTERN,
+    EXPLICIT_FRESHER_REGEX,
     FRESHER_TITLE_REGEX,
+    FRESHER_TRACK_SILENCE_LABEL,
     SENIORITY_TITLE_REGEX,
     title_seniority_veto,
 )
@@ -119,6 +122,65 @@ class TitleSeniorityVetoTests(unittest.TestCase):
             migration.FRESHER_TITLE_SQL,
             FRESHER_TITLE_REGEX.removeprefix('(?i)'),
         )
+
+
+class ExplicitFresherGemTests(unittest.TestCase):
+    """/topfreshers gems: only EXPLICIT fresher / 0-experience wording
+    qualifies — inference (LinkedIn Entry tag, 'Junior' titles) never does."""
+
+    def test_explicit_wording_matches(self):
+        for text in (
+            'Data Analyst (Fresher)',
+            'Freshers welcome — Software Trainee',
+            'Fresh Graduates - 2026 batch',
+            'No prior experience required',
+            'No experience needed, we train you',
+            'Zero experience? Apply now',
+            '0 years of experience',
+            '0-2 years experience',
+            '0 to 2 yrs',
+            '0+ years',
+            'Experience: 0 – 1 years',
+        ):
+            self.assertTrue(EXPLICIT_FRESHER_PATTERN.search(text), text)
+
+    def test_inference_and_lookalikes_never_match(self):
+        for text in (
+            'Junior Software Engineer',       # early-career, but not explicit
+            'Graduate Engineer Trainee',      # fresher-adjacent, not explicit
+            'Internship — Data Science',
+            '10 years of experience',         # the 0 must not match inside 10
+            'Minimum 5 Year(s) Of Experience Is Required',
+            'Refresher training provided',    # 'refresher' is not 'fresher'
+            'Entry level',                    # LinkedIn's tag, not a statement
+        ):
+            self.assertFalse(EXPLICIT_FRESHER_PATTERN.search(text), text)
+
+    def test_pattern_stays_portable_to_postgres(self):
+        self.assertNotIn(r'\b', EXPLICIT_FRESHER_REGEX)
+        self.assertNotIn('(?<', EXPLICIT_FRESHER_REGEX)
+        self.assertTrue(EXPLICIT_FRESHER_REGEX.startswith('(?i)'))
+        re.compile(EXPLICIT_FRESHER_REGEX.removeprefix('(?i)'))
+
+    def test_silence_stamp_label_matches_tasks_and_is_excluded_from_clause(self):
+        """card_requirements stamps this exact label from LinkedIn's f_E=1,2
+        silence — the explicit-fresher clause must name (and exclude) the
+        same string, so pin them together."""
+        from app.tasks import card_requirements
+
+        _req, band, label = card_requirements('Plain card text', 'fresher', title='Data Analyst')
+        self.assertEqual(band, 'Fresher')
+        self.assertEqual(label, FRESHER_TRACK_SILENCE_LABEL)
+
+    def test_clause_covers_title_details_stated_years_and_label(self):
+        from app.seniority import explicit_fresher_clause
+
+        sql = str(explicit_fresher_clause().compile(compile_kwargs={'literal_binds': True}))
+        self.assertIn('title', sql)
+        self.assertIn('raw_text', sql)
+        self.assertIn('experience_min_years', sql)
+        self.assertIn('experience_label', sql)
+        self.assertIn(FRESHER_TRACK_SILENCE_LABEL, sql)
 
 
 if __name__ == '__main__':

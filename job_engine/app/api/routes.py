@@ -201,13 +201,15 @@ def list_jobs(
     search_config_id: int | None = None,
     company_id: int | None = None,
     verified: bool = False,
+    skill: str | None = None,
+    explicit_fresher: bool = False,
     db: Session = Depends(get_db),
 ):
     from app.cities import normalize_city_filter
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
-    from app.seniority import fresher_title_safe_clause
+    from app.seniority import explicit_fresher_clause, fresher_title_safe_clause
 
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
@@ -249,6 +251,21 @@ def list_jobs(
         # Checked-only law (2026-08-14): only jobs whose LinkedIn detail
         # page has been read (experience/degrees/certs verified) qualify.
         query = query.where(JobMaster.requirements_enriched_at.is_not(None))
+    if explicit_fresher:
+        # /topfreshers gems: the employer literally said fresher / 0 exp
+        # (title, details text, stated 0 years, or stated fresher label) —
+        # LinkedIn's Entry tag alone never qualifies. See app/seniority.py.
+        query = query.where(explicit_fresher_clause())
+    if skill:
+        needle = re.escape(skill.strip().lower())
+        if needle:
+            skill_pattern = rf'(^|[^a-z0-9]){needle}([^a-z0-9]|$)'
+            # Word-bounded so skill=sql never matches "MySQL"; searched in
+            # the title AND the card details text.
+            query = query.where(or_(
+                JobMaster.title.op('~*')(skill_pattern),
+                JobMaster.raw_text.op('~*')(skill_pattern),
+            ))
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         query = query.where(JobMaster.title.op('~*')(pattern))

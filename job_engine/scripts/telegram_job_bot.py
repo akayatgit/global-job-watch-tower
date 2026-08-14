@@ -120,6 +120,9 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'resetdata',
     'resetconfirm',
     'resetcancel',
+    # Video gems (2026-08-14): verified rows that EXPLICITLY say fresher /
+    # 0 experience — with company: / skill: / role: filters.
+    'topfreshers',
 })
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
@@ -127,6 +130,21 @@ PENDING_PUSH_TTL_S = 600
 # Same review window for a staged /resetdata — a destructive action must
 # never fire from a stale confirmation.
 PENDING_RESET_TTL_S = 600
+# /topfreshers — video-gem mining. Filters are key:value tokens; a value
+# runs until the next key or the trailing experience number, so multi-word
+# companies ("company:Tata Consultancy Services 0") parse whole.
+TOPFRESHERS_FILTER_RE = re.compile(
+    r'(company|skill|role)\s*:\s*(.+?)(?=\s+(?:company|skill|role)\s*:|\s+\d+\s*$|\s*$)',
+    re.IGNORECASE,
+)
+TOPFRESHERS_LEVEL_RE = re.compile(r'(?:^|\s)(\d+)\s*$')
+TOPFRESHERS_FETCH = 200
+TOPFRESHERS_SHOW = 30
+TOPFRESHERS_USAGE = (
+    'Usage: /topfreshers [company:<name>] [skill:<term>] [role:<term>] 0\n'
+    'Examples: /topfreshers 0 · /topfreshers company:Deloitte 0 · '
+    '/topfreshers skill:sql 0 · /topfreshers role:data 0'
+)
 # Ashok-only self-test toggle: no second phone needed to see the guest
 # experience. Always dispatched off the REAL owner check (never the
 # simulated one) so this pair of commands can never lock him out of his
@@ -140,6 +158,8 @@ OWNER_COMMANDS = frozenset((
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
 OWNER_MENU = [
+    {'command': 'topfreshers', 'description': 'Video gems — explicit fresher/0-exp, checked'},
+    {'command': 'help', 'description': 'All commands with options'},
     {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
     {'command': 'companies', 'description': 'Full MNC watchlist roster'},
     {'command': 'resetdata', 'description': 'Stage a tower data reset'},
@@ -455,6 +475,8 @@ class JobMasterTelegramBot:
         *,
         update_id: int | None,
     ) -> str:
+        if command == 'help':
+            return self._owner_help()
         if command in OWNER_MANAGEMENT_COMMANDS:
             return self._management_reply(chat_id, command, arg)
         if command in OWNER_COMPANY_COMMANDS:
@@ -542,6 +564,8 @@ class JobMasterTelegramBot:
             return self._confirm_push(chat_id)
         if command == 'pushstats':
             return self._push_stats()
+        if command == 'topfreshers':
+            return self._topfreshers_reply(arg)
         if command == 'addcompany':
             return self._add_company_reply(arg)
         if command == 'companies':
@@ -865,6 +889,116 @@ class JobMasterTelegramBot:
                 f"({row.get('jobs_24h', 0)} in 24h) · "
                 f"scraped {self._ago(row.get('last_run_at'))}{state}"
             )
+        return '\n'.join(lines)
+
+    def _topfreshers_reply(self, arg: str) -> str:
+        """/topfreshers — the video gems: detail-checked jobs whose employer
+        EXPLICITLY said fresher / 0 experience in the title or details.
+        Silence-stamped rows (LinkedIn Entry tag only) never qualify."""
+        text = (arg or '').strip()
+        filters = {
+            m.group(1).lower(): m.group(2).strip()
+            for m in TOPFRESHERS_FILTER_RE.finditer(text)
+            if m.group(2).strip()
+        }
+        level_match = TOPFRESHERS_LEVEL_RE.search(text)
+        level = int(level_match.group(1)) if level_match else 0
+        if level != 0:
+            return (
+                'Only 0 is supported — /topfreshers lists jobs that '
+                'explicitly say fresher or 0 experience.\n' + TOPFRESHERS_USAGE
+            )
+        params: dict[str, Any] = {
+            'limit': TOPFRESHERS_FETCH,
+            'verified': 1,
+            'explicit_fresher': 1,
+        }
+        if filters.get('company'):
+            params['company'] = filters['company']
+        if filters.get('skill'):
+            params['skill'] = filters['skill']
+        role = filters.get('role', '')
+        if role:
+            if role.lower() in ROLE_FAMILY_LABELS:
+                params['role_family'] = role.lower()
+            else:
+                params['title_terms'] = role
+        try:
+            rows = self.engine.api_get('/api/jobs', params)
+        except Exception:
+            return 'Tower is unreachable right now — try /topfreshers again in a minute.'
+        if not isinstance(rows, list):
+            rows = []
+        applied = ' · '.join(
+            f'{key}: {filters[key]}'
+            for key in ('company', 'skill', 'role')
+            if filters.get(key)
+        )
+        if not rows:
+            scope = f' for {applied}' if applied else ''
+            return (
+                f'No checked explicit-fresher gems{scope} yet.\n'
+                'Verification may still be draining — /health shows the queue. '
+                'Widen the filters or check back shortly.\n' + TOPFRESHERS_USAGE
+            )
+        total = f'{TOPFRESHERS_FETCH}+' if len(rows) >= TOPFRESHERS_FETCH else str(len(rows))
+        lines = [f'🎬 TOP FRESHER GEMS · {total} checked · explicitly fresher/0-exp']
+        if applied:
+            lines.append(f'Filters: {applied}')
+        lines.append('')
+        for i, job in enumerate(rows[:TOPFRESHERS_SHOW], 1):
+            place = (
+                city_label(job.get('city_key')) if job.get('city_key') else None
+            ) or job.get('location') or 'India'
+            lines.append(
+                f"{i}. {job.get('title') or 'Untitled'} — "
+                f"{job.get('company') or 'Unknown company'} — {place}"
+            )
+            lines.append(str(job.get('job_url') or ''))
+        if len(rows) > TOPFRESHERS_SHOW:
+            lines.append('')
+            lines.append(
+                f'…and {len(rows) - TOPFRESHERS_SHOW} more gems — '
+                'narrow with company:/skill:/role:.'
+            )
+        return '\n'.join(lines)
+
+    def _owner_help(self) -> str:
+        """/help for Ashok — every command with its options on one sheet."""
+        lines = [
+            'JOBMASTER · ALL COMMANDS',
+            '',
+            'With options:',
+            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0 — '
+            'checked jobs that explicitly say fresher/0-exp (the video gems)',
+            '/companyjobs <company> [24h | 7 | 30] — jobs at one company '
+            '(also today, 1, 2, 4, 14)',
+            '/fresh · /towerinsights · /hiringsignals · /watchlist [days] — '
+            'boards accept a day window',
+            '/stats [role] — live 24h job count',
+            '/addcompany <name> — watch a new MNC (first scrape queues now)',
+            '/history <@username or ID> [1–40] — delivered guest conversations',
+            '/guestprofile <@username or ID> — remembered role/experience/city',
+            '/checkaccess <@username or ID> — why a person can/can\'t text',
+            '/allowguest <@username or ID> [minutes] · /blockguest <@username or ID>',
+            '/push <message> — stage a broadcast → /pushconfirm within 10 min',
+            '/resetdata — stage a tower wipe → /resetconfirm within 10 min',
+            'Add -unfiltered to any job list (searches, /companyjobs, /fresh) '
+            'to include unchecked rows.',
+            '',
+            'Everything:',
+        ]
+        seen: set[str] = set()
+        for item in OWNER_MENU:
+            if item['command'] in seen:
+                continue
+            seen.add(item['command'])
+            lines.append(f"/{item['command']} — {item['description']}")
+        lines.append('')
+        lines.append(
+            'Guests never see this sheet — they just type what they want '
+            '("data jobs in Chennai") or use the buttons.'
+        )
         return '\n'.join(lines)
 
     def _add_company_reply(self, arg: str) -> str:
@@ -1338,7 +1472,13 @@ class JobMasterTelegramBot:
                 )
             return
         parsed = self._command(clean)
-        if parsed and parsed[0] in OWNER_COMMANDS:
+        # /help is owner-only as a COMMAND surface: Ashok gets the full
+        # command sheet; guests keep the simple engine help line (Gate 3.0 —
+        # the ops deck is never exposed to customer chats).
+        if parsed and (
+            parsed[0] in OWNER_COMMANDS
+            or (parsed[0] == 'help' and self._effective_is_owner(chat_id))
+        ):
             command, arg = parsed
             if command in OWNER_ROLE_SWITCH_COMMANDS and self._is_owner(chat_id):
                 # Gated on the REAL owner check, never the simulated one, so
