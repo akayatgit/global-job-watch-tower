@@ -92,6 +92,11 @@ HEAT_COOLDOWN_RETRIES = int(os.getenv('HEAT_COOLDOWN_RETRIES', '3'))
 HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
 OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 
+# Partner API (/api/partner/v1/ — AvatarPitch integration, 2026-08-14).
+# Static bearer token shared server-to-server on this machine only.
+# Unset = the partner surface answers 503 (disabled by default).
+PARTNER_API_TOKEN = os.getenv('PARTNER_API_TOKEN', '').strip()
+
 # Replicate — Telegram image chat + Carousel (Gate 1)
 # Must include :version hash (bare owner/name returns "No adapter found").
 REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN', '').strip()

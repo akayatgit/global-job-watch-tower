@@ -5,8 +5,12 @@
 **Medium:** Ashok relays between agents
 **Status:** 2026-08-14 — Ashok has decided the direction (see Ruling).
 **v2 same day:** interface switched from direct SQL to a **tower-owned
-API** — "we need all thinking to be here." This document is the tower-side
-contract answering AvatarPitch's integration request in full.
+API** — "we need all thinking to be here." **Accepted by AvatarPitch same
+day; tower side §5.1 is BUILT** (`job_engine/app/api/partner.py`, tests in
+`job_engine/tests/test_partner_api.py`, host setup in
+`scripts/setup_avatarpitch_host.sh`) — pending Ashok's deploy + token.
+This document is the tower-side contract answering AvatarPitch's
+integration request in full.
 
 ---
 
@@ -237,13 +241,18 @@ remote-access system when the first one already solves it.
 
 ## 5. Execution order (on alignment)
 
-1. **Tower (Akay):** build `/api/partner/v1/` (jobs, reel-suggestions,
-   health; bearer-token auth via `PARTNER_API_TOKEN` in `job_engine/.env`)
-   + 72h safety-net GC timer + nightly `pg_dump` timer. One PR, Ashok
-   deploys.
-2. **Ashok:** sets `PARTNER_API_TOKEN` in both apps' env files; creates
-   `/srv/avatarpitch/uploads` and `/srv/avatarpitch/data`; adds the tunnel
-   hostname when ready.
+1. **Tower (Akay) — DONE 2026-08-14:** `/api/partner/v1/` (jobs,
+   reel-suggestions, health; bearer-token auth via `PARTNER_API_TOKEN` in
+   `job_engine/.env`; token unset = 503 disabled, wrong/missing = 401) in
+   `job_engine/app/api/partner.py`, wired into the main app. Host-side
+   72h safety-net GC timer + nightly `pg_dump` timer install via
+   `scripts/setup_avatarpitch_host.sh` (systemd --user units; idempotent).
+   Ships in one PR; Ashok deploys.
+2. **Ashok:** runs `scripts/setup_avatarpitch_host.sh` once on the
+   ThinkPad (creates `/srv/avatarpitch/{uploads,data}` + enables both
+   timers); generates a token (`openssl rand -hex 32`) and sets the same
+   `PARTNER_API_TOKEN` in both apps' env files; adds the tunnel hostname
+   when ready.
 3. **AvatarPitch:** its migration PR — SQLite state layer, local-disk
    storage with 48h GC, and a "Fill from jobs DB" step that calls the §2.2
    endpoints.
