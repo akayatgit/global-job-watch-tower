@@ -197,10 +197,14 @@ need to be told twice.
 - **2026-08-14 · AvatarPitch ruling — no Supabase, tower is home, 48h GC.**
  Ashok: "Lets not allow it to connect to supabase, the marketing data
  needs to get insights from here and upload all the resources here, with
- 48hrs garbage collection timeframe." AvatarPitch moves onto the ThinkPad:
- reads jobs via a versioned read-only view `jobs_public_v1` (role
- `avatarpitch_ro`, never base tables), owns schema `avatarpitch` in the
- same Postgres, stores all assets in `/srv/avatarpitch/uploads` with
+ 48hrs garbage collection timeframe." Then, same day: "Lets give as api
+ instead of database connection, we need all thinking to be here."
+ AvatarPitch moves onto the ThinkPad: reads jobs **only** through
+ tower-owned, bearer-token endpoints `/api/partner/v1/` (jobs ·
+ reel-suggestions · health) — **no Postgres connection ever**; all query
+ logic, freshness rules, skill matching, and one-per-company dedupe are
+ tower code. Its own app state lives in its own SQLite file under
+ `/srv/avatarpitch/data/`. Assets live in `/srv/avatarpitch/uploads` with
  **48-hour garbage collection** (tower adds a 72h safety-net timer), runs
  as a niced systemd service that must lose CPU fights against scrape/
  Ollama, and reaches the iPhone via a second hostname on the existing
