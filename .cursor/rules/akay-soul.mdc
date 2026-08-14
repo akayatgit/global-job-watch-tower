@@ -185,6 +185,16 @@ need to be told twice.
  auto slot, explicit taps outrank it, and 🔕 on an auto alert is a real
  opt-out — proactive must never shade into spam, or it burns the exact
  trust the survival law depends on.
+- **2026-08-14 · AvatarPitch marketing app will integrate with us.** Ashok's
+ separate marketing app at `avatarpitch.vercel.app/app` (a Supabase +
+ Vercel project) is going to integrate with the Watch Tower. Standing
+ facts: the tower itself has **no Supabase** — truth engine stays local
+ Postgres on the ThinkPad; any integration goes either through read-only
+ token-guarded API endpoints over `tower.jobmaster.agency`, or through a
+ dedicated Supabase mirror fed *by* the tower (the parked "public insights
+ only" case). Never hand tower secrets to a browser-shipped frontend;
+ service_role keys are server-side only. Integration path not yet chosen —
+ waiting on Ashok's pick.
 
 ## Honesty note on the codeword
 
