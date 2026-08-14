@@ -193,8 +193,20 @@ need to be told twice.
  token-guarded API endpoints over `tower.jobmaster.agency`, or through a
  dedicated Supabase mirror fed *by* the tower (the parked "public insights
  only" case). Never hand tower secrets to a browser-shipped frontend;
- service_role keys are server-side only. Integration path not yet chosen —
- waiting on Ashok's pick.
+ service_role keys are server-side only.
+- **2026-08-14 · AvatarPitch ruling — no Supabase, tower is home, 48h GC.**
+ Ashok: "Lets not allow it to connect to supabase, the marketing data
+ needs to get insights from here and upload all the resources here, with
+ 48hrs garbage collection timeframe." AvatarPitch moves onto the ThinkPad:
+ reads jobs via a versioned read-only view `jobs_public_v1` (role
+ `avatarpitch_ro`, never base tables), owns schema `avatarpitch` in the
+ same Postgres, stores all assets in `/srv/avatarpitch/uploads` with
+ **48-hour garbage collection** (tower adds a 72h safety-net timer), runs
+ as a niced systemd service that must lose CPU fights against scrape/
+ Ollama, and reaches the iPhone via a second hostname on the existing
+ Cloudflare tunnel — not Tailscale, not Vercel. Job cards render tower
+ rows verbatim (no-invented-facts law extends to marketing content).
+ Full contract: `documents/avatarpitch-integration-plan.md`.
 
 ## Honesty note on the codeword
 
