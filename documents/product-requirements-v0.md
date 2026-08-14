@@ -333,6 +333,34 @@ Investor pitch keeps the light lavender/blue Quanta brand. **Ops UI on the Think
 
 v0 build priority: **Admin + Intelligence for decision-makers**. Seeker-facing employability can follow once the flywheel is real.
 
+### 4A. MNC-first collection base (Ashok pivot, 2026-08-14)
+
+The serving niche is sharper than "freshers": **graduates chasing the MNC
+dream** — high pay, a big brand, tall buildings, a lifestyle change. The
+market for that niche is hot; broad role-keyword scraping diluted it with
+startup/consultancy noise.
+
+Collection therefore flips from role-first to **company-first**:
+
+- A curated, growing **watchlist of giants** (Deloitte, Oracle, Apple,
+  Google, Accenture, JPMorganChase, …) is the collection backbone —
+  `job_engine/app/mnc_watchlist.py` is the catalogue of record.
+- One company-scoped fresher search per giant (quoted company keywords +
+  LinkedIn Internship/Entry + India, daily staggered). At insert only jobs
+  whose card company matches the target are kept; the AI relevance filter
+  is skipped (company match IS relevance — every role at a giant counts).
+- The list grows from Ashok's phone: **`/addcompany <name>`** → watched
+  company + daily search + immediate first scrape.
+- **Detail enrich returned to full** (Ashok sign-off 2026-08-14): focused
+  volume affords a detail-page visit for every job — verified experience,
+  degrees, certifications. Complete data on the outliers, not shallow data
+  on everything.
+- Old role-keyword searches are **asleep, not deleted** (definitions kept;
+  seed sleeps them on every deploy).
+- Base rebuild: owner Telegram **`/resetdata` → `/resetconfirm`** wipes
+  caught data (keeps definitions, watchlist, guests, alerts, history) and
+  every search re-runs automatically, one by one.
+
 ---
 
 ## 5. Product architecture (conceptual)
