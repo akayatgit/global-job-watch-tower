@@ -942,7 +942,7 @@ class JobMasterTelegramBot:
                 'Widen the filters or check back shortly.\n' + TOPFRESHERS_USAGE
             )
         total = f'{TOPFRESHERS_FETCH}+' if len(rows) >= TOPFRESHERS_FETCH else str(len(rows))
-        lines = [f'🎬 TOP FRESHER GEMS · {total} checked · explicitly fresher/0-exp']
+        lines = [f'🎬 TOP FRESHER GEMS · {total} checked · fresher in title / 0–1 yrs stated']
         if applied:
             lines.append(f'Filters: {applied}')
         lines.append('')

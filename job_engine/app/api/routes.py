@@ -209,7 +209,7 @@ def list_jobs(
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
-    from app.seniority import explicit_fresher_clause, fresher_title_safe_clause
+    from app.seniority import fresher_title_safe_clause, mandatory_fresher_clause
 
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
@@ -250,12 +250,16 @@ def list_jobs(
     if verified:
         # Checked-only law (2026-08-14): only jobs whose LinkedIn detail
         # page has been read (experience/degrees/certs verified) qualify.
+        # PLUS the mandatory fresher law (2026-08-14 21:02): a verified
+        # reply may only carry jobs that literally say fresher in the title
+        # or state 0–1 years of experience — stated years above 1 veto the
+        # row no matter what the card text claims. See app/seniority.py.
         query = query.where(JobMaster.requirements_enriched_at.is_not(None))
+        query = query.where(mandatory_fresher_clause())
     if explicit_fresher:
-        # /topfreshers gems: the employer literally said fresher / 0 exp
-        # (title, details text, stated 0 years, or stated fresher label) —
-        # LinkedIn's Entry tag alone never qualifies. See app/seniority.py.
-        query = query.where(explicit_fresher_clause())
+        # /topfreshers gems: same mandatory law, applied even if a caller
+        # ever passes explicit_fresher without verified.
+        query = query.where(mandatory_fresher_clause())
     if skill:
         needle = re.escape(skill.strip().lower())
         if needle:
@@ -331,7 +335,7 @@ def job_insights(
     from app.cities import city_label, normalize_city_filter
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
-    from app.seniority import fresher_title_safe_clause
+    from app.seniority import fresher_title_safe_clause, mandatory_fresher_clause
 
     days = days if days in (0, 1, 2, 4, 7, 14, 30) else 7
     city = normalize_city_filter(city)
@@ -376,7 +380,10 @@ def job_insights(
         # actually show — seniority-titled rows are excluded from both.
         filters.append(fresher_title_safe_clause())
     if verified:
+        # Counts obey the same mandatory fresher law as job lists — a number
+        # is never a promise the rows can't keep.
         filters.append(JobMaster.requirements_enriched_at.is_not(None))
+        filters.append(mandatory_fresher_clause())
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         filters.append(JobMaster.title.op('~*')(pattern))

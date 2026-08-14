@@ -12,11 +12,12 @@ import re
 import unittest
 
 from app.seniority import (
-    EXPLICIT_FRESHER_PATTERN,
-    EXPLICIT_FRESHER_REGEX,
     FRESHER_TITLE_REGEX,
     FRESHER_TRACK_SILENCE_LABEL,
+    MANDATORY_FRESHER_TITLE_PATTERN,
+    MANDATORY_FRESHER_TITLE_REGEX,
     SENIORITY_TITLE_REGEX,
+    is_mandatory_fresher,
     title_seniority_veto,
 )
 
@@ -124,63 +125,83 @@ class TitleSeniorityVetoTests(unittest.TestCase):
         )
 
 
-class ExplicitFresherGemTests(unittest.TestCase):
-    """/topfreshers gems: only EXPLICIT fresher / 0-experience wording
-    qualifies — inference (LinkedIn Entry tag, 'Junior' titles) never does."""
+class MandatoryFresherLawTests(unittest.TestCase):
+    """The mandatory fresher law (Ashok, 2026-08-14 21:02): a servable job
+    must literally say fresher in the TITLE or state 0–1 years of experience.
+    Stated years above 1 veto everything — card marketing, labels, and
+    LinkedIn's Entry tag are never evidence. This killed the 9/10 bad
+    /topfreshers list."""
 
-    def test_explicit_wording_matches(self):
-        for text in (
-            'Data Analyst (Fresher)',
-            'Freshers welcome — Software Trainee',
-            'Fresh Graduates - 2026 batch',
-            'No prior experience required',
-            'No experience needed, we train you',
-            'Zero experience? Apply now',
-            '0 years of experience',
-            '0-2 years experience',
-            '0 to 2 yrs',
-            '0+ years',
-            'Experience: 0 – 1 years',
+    def test_stated_0_to_1_years_qualifies_regardless_of_title(self):
+        for title, min_years in (
+            ('Data Platform Engineer', 0.0),
+            ('SQL Developer', 1.0),
+            ('Software Engineer', 0.5),
+            (None, 0.0),
         ):
-            self.assertTrue(EXPLICIT_FRESHER_PATTERN.search(text), text)
+            self.assertTrue(is_mandatory_fresher(title, min_years), (title, min_years))
 
-    def test_inference_and_lookalikes_never_match(self):
-        for text in (
-            'Junior Software Engineer',       # early-career, but not explicit
+    def test_stated_years_above_1_veto_everything(self):
+        # The exact live failure: card/details shouting "Freshers" while the
+        # detail page states real years. Stated years always win.
+        for title, min_years in (
+            ('Data Analyst (Fresher)', 3.0),
+            ('Freshers welcome — SQL Developer', 5.0),
+            ('Software Engineer', 2.0),
+            ('Fresh Graduate Program', 1.5),
+        ):
+            self.assertFalse(is_mandatory_fresher(title, min_years), (title, min_years))
+
+    def test_without_stated_years_only_fresher_in_title_qualifies(self):
+        for title in (
+            'Data Analyst (Fresher)',
+            'Freshers — Software Trainee',
+            'Fresh Graduate Hiring 2026',
+        ):
+            self.assertTrue(is_mandatory_fresher(title, None), title)
+        for title in (
+            'Junior Software Engineer',       # early-career, not explicit
             'Graduate Engineer Trainee',      # fresher-adjacent, not explicit
             'Internship — Data Science',
-            '10 years of experience',         # the 0 must not match inside 10
-            'Minimum 5 Year(s) Of Experience Is Required',
             'Refresher training provided',    # 'refresher' is not 'fresher'
-            'Entry level',                    # LinkedIn's tag, not a statement
+            'Data Platform Engineer',
+            'Entry Level Software Engineer',  # LinkedIn vocabulary, not a statement
+            '',
+            None,
         ):
-            self.assertFalse(EXPLICIT_FRESHER_PATTERN.search(text), text)
+            self.assertFalse(is_mandatory_fresher(title, None), title)
+
+    def test_title_pattern_matches_only_fresher_words(self):
+        self.assertTrue(MANDATORY_FRESHER_TITLE_PATTERN.search('Fresher'))
+        self.assertTrue(MANDATORY_FRESHER_TITLE_PATTERN.search('freshers batch'))
+        self.assertTrue(MANDATORY_FRESHER_TITLE_PATTERN.search('Fresh Graduates 2026'))
+        self.assertFalse(MANDATORY_FRESHER_TITLE_PATTERN.search('Refresher course'))
+        self.assertFalse(MANDATORY_FRESHER_TITLE_PATTERN.search('Fresh produce buyer'))
 
     def test_pattern_stays_portable_to_postgres(self):
-        self.assertNotIn(r'\b', EXPLICIT_FRESHER_REGEX)
-        self.assertNotIn('(?<', EXPLICIT_FRESHER_REGEX)
-        self.assertTrue(EXPLICIT_FRESHER_REGEX.startswith('(?i)'))
-        re.compile(EXPLICIT_FRESHER_REGEX.removeprefix('(?i)'))
+        self.assertNotIn(r'\b', MANDATORY_FRESHER_TITLE_REGEX)
+        self.assertNotIn('(?<', MANDATORY_FRESHER_TITLE_REGEX)
+        self.assertTrue(MANDATORY_FRESHER_TITLE_REGEX.startswith('(?i)'))
+        re.compile(MANDATORY_FRESHER_TITLE_REGEX.removeprefix('(?i)'))
 
-    def test_silence_stamp_label_matches_tasks_and_is_excluded_from_clause(self):
-        """card_requirements stamps this exact label from LinkedIn's f_E=1,2
-        silence — the explicit-fresher clause must name (and exclude) the
-        same string, so pin them together."""
+    def test_silence_stamp_label_is_pinned_to_tasks(self):
+        """card_requirements still stamps this label from LinkedIn's f_E=1,2
+        silence — kept pinned so the serving law can keep ignoring it."""
         from app.tasks import card_requirements
 
         _req, band, label = card_requirements('Plain card text', 'fresher', title='Data Analyst')
         self.assertEqual(band, 'Fresher')
         self.assertEqual(label, FRESHER_TRACK_SILENCE_LABEL)
 
-    def test_clause_covers_title_details_stated_years_and_label(self):
-        from app.seniority import explicit_fresher_clause
+    def test_clause_matches_the_python_twin_shape(self):
+        from app.seniority import mandatory_fresher_clause
 
-        sql = str(explicit_fresher_clause().compile(compile_kwargs={'literal_binds': True}))
-        self.assertIn('title', sql)
-        self.assertIn('raw_text', sql)
+        sql = str(mandatory_fresher_clause().compile(compile_kwargs={'literal_binds': True}))
         self.assertIn('experience_min_years', sql)
-        self.assertIn('experience_label', sql)
-        self.assertIn(FRESHER_TRACK_SILENCE_LABEL, sql)
+        self.assertIn('title', sql)
+        # No loose evidence sources may creep back in.
+        self.assertNotIn('raw_text', sql)
+        self.assertNotIn('experience_label', sql)
 
 
 if __name__ == '__main__':

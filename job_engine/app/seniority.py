@@ -58,21 +58,19 @@ SENIORITY_TITLE_PATTERN = re.compile(SENIORITY_TITLE_REGEX)
 # must never treat this inferred label as an explicit fresher statement.
 FRESHER_TRACK_SILENCE_LABEL = 'Fresher track (LinkedIn Internship/Entry)'
 
-# Explicitly-declared fresher / zero-experience wording. Deliberately tighter
-# than FRESHER_TITLE_REGEX: "Junior" or an internship tag is early-career
-# evidence, but only the employer literally saying fresher / fresh graduate /
-# no experience / 0 years makes a row a /topfreshers video gem. The wrapper
-# uses [^a-z0-9] so "10 years" can never match the "0 years" alternative and
-# "refresher" can never match "fresher".
-EXPLICIT_FRESHER_REGEX = (
-    r'(?i)(^|[^a-z0-9])(?:'
-    r'freshers?|fresh\s+graduates?|'
-    r'no\s+(?:prior\s+|work\s+)?experience|'
-    r'zero\s+experience|'
-    r'0\s*(?:-|–|to\s+)?\s*\d*\s*\+?\s*(?:years?|yrs?)'
-    r')([^a-z]|$)'
+# The MANDATORY fresher law (Ashok, 2026-08-14 21:02): a servable job must
+# literally say "fresher" (or "fresh graduate") in its TITLE, or its stated
+# years-of-experience must be 0–1. Nothing else counts: card-text marketing
+# ("freshers welcome" in a 3–6-years job), labels, and LinkedIn's Entry tag
+# were all letting 9/10 non-fresher rows through /topfreshers. The wrapper
+# uses [^a-z0-9] so "refresher" can never match "fresher".
+MANDATORY_FRESHER_TITLE_REGEX = (
+    r'(?i)(^|[^a-z0-9])(?:freshers?|fresh\s+graduates?)([^a-z]|$)'
 )
-EXPLICIT_FRESHER_PATTERN = re.compile(EXPLICIT_FRESHER_REGEX)
+MANDATORY_FRESHER_TITLE_PATTERN = re.compile(MANDATORY_FRESHER_TITLE_REGEX)
+
+# Stated minimum years a fresher can honestly be asked for: 0 or 1.
+MANDATORY_FRESHER_MAX_MIN_YEARS = 1.0
 
 
 def title_seniority_veto(title: str | None) -> bool:
@@ -107,25 +105,41 @@ def fresher_title_safe_clause():
     return or_(~seniority, fresher_words)
 
 
-def explicit_fresher_clause():
-    """SQLAlchemy WHERE fragment for /topfreshers gems: the employer
-    explicitly said fresher / 0 experience — in the title, in the card
-    details text, as a parsed minimum of 0 stated years, or as a stated
-    fresher experience label. LinkedIn's Internship/Entry silence-stamp
-    label never qualifies (that is inference, not a statement).
+def is_mandatory_fresher(title: str | None, experience_min_years: float | None) -> bool:
+    """Python twin of ``mandatory_fresher_clause`` — one law, two runtimes.
+
+    Qualifies when:
+    - stated years-of-experience exist and the minimum is 0–1, OR
+    - the title literally says fresher / fresh graduate AND no stated years
+      contradict it (years absent).
+    Stated minimum years above 1 veto EVERYTHING — a card shouting
+    "Freshers!" cannot outrank a detail page stating 3–6 years.
+    """
+    if experience_min_years is not None:
+        return 0 <= experience_min_years <= MANDATORY_FRESHER_MAX_MIN_YEARS
+    return bool(MANDATORY_FRESHER_TITLE_PATTERN.search((title or '').strip()))
+
+
+def mandatory_fresher_clause():
+    """SQLAlchemy WHERE fragment of the mandatory fresher law: stated 0–1
+    years-of-experience, or fresher literally in the title with no stated
+    years at all. Stated years > 1 exclude the row no matter what the title
+    or card text claims. LinkedIn's Entry tag / silence-stamp label are
+    never evidence (they don't touch title or stated years).
     """
     from sqlalchemy import and_, or_
 
     from app.models import JobMaster
 
-    pg = EXPLICIT_FRESHER_REGEX.removeprefix('(?i)')
-    stated_fresher_label = and_(
-        JobMaster.experience_label.op('~*')('(^|[^a-z])freshers?([^a-z]|$)'),
-        JobMaster.experience_label != FRESHER_TRACK_SILENCE_LABEL,
+    stated_0_1 = and_(
+        JobMaster.experience_min_years.is_not(None),
+        JobMaster.experience_min_years >= 0,
+        JobMaster.experience_min_years <= MANDATORY_FRESHER_MAX_MIN_YEARS,
     )
-    return or_(
-        JobMaster.title.op('~*')(pg),
-        JobMaster.raw_text.op('~*')(pg),
-        JobMaster.experience_min_years == 0,
-        stated_fresher_label,
+    fresher_titled_uncontradicted = and_(
+        JobMaster.title.op('~*')(
+            MANDATORY_FRESHER_TITLE_REGEX.removeprefix('(?i)')
+        ),
+        JobMaster.experience_min_years.is_(None),
     )
+    return or_(stated_0_1, fresher_titled_uncontradicted)
