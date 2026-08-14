@@ -40,6 +40,7 @@ from app.telegram_job_search import (  # noqa: E402
     RESET_RE,
     ROLE_FAMILY_LABELS,
     JobMasterEngine,
+    parse_window_token,
 )
 from app.telegram_waitlist import list_waitlist, waitlist_count  # noqa: E402
 from app.telegram_guests import (  # noqa: E402
@@ -90,6 +91,9 @@ OWNER_QUERY_COMMANDS = {
     'stats': lambda arg: f'How many {arg or ""} jobs in the past 24 hours?'.strip(),
     'governmentjobs': lambda _arg: 'Government jobs',
 }
+# Jobs at one company over a time window — routed to the same deterministic
+# engine formatter guests get through natural chat ("jobs at Deloitte 24h").
+OWNER_COMPANY_COMMANDS = frozenset({'companyjobs'})
 OWNER_MANAGEMENT_COMMANDS = frozenset({
     'allowguest',
     'allow',
@@ -120,6 +124,7 @@ OWNER_ROLE_SWITCH_COMMANDS = frozenset({'actasguest', 'actasowner'})
 OWNER_COMMANDS = frozenset((
     *OWNER_BOARD_COMMANDS,
     *OWNER_QUERY_COMMANDS,
+    *OWNER_COMPANY_COMMANDS,
     *OWNER_MANAGEMENT_COMMANDS,
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
@@ -138,6 +143,7 @@ OWNER_MENU = [
     {'command': 'actasguest', 'description': 'Test this chat as a guest'},
     {'command': 'actasowner', 'description': 'Back to owner mode'},
     {'command': 'stats', 'description': 'Live job count · add a role'},
+    {'command': 'companyjobs', 'description': 'Jobs at a company · 24h/7/30'},
     {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
     {'command': 'hiringsignals', 'description': 'Hiring signals'},
@@ -431,6 +437,8 @@ class JobMasterTelegramBot:
     ) -> str:
         if command in OWNER_MANAGEMENT_COMMANDS:
             return self._management_reply(chat_id, command, arg)
+        if command in OWNER_COMPANY_COMMANDS:
+            return self._companyjobs_reply(chat_id, arg, update_id=update_id)
         if command in OWNER_BOARD_COMMANDS:
             days = None
             if arg:
@@ -446,6 +454,36 @@ class JobMasterTelegramBot:
             if 'update_id' not in str(exc):
                 raise
             return self.engine.handle(query, chat_id)
+
+    def _companyjobs_reply(
+        self,
+        chat_id: str,
+        arg: str,
+        *,
+        update_id: int | None,
+    ) -> str:
+        """/companyjobs <company> [24h | 7 | 30] — a trailing window token is
+        optional; everything before it is the company name (default 7 days)."""
+        tokens = (arg or '').split()
+        usage = (
+            'Usage: /companyjobs <company> [24h | 7 | 30]\n'
+            'Windows: 24h (caught) · 7 (posted, default) · 30 (this month) — '
+            'also today, 1, 2, 4, 14.'
+        )
+        if not tokens:
+            return usage
+        days = parse_window_token(tokens[-1]) if len(tokens) >= 2 else None
+        if days is not None:
+            name = ' '.join(tokens[:-1])
+        else:
+            days = 7
+            name = ' '.join(tokens)
+        try:
+            return self.engine.company_jobs(name, days, chat_id, update_id=update_id)
+        except TypeError as exc:
+            if 'update_id' not in str(exc):
+                raise
+            return self.engine.company_jobs(name, days, chat_id)
 
     @staticmethod
     def _relative_age(timestamp: float) -> str:

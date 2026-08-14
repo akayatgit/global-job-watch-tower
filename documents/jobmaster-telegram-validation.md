@@ -476,6 +476,30 @@ is a real opt-out (never silently re-enrolled).
 | JM-232 | Repeat the exact same search that already has the auto alert, page with `More jobs ▸`, wait for dispatch | Jobs already shown on any page today are never re-announced by tomorrow's alert (seen ids fold into the alert on every page). |
 | JM-233 | With 3 explicit (manual) alerts active, run a new search | Results still work; no auto alert is force-created past the cap and no error shown. A `🔔 Set alert` tap on that search evicts the auto slot only if one exists, else politely refuses with `/myalerts`. |
 
+## 14G. Jobs by company with time windows — 24h · 7d · this month (2026-08-14)
+
+Ashok: "I want jobs on company name for 24hrs, 7 days, this month filter as
+command for admin and through chat for guests." Born from a live guest test
+where "Jobin Deloitte" / "jobin Deloitte 24" got "I don't understand".
+One deterministic formatter serves both surfaces: guests through natural
+chat, Ashok through `/companyjobs`. Windows follow the product convention —
+24h = caught (scraped) rolling 24 hours, 7 days / this month = LinkedIn's
+own posted date. Header counts are computed from the exact same
+whole-word-matched rows shown below them, so numbers and rows can never
+disagree.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-234 | Guest types `jobs at Deloitte` | Tri-window header (`Deloitte — N openings posted in the last 7 days (M this month · K caught in 24h)`) then up to 10 rows `Title — Experience` + canonical LinkedIn link. Default window is 7 days. |
+| JM-235 | Guest types `Jobin Deloitte 24` (the live-seen typo) | Understood as "job in Deloitte, last 24 hours" — header leads with the 24h caught count; never "I don't understand". |
+| JM-236 | Guest types `deloitte jobs this month` | Same shape with the this-month (posted, last 30 days) count leading. |
+| JM-237 | Guest types `jobs at <company the tower has never seen>` | Honest zero: "I don't see verified <Name> openings in the last 7 days. Try 'top companies hiring' to see who's active right now." — never invented rows. |
+| JM-238 | Guest types `python jobs` / `ai jobs` / `jobs in bangalore` | NOT treated as a company — falls through to the normal role/city search exactly as before (ambiguous phrasing only becomes a company query when the name is a tracked company). |
+| JM-239 | Guest types `jobs at deloitte 24h` when Deloitte has month activity but nothing in 24h | Honest zero for the window plus a pointer: "— this month has N. Say 'jobs at Deloitte this month' to see them." |
+| JM-240 | After JM-234 with more than 10 matches, reply `more` | Next page of the same company search — numbering continues, no duplicate links, no repeated header. |
+| JM-241 | Ashok: `/companyjobs deloitte 24h` (also `7`, `30`, or no window = 7 days) | Exact same reply a guest would get through chat for that company + window; `/companyjobs` alone shows usage with the window vocabulary. |
+| JM-242 | A guest sends `/companyjobs deloitte` | Ordinary owner-command denial ("JobMaster can help you find verified jobs...") — the natural-chat path (JM-234) is the guest surface. |
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -552,6 +576,18 @@ Convert this suite without changing its IDs:
    reseeding) and `test_telegram_job_bot.py` (🔕 on auto = opt-out with the
    honest copy; 🔕 on manual does NOT opt out). 329/329 green locally.
    Still requires Ashok's live Telegram run to close JM-226..233 above.
+2C. **Jobs by company with time windows contract tests — done (2026-08-14):**
+   JM-234..242 above are automated in
+   `job_engine/tests/test_telegram_job_search.py::CompanyJobsTests` (12
+   tests: deterministic company/window detection incl. the "jobin" typo and
+   the city/role-family/filler rejections, tri-window header counts, whole-
+   word short-name matching so "ai"/"ey" never count substring companies,
+   honest zero replies for unknown companies and empty windows, pagination
+   continuity, owner-entry-point parity with guest chat, and no guest-
+   profile overwrite) plus `test_telegram_job_bot.py` (4 tests: `/companyjobs`
+   window-arg routing, multi-word names, usage reply, guest denial).
+   358/358 green locally. Still requires Ashok's live Telegram run to close
+   JM-234..242 in the execution log above.
 3. **Telegram sandbox integration:** scoped `getMyCommands`, real update/send
    behavior, retries, FIFO, and restart persistence using a non-production bot.
 4. **Live read-only smoke:** owner command, one grounded search, canonical-link
