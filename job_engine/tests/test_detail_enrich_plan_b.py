@@ -72,6 +72,49 @@ class CardRequirementsTests(unittest.TestCase):
         )
         self.assertEqual(band, '9-12 years')
 
+    def test_seniority_title_blocks_the_silence_stamp(self):
+        """Live incident (2026-08-14): 'Omniverse – Software Engineer II'
+        (Bachelor's + 3–6 years on the detail page) was silence-stamped
+        Fresher because LinkedIn's Entry tag lied. A seniority-signalling
+        title now stays band-NULL, pending detail verification."""
+        for title in (
+            'Omniverse – Software Engineer II',
+            'EH-FY27-Consulting-S&T-M&A-Senior Consultant-IT',
+            'Machine Learning-AI and Data Science Engineer II',
+        ):
+            _req, band, label = card_requirements(
+                f'{title} · Deloitte · Chennai', 'fresher', title=title,
+            )
+            self.assertIsNone(band, title)
+            self.assertEqual(label, 'Seniority in title — pending verification')
+
+    def test_clean_title_still_gets_the_fresher_stamp(self):
+        _req, band, label = card_requirements(
+            'Software Engineer · Foo Ltd · Hyderabad',
+            'fresher',
+            title='Software Engineer',
+        )
+        self.assertEqual(band, 'Fresher')
+        self.assertEqual(label, 'Fresher track (LinkedIn Internship/Entry)')
+
+    def test_trainee_wording_defeats_the_title_veto(self):
+        _req, band, _label = card_requirements(
+            'Management Trainee · Foo Ltd · Pune',
+            'fresher',
+            title='Management Trainee',
+        )
+        self.assertEqual(band, 'Fresher')
+
+    def test_stated_years_still_win_over_a_vetoed_title(self):
+        """Evidence hierarchy: stated card years outrank both the stamp and
+        the veto — a senior title with stated 9-12 years keeps that band."""
+        _req, band, _label = card_requirements(
+            'Senior Engineering Manager · 9-12 years · Pune',
+            'fresher',
+            title='Senior Engineering Manager',
+        )
+        self.assertEqual(band, '9-12 years')
+
 
 # ---------------------------------------------------------------------------
 # Daily budget ledger

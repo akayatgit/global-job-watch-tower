@@ -296,6 +296,22 @@ class TelegramJobSearchTests(unittest.TestCase):
         self.assertNotIn('No Link', reply)
         self.assertNotIn('Java Engineer', reply)
 
+    def test_fresher_search_never_renders_seniority_titles(self):
+        """Fresher truthfulness (2026-08-14): even when the API serves a
+        seniority-titled row (older tower build / unverified NULL band), the
+        client guard must drop it from fresher results."""
+        self.api.jobs = [
+            make_job(1, title='Machine Learning Engineer'),
+            make_job(2, title='Machine Learning Engineer II'),
+            make_job(3, title='Senior Machine Learning Engineer'),
+            make_job(4, title='Machine Learning Intern Engineer'),
+        ]
+        reply = self.engine.handle('AI jobs Bangalore for freshers', '42')
+        self.assertIn('Machine Learning Engineer —', reply)
+        self.assertIn('Machine Learning Intern Engineer', reply)
+        self.assertNotIn('Engineer II', reply)
+        self.assertNotIn('Senior Machine Learning', reply)
+
     def test_zero_matches_does_not_widen_search(self):
         self.api.jobs = [make_job(1, title='Finance Manager', city='mumbai')]
         reply = self.engine.handle('AI jobs Bangalore', '42')
@@ -477,6 +493,18 @@ class CompanyJobsTests(unittest.TestCase):
     def test_company_search_does_not_overwrite_guest_role_profile(self):
         self.engine.handle('jobs at deloitte', '42')
         self.assertIsNone(self.sessions.get_guest_profile('42'))
+
+    def test_company_lens_shows_seniority_jobs_with_honest_band_never_fresher(self):
+        """The company lens is an all-experience view — a seniority-titled
+        job stays visible there, but with the honest band ('Not stated'
+        until detail-verified), never a false 'Fresher' label."""
+        self.api.jobs = [
+            make_job(210, title='Omniverse – Software Engineer II',
+                     company='Deloitte', posted_days_ago=1, scraped_hours_ago=5),
+        ]
+        reply = self.engine.handle('jobs at deloitte', '42')
+        self.assertIn('Omniverse – Software Engineer II — Not stated', reply)
+        self.assertNotIn('Fresher', reply)
 
     def test_company_query_rescues_a_chat_stuck_at_ask_role(self):
         """Live-seen 2026-08-14: a dead-ended role prompt parks the chat at

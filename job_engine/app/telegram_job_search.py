@@ -22,6 +22,7 @@ from typing import Any, Callable
 from app import config
 from app.cities import city_label
 from app.job_role_families import ROLE_PATTERNS, title_matches_role_family
+from app.seniority import title_seniority_veto
 from app.telegram_sessions import TelegramSessionStore
 
 BASE = 'http://127.0.0.1:8001'
@@ -839,6 +840,12 @@ class JobMasterEngine:
                     continue
                 band = normalize_experience_value(str(job.get('experience_band') or ''))
                 if intent.experience == 'fresher' and band and band != 'fresher':
+                    continue
+                if intent.experience == 'fresher' and title_seniority_veto(title):
+                    # Defense in depth behind the API-side fresher gate:
+                    # a seniority-titled row (Engineer II, Senior ...) must
+                    # never render as a fresher result even if served by an
+                    # older tower build. See app/seniority.py.
                     continue
                 key = str(job.get('linkedin_job_id') or link)
                 if key in prior_seen or key in fetched_seen:

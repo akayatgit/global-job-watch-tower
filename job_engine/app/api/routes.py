@@ -140,6 +140,7 @@ def list_jobs(
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
+    from app.seniority import fresher_title_safe_clause
 
     sector = normalize_sector(sector)
     city = normalize_city_filter(city)
@@ -171,6 +172,12 @@ def list_jobs(
         if track == 'fresher' and exp is None:
             fresher_exp = experience_clause('fresher')
             query = query.where(or_(JobMaster.experience_band.is_(None), fresher_exp))
+    if experience == 'fresher' or (track == 'fresher' and exp is None):
+        # Fresher truthfulness (2026-08-14): a title carrying seniority
+        # evidence (II/III, Senior, Lead, Manager...) can never ship to a
+        # fresher, even while its band is unverified NULL — LinkedIn's
+        # Entry tag alone is not proof. See app/seniority.py.
+        query = query.where(fresher_title_safe_clause())
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         query = query.where(JobMaster.title.op('~*')(pattern))
@@ -235,6 +242,7 @@ def job_insights(
     from app.cities import city_label, normalize_city_filter
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
+    from app.seniority import fresher_title_safe_clause
 
     days = days if days in (0, 1, 2, 4, 7, 14, 30) else 7
     city = normalize_city_filter(city)
@@ -274,6 +282,10 @@ def job_insights(
         if track == 'fresher' and exp is None:
             fresher_exp = experience_clause('fresher')
             filters.append(or_(JobMaster.experience_band.is_(None), fresher_exp))
+    if experience == 'fresher' or (track == 'fresher' and exp is None):
+        # Fresher truthfulness: counts must match what fresher searches
+        # actually show — seniority-titled rows are excluded from both.
+        filters.append(fresher_title_safe_clause())
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')
         filters.append(JobMaster.title.op('~*')(pattern))
