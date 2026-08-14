@@ -604,7 +604,7 @@ command with its options.
 
 | ID | Do | Expected |
 |---|---|---|
-| JM-259 | Ashok: `/topfreshers 0` | `🎬 TOP FRESHER GEMS · N checked · explicitly fresher/0-exp` then numbered rows `Title — Company — City` + LinkedIn link. Every row is detail-verified AND explicitly says fresher / fresh graduate / no experience / 0 years in its title or details (or parsed stated 0 min years). A silence-stamped `Fresher track (LinkedIn Internship/Entry)` row never appears. Lists longer than 30 cap with `…and N more gems`. |
+| JM-259 | Ashok: `/topfreshers 0` | `🎬 TOP FRESHER GEMS · N checked · fresher in title / 0–1 yrs stated` then numbered rows `Title — Company — City` + LinkedIn link. Every row is detail-verified AND passes the mandatory fresher law (JM-267). A silence-stamped `Fresher track (LinkedIn Internship/Entry)` row never appears. Lists longer than 30 cap with `…and N more gems`. |
 | JM-260 | Ashok: `/topfreshers company:Deloitte 0` | Only Deloitte gems (multi-word companies parse whole: `company:Tata Consultancy Services 0`). Header shows `Filters: company: Deloitte`. |
 | JM-261 | Ashok: `/topfreshers skill:sql 0` | Only gems whose title or details mention `sql` as a whole word — "MySQL" alone never matches `skill:sql`. |
 | JM-262 | Ashok: `/topfreshers role:data 0` / `role:tester 0` | Known families (ai_ml, data, software, cybersecurity, cloud_devops, product, design) filter by family; anything else matches the title. Filters combine: `company:Deloitte skill:sql 0`. |
@@ -612,6 +612,25 @@ command with its options.
 | JM-264 | Zero gems match | "No checked explicit-fresher gems… Verification may still be draining — /health shows the queue." — never invented rows. |
 | JM-265 | Ashok: `/help` | Full `JOBMASTER · ALL COMMANDS` sheet: options-first section (`/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0`, `/companyjobs <company> [24h \| 7 \| 30]`, `-unfiltered`, …) then every menu command with its description. |
 | JM-266 | Any guest: `/topfreshers 0` or `/help` | `/topfreshers` gets the ordinary owner-command denial; `/help` keeps the simple "JobMaster provides verified jobs…" line — the ops sheet is never exposed to customer chats. |
+
+## 14K. Mandatory fresher law — title or 0–1 stated years (2026-08-14)
+
+Ashok's live verdict on the first /topfreshers list: "Still a bad list…
+9/10 jobs now are non freshers even with /topfreshers 0… Even if we pick 20
+jobs a day, it has to be explicitly mentioned as freshers or 0 to 1 years."
+The law: a servable job must literally say **fresher** in its TITLE, or its
+stated years-of-experience must be **0–1**. Stated years above 1 veto the
+row no matter what the card text shouts. Card marketing ("Freshers
+welcome"), labels, and LinkedIn's Entry tag are never evidence. Enforced on
+EVERY verified reply (`/api/jobs?verified=1` and insight counts), not just
+/topfreshers. Ashok resets data after this deploy.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-267 | After the reset, run `/topfreshers 0` and eyeball 10 rows | Every row either has fresher/fresh-graduate literally in the title, or its detail page states 0–1 years. A "Data Platform Engineer — Minimum 5 Years" class row can NEVER appear, even if its card said "freshers". Target: 10/10 real gems, even if only 20 jobs/day survive. |
+| JM-268 | Any guest search / button flow / `jobs at Deloitte` / daily alert after the reset | Same mandatory law on every listed job — guests can never receive a verified job that fails the title-or-0–1-years test. Insight counts match the rows. |
+| JM-269 | A job whose detail page states "1-3 years" | Qualifies only via stated minimum ≤ 1 (1-3 passes; 2-4 fails; 3-6 fails). A fresher-titled job whose detail page states 3+ years is OUT — stated years always beat the title. |
+| JM-270 | `-unfiltered` on any query | Remains the ONLY escape hatch (owner debugging): lifts both the checked-only and mandatory-fresher gates for that reply. Alerts still have no override. |
 
 ## 15. Execution log
 

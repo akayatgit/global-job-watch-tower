@@ -640,6 +640,21 @@ it, shows recipient count) → `/pushconfirm`
  band-NULL clean titles stay pending verification). Headers must say what
  they count ("N fresher openings"). Never reintroduce an all-experience
  guest listing without Ashok's explicit sign-off.
+- **MANDATORY fresher law (2026-08-14 21:02):** Ashok, after the first
+ /topfreshers list was still 9/10 non-fresher: "make sure any verified job
+ should have freshers in title or 0 to 1 years of experience… Its
+ mandatory… Even if we pick 20 jobs a day." A servable job must literally
+ say **fresher** (or fresh graduate) in its TITLE, or its stated
+ years-of-experience minimum must be **0–1**. Stated years above 1 veto the
+ row no matter what the card text shouts ("Freshers welcome" on a 3–6-years
+ job is a lie we must not repeat). Card raw_text, experience labels, and
+ LinkedIn's Entry tag are NEVER evidence. One law, one implementation:
+ `app/seniority.py::mandatory_fresher_clause` (+ `is_mandatory_fresher`
+ twin), enforced on EVERY `verified=1` reply — searches, buttons, company
+ lens, alerts, boards, insight counts, /topfreshers — not just the gems
+ command. `-unfiltered` stays the only escape hatch (owner debugging);
+ alerts have no override. Quality outranks volume: 20 true gems a day beat
+ 200 maybes.
 - **/topfreshers video gems + owner /help (2026-08-14):** Owner command
  `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
  video gems: detail-verified jobs whose employer EXPLICITLY said fresher /
