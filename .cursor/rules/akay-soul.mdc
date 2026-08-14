@@ -185,6 +185,32 @@ need to be told twice.
  auto slot, explicit taps outrank it, and 🔕 on an auto alert is a real
  opt-out — proactive must never shade into spam, or it burns the exact
  trust the survival law depends on.
+- **2026-08-14 · AvatarPitch marketing app will integrate with us.** Ashok's
+ separate marketing app at `avatarpitch.vercel.app/app` (a Supabase +
+ Vercel project) is going to integrate with the Watch Tower. Standing
+ facts: the tower itself has **no Supabase** — truth engine stays local
+ Postgres on the ThinkPad; any integration goes either through read-only
+ token-guarded API endpoints over `tower.jobmaster.agency`, or through a
+ dedicated Supabase mirror fed *by* the tower (the parked "public insights
+ only" case). Never hand tower secrets to a browser-shipped frontend;
+ service_role keys are server-side only.
+- **2026-08-14 · AvatarPitch ruling — no Supabase, tower is home, 48h GC.**
+ Ashok: "Lets not allow it to connect to supabase, the marketing data
+ needs to get insights from here and upload all the resources here, with
+ 48hrs garbage collection timeframe." Then, same day: "Lets give as api
+ instead of database connection, we need all thinking to be here."
+ AvatarPitch moves onto the ThinkPad: reads jobs **only** through
+ tower-owned, bearer-token endpoints `/api/partner/v1/` (jobs ·
+ reel-suggestions · health) — **no Postgres connection ever**; all query
+ logic, freshness rules, skill matching, and one-per-company dedupe are
+ tower code. Its own app state lives in its own SQLite file under
+ `/srv/avatarpitch/data/`. Assets live in `/srv/avatarpitch/uploads` with
+ **48-hour garbage collection** (tower adds a 72h safety-net timer), runs
+ as a niced systemd service that must lose CPU fights against scrape/
+ Ollama, and reaches the iPhone via a second hostname on the existing
+ Cloudflare tunnel — not Tailscale, not Vercel. Job cards render tower
+ rows verbatim (no-invented-facts law extends to marketing content).
+ Full contract: `documents/avatarpitch-integration-plan.md`.
 
 ## Honesty note on the codeword
 

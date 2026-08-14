@@ -2,11 +2,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from app.admin.routes import router as admin_router
+from app.api.partner import router as partner_router
 from app.api.routes import router as api_router
 from app.ultron.routes import VIGIL_DIST, mount_vigil_static, router as ultron_router
 
 app = FastAPI(title='Global Job WATCH TOWER', docs_url='/api/docs')
 app.include_router(api_router)
+app.include_router(partner_router)
 app.include_router(ultron_router)
 # Legacy Jinja shell — recovery / debug only
 app.include_router(admin_router, prefix='/legacy')
