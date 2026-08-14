@@ -524,6 +524,47 @@ the veto, so "Management Trainee" stays a fresher result.
 | JM-246 | After the backfill migration deploys, spot-check the exact live incident row (`Omniverse – Software Engineer II`) in the tower DB / `jobs at deloitte` | `experience_band` is NULL with label "Seniority in title — pending verification" (or already detail-verified real years); it no longer appears in any fresher search or fresher count. |
 | JM-247 | Guest searches for trainee/intern roles (e.g. `graduate engineer trainee jobs`) and inspects rows like `Management Trainee` | Employer-declared fresher wording defeats the seniority veto — these titles still stamp and render as Fresher; "Lead Generation Executive"-shaped titles are also never mistaken for seniority. |
 
+## 14H. Nightly regression corpus — automated (2026-08-14)
+
+Kanban card #7, slice 5 (backlog item 6 below). Unlike the sections above,
+each `JM-3xx` ID here is a **group ID covering one corpus battery** of many
+cases, fully automated in
+`job_engine/tests/test_jobmaster_nightly_corpus.py` — no live run needed to
+close these; CI runs them on every push ("nightly" is the coverage class,
+not a schedule). Every entry asserts real deterministic-parser behavior,
+including honest misses: an unknown place/role must resolve to nothing,
+never to an invented city, role, or company.
+
+| ID | Corpus battery | Guards |
+|---|---|---|
+| JM-300 | City alias corpus + tower-hint drift guard | Every alias (`bangalore`, `madras`, `gurgaon`, `bombay`, `kochi`, `calicut`, `pimpri`, `wfh`, ...) resolves to its stable city key; every hint in `app/cities.py::_CITY_HINTS` must resolve in chat too, so the two tables can never drift apart again silently. |
+| JM-301 | City misspelling corpus | One-slip typos (`banglore`, `hydrabad`, `chenai`, `mumbay`, `gurgoan`, `kolkatta`, ...) still land on the right city via the fuzzy path. |
+| JM-302 | Unknown-place honesty | `atlantis`, `london`, `dubai`, ... resolve to NO city filter — never silently reinterpreted. |
+| JM-303 | API city-filter aliases | `normalize_city_filter` (alerts + API layer) honors the same alias table; `any`/`all`/unknown → no filter, never `other`. |
+| JM-304 | Role-family synonym corpus | All 7 families' natural synonyms map to the same bucket (`genai`→ai_ml, `sre`→cloud_devops, `infosec`→cybersecurity, ...). |
+| JM-305 | Role typo corpus | Typos the regexes genuinely absorb are recovered (`machin learning`); anything else is an honest miss with NO family — never a wrong one. |
+| JM-306 | Experience phrasing corpus | Every band boundary (1/2/3/5/6/8/9/12/13/20 yrs), range, and fresher synonym maps to the right band; absurd input (`200 years`) invents nothing. |
+| JM-307 | Experience alias table | `normalize_experience_value` accepts every documented alias and rejects garbage with `''` — the API can never receive a band that doesn't exist. |
+| JM-308 | Insight window corpus | `24h`→0, `today`→1, `1/2/4/7/14/30 days` exact, unstated → 7-day default. |
+| JM-309 | Company-lens window corpus | Clean company name + right window for every natural phrasing, incl. the `in the last …` family (see fix note below); role/city searches never fire the company lens. |
+| JM-310 | Deep pagination to exhaustion | 87 jobs → 9 pages, every job served exactly once, honest "No more…" end, stable if `more` is repeated after the end. |
+| JM-311 | Deep pagination chat isolation | Two chats paginating different searches at depth never see each other's rows. |
+| JM-312 | Pagination across restart | The durable session store owns the cursor — a deploy/restart between pages never re-serves page one. |
+| JM-320 | Injection payload corpus | 15 payloads (prompt injection, fake system/assistant turns, SQL, HTML/JS, markdown-link smuggle, `${jndi:…}`, template `{{…}}`, secret-file asks, echo-token demands, RTL/zero-width unicode, 5000-char token) — reply always a string, no leak markers, no non-LinkedIn URL, no payload echo. |
+| JM-321 | Malicious model-output corpus | Whatever a compromised LLM step emits, `IntentInterpreter._validate` clamps every field to the fixed enums and the deterministic fallback — cities/experience are never model-authored. |
+
+**Two real bugs found while building this corpus (both fixed same day):**
+1. **Company-name window residue** — `jobs at deloitte in the last 24 hours`
+   parsed the company as `deloitte in the` (the window regex consumed
+   "24 hours" but left the connective glued to the name), corrupting 9 of 10
+   natural time phrasings. `_clean_company_name` now strips trailing
+   connective words repeatedly. Guarded by JM-309.
+2. **City alias drift** — chat's `CITY_ALIASES` was a hand-copied subset of
+   the tower's `_CITY_HINTS`: a guest typing `calicut`, `thiruvananthapuram`,
+   or `pimpri` got a silent unscoped all-India search even though the tower
+   stamps those jobs as Kerala/Pune. Table completed; the JM-300 drift guard
+   makes a future divergence a CI failure, not a live guest incident.
+
 ## 15. Execution log
 
 Append one row after each test. Do not mark the suite accepted merely because
@@ -637,8 +678,14 @@ Convert this suite without changing its IDs:
    validation, and guest command denial.
 5. **Deployment gate:** exact runtime SHA, one poller, Hermes off, owner menu
    ready, active-role retrigger proof.
-6. **Nightly regression:** aliases, misspellings, experience bands, time
-   windows, deep pagination, and injection corpus.
+6. **Nightly regression — done (2026-08-14):** aliases, misspellings,
+   experience bands, time windows, deep pagination, and injection corpus —
+   automated as §14H above (`JM-300`..`JM-321`, group IDs) in
+   `job_engine/tests/test_jobmaster_nightly_corpus.py` (17 tests /
+   ~243 corpus cases via subtests). Runs in CI on every push, same as the
+   rest of the suite — "nightly" is the coverage class, not a schedule.
+   Found and fixed two real parser bugs on day one (company-name window
+   residue; chat/tower city-alias drift — see §14H).
 
 Automation must never spam real users, consume production paid image credits,
 or intentionally interrupt a live LinkedIn search outside an approved deploy.
