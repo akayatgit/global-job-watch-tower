@@ -875,8 +875,33 @@ IDs when automating so a live failure maps directly to a regression test.
    links, and guest command denial.
 4. Deployment gate for exact SHA, one poller, Hermes off, owner menu ready, and
    cancelled-role retrigger evidence.
-5. Nightly alias, typo, experience, time-window, deep-pagination, and injection
-   corpus.
+5. **Nightly alias, typo, experience, time-window, deep-pagination, and
+   injection corpus — done (2026-08-14).**
+   `job_engine/tests/test_jobmaster_nightly_corpus.py` (17 tests, ~243 corpus
+   cases via subtests, group IDs `JM-300`..`JM-321` in validation doc §14H):
+   city aliases + one-slip typos + unknown-place honesty + API-filter
+   aliases, all 7 role families' synonyms + typo recovery/honest-miss split,
+   every experience band boundary/range/synonym + the full
+   `normalize_experience_value` alias table, insight and company-lens time
+   windows, deep pagination (87 jobs to exhaustion, chat isolation at depth,
+   cursor survives a restart), a 15-payload injection battery, and a
+   malicious-model-output battery at the `_validate` boundary. Runs in CI on
+   every push (the "nightly" name is the coverage class, not a schedule).
+
+   **Two real parser bugs found by building the corpus, fixed same day:**
+   - `jobs at deloitte in the last 24 hours` parsed the company as
+     `deloitte in the` — the window regex consumed "24 hours" but left the
+     connective glued to the name, corrupting 9 of 10 natural time phrasings
+     of the brand-new company lens (#55). `_clean_company_name` now strips
+     trailing connectives repeatedly; guarded by JM-309.
+   - Chat's `CITY_ALIASES` had drifted from the tower's
+     `app/cities.py::_CITY_HINTS`: guests typing `calicut`,
+     `thiruvananthapuram`, or `pimpri` got a silent unscoped all-India
+     search while the tower stamps those very jobs Kerala/Pune. Table
+     completed; the JM-300 drift guard turns any future divergence into a
+     CI failure instead of a live guest incident.
+
+   Full suite after this slice: **375 tests + 249 subtests green.**
 
 **Acceptance:** every automatable `JM-*` case reports pass/fail with captured
 evidence; destructive/outage cases run only in an isolated sandbox; no paid
