@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import logging
 
+from celery.signals import worker_ready
 from croniter import croniter
 from sqlalchemy import desc, select
 
@@ -592,6 +593,36 @@ def enrich_job_requirements(self, job_ids: list[int] | None = None, run_id: int 
             return {'error': str(exc)[:500]}
 
 
+def should_chain_backfill(db, result) -> tuple[bool, str]:
+    """Full-mode drain (Ashok, 2026-08-14): after a verification batch, may
+    the next one start right away instead of waiting for the 10-min beat?
+
+    Chain only while it is safe AND useful: the last batch actually
+    verified something (never hot-loop on an empty or failing queue),
+    jobs are still pending, the scrape lane is free (scraping always
+    wins), and the host is not Hot/Critical.
+    """
+    from app import thermal
+    from app.enrichment import pending_requirement_ids
+
+    enriched = result.get('enriched', 0) if isinstance(result, dict) else 0
+    if not enriched:
+        return False, 'last batch verified nothing'
+    if not pending_requirement_ids(db, limit=1):
+        return False, 'verification queue drained'
+    active = db.execute(
+        select(ScrapeRun.id).where(
+            ScrapeRun.status.in_(('queued', 'dispatched', 'running'))
+        ).limit(1)
+    ).scalar_one_or_none()
+    if active is not None:
+        return False, 'scrape lane busy — beat resumes the drain later'
+    snap = thermal.snapshot()
+    if snap.level in ('hot', 'critical'):
+        return False, f'host too hot ({snap.level})'
+    return True, 'jobs still waiting, lane free'
+
+
 @celery.task(name='app.tasks.enrich_pending_requirements')
 def enrich_pending_requirements():
     """Beat: budgeted, idle-gated backfill of requirement details (Plan B).
@@ -600,7 +631,10 @@ def enrich_pending_requirements():
     light → runs a small batch only when the trickle gate says the browser
             lane is truly free: budget left, no run active/queued, no search
             due within the look-ahead, host Cool.
-    full  → legacy unconditional backfill.
+    full  → drains: one batch per task, then self-requeues while jobs are
+            pending and the lane is free (queued scrapes interleave — FIFO
+            keeps scraping first). No more waiting out the 10-min bell with
+            a backlog standing in line.
     """
     from app import detail_budget
 
@@ -613,7 +647,40 @@ def enrich_pending_requirements():
         if not ok:
             return {'skipped': reason, 'mode': 'light'}
         console_log('enrich', f'Detail trickle window open — {reason}.')
-    return enrich_job_requirements(job_ids=None, run_id=None)
+    result = enrich_job_requirements(job_ids=None, run_id=None)
+    if mode == 'full':
+        try:
+            with SessionLocal() as db:
+                chain, reason = should_chain_backfill(db, result)
+            if chain:
+                enrich_pending_requirements.apply_async(countdown=5)
+                console_log(
+                    'enrich',
+                    f'Verification drain continues — {reason}; '
+                    'next batch in 5s.',
+                )
+            else:
+                console_log('enrich', f'Verification drain pauses — {reason}.')
+        except Exception:
+            logger.warning('backfill chain check failed', exc_info=True)
+    return result
+
+
+@worker_ready.connect
+def _kick_detail_drain(**_kwargs):
+    """Start the full-mode verification drain right after a worker boot.
+
+    Deploys purge queued enrich tasks (2026-08-14 incident: the Accenture
+    '5 years' job sat unverified because the deploy purge ate its queued
+    burst) — kicking one backfill on worker_ready means the drain resumes
+    seconds after every restart instead of waiting out the first 10-min
+    beat tick.
+    """
+    try:
+        if get_detail_enrich_mode() == 'full':
+            enrich_pending_requirements.apply_async(countdown=10)
+    except Exception:
+        logger.warning('detail drain kickoff failed', exc_info=True)
 
 
 @celery.task(name='app.tasks.enrich_company_profiles', bind=True, max_retries=1)

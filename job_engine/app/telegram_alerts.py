@@ -218,6 +218,9 @@ def _fetch_candidates(
         params['track'] = 'fresher'
     elif experience:
         params['experience'] = experience
+    # Checked-only law (2026-08-14): proactive alerts NEVER carry an
+    # unverified job — there is no '-unfiltered' override for alerts.
+    params['verified'] = 1
     try:
         data = api_get('/api/jobs', params)
     except Exception:

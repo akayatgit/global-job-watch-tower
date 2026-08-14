@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from app import detail_budget, runtime_settings
 from app.db import Base
 from app.models import JobMaster, ScrapeRun, SearchConfig
-from app.tasks import card_requirements
+from app.tasks import card_requirements, should_chain_backfill
 
 
 def utcnow() -> datetime:
@@ -226,6 +226,79 @@ class WarmSnap:
 # daily 05:00 UTC cron, last run 05:30 → next due tomorrow 05:00.
 FIXED_NOW = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
 FIXED_LAST_RUN = datetime(2026, 8, 8, 5, 30, tzinfo=timezone.utc)
+
+
+class HotSnap:
+    level = 'hot'
+    detail = 'cpu=88C gpu=84C load=6.0'
+
+
+class FullDrainChainTests(unittest.TestCase):
+    """Full-mode verification drain (Ashok, 2026-08-14): after each batch,
+    keep pulling the next one while jobs wait and the lane is free —
+    no more waiting out the 10-min bell with a backlog standing in line."""
+
+    def setUp(self):
+        self.db = make_session()
+        self.cfg = add_config(self.db)
+        heat = mock.patch('app.thermal.snapshot', return_value=CoolSnap())
+        self.heat_mock = heat.start()
+        self.addCleanup(heat.stop)
+
+    def _pending_job(self):
+        add_job(self.db, self.cfg, linkedin_job_id='4454540284')
+
+    def test_chains_while_jobs_pend_and_lane_is_free(self):
+        self._pending_job()
+        chain, reason = should_chain_backfill(self.db, {'enriched': 12})
+        self.assertTrue(chain, reason)
+        self.assertIn('lane free', reason)
+
+    def test_never_chains_when_the_queue_is_drained(self):
+        chain, reason = should_chain_backfill(self.db, {'enriched': 12})
+        self.assertFalse(chain)
+        self.assertIn('drained', reason)
+
+    def test_never_hot_loops_on_a_batch_that_verified_nothing(self):
+        self._pending_job()
+        chain, reason = should_chain_backfill(self.db, {'enriched': 0})
+        self.assertFalse(chain)
+        self.assertIn('verified nothing', reason)
+        chain, _ = should_chain_backfill(self.db, None)
+        self.assertFalse(chain)
+
+    def test_scraping_always_wins_the_lane(self):
+        self._pending_job()
+        for status in ('queued', 'dispatched', 'running'):
+            self.db.add(ScrapeRun(search_config_id=self.cfg.id, status=status))
+            self.db.commit()
+            chain, reason = should_chain_backfill(self.db, {'enriched': 12})
+            self.assertFalse(chain, status)
+            self.assertIn('scrape lane busy', reason)
+            self.db.query(ScrapeRun).delete()
+            self.db.commit()
+
+    def test_a_finished_run_does_not_block_the_drain(self):
+        self._pending_job()
+        self.db.add(ScrapeRun(search_config_id=self.cfg.id, status='success'))
+        self.db.commit()
+        chain, _ = should_chain_backfill(self.db, {'enriched': 12})
+        self.assertTrue(chain)
+
+    def test_hot_host_pauses_the_drain(self):
+        self._pending_job()
+        self.heat_mock.return_value = HotSnap()
+        chain, reason = should_chain_backfill(self.db, {'enriched': 12})
+        self.assertFalse(chain)
+        self.assertIn('too hot', reason)
+
+    def test_warm_host_still_drains(self):
+        """Warm is fine for full mode — Ashok ordered complete detail truth;
+        only Hot/Critical protects the laptop."""
+        self._pending_job()
+        self.heat_mock.return_value = WarmSnap()
+        chain, _ = should_chain_backfill(self.db, {'enriched': 12})
+        self.assertTrue(chain)
 
 
 class TrickleGateTests(unittest.TestCase):

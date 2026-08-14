@@ -460,12 +460,19 @@ class JobMasterTelegramBot:
         if command in OWNER_COMPANY_COMMANDS:
             return self._companyjobs_reply(chat_id, arg, update_id=update_id)
         if command in OWNER_BOARD_COMMANDS:
+            tokens = (arg or '').split()
+            unfiltered = any(t.lower().lstrip('-–—') == 'unfiltered' for t in tokens)
+            tokens = [t for t in tokens if t.lower().lstrip('-–—') != 'unfiltered']
             days = None
-            if arg:
+            if tokens:
                 try:
-                    days = int(arg.split()[0])
+                    days = int(tokens[0])
                 except ValueError:
                     days = None
+            if unfiltered:
+                return self.board_renderer(
+                    OWNER_BOARD_COMMANDS[command], days=days, unfiltered=True,
+                )
             return self.board_renderer(OWNER_BOARD_COMMANDS[command], days=days)
         query = OWNER_QUERY_COMMANDS[command](arg)
         try:
@@ -485,6 +492,8 @@ class JobMasterTelegramBot:
         """/companyjobs <company> [24h | 7 | 30] — a trailing window token is
         optional; everything before it is the company name (default 7 days)."""
         tokens = (arg or '').split()
+        unfiltered = any(t.lower().lstrip('-–—') == 'unfiltered' for t in tokens)
+        tokens = [t for t in tokens if t.lower().lstrip('-–—') != 'unfiltered']
         usage = (
             'Usage: /companyjobs <company> [24h | 7 | 30]\n'
             'Windows: 24h (caught) · 7 (posted, default) · 30 (this month) — '
@@ -498,6 +507,8 @@ class JobMasterTelegramBot:
         else:
             days = 7
             name = ' '.join(tokens)
+        if unfiltered:
+            name = f'{name} -unfiltered'
         try:
             return self.engine.company_jobs(name, days, chat_id, update_id=update_id)
         except TypeError as exc:

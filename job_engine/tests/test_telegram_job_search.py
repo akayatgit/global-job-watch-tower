@@ -15,6 +15,7 @@ from app.telegram_job_search import (
     canonical_link,
     experience_display,
     parse_window_token,
+    strip_unfiltered,
 )
 from app.telegram_sessions import TelegramSessionStore
 
@@ -120,6 +121,120 @@ class FakeAPI:
         if path == '/api/ultron/roles-rank':
             return {'roles': [{'name': 'AI Engineer', 'n': 11}]}
         return {}
+
+
+class CheckedOnlyLawTests(unittest.TestCase):
+    """Checked-only law (Ashok, 2026-08-14): every job list with links shows
+    detail-verified jobs only, unless the message ends with '-unfiltered'."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'sessions.db')
+        self.api = FakeAPI()
+        self.engine = JobMasterEngine(
+            api_get=self.api,
+            interpreter=IntentInterpreter(enabled=False),
+            sessions=self.sessions,
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _jobs_params(self, *, company_only: bool = False) -> list[dict]:
+        return [
+            params for path, params in self.api.calls
+            if path == '/api/jobs'
+            and (not company_only or params.get('company'))
+        ]
+
+    def test_strip_unfiltered_variants(self):
+        self.assertEqual(strip_unfiltered('ai jobs -unfiltered'), ('ai jobs', True))
+        self.assertEqual(
+            strip_unfiltered('jobs at deloitte — unfiltered'),
+            ('jobs at deloitte', True),
+        )
+        self.assertEqual(strip_unfiltered('AI Jobs -UNFILTERED!'), ('AI Jobs', True))
+        self.assertEqual(strip_unfiltered('ai jobs'), ('ai jobs', False))
+        # Only at the END of the message — never inside it.
+        self.assertEqual(
+            strip_unfiltered('-unfiltered ai jobs'),
+            ('-unfiltered ai jobs', False),
+        )
+
+    def test_default_search_asks_for_checked_jobs_only(self):
+        self.engine.handle('AI jobs in Bangalore for fresher', '1')
+        params = self._jobs_params()
+        self.assertTrue(params)
+        self.assertTrue(all(p.get('verified') == 1 for p in params))
+
+    def test_unfiltered_suffix_lifts_the_gate(self):
+        self.engine.handle('AI jobs in Bangalore for fresher -unfiltered', '1')
+        params = self._jobs_params()
+        self.assertTrue(params)
+        self.assertTrue(all('verified' not in p for p in params))
+
+    def test_more_pagination_keeps_the_checked_lens_by_default(self):
+        self.engine.handle('AI jobs for fresher', '1')
+        self.api.calls.clear()
+        self.engine.handle('more', '1')
+        params = self._jobs_params()
+        self.assertTrue(params)
+        self.assertTrue(all(p.get('verified') == 1 for p in params))
+
+    def test_more_pagination_keeps_the_unfiltered_lens_too(self):
+        self.engine.handle('AI jobs for fresher -unfiltered', '1')
+        self.api.calls.clear()
+        self.engine.handle('more', '1')
+        params = self._jobs_params()
+        self.assertTrue(params)
+        self.assertTrue(all('verified' not in p for p in params))
+
+    def test_company_lens_is_checked_only_by_default(self):
+        self.api.jobs = [
+            make_job(i, company='Deloitte', posted_days_ago=1)
+            for i in range(1, 6)
+        ]
+        self.engine.handle('jobs at deloitte', '1')
+        params = self._jobs_params(company_only=True)
+        self.assertTrue(params)
+        self.assertTrue(all(p.get('verified') == 1 for p in params))
+
+    def test_company_lens_unfiltered_override(self):
+        self.api.jobs = [
+            make_job(i, company='Deloitte', posted_days_ago=1)
+            for i in range(1, 6)
+        ]
+        self.engine.handle('jobs at deloitte -unfiltered', '1')
+        params = self._jobs_params(company_only=True)
+        self.assertTrue(params)
+        self.assertTrue(all('verified' not in p for p in params))
+
+    def test_owner_companyjobs_strips_the_suffix_from_the_name(self):
+        self.api.jobs = [
+            make_job(i, company='Deloitte', posted_days_ago=1)
+            for i in range(1, 6)
+        ]
+        self.engine.company_jobs('deloitte -unfiltered', 7, '1')
+        params = self._jobs_params(company_only=True)
+        self.assertTrue(params)
+        self.assertTrue(all(p.get('company') == 'deloitte' for p in params))
+        self.assertTrue(all('verified' not in p for p in params))
+
+    def test_insight_counts_use_the_same_checked_lens(self):
+        self.engine.handle('How many ai jobs in the past 24 hours?', '1')
+        params = [
+            p for path, p in self.api.calls if path == '/api/jobs/insights'
+        ]
+        self.assertTrue(params)
+        self.assertTrue(all(p.get('verified') == 1 for p in params))
+
+    def test_insight_counts_honor_the_unfiltered_override(self):
+        self.engine.handle('How many ai jobs in the past 24 hours? -unfiltered', '1')
+        params = [
+            p for path, p in self.api.calls if path == '/api/jobs/insights'
+        ]
+        self.assertTrue(params)
+        self.assertTrue(all('verified' not in p for p in params))
 
 
 class TelegramJobSearchTests(unittest.TestCase):

@@ -621,6 +621,15 @@ it, shows recipient count) → `/pushconfirm`
  `last_run_at` so the whole catalogue re-scrapes automatically one by one.
  Running workers are cancelled gracefully (their run rows kept — deleting
  them crashes the worker mid-page).
+- **Checked-only job replies (2026-08-14):** Every Telegram reply that lists
+ jobs with links — free-text searches, button-flow results, pagination,
+ company lens, `/companyjobs`, `/fresh`, insight counts — shows ONLY
+ detail-verified jobs (`requirements_enriched_at` set) by default, via
+ `/api/jobs?verified=1`. Ending any message with `-unfiltered` lifts the
+ gate for that reply (and its `more` pages — the lens is stored with the
+ search intent). Alerts have NO unfiltered override — proactive messages
+ never carry an unverified job. Counts use the same lens as lists so a
+ number is never a promise the rows can't keep.
 - **Every guest job surface is fresher-only (2026-08-14):** After the
  fresher-truthfulness gate shipped, Ashok's second live test ("Still im
  getting senior and II cant you see?") showed the company lens (`jobs at

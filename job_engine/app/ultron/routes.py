@@ -569,8 +569,17 @@ def ultron_health(db: Session = Depends(get_db)):
     recent = db.execute(
         select(TowerEvent).order_by(desc(TowerEvent.id)).limit(40)
     ).scalars().all()
+    # Checked-only law (2026-08-14): how much of the catch is still waiting
+    # for detail verification — the queue the full-mode drain is working.
+    unchecked = db.query(JobMaster).filter(
+        JobMaster.requirements_enriched_at.is_(None)
+    ).count()
+    checked = db.query(JobMaster).filter(
+        JobMaster.requirements_enriched_at.is_not(None)
+    ).count()
     return {
         'vitals': _vitals_json(vitals),
+        'verification': {'unchecked': unchecked, 'checked': checked},
         'recent_events': [{
             'id': e.id,
             'kind': e.kind,

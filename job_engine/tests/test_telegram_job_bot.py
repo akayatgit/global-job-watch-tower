@@ -327,6 +327,26 @@ class TelegramBotContractTests(unittest.TestCase):
             tower_post=tower_post,
         )
 
+    def test_fresh_board_is_checked_only_and_unfiltered_lifts_it(self):
+        rendered: list[tuple[str, dict]] = []
+
+        def board_renderer(board: str, *, days: int | None = None, **kwargs) -> str:
+            rendered.append((board, {'days': days, **kwargs}))
+            return 'FRESHEST CATCHES'
+
+        bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'owner'},
+            board_renderer=board_renderer,
+        )
+        bot.process('owner', '/fresh')
+        bot.process('owner', '/fresh -unfiltered')
+        self.assertEqual(rendered[0], ('fresh', {'days': None}))
+        self.assertEqual(rendered[1], ('fresh', {'days': None, 'unfiltered': True}))
+
     def test_owner_addcompany_adds_to_watchlist_and_queues_first_scrape(self):
         posts: list[tuple[str, dict | None]] = []
 

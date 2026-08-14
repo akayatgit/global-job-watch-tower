@@ -33,6 +33,9 @@ ALLOWED_WINDOWS = {0, 1, 2, 4, 7, 14, 30}
 
 LINKEDIN_ID_RE = re.compile(r'/jobs/view/(?:[^/?#]*-)?(\d{6,})(?:[/?#]|$)', re.I)
 MORE_RE = re.compile(r'^\s*(?:more|next|show\s+more|more\s+jobs|next\s+10)\s*[.!?]*\s*$', re.I)
+# '-unfiltered' at the END of any message lifts the checked-only gate for
+# that reply (Ashok, 2026-08-14). Accepts -, – and — plus trailing noise.
+UNFILTERED_RE = re.compile(r'\s*[-–—]\s*unfiltered\s*[.!?]*\s*$', re.I)
 RESET_RE = re.compile(r'^\s*(?:/new|/reset|/clear|new|reset|clear)\s*$', re.I)
 # Bare greetings only — a fully specified first message (e.g. "AI jobs in
 # Bangalore for fresher") must still return grounded results immediately,
@@ -293,6 +296,23 @@ class JobMasterIntent:
     metric: str = ''  # count | top_companies | top_roles | compare_cities | trend
     window_days: int = 7
     company: str = ''
+    # Checked-only law (Ashok, 2026-08-14): job lists show detail-verified
+    # rows only unless the message ended with '-unfiltered'. Serialized with
+    # the intent so 'more' pagination keeps the same lens.
+    unfiltered: bool = False
+
+
+def strip_unfiltered(text: str) -> tuple[str, bool]:
+    """Split the '-unfiltered' override off the end of a message.
+
+    Returns (clean_text, unfiltered). The override only counts at the end
+    of the message so a job title containing the word can never trip it.
+    """
+    raw = (text or '').strip()
+    match = UNFILTERED_RE.search(raw)
+    if match:
+        return raw[:match.start()].strip(), True
+    return raw, False
 
 
 def _http_get(path: str, params: dict[str, Any] | None = None) -> dict | list:
@@ -724,7 +744,7 @@ class JobMasterEngine:
         self.sessions = sessions or TelegramSessionStore()
 
     def handle(self, text: str, chat_id: str, *, update_id: int | None = None) -> str:
-        raw = (text or '').strip()
+        raw, unfiltered = strip_unfiltered(text)
         if RESET_RE.match(raw):
             reply = 'Search reset. Send a role, city, or job-market question.'
             self.sessions.clear_onboarding(chat_id)
@@ -770,6 +790,7 @@ class JobMasterEngine:
                 chat_id,
                 stated_outright=stated_outright,
                 update_id=update_id,
+                unfiltered=unfiltered,
             )
             if company_result is not None:
                 self.sessions.clear_onboarding(chat_id)
@@ -790,11 +811,13 @@ class JobMasterEngine:
                 chat_id,
                 stated_outright=stated_outright,
                 update_id=update_id,
+                unfiltered=unfiltered,
             )
             if company_result is not None:
                 return company_result
 
         intent = self.interpreter.parse(raw)
+        intent.unfiltered = unfiltered
         if intent.kind == 'insight':
             reply = self._insight_reply(intent)
             self.sessions.apply_result(chat_id, reply, update_id=update_id)
@@ -853,6 +876,9 @@ class JobMasterEngine:
             params['track'] = 'fresher'
         elif intent.experience:
             params['experience'] = intent.experience
+        if not intent.unfiltered:
+            # Checked-only law: only detail-verified jobs carry links.
+            params['verified'] = 1
         valid: list[dict[str, Any]] = []
         prior_seen = set(seen_ids)
         fetched_seen: set[str] = set()
@@ -910,10 +936,13 @@ class JobMasterEngine:
         chat_id: str,
         *,
         update_id: int | None = None,
+        unfiltered: bool = False,
     ) -> str:
         """Owner /companyjobs entry point — same formatter as guest chat."""
         days = days if days in ALLOWED_WINDOWS else 7
         name = re.sub(r'\s+', ' ', str(company or '')).strip()
+        name, stripped = strip_unfiltered(name)
+        unfiltered = unfiltered or stripped
         if not name:
             return 'Usage: /companyjobs <company> [24h | 7 | 30]'
         reply = self._company_search(
@@ -922,6 +951,7 @@ class JobMasterEngine:
             chat_id,
             stated_outright=True,
             update_id=update_id,
+            unfiltered=unfiltered,
         )
         # stated_outright=True guarantees a reply (honest zero instead of
         # falling through), so this is only defensive.
@@ -938,13 +968,17 @@ class JobMasterEngine:
         *,
         stated_outright: bool,
         update_id: int | None,
+        unfiltered: bool = False,
     ) -> str | None:
         """Run a company-window search; None = not actually a company query
         (ambiguous phrasing and no tracked company matches), so the caller
         falls through to the normal role/insight path."""
-        intent = JobMasterIntent(kind='company_jobs', company=name, window_days=days)
-        rows_month = self._fetch_company_rows(name, 30)
-        rows_24h = self._fetch_company_rows(name, 0)
+        intent = JobMasterIntent(
+            kind='company_jobs', company=name, window_days=days,
+            unfiltered=unfiltered,
+        )
+        rows_month = self._fetch_company_rows(name, 30, unfiltered=unfiltered)
+        rows_24h = self._fetch_company_rows(name, 0, unfiltered=unfiltered)
         if not rows_month and not rows_24h:
             if not stated_outright and not self._company_exists(name):
                 return None
@@ -975,8 +1009,12 @@ class JobMasterEngine:
         *,
         seen_ids: list[str],
     ) -> tuple[str, list[str]]:
-        rows_month = self._fetch_company_rows(intent.company, 30)
-        rows_24h = self._fetch_company_rows(intent.company, 0)
+        rows_month = self._fetch_company_rows(
+            intent.company, 30, unfiltered=intent.unfiltered,
+        )
+        rows_24h = self._fetch_company_rows(
+            intent.company, 0, unfiltered=intent.unfiltered,
+        )
         return self._company_reply(
             intent, rows_month=rows_month, rows_24h=rows_24h, seen_ids=seen_ids,
         )
@@ -1040,7 +1078,13 @@ class JobMasterEngine:
         )
         return f'{header}\n\n{body}', new_ids
 
-    def _fetch_company_rows(self, company: str, days: int | None) -> list[dict[str, Any]]:
+    def _fetch_company_rows(
+        self,
+        company: str,
+        days: int | None,
+        *,
+        unfiltered: bool = False,
+    ) -> list[dict[str, Any]]:
         """Fresher-safe verified jobs for a company in a window, oldest scan
         capped at MAX_SCAN. The API's company filter is a substring ILIKE; a
         whole-word re-check here keeps short names honest ('ai' must never
@@ -1055,6 +1099,8 @@ class JobMasterEngine:
         most cards are silent)."""
         word = re.compile(rf'(?<![a-z0-9]){re.escape(company.lower())}(?![a-z0-9])')
         params: dict[str, Any] = {'limit': API_PAGE_SIZE, 'company': company}
+        if not unfiltered:
+            params['verified'] = 1
         if days is not None:
             params['days'] = days
         rows_out: list[dict[str, Any]] = []
@@ -1124,6 +1170,10 @@ class JobMasterEngine:
             params['track'] = 'fresher'
         elif intent.experience:
             params['experience'] = intent.experience
+        if not intent.unfiltered:
+            # Counts answer with the same checked-only lens as job lists —
+            # a number the guest cannot then see as rows is a broken promise.
+            params['verified'] = 1
         scope = city_label(intent.cities[0]) if intent.cities else 'All India'
         if intent.window_days == 0:
             window = 'past 24 hours'
