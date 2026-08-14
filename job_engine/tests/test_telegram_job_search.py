@@ -27,6 +27,7 @@ def make_job(
     company: str | None = None,
     posted_days_ago: int | None = None,
     scraped_hours_ago: int | None = None,
+    experience_band: str | None | object = 'unset',
 ) -> dict:
     job_id = str(4448000000 + i)
     job = {
@@ -35,7 +36,10 @@ def make_job(
         'title': title,
         'company': company if company is not None else f'Company {i}',
         'city_key': city,
-        'experience_band': 'Fresher' if i % 2 else None,
+        'experience_band': (
+            ('Fresher' if i % 2 else None)
+            if experience_band == 'unset' else experience_band
+        ),
         'source_track': 'fresher',
         'job_url': f'https://www.linkedin.com/jobs/view/broken-title-{job_id}/?tracking=x',
     }
@@ -404,7 +408,8 @@ class CompanyJobsTests(unittest.TestCase):
     def test_default_window_is_7_days_with_tri_window_header(self):
         reply = self.engine.handle('jobs at deloitte', '42')
         self.assertIn(
-            'Deloitte — 3 openings posted in the last 7 days (5 this month · 2 caught in 24h)',
+            'Deloitte — 3 fresher openings posted in the last 7 days '
+            '(5 this month · 2 caught in 24h)',
             reply,
         )
         self.assertIn('1. Audit Analyst — Fresher', reply)
@@ -415,7 +420,8 @@ class CompanyJobsTests(unittest.TestCase):
     def test_live_seen_typo_jobin_and_24h_window(self):
         reply = self.engine.handle('Jobin Deloitte 24', '42')
         self.assertIn(
-            'Deloitte — 2 openings caught in the last 24 hours (3 in 7 days · 5 this month)',
+            'Deloitte — 2 fresher openings caught in the last 24 hours '
+            '(3 in 7 days · 5 this month)',
             reply,
         )
         self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 2)
@@ -423,7 +429,8 @@ class CompanyJobsTests(unittest.TestCase):
     def test_this_month_window(self):
         reply = self.engine.handle('deloitte jobs this month', '42')
         self.assertIn(
-            'Deloitte — 5 openings posted this month (3 in 7 days · 2 caught in 24h)',
+            'Deloitte — 5 fresher openings posted this month '
+            '(3 in 7 days · 2 caught in 24h)',
             reply,
         )
         self.assertEqual(reply.count('https://www.linkedin.com/jobs/view/'), 5)
@@ -432,7 +439,7 @@ class CompanyJobsTests(unittest.TestCase):
         reply = self.engine.handle('jobs at hogwarts', '42')
         self.assertEqual(
             reply,
-            "I don't see verified Hogwarts openings in the last 7 days. "
+            "I don't see verified fresher openings at Hogwarts in the last 7 days. "
             "Try 'top companies hiring' to see who's active right now.",
         )
 
@@ -449,7 +456,7 @@ class CompanyJobsTests(unittest.TestCase):
                      posted_days_ago=1, scraped_hours_ago=30),
         ]
         reply = self.engine.handle('jobs at ey', '42')
-        self.assertIn('EY — 1 opening posted in the last 7 days', reply)
+        self.assertIn('EY — 1 fresher opening posted in the last 7 days', reply)
         self.assertIn('Assurance Associate', reply)
         self.assertNotIn('Keyence', reply)
         self.assertNotIn('Sensor Engineer', reply)
@@ -462,7 +469,7 @@ class CompanyJobsTests(unittest.TestCase):
         reply = self.engine.handle('jobs at deloitte 24h', '42')
         self.assertEqual(
             reply,
-            "I don't see verified Deloitte openings in the last 24 hours — "
+            "I don't see verified fresher openings at Deloitte in the last 24 hours — "
             "this month has 1. Say 'jobs at Deloitte this month' to see them.",
         )
 
@@ -494,17 +501,52 @@ class CompanyJobsTests(unittest.TestCase):
         self.engine.handle('jobs at deloitte', '42')
         self.assertIsNone(self.sessions.get_guest_profile('42'))
 
-    def test_company_lens_shows_seniority_jobs_with_honest_band_never_fresher(self):
-        """The company lens is an all-experience view — a seniority-titled
-        job stays visible there, but with the honest band ('Not stated'
-        until detail-verified), never a false 'Fresher' label."""
+    def test_company_lens_is_fresher_only_no_senior_or_ii_titles(self):
+        """Ashok's second live test (2026-08-14, screenshot): 'Jobs in
+        Deloitte 24hrs' still listed 'Omniverse – Software Engineer II' and
+        'Senior Consultant-IT' (honestly labelled, but present). The company
+        lens serves the same fresher audience as every other search —
+        seniority-titled and stated-experienced rows never render, and the
+        header counts only what is actually shown."""
+        self.api.jobs = [
+            make_job(210, title='Omniverse – Software Engineer II',
+                     company='Deloitte', posted_days_ago=1, scraped_hours_ago=5),
+            make_job(211, title='EH-FY27-Consulting-S&T-M&A-Senior Consultant-IT',
+                     company='Deloitte', posted_days_ago=1, scraped_hours_ago=6),
+            make_job(212, title='Risk Consultant', company='Deloitte',
+                     posted_days_ago=1, scraped_hours_ago=7,
+                     experience_band='3-5 years'),
+            make_job(213, title='Australian Tax - Junior Tax Consultant',
+                     company='Deloitte', posted_days_ago=1, scraped_hours_ago=8),
+            make_job(214, title='Business Resilience - Consultant',
+                     company='Deloitte', posted_days_ago=1, scraped_hours_ago=9),
+        ]
+        reply = self.engine.handle('jobs in deloitte 24h', '42')
+        self.assertIn(
+            'Deloitte — 2 fresher openings caught in the last 24 hours '
+            '(2 in 7 days · 2 this month)',
+            reply,
+        )
+        self.assertIn('Junior Tax Consultant', reply)
+        self.assertIn('Business Resilience - Consultant', reply)
+        self.assertNotIn('Engineer II', reply)
+        self.assertNotIn('Senior Consultant', reply)
+        self.assertNotIn('Risk Consultant', reply)
+        self.assertNotIn('3-5 years', reply)
+
+    def test_company_zero_when_only_senior_jobs_exist(self):
+        """A company with ONLY seniority-titled catches gets the honest
+        fresher-zero, never those rows with a 'Not stated' fig leaf."""
         self.api.jobs = [
             make_job(210, title='Omniverse – Software Engineer II',
                      company='Deloitte', posted_days_ago=1, scraped_hours_ago=5),
         ]
         reply = self.engine.handle('jobs at deloitte', '42')
-        self.assertIn('Omniverse – Software Engineer II — Not stated', reply)
-        self.assertNotIn('Fresher', reply)
+        self.assertEqual(
+            reply,
+            "I don't see verified fresher openings at Deloitte in the last 7 days. "
+            "Try 'top companies hiring' to see who's active right now.",
+        )
 
     def test_company_query_rescues_a_chat_stuck_at_ask_role(self):
         """Live-seen 2026-08-14: a dead-ended role prompt parks the chat at
@@ -521,7 +563,7 @@ class CompanyJobsTests(unittest.TestCase):
             'city_known': False,
         })
         reply = self.engine.handle('Jobin Deloitte', '42')
-        self.assertIn('Deloitte — 3 openings posted in the last 7 days', reply)
+        self.assertIn('Deloitte — 3 fresher openings posted in the last 7 days', reply)
         self.assertNotIn("I don't see verified Jobin Deloitte openings", reply)
         self.assertIsNone(self.sessions.load_onboarding('42'))
         more = self.engine.handle('more', '42')

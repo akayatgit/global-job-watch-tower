@@ -599,6 +599,16 @@ it, shows recipient count) → `/pushconfirm`
  line pattern. This is a day-one retention mechanic available to every
  guest, never a premium/paid feature. `app/telegram_alerts.py` and
  `app/telegram_broadcast.py` own this logic; kanban card #15.
+- **Every guest job surface is fresher-only (2026-08-14):** After the
+ fresher-truthfulness gate shipped, Ashok's second live test ("Still im
+ getting senior and II cant you see?") showed the company lens (`jobs at
+ deloitte`) still listing seniority-titled rows with honest labels. Not
+ acceptable: JobMaster's audience is freshers, so EVERY job-listing surface
+ — role search, company lens, alerts, `/companyjobs` — shows only
+ fresher-safe rows (no seniority-veto title, no stated non-fresher band;
+ band-NULL clean titles stay pending verification). Headers must say what
+ they count ("N fresher openings"). Never reintroduce an all-experience
+ guest listing without Ashok's explicit sign-off.
 - **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
  "very few will click on set alert option... why can't we automatically
  send one alert per day on the telegram guest's last search, so we can
