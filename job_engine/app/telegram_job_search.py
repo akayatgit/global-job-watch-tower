@@ -70,13 +70,22 @@ ROLE_FAMILY_LABELS = {
     'design': 'Design',
 }
 
+# Must cover every alias app.cities._CITY_HINTS knows (drift guard:
+# tests/test_jobmaster_nightly_corpus.py::test_JM300) — the tower stamps jobs
+# with those hints, so a guest naming any of them must get the city filter,
+# never a silent unscoped all-India search. Chat-only typo extras on top.
 CITY_ALIASES = {
     'bengaluru': ('bengaluru', 'bangalore', 'bengalore', 'banglore'),
     'hyderabad': ('hyderabad', 'hydrabad', 'secunderabad'),
     'chennai': ('chennai', 'madras'),
-    'kerala': ('kerala', 'kochi', 'cochin', 'trivandrum', 'ernakulam'),
-    'pune': ('pune',),
-    'mumbai': ('mumbai', 'bombay', 'thane'),
+    'kerala': (
+        'kerala', 'kochi', 'cochin', 'trivandrum', 'thiruvananthapuram',
+        'kozhikode', 'calicut', 'ernakulam', 'thrissur', 'kannur',
+        'kollam', 'alappuzha', 'palakkad', 'malappuram', 'kottayam',
+        'sulthanbathery',
+    ),
+    'pune': ('pune', 'pimpri', 'chinchwad'),
+    'mumbai': ('mumbai', 'bombay', 'navi mumbai', 'thane'),
     'delhi': ('delhi', 'new delhi', 'delhi ncr'),
     'gurugram': ('gurugram', 'gurgaon'),
     'noida': ('noida', 'greater noida'),
@@ -180,7 +189,14 @@ def _clean_company_name(raw: str) -> str:
         for alias in aliases:
             name = re.sub(rf'\b{re.escape(alias)}\b', ' ', name)
     name = re.sub(r'\s+', ' ', name).strip()
-    name = re.sub(r'\s*\b(?:in|at|near|around)\b$', '', name).strip(" .'&-")
+    # Window phrases like "in the last 24 hours" lose their number/unit to
+    # COMPANY_WINDOW_RES first, which can leave a trailing connective glued to
+    # the name ("deloitte in the last"). Strip those words repeatedly so the
+    # company filter never searches for a company that doesn't exist.
+    name = re.sub(
+        r'(?:\s*\b(?:in|at|near|around|the|last|past|over|during|within|for)\b)+$',
+        '', name,
+    ).strip(" .'&-")
     words = name.split()
     if not words:
         return ''
