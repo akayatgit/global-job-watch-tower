@@ -187,6 +187,10 @@ def _board_health() -> str:
         f"Heat {heat_s} ({v.get('heat_label', '—')}) · Memory {round(v.get('mem_pct') or 0)}% · "
         f"CPU {v.get('cpu_label', '—')}",
         f"Searches today {v.get('searches_today', '—')} · 24h {v.get('searches_24h', '—')}",
+        (
+            f"Verification queue {(d.get('verification') or {}).get('unchecked', '—')} unchecked "
+            f"· {(d.get('verification') or {}).get('checked', '—')} checked"
+        ),
         f"Ollama today {v.get('ollama_today', '—')} · 24h {v.get('ollama_24h', '—')} · "
         f"capacity ~{v.get('ollama_capacity_estimate', '—')}/day",
         f"Mode {v.get('filter_mode_policy', '—')} · Browser {'Hidden' if v.get('headless') else 'Visible'}",
