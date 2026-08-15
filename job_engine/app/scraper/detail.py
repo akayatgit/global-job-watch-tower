@@ -19,6 +19,9 @@ class DetailParse:
     requirements: JobRequirements
     posted_date: date | None = None
     company: CompanyProfile | None = None
+    # LinkedIn's own criteria block ("Industries") — deterministic, so it
+    # outranks any AI-read industry fallback.
+    industries: str | None = None
 
 
 def _clean(value: str | None) -> str | None:
@@ -66,6 +69,7 @@ def parse_job_detail(page, *, card_text: str | None = None) -> DetailParse:
 
     seniority = None
     employment_type = None
+    industries = None
     try:
         items = page.css(
             'li.description__job-criteria-item, '
@@ -87,6 +91,8 @@ def parse_job_detail(page, *, card_text: str | None = None) -> DetailParse:
                 seniority = value
             elif 'employment' in low:
                 employment_type = value
+            elif 'industr' in low:
+                industries = value[:160]
     except Exception:
         pass
 
@@ -116,4 +122,5 @@ def parse_job_detail(page, *, card_text: str | None = None) -> DetailParse:
         requirements=req,
         posted_date=posted,
         company=company,
+        industries=industries,
     )

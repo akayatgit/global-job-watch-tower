@@ -675,7 +675,25 @@ beat backfill; skips under heat or during scrapes and retries later.
 | JM-276 | Ollama busy/hot during detail verification | Job is verified regex-only, `ai_read_at` stays NULL, and the 10-min `ai_read_pending_descriptions` beat backfills the reading later — never blocks the browser lane, never fights a live scrape's Ollama. |
 | JM-277 | Owner spot-check: pick a /topfreshers row and read its `ai_fresher_evidence` | The evidence sentence exists word-for-word in the LinkedIn description — a hallucinated quote can never be stored (validation drops ungrounded claims). |
 
-## 15. Execution log
+## 14N. AI also reads qualifications, skills, industry, salary (2026-08-15)
+
+Ashok: "Ai also needs to get qualifications, skills required, industry, and
+salary. All if mentioned." Same grounding law: every list item and snippet
+must exist verbatim in the description or it is dropped one by one.
+Qualifications merge into the existing degrees list (regex-found first);
+skills get their own column; industry comes from LinkedIn's own criteria
+block first (deterministic, captured at detail parse) with the AI reading
+only filling the gap; salary is stored as the employer's verbatim text —
+never parsed guesses — and must carry money evidence (a number plus a
+currency/pay word). `/topfreshers` rows append `💰 <salary>` when stated.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-278 | A description with "Qualification: B.Tech or MCA", "Skills required: SQL, Python", "Salary: INR 4,50,000 - 6,00,000 per annum" is detail-verified | Degrees include B.Tech + MCA, skills list SQL + Python, salary_text stores the verbatim salary snippet. |
+| JM-279 | A description that never mentions salary or industry | `salary_text` and `industry` stay NULL — the model returning invented values fails grounding and stores nothing. |
+| JM-280 | LinkedIn criteria block shows "Industries: IT Services and IT Consulting" | The job's industry is set from the criteria block at enrich time; a differing AI-read industry never overwrites it. |
+| JM-281 | `/topfreshers 0` where one row has a stated salary and another does not | The stated row ends `— 💰 INR …`; the other row shows no salary at all — never a guessed number. |
+| JM-282 | `/topfreshers skill:sql 0` for a job whose title/card never says SQL but the stored description lists it | The row now matches — the skill filter searches title, card text, AND the stored full description (word-bounded, so sql never matches MySQL). |
 
 ## 15. Execution log
 

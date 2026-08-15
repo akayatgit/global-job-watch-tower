@@ -681,6 +681,21 @@ it, shows recipient count) → `/pushconfirm`
  browser time) + a 10-min beat backfill (`ai_read_pending_descriptions`);
  skips under heat / during scrapes (ai_read_at NULL = retry later).
  `AI_REQUIREMENTS_MODE=off` is the kill switch.
+- **AI also reads qualifications, skills, industry, salary (2026-08-15):**
+ Ashok: "Ai also needs to get qualifications, skills required, industry,
+ and salary. All if mentioned." Same grounding law — every list item and
+ snippet must exist verbatim in the description or it is dropped
+ individually. Qualifications merge into the existing `degrees` list
+ (regex-found first, dedup); skills → `JobMaster.skills`; industry comes
+ from LinkedIn's own criteria block FIRST (deterministic — captured in
+ `parse_job_detail`, applied in `_apply_requirements`) and the AI reading
+ only fills the gap, never overwrites; salary → `salary_text` as the
+ employer's verbatim snippet (must carry a number + a currency/pay-period
+ anchor — a grounded but non-salary sentence is rejected). Never parse or
+ display guessed salary numbers. Surfaces: `/topfreshers` rows append
+ `— 💰 <salary_text>` only when stated; the `skill=` filter now also
+ searches the stored full description (still word-bounded); `JobOut`
+ carries `salary_text` + `industry`.
 - **/topfreshers video gems + owner /help (2026-08-14):** Owner command
  `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
  video gems: detail-verified jobs whose employer EXPLICITLY said fresher /

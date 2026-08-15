@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 # Keep the prompt pure visuals-of-the-task (DIRECTOR prompt hygiene law):
 # instructions + data only, no policy text.
 PROMPT = """You read ONE job description and report ONLY what the employer \
-wrote about required experience. Never guess, never infer from the role name.
+wrote. Never guess, never infer from the role name, never add anything that \
+is not literally in the description.
 
 TITLE: {title}
 
@@ -45,10 +46,15 @@ Reply with JSON only:
 "quote": "<the exact sentence from the description stating the years, or null>"}},
  "fresher_statement": {{"present": <true or false>, \
 "quote": "<the exact sentence saying freshers / graduates with no experience are \
-welcome, or null>"}}}}
+welcome, or null>"}},
+ "qualifications": ["<degree/qualification exactly as written, e.g. B.Tech>", ...],
+ "skills": ["<required skill exactly as written, e.g. SQL>", ...],
+ "industry": "<the industry exactly as written, or null>",
+ "salary": "<the exact salary text as written, e.g. INR 4,50,000 - 6,00,000 per annum, or null>"}}
 
 Rules:
-- Quotes MUST be copied character-for-character from the description.
+- Quotes and every list item MUST be copied character-for-character from the description.
+- Empty list / null for anything the description does not mention.
 - If the description never states years of experience: min_years=null, max_years=null, quote=null.
 - fresher_statement.present is true ONLY if the employer explicitly welcomes \
 freshers / fresh graduates / people with no experience. A statement that the \
@@ -58,6 +64,14 @@ MAX_DESCRIPTION_CHARS = 8000
 MIN_DESCRIPTION_CHARS = 80
 MIN_QUOTE_CHARS = 12
 EVIDENCE_MAX_CHARS = 400
+# Short employer-stated facts (a skill can legitimately be "R" or "Go", but
+# 2 chars is the floor so lone letters from bad JSON never slip through).
+MIN_ITEM_CHARS = 2
+MAX_ITEM_CHARS = 80
+MAX_SKILLS = 15
+MAX_QUALIFICATIONS = 8
+MAX_INDUSTRY_CHARS = 160
+MAX_SALARY_CHARS = 200
 
 # A years quote must actually carry a number (digit or word).
 NUMBER_ANCHOR_RE = re.compile(
@@ -79,6 +93,13 @@ NEGATED_FRESHER_RE = re.compile(
     r'|no\s+freshers?|except\s+freshers?|other\s+than\s+freshers?'
     r'|freshers?\s+(?:are\s+)?not\s+eligible', re.I,
 )
+# A salary snippet must carry money evidence — a number plus a currency /
+# pay-period word — otherwise the model quoted some unrelated sentence.
+SALARY_ANCHOR_RE = re.compile(
+    r'(?:₹|\$|€|£|\brs\.?\b|\binr\b|\busd\b|\beur\b|\bgbp\b|\blpa\b|\blakh?s?\b'
+    r'|\bcrore\b|\bctc\b|\bsalary\b|\bstipend\b|\bcompensation\b|\bpay\b'
+    r'|\bper\s+(?:annum|month|year|hour)\b|\bp\.?a\.?\b|\bk\b)', re.I,
+)
 
 
 @dataclass
@@ -90,6 +111,12 @@ class AIReading:
     max_years: float | None
     fresher_quote: str | None
     years_quote: str | None
+    # Employer-stated facts, each grounded verbatim in the description —
+    # empty list / None whenever the employer never mentioned them.
+    qualifications: list[str] | None = None
+    skills: list[str] | None = None
+    industry: str | None = None
+    salary_text: str | None = None
 
 
 def _norm(text: str | None) -> str:
@@ -102,6 +129,31 @@ def _quote_grounded(quote: str | None, description_norm: str) -> bool:
     and the claim it carried is discarded."""
     q = _norm(quote)
     return len(q) >= MIN_QUOTE_CHARS and q in description_norm
+
+
+def _grounded_items(
+    values, description_norm: str, *, cap: int,
+) -> list[str] | None:
+    """Keep only list items that literally appear in the description.
+    Hallucinated items are dropped one by one, never the whole list."""
+    if not isinstance(values, list):
+        return None
+    kept: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        item = ' '.join(value.split())
+        norm = _norm(item)
+        if not (MIN_ITEM_CHARS <= len(item) <= MAX_ITEM_CHARS):
+            continue
+        if norm in seen or norm not in description_norm:
+            continue
+        seen.add(norm)
+        kept.append(item)
+        if len(kept) >= cap:
+            break
+    return kept or None
 
 
 def _as_years(value) -> float | None:
@@ -165,12 +217,41 @@ def validate_reading(raw: str, description: str) -> AIReading | None:
             explicit_fresher = True
             fresher_quote = ' '.join(quote.split())[:EVIDENCE_MAX_CHARS]
 
+    qualifications = _grounded_items(
+        payload.get('qualifications'), description_norm, cap=MAX_QUALIFICATIONS,
+    )
+    skills = _grounded_items(
+        payload.get('skills'), description_norm, cap=MAX_SKILLS,
+    )
+
+    industry = None
+    raw_industry = payload.get('industry')
+    if isinstance(raw_industry, str):
+        candidate = ' '.join(raw_industry.split())[:MAX_INDUSTRY_CHARS]
+        if MIN_ITEM_CHARS <= len(candidate) and _norm(candidate) in description_norm:
+            industry = candidate
+
+    salary_text = None
+    raw_salary = payload.get('salary')
+    if isinstance(raw_salary, str):
+        candidate = ' '.join(raw_salary.split())[:MAX_SALARY_CHARS]
+        if (
+            _norm(candidate) in description_norm
+            and re.search(r'\d', candidate)
+            and SALARY_ANCHOR_RE.search(candidate)
+        ):
+            salary_text = candidate
+
     return AIReading(
         explicit_fresher=explicit_fresher,
         min_years=min_years,
         max_years=max_years,
         fresher_quote=fresher_quote,
         years_quote=years_quote,
+        qualifications=qualifications,
+        skills=skills,
+        industry=industry,
+        salary_text=salary_text,
     )
 
 
@@ -187,7 +268,7 @@ def _chat(prompt: str) -> str:
         options={
             'temperature': 0,
             'num_ctx': 4096,
-            'num_predict': 260,
+            'num_predict': 600,
         },
     )
     return response['message']['content']
@@ -254,6 +335,28 @@ def apply_reading(job, reading: AIReading) -> list[str]:
         else:
             job.experience_label = f'{reading.min_years:g}+ years (AI-read)'
         notes.append(f'AI: stated years {job.experience_label}')
+
+    # Employer-stated facts — only when mentioned, all grounded verbatim.
+    if reading.qualifications:
+        existing = [d for d in (job.degrees or []) if isinstance(d, str)]
+        seen = {d.lower() for d in existing}
+        merged = existing + [
+            q for q in reading.qualifications if q.lower() not in seen
+        ]
+        if merged != existing:
+            job.degrees = merged[:MAX_QUALIFICATIONS]
+            notes.append(f'AI: qualifications {", ".join(reading.qualifications)}')
+    if reading.skills and not job.skills:
+        job.skills = reading.skills
+        notes.append(f'AI: skills {", ".join(reading.skills[:6])}')
+    if reading.industry and not job.industry:
+        # LinkedIn's own criteria block (enrichment) outranks this fallback —
+        # AI fills the gap only when the criteria never said an industry.
+        job.industry = reading.industry
+        notes.append(f'AI: industry {reading.industry}')
+    if reading.salary_text and not job.salary_text:
+        job.salary_text = reading.salary_text
+        notes.append(f'AI: salary {reading.salary_text}')
     return notes
 
 

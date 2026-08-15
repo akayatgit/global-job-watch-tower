@@ -950,10 +950,15 @@ class JobMasterTelegramBot:
             place = (
                 city_label(job.get('city_key')) if job.get('city_key') else None
             ) or job.get('location') or 'India'
-            lines.append(
+            row = (
                 f"{i}. {job.get('title') or 'Untitled'} — "
                 f"{job.get('company') or 'Unknown company'} — {place}"
             )
+            # Employer-stated salary (AI quote-grounded) — gold for videos.
+            salary = job.get('salary_text')
+            if salary:
+                row += f' — 💰 {salary}'
+            lines.append(row)
             lines.append(str(job.get('job_url') or ''))
         if len(rows) > TOPFRESHERS_SHOW:
             lines.append('')

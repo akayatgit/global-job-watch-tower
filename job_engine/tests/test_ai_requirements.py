@@ -33,7 +33,10 @@ DESC = (
     'Freshers and fresh graduates are welcome to apply for this role. '
     'Candidates having up to one year of exposure may also apply. '
     'Good knowledge of SQL is expected. This position requires 0-1 years '
-    'of experience in analytics.'
+    'of experience in analytics. Qualification: B.Tech or MCA in any stream. '
+    'Skills required: SQL, Python and Excel. '
+    'Industry: IT Services and IT Consulting. '
+    'Salary: INR 4,50,000 - 6,00,000 per annum.'
 )
 
 SENIOR_DESC = (
@@ -43,11 +46,13 @@ SENIOR_DESC = (
 )
 
 
-def reply(experience=None, fresher=None) -> str:
-    return json.dumps({
+def reply(experience=None, fresher=None, **extras) -> str:
+    payload = {
         'experience': experience or {'min_years': None, 'max_years': None, 'quote': None},
         'fresher_statement': fresher or {'present': False, 'quote': None},
-    })
+    }
+    payload.update(extras)
+    return json.dumps(payload)
 
 
 class ValidateReadingTests(unittest.TestCase):
@@ -125,6 +130,60 @@ class ValidateReadingTests(unittest.TestCase):
         self.assertIsNone(validate_reading('', DESC))
 
 
+class EmployerFactsValidationTests(unittest.TestCase):
+    """Qualifications / skills / industry / salary — all only if mentioned,
+    every item grounded verbatim in the description (Ashok, 2026-08-15)."""
+
+    def test_grounded_facts_are_all_accepted(self):
+        reading = validate_reading(reply(
+            qualifications=['B.Tech', 'MCA'],
+            skills=['SQL', 'Python', 'Excel'],
+            industry='IT Services and IT Consulting',
+            salary='INR 4,50,000 - 6,00,000 per annum',
+        ), DESC)
+        self.assertEqual(reading.qualifications, ['B.Tech', 'MCA'])
+        self.assertEqual(reading.skills, ['SQL', 'Python', 'Excel'])
+        self.assertEqual(reading.industry, 'IT Services and IT Consulting')
+        self.assertEqual(reading.salary_text, 'INR 4,50,000 - 6,00,000 per annum')
+
+    def test_hallucinated_items_are_dropped_one_by_one(self):
+        reading = validate_reading(reply(
+            qualifications=['B.Tech', 'PhD in Astrophysics'],
+            skills=['SQL', 'Kubernetes'],
+        ), DESC)
+        self.assertEqual(reading.qualifications, ['B.Tech'])
+        self.assertEqual(reading.skills, ['SQL'])
+
+    def test_unmentioned_facts_stay_none(self):
+        reading = validate_reading(reply(), DESC)
+        self.assertIsNone(reading.qualifications)
+        self.assertIsNone(reading.skills)
+        self.assertIsNone(reading.industry)
+        self.assertIsNone(reading.salary_text)
+
+    def test_hallucinated_industry_and_salary_are_rejected(self):
+        reading = validate_reading(reply(
+            industry='Quantum Blockchain Consulting',
+            salary='USD 250,000 per year plus equity',
+        ), DESC)
+        self.assertIsNone(reading.industry)
+        self.assertIsNone(reading.salary_text)
+
+    def test_salary_needs_money_evidence_not_any_grounded_sentence(self):
+        # Grounded sentence, but it is not a salary — a lazy model must not
+        # launder arbitrary text into the salary field.
+        reading = validate_reading(reply(
+            salary='Good knowledge of SQL is expected.',
+        ), DESC)
+        self.assertIsNone(reading.salary_text)
+
+    def test_duplicate_and_junk_items_are_filtered(self):
+        reading = validate_reading(reply(
+            skills=['SQL', 'sql', '', 'x' * 200, 42],
+        ), DESC)
+        self.assertEqual(reading.skills, ['SQL'])
+
+
 class ApplyReadingTests(unittest.TestCase):
     def _job(self, **kwargs) -> JobMaster:
         base = dict(
@@ -173,6 +232,122 @@ class ApplyReadingTests(unittest.TestCase):
         ))
         self.assertIs(job.ai_fresher_verdict, False)
         self.assertIsNotNone(job.ai_read_at)
+
+    def test_qualifications_merge_into_degrees_without_duplicates(self):
+        job = self._job(degrees=['B.Tech'])
+        notes = apply_reading(job, AIReading(
+            explicit_fresher=False, min_years=None, max_years=None,
+            fresher_quote=None, years_quote=None,
+            qualifications=['b.tech', 'MCA'],
+        ))
+        # Regex-found degree keeps first place; only genuinely new ones join.
+        self.assertEqual(job.degrees, ['B.Tech', 'MCA'])
+        self.assertTrue(any('qualifications' in n for n in notes))
+
+    def test_skills_salary_stored_and_linkedin_industry_never_overwritten(self):
+        job = self._job(industry='IT Services and IT Consulting')
+        apply_reading(job, AIReading(
+            explicit_fresher=False, min_years=None, max_years=None,
+            fresher_quote=None, years_quote=None,
+            skills=['SQL', 'Python'],
+            industry='Software Development',
+            salary_text='INR 4,50,000 - 6,00,000 per annum',
+        ))
+        self.assertEqual(job.skills, ['SQL', 'Python'])
+        self.assertEqual(job.salary_text, 'INR 4,50,000 - 6,00,000 per annum')
+        # LinkedIn's own criteria block outranks the AI fallback.
+        self.assertEqual(job.industry, 'IT Services and IT Consulting')
+
+    def test_ai_industry_fills_the_gap_when_criteria_had_none(self):
+        job = self._job()
+        apply_reading(job, AIReading(
+            explicit_fresher=False, min_years=None, max_years=None,
+            fresher_quote=None, years_quote=None,
+            industry='IT Services and IT Consulting',
+        ))
+        self.assertEqual(job.industry, 'IT Services and IT Consulting')
+
+
+class _FakeSel(list):
+    def getall(self):
+        return list(self)
+
+
+class _FakeCriteriaItem:
+    def __init__(self, label: str, value: str):
+        self._label = label
+        self._value = value
+
+    def css(self, selector: str):
+        if 'h3' in selector or 't-bold' in selector:
+            return _FakeSel([self._label])
+        return _FakeSel([self._value])
+
+
+class _FakeJobPage:
+    DESC = (
+        'We are hiring a data analyst for our Bengaluru team. Freshers are '
+        'welcome. Strong SQL knowledge preferred. Apply now to join us.'
+    )
+
+    def css(self, selector: str):
+        if selector == '.jobs-description__content ::text':
+            return _FakeSel([self.DESC])
+        if selector.startswith('li.description__job-criteria-item'):
+            return [
+                _FakeCriteriaItem('Seniority level', 'Entry level'),
+                _FakeCriteriaItem('Employment type', 'Full-time'),
+                _FakeCriteriaItem('Industries', 'IT Services and IT Consulting'),
+            ]
+        return _FakeSel([])
+
+
+class ParseJobDetailIndustriesTests(unittest.TestCase):
+    def test_criteria_block_industries_are_captured(self):
+        from app.scraper.detail import parse_job_detail
+
+        detail = parse_job_detail(_FakeJobPage())
+        self.assertEqual(detail.industries, 'IT Services and IT Consulting')
+        self.assertEqual(detail.seniority, 'Entry level')
+        self.assertEqual(detail.employment_type, 'Full-time')
+
+
+class LinkedInIndustriesCriteriaTests(unittest.TestCase):
+    """LinkedIn's own criteria block names the industry — deterministic, it
+    lands on the job at enrich time and outranks the AI-read fallback."""
+
+    def _detail(self, industries):
+        from app.scraper.detail import DetailParse
+        from app.scraper.requirements import JobRequirements
+
+        return DetailParse(
+            description='x' * 200,
+            seniority=None,
+            employment_type=None,
+            requirements=JobRequirements(description_text='x' * 200),
+            industries=industries,
+        )
+
+    def test_criteria_industry_lands_on_the_job(self):
+        from app.enrichment import _apply_requirements
+
+        job = JobMaster(
+            linkedin_job_id='9', title='Data Analyst',
+            job_url='https://www.linkedin.com/jobs/view/9/',
+        )
+        _apply_requirements(job, self._detail('IT Services and IT Consulting'))
+        self.assertEqual(job.industry, 'IT Services and IT Consulting')
+
+    def test_missing_criteria_leaves_industry_untouched(self):
+        from app.enrichment import _apply_requirements
+
+        job = JobMaster(
+            linkedin_job_id='9', title='Data Analyst',
+            job_url='https://www.linkedin.com/jobs/view/9/',
+            industry='Software Development',
+        )
+        _apply_requirements(job, self._detail(None))
+        self.assertEqual(job.industry, 'Software Development')
 
 
 class MandatoryLawWithAITests(unittest.TestCase):

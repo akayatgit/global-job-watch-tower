@@ -56,6 +56,10 @@ def _apply_requirements(job: JobMaster, detail) -> None:
     job.domains = req.domains or None
     job.description_text = req.description_text
     job.requirements_enriched_at = utcnow()
+    # LinkedIn's own criteria block names the industry — deterministic, so
+    # it always outranks the AI-read fallback that fills the gap later.
+    if getattr(detail, 'industries', None):
+        job.industry = detail.industries
     # Fill posted_date when search cards only had "2h ago" / missing <time>
     if detail.posted_date and not job.posted_date:
         job.posted_date = detail.posted_date

@@ -137,6 +137,12 @@ class JobMaster(Base):
     ai_read_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
+    # Employer-stated facts (only when mentioned): skills from the AI read
+    # (each grounded verbatim in the description), industry from LinkedIn's
+    # own criteria block first / AI fallback, salary as the verbatim snippet.
+    skills: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    salary_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Immutable provenance captured when this job was first stored. Search
     # definitions may change track later; historical fresher scope must not.
     source_track: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
