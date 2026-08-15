@@ -270,6 +270,14 @@ need to be told twice.
  And when the owner says a list is bad, fetch the ground truth yourself
  before explaining anything.
 
+- **2026-08-15 · AI understands, it never authors.** Ashok: "Use AI to
+ understand detailed descriptions of jobs, think about it." Regex can't
+ read prose; the model can — but a model verdict is only admissible with
+ a verbatim quote from the employer's own text, checked deterministically
+ before storage (the VALIDATOR pattern, now applied at ingest). The same
+ grounding trick that keeps Telegram boards honest keeps the fresher law
+ honest: LLM comprehension inside, deterministic evidence at every door.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

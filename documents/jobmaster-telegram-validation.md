@@ -653,6 +653,28 @@ years pass; migration `d1f0a3b47c21` clears already-stored fabricated zeros.
 | JM-271 | After deploy (+ Ashok's reset), `/topfreshers 0` — open every link shown | Each detail page literally says fresher (or a trainee/campus program / no experience / 0 years) or states a years range entirely within 0–1. None of the audited 30 (Senior Engineer, ANALYST L2, 1-3-years Wipro rows, no-years Infosys consultants) may reappear. |
 | JM-272 | Compare `/health` checked count before/after | The gems count may drop hard (70 → possibly single digits) — that is correct behavior, not a bug: purity outranks volume ("even if we pick 20 jobs a day"). |
 
+## 14M. AI reads job descriptions — grounded by verbatim quotes (2026-08-15)
+
+Ashok: "Use AI to understand detailed descriptions of jobs, think about it."
+Regex loses to real employer prose ("candidates having up to one year of
+exposure may apply", "only 2026 passouts"). The local Ollama model now READS
+every stored `description_text` and reports experience statements — but a
+deterministic validator requires each claim to carry a VERBATIM quote found
+in the description (whitespace/case-insensitive), with fresher-wording and
+number anchors plus a negation rejector. AI understands; it never authors.
+Evidence hierarchy: regex-parsed years > AI-read years (fill gap only,
+labelled "(AI-read)") > AI fresher verdict (only when no years stated) >
+title. Runs inline after each detail parse (no browser time) plus a 10-min
+beat backfill; skips under heat or during scrapes and retries later.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-273 | A job whose description says "Candidates having up to one year of exposure may also apply" (no regex-parsable years) is detail-verified | AI stores 0–1 years with label `0-1 years (AI-read)` + the quoted sentence in `ai_fresher_evidence`; the job qualifies for /topfreshers and guest results. |
+| JM-274 | A description stating "minimum 5 years" whose card shouts "Freshers welcome" | AI verdict may be anything — stated 5 years still veto the row everywhere. Stated years always outrank the model. |
+| JM-275 | A description saying "This role is not suitable for freshers" | AI verdict FALSE (negation rejector) — the row can only qualify via genuinely stated 0–1 years or fresher in the title. |
+| JM-276 | Ollama busy/hot during detail verification | Job is verified regex-only, `ai_read_at` stays NULL, and the 10-min `ai_read_pending_descriptions` beat backfills the reading later — never blocks the browser lane, never fights a live scrape's Ollama. |
+| JM-277 | Owner spot-check: pick a /topfreshers row and read its `ai_fresher_evidence` | The evidence sentence exists word-for-word in the LinkedIn description — a hallucinated quote can never be stored (validation drops ungrounded claims). |
+
 ## 15. Execution log
 
 ## 15. Execution log

@@ -129,6 +129,14 @@ class JobMaster(Base):
     requirements_enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True,
     )
+    # AI reading of description_text (quote-grounded, app/ai_requirements.py):
+    # verdict TRUE = employer explicitly welcomes freshers, evidence = the
+    # verbatim sentence, ai_read_at NULL = not read yet (beat backfills).
+    ai_fresher_verdict: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ai_fresher_evidence: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    ai_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
     # Immutable provenance captured when this job was first stored. Search
     # definitions may change track later; historical fresher scope must not.
     source_track: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)

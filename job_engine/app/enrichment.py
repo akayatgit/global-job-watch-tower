@@ -213,6 +213,21 @@ def enrich_jobs_by_ids(
                 detail = parse_job_detail(response, card_text=job.raw_text)
                 _apply_requirements(job, detail)
                 _apply_company_from_detail(db, job, detail)
+                # AI reads the freshly stored description (quote-grounded,
+                # Ollama-only — no extra browser time). Best-effort: any AI
+                # failure leaves ai_read_at NULL and the beat backfill
+                # retries; the regex verdict above always stands on its own.
+                try:
+                    from app import ai_requirements
+
+                    reading = ai_requirements.read_description(
+                        job.title, job.description_text,
+                    )
+                    if reading is not None:
+                        for note in ai_requirements.apply_reading(job, reading):
+                            say(note)
+                except Exception:
+                    logger.exception('AI description read failed job %s', job.id)
                 db.commit()
                 enriched += 1
                 bits = []

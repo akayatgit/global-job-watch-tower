@@ -109,6 +109,7 @@ def is_mandatory_fresher(
     title: str | None,
     experience_min_years: float | None,
     experience_max_years: float | None = None,
+    ai_fresher_verdict: bool | None = None,
 ) -> bool:
     """Python twin of ``mandatory_fresher_clause`` — one law, two runtimes.
 
@@ -116,10 +117,14 @@ def is_mandatory_fresher(
     - stated years-of-experience exist and the WHOLE range is 0–1
       ("1-3 years" is NOT a fresher job — live audit 2026-08-15 showed five
       Wipro "1-3 years" rows passing a min-only check), OR
-    - the title literally says fresher / fresh graduate and no stated years
-      contradict it (years absent).
+    - years are absent and the title literally says fresher/fresh graduate, OR
+    - years are absent and the AI description reading found an explicit,
+      quote-grounded fresher statement (app/ai_requirements.py — the quote
+      must exist verbatim in the employer's own description text).
     A seniority-signalled title (Senior/L2/II/Lead…) vetoes the row even
     when stated years pass — "Senior Engineer" was row #1 of the bad list.
+    Stated years always outrank the AI verdict: a description stating 3–6
+    years excludes the row no matter what the model concluded.
     """
     if title_seniority_veto(title):
         return False
@@ -131,6 +136,8 @@ def is_mandatory_fresher(
                 or experience_max_years <= MANDATORY_FRESHER_MAX_MIN_YEARS
             )
         )
+    if ai_fresher_verdict is True:
+        return True
     return bool(MANDATORY_FRESHER_TITLE_PATTERN.search((title or '').strip()))
 
 
@@ -161,7 +168,15 @@ def mandatory_fresher_clause():
         ),
         JobMaster.experience_min_years.is_(None),
     )
+    ai_statement_uncontradicted = and_(
+        JobMaster.ai_fresher_verdict.is_(True),
+        JobMaster.experience_min_years.is_(None),
+    )
     return and_(
-        or_(stated_0_1, fresher_titled_uncontradicted),
+        or_(
+            stated_0_1,
+            fresher_titled_uncontradicted,
+            ai_statement_uncontradicted,
+        ),
         fresher_title_safe_clause(),
     )

@@ -710,6 +710,51 @@ def enrich_company_profiles(self, company_ids: list[int] | None = None, run_id: 
             return {'error': str(exc)[:500]}
 
 
+@celery.task(name='app.tasks.ai_read_pending_descriptions')
+def ai_read_pending_descriptions():
+    """Beat: AI-read stored descriptions that were skipped inline (Ollama
+    hot/busy/off at enrich time) or that predate the AI lane. Ollama-only —
+    no browser — but still never fights a live scrape's Ollama filter and
+    stops between items the moment the host stops being safely cool."""
+    from app import ai_requirements, thermal
+
+    if getattr(app_config, 'AI_REQUIREMENTS_MODE', 'on') == 'off':
+        return {'read': 0, 'paused': True, 'mode': 'off'}
+    if not thermal.ollama_path_open():
+        return {'read': 0, 'skipped': 'host heat / no GPU'}
+    with SessionLocal() as db:
+        active = db.execute(
+            select(ScrapeRun.id).where(
+                ScrapeRun.status.in_(('queued', 'dispatched', 'running'))
+            ).limit(1)
+        ).scalar_one_or_none()
+        if active is not None:
+            return {'read': 0, 'skipped': 'scrape lane busy — never fight its Ollama'}
+        ids = ai_requirements.pending_ai_read_ids(db, limit=10)
+        if not ids:
+            return {'read': 0, 'note': 'nothing pending'}
+        read = 0
+        for job_id in ids:
+            if not thermal.ollama_path_open():
+                break
+            job = db.get(JobMaster, job_id)
+            if job is None:
+                continue
+            try:
+                reading = ai_requirements.read_description(job.title, job.description_text)
+                if reading is None:
+                    continue
+                notes = ai_requirements.apply_reading(job, reading)
+                db.commit()
+                read += 1
+                if notes:
+                    console_log('ai', f'{job.title[:60]} — {"; ".join(notes)}')
+            except Exception:
+                db.rollback()
+                logger.exception('AI backfill read failed job %s', job_id)
+        return {'read': read, 'pending_batch': len(ids)}
+
+
 @celery.task(name='app.tasks.enrich_pending_companies')
 def enrich_pending_companies():
     """Beat: backfill company logos / followers / punchlines (after job scrapes)."""

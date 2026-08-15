@@ -666,6 +666,21 @@ it, shows recipient count) → `/pushconfirm`
  `d1f0a3b47c21` cleared already-stored fabricated zeros). Provenance rule:
  any signal that feeds a serving law must be traceable to something the
  employer actually wrote.
+- **AI reads descriptions, grounded by verbatim quotes (2026-08-15):**
+ Ashok: "Use AI to understand detailed descriptions of jobs." The local
+ Ollama model reads every stored `description_text`
+ (`app/ai_requirements.py`) and reports experience statements — each claim
+ must carry a VERBATIM quote the deterministic validator finds in the
+ description (plus fresher-wording/number anchors and a negation
+ rejector); hallucinated quotes die at validation. AI understands, it
+ never authors. Evidence hierarchy: regex-parsed stated years > AI-read
+ years (fill gap only, label "(AI-read)") > AI fresher verdict
+ (`ai_fresher_verdict`, only counts when NO years are stated; third path
+ in `mandatory_fresher_clause`) > title wording; title-seniority veto
+ applies over all. Runs inline after each detail parse (Ollama-only, no
+ browser time) + a 10-min beat backfill (`ai_read_pending_descriptions`);
+ skips under heat / during scrapes (ai_read_at NULL = retry later).
+ `AI_REQUIREMENTS_MODE=off` is the kill switch.
 - **/topfreshers video gems + owner /help (2026-08-14):** Owner command
  `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
  video gems: detail-verified jobs whose employer EXPLICITLY said fresher /
