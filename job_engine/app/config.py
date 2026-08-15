@@ -63,6 +63,11 @@ DETAIL_BATCH_SIZE = int(os.getenv('DETAIL_BATCH_SIZE', '6'))
 # Trickle never starts when any search is due within this look-ahead
 DETAIL_IDLE_LOOKAHEAD_MIN = int(os.getenv('DETAIL_IDLE_LOOKAHEAD_MIN', '15'))
 
+# AI reading of stored job descriptions (app/ai_requirements.py): Ollama
+# reports employer experience statements, grounded by verbatim quotes.
+# 'on' (default) or 'off'. Costs no browser time; respects thermal gates.
+AI_REQUIREMENTS_MODE = os.getenv('AI_REQUIREMENTS_MODE', 'on').strip().lower()
+
 # Transient page-fetch retries inside one browser session
 FETCH_RETRIES = int(os.getenv('FETCH_RETRIES', '2'))
 

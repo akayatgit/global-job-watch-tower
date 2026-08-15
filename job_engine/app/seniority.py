@@ -105,27 +105,49 @@ def fresher_title_safe_clause():
     return or_(~seniority, fresher_words)
 
 
-def is_mandatory_fresher(title: str | None, experience_min_years: float | None) -> bool:
+def is_mandatory_fresher(
+    title: str | None,
+    experience_min_years: float | None,
+    experience_max_years: float | None = None,
+    ai_fresher_verdict: bool | None = None,
+) -> bool:
     """Python twin of ``mandatory_fresher_clause`` — one law, two runtimes.
 
-    Qualifies when:
-    - stated years-of-experience exist and the minimum is 0–1, OR
-    - the title literally says fresher / fresh graduate AND no stated years
-      contradict it (years absent).
-    Stated minimum years above 1 veto EVERYTHING — a card shouting
-    "Freshers!" cannot outrank a detail page stating 3–6 years.
+    Qualifies when the title carries no seniority signal AND:
+    - stated years-of-experience exist and the WHOLE range is 0–1
+      ("1-3 years" is NOT a fresher job — live audit 2026-08-15 showed five
+      Wipro "1-3 years" rows passing a min-only check), OR
+    - years are absent and the title literally says fresher/fresh graduate, OR
+    - years are absent and the AI description reading found an explicit,
+      quote-grounded fresher statement (app/ai_requirements.py — the quote
+      must exist verbatim in the employer's own description text).
+    A seniority-signalled title (Senior/L2/II/Lead…) vetoes the row even
+    when stated years pass — "Senior Engineer" was row #1 of the bad list.
+    Stated years always outrank the AI verdict: a description stating 3–6
+    years excludes the row no matter what the model concluded.
     """
+    if title_seniority_veto(title):
+        return False
     if experience_min_years is not None:
-        return 0 <= experience_min_years <= MANDATORY_FRESHER_MAX_MIN_YEARS
+        return (
+            0 <= experience_min_years <= MANDATORY_FRESHER_MAX_MIN_YEARS
+            and (
+                experience_max_years is None
+                or experience_max_years <= MANDATORY_FRESHER_MAX_MIN_YEARS
+            )
+        )
+    if ai_fresher_verdict is True:
+        return True
     return bool(MANDATORY_FRESHER_TITLE_PATTERN.search((title or '').strip()))
 
 
 def mandatory_fresher_clause():
-    """SQLAlchemy WHERE fragment of the mandatory fresher law: stated 0–1
-    years-of-experience, or fresher literally in the title with no stated
-    years at all. Stated years > 1 exclude the row no matter what the title
-    or card text claims. LinkedIn's Entry tag / silence-stamp label are
-    never evidence (they don't touch title or stated years).
+    """SQLAlchemy WHERE fragment of the mandatory fresher law: the whole
+    stated years range is 0–1, or fresher literally in the title with no
+    stated years at all — and the title never carries a seniority signal.
+    LinkedIn's Entry tag / silence-stamp label are never evidence (they
+    don't touch title or stated years — and since the 2026-08-15 fix the
+    extractor no longer fabricates stated years from them either).
     """
     from sqlalchemy import and_, or_
 
@@ -135,6 +157,10 @@ def mandatory_fresher_clause():
         JobMaster.experience_min_years.is_not(None),
         JobMaster.experience_min_years >= 0,
         JobMaster.experience_min_years <= MANDATORY_FRESHER_MAX_MIN_YEARS,
+        or_(
+            JobMaster.experience_max_years.is_(None),
+            JobMaster.experience_max_years <= MANDATORY_FRESHER_MAX_MIN_YEARS,
+        ),
     )
     fresher_titled_uncontradicted = and_(
         JobMaster.title.op('~*')(
@@ -142,4 +168,15 @@ def mandatory_fresher_clause():
         ),
         JobMaster.experience_min_years.is_(None),
     )
-    return or_(stated_0_1, fresher_titled_uncontradicted)
+    ai_statement_uncontradicted = and_(
+        JobMaster.ai_fresher_verdict.is_(True),
+        JobMaster.experience_min_years.is_(None),
+    )
+    return and_(
+        or_(
+            stated_0_1,
+            fresher_titled_uncontradicted,
+            ai_statement_uncontradicted,
+        ),
+        fresher_title_safe_clause(),
+    )

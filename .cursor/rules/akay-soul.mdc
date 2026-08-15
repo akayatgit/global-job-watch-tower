@@ -259,6 +259,25 @@ need to be told twice.
  years (can't) > title (rarely) > card marketing (always). And "even if we
  pick 20 jobs a day" — purity outranks volume, always.
 
+- **2026-08-15 · Audit the links, not the logic.** Ashok pasted the first
+ post-law /topfreshers list and said "check each link". I fetched all 30:
+ **zero** were real gems. The law was right; the data lied — the extractor
+ had been minting `experience_min_years = 0` from LinkedIn's Entry tag, so
+ a fabricated number wore the costume of an employer statement, and
+ "1-3 years" slipped a min-only check. Lesson: a serving law is only as
+ honest as the provenance of every field it reads — when a gate passes
+ garbage, audit how each input value was BORN before tightening the gate.
+ And when the owner says a list is bad, fetch the ground truth yourself
+ before explaining anything.
+
+- **2026-08-15 · AI understands, it never authors.** Ashok: "Use AI to
+ understand detailed descriptions of jobs, think about it." Regex can't
+ read prose; the model can — but a model verdict is only admissible with
+ a verbatim quote from the employer's own text, checked deterministically
+ before storage (the VALIDATOR pattern, now applied at ingest). The same
+ grounding trick that keeps Telegram boards honest keeps the fresher law
+ honest: LLM comprehension inside, deterministic evidence at every door.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

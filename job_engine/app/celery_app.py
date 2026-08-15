@@ -31,6 +31,11 @@ celery.conf.update(
             'task': 'app.tasks.enrich_pending_companies',
             'schedule': 900.0,  # every 15 minutes
         },
+        # AI-read stored descriptions skipped inline (heat/busy) — no browser
+        'ai-read-pending-descriptions': {
+            'task': 'app.tasks.ai_read_pending_descriptions',
+            'schedule': 600.0,  # every 10 minutes
+        },
     },
 )
 

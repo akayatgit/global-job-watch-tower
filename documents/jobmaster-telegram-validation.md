@@ -629,8 +629,71 @@ EVERY verified reply (`/api/jobs?verified=1` and insight counts), not just
 |---|---|---|
 | JM-267 | After the reset, run `/topfreshers 0` and eyeball 10 rows | Every row either has fresher/fresh-graduate literally in the title, or its detail page states 0–1 years. A "Data Platform Engineer — Minimum 5 Years" class row can NEVER appear, even if its card said "freshers". Target: 10/10 real gems, even if only 20 jobs/day survive. |
 | JM-268 | Any guest search / button flow / `jobs at Deloitte` / daily alert after the reset | Same mandatory law on every listed job — guests can never receive a verified job that fails the title-or-0–1-years test. Insight counts match the rows. |
-| JM-269 | A job whose detail page states "1-3 years" | Qualifies only via stated minimum ≤ 1 (1-3 passes; 2-4 fails; 3-6 fails). A fresher-titled job whose detail page states 3+ years is OUT — stated years always beat the title. |
+| JM-269 | A job whose detail page states "1-3 years" | FAILS — the WHOLE stated range must be 0–1 ("0-1" passes; "1-3", "0-2", "2-4" all fail). A fresher-titled job whose detail page states years past 1 is OUT — stated years always beat the title. |
 | JM-270 | `-unfiltered` on any query | Remains the ONLY escape hatch (owner debugging): lifts both the checked-only and mandatory-fresher gates for that reply. Alerts still have no override. |
+
+## 14L. No fabricated stated years — the 70-gems audit (2026-08-15)
+
+Ashok pasted the first post-law /topfreshers list (70 "gems", "Senior
+Engineer" at #1) and asked Akay to check every link. Audit of all 30 shown
+rows: **0 were real gems.** Two leaks, both upstream of the law: (1) five
+Wipro rows stated "1-3 years" and passed a min-only check; (2) all 25
+Infosys rows had NO stated years — LinkedIn's "Entry level" tag made
+`extract_requirements` fabricate `experience_min_years = 0`, and since the
+fresher-track searches (f_E=1,2) only return Entry/Internship-tagged jobs,
+nearly every verified job carried a fake "stated 0". Fixes: the extractor
+never mints stated years from tags or 'entry level' vocabulary (band only;
+literal employer statements like "freshers"/"no experience"/"0 years"/
+trainee-program wording still count as stated 0); the law requires the WHOLE
+stated range to be 0–1; the title-seniority veto applies even when stated
+years pass; migration `d1f0a3b47c21` clears already-stored fabricated zeros.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-271 | After deploy (+ Ashok's reset), `/topfreshers 0` — open every link shown | Each detail page literally says fresher (or a trainee/campus program / no experience / 0 years) or states a years range entirely within 0–1. None of the audited 30 (Senior Engineer, ANALYST L2, 1-3-years Wipro rows, no-years Infosys consultants) may reappear. |
+| JM-272 | Compare `/health` checked count before/after | The gems count may drop hard (70 → possibly single digits) — that is correct behavior, not a bug: purity outranks volume ("even if we pick 20 jobs a day"). |
+
+## 14M. AI reads job descriptions — grounded by verbatim quotes (2026-08-15)
+
+Ashok: "Use AI to understand detailed descriptions of jobs, think about it."
+Regex loses to real employer prose ("candidates having up to one year of
+exposure may apply", "only 2026 passouts"). The local Ollama model now READS
+every stored `description_text` and reports experience statements — but a
+deterministic validator requires each claim to carry a VERBATIM quote found
+in the description (whitespace/case-insensitive), with fresher-wording and
+number anchors plus a negation rejector. AI understands; it never authors.
+Evidence hierarchy: regex-parsed years > AI-read years (fill gap only,
+labelled "(AI-read)") > AI fresher verdict (only when no years stated) >
+title. Runs inline after each detail parse (no browser time) plus a 10-min
+beat backfill; skips under heat or during scrapes and retries later.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-273 | A job whose description says "Candidates having up to one year of exposure may also apply" (no regex-parsable years) is detail-verified | AI stores 0–1 years with label `0-1 years (AI-read)` + the quoted sentence in `ai_fresher_evidence`; the job qualifies for /topfreshers and guest results. |
+| JM-274 | A description stating "minimum 5 years" whose card shouts "Freshers welcome" | AI verdict may be anything — stated 5 years still veto the row everywhere. Stated years always outrank the model. |
+| JM-275 | A description saying "This role is not suitable for freshers" | AI verdict FALSE (negation rejector) — the row can only qualify via genuinely stated 0–1 years or fresher in the title. |
+| JM-276 | Ollama busy/hot during detail verification | Job is verified regex-only, `ai_read_at` stays NULL, and the 10-min `ai_read_pending_descriptions` beat backfills the reading later — never blocks the browser lane, never fights a live scrape's Ollama. |
+| JM-277 | Owner spot-check: pick a /topfreshers row and read its `ai_fresher_evidence` | The evidence sentence exists word-for-word in the LinkedIn description — a hallucinated quote can never be stored (validation drops ungrounded claims). |
+
+## 14N. AI also reads qualifications, skills, industry, salary (2026-08-15)
+
+Ashok: "Ai also needs to get qualifications, skills required, industry, and
+salary. All if mentioned." Same grounding law: every list item and snippet
+must exist verbatim in the description or it is dropped one by one.
+Qualifications merge into the existing degrees list (regex-found first);
+skills get their own column; industry comes from LinkedIn's own criteria
+block first (deterministic, captured at detail parse) with the AI reading
+only filling the gap; salary is stored as the employer's verbatim text —
+never parsed guesses — and must carry money evidence (a number plus a
+currency/pay word). `/topfreshers` rows append `💰 <salary>` when stated.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-278 | A description with "Qualification: B.Tech or MCA", "Skills required: SQL, Python", "Salary: INR 4,50,000 - 6,00,000 per annum" is detail-verified | Degrees include B.Tech + MCA, skills list SQL + Python, salary_text stores the verbatim salary snippet. |
+| JM-279 | A description that never mentions salary or industry | `salary_text` and `industry` stay NULL — the model returning invented values fails grounding and stores nothing. |
+| JM-280 | LinkedIn criteria block shows "Industries: IT Services and IT Consulting" | The job's industry is set from the criteria block at enrich time; a differing AI-read industry never overwrites it. |
+| JM-281 | `/topfreshers 0` where one row has a stated salary and another does not | The stated row ends `— 💰 INR …`; the other row shows no salary at all — never a guessed number. |
+| JM-282 | `/topfreshers skill:sql 0` for a job whose title/card never says SQL but the stored description lists it | The row now matches — the skill filter searches title, card text, AND the stored full description (word-bounded, so sql never matches MySQL). |
 
 ## 15. Execution log
 

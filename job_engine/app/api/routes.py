@@ -265,10 +265,12 @@ def list_jobs(
         if needle:
             skill_pattern = rf'(^|[^a-z0-9]){needle}([^a-z0-9]|$)'
             # Word-bounded so skill=sql never matches "MySQL"; searched in
-            # the title AND the card details text.
+            # the title, the card details text, AND the stored full
+            # description (where employers actually list required skills).
             query = query.where(or_(
                 JobMaster.title.op('~*')(skill_pattern),
                 JobMaster.raw_text.op('~*')(skill_pattern),
+                JobMaster.description_text.op('~*')(skill_pattern),
             ))
     if role_family:
         pattern = ROLE_FAMILY_REGEX[role_family].removeprefix('(?i)')

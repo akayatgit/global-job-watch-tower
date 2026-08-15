@@ -61,5 +61,9 @@ class JobOut(BaseModel):
     job_url: str
     posted_date: date | None
     scraped_at: datetime
+    # Employer-stated only (AI quote-grounded / LinkedIn criteria) — None
+    # whenever the posting never mentioned them.
+    salary_text: str | None = None
+    industry: str | None = None
 
     model_config = {'from_attributes': True}

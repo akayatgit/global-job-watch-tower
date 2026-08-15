@@ -67,6 +67,7 @@ class FakeEngine:
                 'city_key': None,
                 'location': 'Bengaluru, Karnataka, India',
                 'job_url': 'https://www.linkedin.com/jobs/view/4448000301/',
+                'salary_text': 'INR 4,50,000 - 6,00,000 per annum',
             },
             {
                 'title': 'SQL Developer — 0-1 years',
@@ -1967,6 +1968,15 @@ class TopFreshersCommandTests(unittest.TestCase):
         self.assertIn('Fresher Analyst 29', text)
         self.assertNotIn('Fresher Analyst 30', text)
         self.assertIn('…and 5 more gems', text)
+
+    def test_salary_shows_on_the_row_only_when_employer_stated_it(self):
+        self.bot.process('42', '/topfreshers 0')
+        text = self.api.sent[-1][1]
+        # Deloitte row carries the AI quote-grounded salary; Oracle row
+        # (no stated salary) stays clean — never an invented number.
+        self.assertIn('💰 INR 4,50,000 - 6,00,000 per annum', text)
+        oracle_line = next(line for line in text.splitlines() if 'Oracle' in line)
+        self.assertNotIn('💰', oracle_line)
 
     def test_guests_never_reach_topfreshers(self):
         self.bot.process('guest-9', '/topfreshers 0')
