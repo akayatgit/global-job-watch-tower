@@ -147,8 +147,26 @@ FRESHER_TEXT_RE = re.compile(
     r'\bfreshers?\b|\bfresh\s+graduate\b|\bcampus\s+hire\b|\bcampus\s+recruit\b'
     r'|\bgraduate\s+trainee\b|\bgraduate\s+engineer\b|\bgraduate\s+hire\b'
     r'|\bmanagement\s+trainee\b|\banalyst\s+trainee\b'
-    r'|\bno\s+experience\b|\bzero\s+experience\b|\b0\s*(?:years?|yrs?)\b'
+    r'|\bno\s+(?:prior\s+|work\s+)?experience\b|\bzero\s+experience\b'
+    r'|\b0\s*(?:years?|yrs?)\b'
     r'|\bentry[\s-]?level\b'
+    r')',
+    re.I,
+)
+
+# Employer-authored fresher STATEMENTS — the only wording allowed to stand
+# in for stated years (as 0). Live incident (2026-08-15): 25/30 /topfreshers
+# rows were Infosys jobs with NO stated years whose LinkedIn "Entry level"
+# tag fabricated experience_min_years=0 below — and our fresher-track
+# searches (f_E=1,2) ONLY return Entry/Internship-tagged jobs, so nearly
+# every verified job inherited a fake "stated 0". LinkedIn vocabulary
+# ('entry level') may suggest the BAND, never stated years.
+EXPLICIT_FRESHER_STATEMENT_RE = re.compile(
+    r'(?:'
+    r'\bfreshers?\b|\bfresh\s+graduates?\b|\bcampus\s+hire\b|\bcampus\s+recruit\b'
+    r'|\bgraduate\s+trainee\b|\bmanagement\s+trainee\b|\banalyst\s+trainee\b'
+    r'|\bno\s+(?:prior\s+|work\s+)?experience\b|\bzero\s+experience\b'
+    r'|\b0\s*(?:years?|yrs?)\b'
     r')',
     re.I,
 )
@@ -254,13 +272,15 @@ def extract_requirements(
     blob = ' '.join(blob.split())
     amin, amax, label = extract_experience(blob)
     band = experience_band(amin, amax)
-    # Seniority can imply a band when years missing
+    # Seniority can imply a band when years missing — the BAND only.
+    # NEVER fabricate stated years from LinkedIn's tag: the Entry tag lies
+    # (that's why the fresher-track needs detail verification at all), and a
+    # fabricated experience_min_years=0 reads exactly like an employer
+    # statement to the mandatory fresher law downstream.
     sen = normalize_seniority(seniority)
     if band is None and sen:
         if sen in ('Internship', 'Entry level'):
             band = 'Fresher'
-            if amin is None:
-                amin, label = 0, sen
         elif sen == 'Associate':
             band = '1-2 years'
         elif sen in ('Mid-Senior level', 'Senior'):
@@ -273,7 +293,10 @@ def extract_requirements(
             amin is not None and amax is None and amin <= 1
         ):
             band = 'Fresher'
-            if amin is None:
+            if amin is None and EXPLICIT_FRESHER_STATEMENT_RE.search(blob):
+                # Only a literal employer statement ("freshers", "no
+                # experience", "0 years", trainee/campus programs) may stand
+                # in for stated years — 'entry level' alone never does.
                 amin = 0.0
             if not label:
                 label = 'Fresher / graduate'

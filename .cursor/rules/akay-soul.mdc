@@ -259,6 +259,17 @@ need to be told twice.
  years (can't) > title (rarely) > card marketing (always). And "even if we
  pick 20 jobs a day" — purity outranks volume, always.
 
+- **2026-08-15 · Audit the links, not the logic.** Ashok pasted the first
+ post-law /topfreshers list and said "check each link". I fetched all 30:
+ **zero** were real gems. The law was right; the data lied — the extractor
+ had been minting `experience_min_years = 0` from LinkedIn's Entry tag, so
+ a fabricated number wore the costume of an employer statement, and
+ "1-3 years" slipped a min-only check. Lesson: a serving law is only as
+ honest as the provenance of every field it reads — when a gate passes
+ garbage, audit how each input value was BORN before tightening the gate.
+ And when the owner says a list is bad, fetch the ground truth yourself
+ before explaining anything.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

@@ -629,8 +629,31 @@ EVERY verified reply (`/api/jobs?verified=1` and insight counts), not just
 |---|---|---|
 | JM-267 | After the reset, run `/topfreshers 0` and eyeball 10 rows | Every row either has fresher/fresh-graduate literally in the title, or its detail page states 0–1 years. A "Data Platform Engineer — Minimum 5 Years" class row can NEVER appear, even if its card said "freshers". Target: 10/10 real gems, even if only 20 jobs/day survive. |
 | JM-268 | Any guest search / button flow / `jobs at Deloitte` / daily alert after the reset | Same mandatory law on every listed job — guests can never receive a verified job that fails the title-or-0–1-years test. Insight counts match the rows. |
-| JM-269 | A job whose detail page states "1-3 years" | Qualifies only via stated minimum ≤ 1 (1-3 passes; 2-4 fails; 3-6 fails). A fresher-titled job whose detail page states 3+ years is OUT — stated years always beat the title. |
+| JM-269 | A job whose detail page states "1-3 years" | FAILS — the WHOLE stated range must be 0–1 ("0-1" passes; "1-3", "0-2", "2-4" all fail). A fresher-titled job whose detail page states years past 1 is OUT — stated years always beat the title. |
 | JM-270 | `-unfiltered` on any query | Remains the ONLY escape hatch (owner debugging): lifts both the checked-only and mandatory-fresher gates for that reply. Alerts still have no override. |
+
+## 14L. No fabricated stated years — the 70-gems audit (2026-08-15)
+
+Ashok pasted the first post-law /topfreshers list (70 "gems", "Senior
+Engineer" at #1) and asked Akay to check every link. Audit of all 30 shown
+rows: **0 were real gems.** Two leaks, both upstream of the law: (1) five
+Wipro rows stated "1-3 years" and passed a min-only check; (2) all 25
+Infosys rows had NO stated years — LinkedIn's "Entry level" tag made
+`extract_requirements` fabricate `experience_min_years = 0`, and since the
+fresher-track searches (f_E=1,2) only return Entry/Internship-tagged jobs,
+nearly every verified job carried a fake "stated 0". Fixes: the extractor
+never mints stated years from tags or 'entry level' vocabulary (band only;
+literal employer statements like "freshers"/"no experience"/"0 years"/
+trainee-program wording still count as stated 0); the law requires the WHOLE
+stated range to be 0–1; the title-seniority veto applies even when stated
+years pass; migration `d1f0a3b47c21` clears already-stored fabricated zeros.
+
+| ID | Do | Expected |
+|---|---|---|
+| JM-271 | After deploy (+ Ashok's reset), `/topfreshers 0` — open every link shown | Each detail page literally says fresher (or a trainee/campus program / no experience / 0 years) or states a years range entirely within 0–1. None of the audited 30 (Senior Engineer, ANALYST L2, 1-3-years Wipro rows, no-years Infosys consultants) may reappear. |
+| JM-272 | Compare `/health` checked count before/after | The gems count may drop hard (70 → possibly single digits) — that is correct behavior, not a bug: purity outranks volume ("even if we pick 20 jobs a day"). |
+
+## 15. Execution log
 
 ## 15. Execution log
 

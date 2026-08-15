@@ -132,25 +132,55 @@ class MandatoryFresherLawTests(unittest.TestCase):
     LinkedIn's Entry tag are never evidence. This killed the 9/10 bad
     /topfreshers list."""
 
-    def test_stated_0_to_1_years_qualifies_regardless_of_title(self):
-        for title, min_years in (
-            ('Data Platform Engineer', 0.0),
-            ('SQL Developer', 1.0),
-            ('Software Engineer', 0.5),
-            (None, 0.0),
+    def test_stated_0_to_1_years_qualifies_with_a_clean_title(self):
+        for title, min_years, max_years in (
+            ('Data Platform Engineer', 0.0, None),
+            ('SQL Developer', 1.0, None),
+            ('Software Engineer', 0.5, 1.0),
+            (None, 0.0, None),
+            ('Java Developer', 0.0, 1.0),
         ):
-            self.assertTrue(is_mandatory_fresher(title, min_years), (title, min_years))
+            self.assertTrue(
+                is_mandatory_fresher(title, min_years, max_years),
+                (title, min_years, max_years),
+            )
 
     def test_stated_years_above_1_veto_everything(self):
         # The exact live failure: card/details shouting "Freshers" while the
         # detail page states real years. Stated years always win.
-        for title, min_years in (
-            ('Data Analyst (Fresher)', 3.0),
-            ('Freshers welcome — SQL Developer', 5.0),
-            ('Software Engineer', 2.0),
-            ('Fresh Graduate Program', 1.5),
+        for title, min_years, max_years in (
+            ('Data Analyst (Fresher)', 3.0, 6.0),
+            ('Freshers welcome — SQL Developer', 5.0, None),
+            ('Software Engineer', 2.0, None),
+            ('Fresh Graduate Program', 1.5, None),
         ):
-            self.assertFalse(is_mandatory_fresher(title, min_years), (title, min_years))
+            self.assertFalse(
+                is_mandatory_fresher(title, min_years, max_years),
+                (title, min_years, max_years),
+            )
+
+    def test_stated_range_reaching_past_1_is_not_a_fresher_job(self):
+        # Live audit 2026-08-15: five Wipro rows stated "1-3 years" and
+        # passed a min-only check. The WHOLE range must be 0–1.
+        for title, min_years, max_years in (
+            ('Production Specialist', 1.0, 3.0),
+            ('Cyber Security Analyst', 0.0, 2.0),
+            ('Network Engineer', 1.0, 5.0),
+        ):
+            self.assertFalse(
+                is_mandatory_fresher(title, min_years, max_years),
+                (title, min_years, max_years),
+            )
+
+    def test_seniority_titles_are_vetoed_even_with_stated_0_1_years(self):
+        # Row #1 of the bad list was literally "Senior Engineer".
+        for title in (
+            'Senior Engineer - Network Security (Zscaler & Palo Alto)',
+            'Software Engineer II',
+            'Lead Engineer',
+        ):
+            self.assertFalse(is_mandatory_fresher(title, 0.0, 1.0), title)
+            self.assertFalse(is_mandatory_fresher(title, None, None), title)
 
     def test_without_stated_years_only_fresher_in_title_qualifies(self):
         for title in (
@@ -198,10 +228,85 @@ class MandatoryFresherLawTests(unittest.TestCase):
 
         sql = str(mandatory_fresher_clause().compile(compile_kwargs={'literal_binds': True}))
         self.assertIn('experience_min_years', sql)
+        self.assertIn('experience_max_years', sql)  # 1-3 ranges must fail
         self.assertIn('title', sql)
         # No loose evidence sources may creep back in.
         self.assertNotIn('raw_text', sql)
         self.assertNotIn('experience_label', sql)
+
+
+class NoFabricatedStatedYearsTests(unittest.TestCase):
+    """Live audit 2026-08-15: 25/30 /topfreshers rows had NO stated years —
+    LinkedIn's 'Entry level' tag made the extractor fabricate
+    experience_min_years=0, which the mandatory law then read as an employer
+    statement. Tags and vocabulary may suggest the band; they must NEVER
+    mint stated years."""
+
+    def test_entry_tag_sets_band_but_never_stated_years(self):
+        from app.scraper.requirements import extract_requirements
+
+        req = extract_requirements(
+            'Great opportunity to work on SAP Vistex at scale.',
+            seniority='Entry level',
+        )
+        self.assertEqual(req.experience_band, 'Fresher')
+        self.assertIsNone(req.experience_min_years)
+        self.assertFalse(is_mandatory_fresher(
+            'SAP Vistex Consultant', req.experience_min_years, req.experience_max_years,
+        ))
+
+    def test_entry_level_wording_in_text_never_mints_stated_years(self):
+        from app.scraper.requirements import extract_requirements
+
+        req = extract_requirements('This is an entry-level position on our platform team.')
+        self.assertEqual(req.experience_band, 'Fresher')
+        self.assertIsNone(req.experience_min_years)
+
+    def test_literal_fresher_statement_still_counts_as_stated_zero(self):
+        from app.scraper.requirements import extract_requirements
+
+        for text in (
+            'Freshers are welcome to apply.',
+            'No prior experience required — we train you.',
+            'Hiring for our Graduate Trainee program.',
+        ):
+            req = extract_requirements(text)
+            self.assertEqual(req.experience_band, 'Fresher', text)
+            self.assertEqual(req.experience_min_years, 0.0, text)
+
+    def test_stated_ranges_survive_unchanged(self):
+        from app.scraper.requirements import extract_requirements
+
+        req = extract_requirements(
+            'Minimum 1-3 years of experience in Zscaler and Palo Alto.',
+            seniority='Not Applicable',
+        )
+        self.assertEqual(req.experience_min_years, 1.0)
+        self.assertEqual(req.experience_max_years, 3.0)
+        self.assertFalse(is_mandatory_fresher(
+            'Production Specialist', req.experience_min_years, req.experience_max_years,
+        ))
+
+    def test_backfill_migration_targets_exactly_the_fabricated_shape(self):
+        """The data migration clears min=0 + max NULL + label Entry/Internship
+        — the precise fingerprint the fabricating branch used to write."""
+        import importlib.util
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parents[1]
+            / 'alembic' / 'versions' / 'd1f0a3b47c21_clear_fabricated_zero_years.py'
+        )
+        spec = importlib.util.spec_from_file_location('clear_fabricated_zero_years', path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        self.assertEqual(migration.down_revision, 'c8b3f6a92e50')
+        import inspect
+
+        src = inspect.getsource(migration.upgrade)
+        self.assertIn('experience_min_years = 0', src)
+        self.assertIn('experience_max_years IS NULL', src)
+        self.assertIn("'Entry level', 'Internship'", src)
 
 
 if __name__ == '__main__':

@@ -655,6 +655,17 @@ it, shows recipient count) → `/pushconfirm`
  command. `-unfiltered` stays the only escape hatch (owner debugging);
  alerts have no override. Quality outranks volume: 20 true gems a day beat
  200 maybes.
+ **Tightened after the 70-gems audit (2026-08-15, 0/30 real):** the WHOLE
+ stated years range must be 0–1 ("1-3 years" is not a fresher job); the
+ title-seniority veto applies even when stated years pass ("Senior
+ Engineer" was row #1); and the extractor NEVER fabricates stated years
+ from LinkedIn's Entry/Internship tag or 'entry level' vocabulary — tags
+ may suggest the band, only literal employer statements ("freshers", "no
+ experience", "0 years", trainee/campus-program wording) count as stated 0
+ (`app/scraper/requirements.py::EXPLICIT_FRESHER_STATEMENT_RE`; migration
+ `d1f0a3b47c21` cleared already-stored fabricated zeros). Provenance rule:
+ any signal that feeds a serving law must be traceable to something the
+ employer actually wrote.
 - **/topfreshers video gems + owner /help (2026-08-14):** Owner command
  `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
  video gems: detail-verified jobs whose employer EXPLICITLY said fresher /
