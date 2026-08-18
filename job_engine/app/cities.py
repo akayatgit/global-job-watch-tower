@@ -6,6 +6,8 @@ Stable city_key on JobMaster — aliases collapse LinkedIn location variants
 
 from __future__ import annotations
 
+import re
+
 CRITICAL_CITIES: list[dict[str, str]] = [
     {'id': 'bengaluru', 'label': 'Bengaluru'},
     {'id': 'hyderabad', 'label': 'Hyderabad'},
@@ -157,3 +159,38 @@ METRO_CITY_IDS = [
     'bengaluru', 'hyderabad', 'chennai', 'kerala', 'pune', 'mumbai',
     'delhi', 'gurugram', 'noida', 'ahmedabad', 'kolkata',
 ]
+
+# GTM collection cities (Ashok 2026-08-18): MNC company scrapes only STORE
+# jobs in Chennai, Bengaluru/Bangalore, or Remote. India-wide LinkedIn
+# search still runs (one geo keeps the browser lane affordable); the insert
+# gate is the precision cut.
+COLLECTION_CITY_KEYS = frozenset({'chennai', 'bengaluru', 'remote'})
+
+
+def is_collection_city(city_key: str | None) -> bool:
+    return (city_key or '') in COLLECTION_CITY_KEYS
+
+
+def parse_city_filter_list(raw: str | None) -> list[str] | None:
+    """Parse one city, or slash/comma-separated cities, into valid city ids.
+
+    Returns None when the caller asked for all cities (empty / all / *).
+    Returns [] when every token was unknown (caller should treat as no match,
+    never silently widen to all cities).
+    """
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text or text.lower() in ('all', '*', 'any'):
+        return None
+    tokens = [t.strip() for t in re.split(r'[,/|]+', text) if t.strip()]
+    if not tokens:
+        return None
+    out: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        key = normalize_city_filter(token)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out

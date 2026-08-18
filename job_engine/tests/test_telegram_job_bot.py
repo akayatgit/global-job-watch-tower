@@ -66,6 +66,7 @@ class FakeEngine:
                 'company': 'Deloitte',
                 'city_key': None,
                 'location': 'Bengaluru, Karnataka, India',
+                'linkedin_job_id': '4448000301',
                 'job_url': 'https://www.linkedin.com/jobs/view/4448000301/',
                 'salary_text': 'INR 4,50,000 - 6,00,000 per annum',
             },
@@ -74,6 +75,7 @@ class FakeEngine:
                 'company': 'Oracle',
                 'city_key': None,
                 'location': 'Hyderabad, Telangana, India',
+                'linkedin_job_id': '4448000302',
                 'job_url': 'https://www.linkedin.com/jobs/view/4448000302/',
             },
         ]
@@ -91,7 +93,16 @@ class FakeEngine:
         if path == '/api/watchlist/companies':
             return self.companies_roster
         if path == '/api/jobs':
-            return self.jobs_rows
+            rows = list(self.jobs_rows)
+            # Honour limit/offset so /topfreshers pagination tests exercise
+            # the real paging loop against this fake.
+            offset = int((params or {}).get('offset') or 0)
+            limit = (params or {}).get('limit')
+            if offset:
+                rows = rows[offset:]
+            if limit is not None:
+                rows = rows[: int(limit)]
+            return rows
         return {}
 
     def company_jobs(self, company: str, days: int, chat_id: str) -> str:
@@ -229,7 +240,8 @@ class TelegramBotContractTests(unittest.TestCase):
         text = self.api.sent[-1][1]
         self.assertIn('JOBMASTER · ALL COMMANDS', text)
         for fragment in (
-            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0',
+            '/topfreshers [company:<name>] [skill:<term>] [role:<term>]',
+            'city:<chennai/bangalore/remote>',
             '/companyjobs <company> [24h | 7 | 30]',
             '/addcompany <name>',
             '/history <@username or ID> [1–40]',
@@ -1952,22 +1964,54 @@ class TopFreshersCommandTests(unittest.TestCase):
         self.assertIn('No checked explicit-fresher gems', text)
         self.assertIn('/health', text)
 
-    def test_long_lists_cap_with_an_honest_more_line(self):
+    def test_long_lists_page_ten_with_a_more_button(self):
         self.engine.jobs_rows = [
             {
                 'title': f'Fresher Analyst {i}',
                 'company': 'Deloitte',
-                'city_key': None,
+                'city_key': 'bengaluru',
                 'location': 'Bengaluru',
+                'linkedin_job_id': f'id-{i}',
                 'job_url': f'https://www.linkedin.com/jobs/view/{4448001000 + i}/',
             }
             for i in range(35)
         ]
         self.bot.process('42', '/topfreshers 0')
         text = self.api.sent[-1][1]
-        self.assertIn('Fresher Analyst 29', text)
-        self.assertNotIn('Fresher Analyst 30', text)
-        self.assertIn('…and 5 more gems', text)
+        self.assertIn('Fresher Analyst 0', text)
+        self.assertIn('Fresher Analyst 9', text)
+        self.assertNotIn('Fresher Analyst 10', text)
+        self.assertIn('Reply more for 10 more gems.', text)
+        self.assertTrue(self.api.keyboards_sent, 'expected More gems keyboard')
+        # Page 2 via typed "more"
+        self.bot.process('42', 'more')
+        text2 = self.api.sent[-1][1]
+        self.assertIn('Fresher Analyst 10', text2)
+        self.assertIn('Fresher Analyst 19', text2)
+        self.assertNotIn('Fresher Analyst 9', text2)
+        self.assertNotIn('Fresher Analyst 20', text2)
+
+    def test_city_skill_time_filters_reach_the_api(self):
+        self.bot.process(
+            '42',
+            '/topfreshers skill:data_analyst city:chennai/bangalore/remote time:24hrs',
+        )
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('skill'), 'data_analyst')
+        self.assertEqual(params.get('city'), 'chennai/bangalore/remote')
+        self.assertEqual(params.get('days'), 0)
+        self.assertEqual(params.get('verified'), 1)
+        self.assertEqual(params.get('explicit_fresher'), 1)
+        text = self.api.sent[-1][1]
+        self.assertIn('skill: data_analyst', text)
+        self.assertIn('city: chennai/bangalore/remote', text)
+        self.assertIn('time: 24hrs', text)
+
+    def test_trailing_zero_is_optional(self):
+        self.bot.process('42', '/topfreshers city:chennai/bangalore/remote time:24hrs')
+        params = self._last_jobs_params()
+        self.assertEqual(params.get('city'), 'chennai/bangalore/remote')
+        self.assertEqual(params.get('days'), 0)
 
     def test_salary_shows_on_the_row_only_when_employer_stated_it(self):
         self.bot.process('42', '/topfreshers 0')

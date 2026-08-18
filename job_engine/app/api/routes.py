@@ -205,14 +205,14 @@ def list_jobs(
     explicit_fresher: bool = False,
     db: Session = Depends(get_db),
 ):
-    from app.cities import normalize_city_filter
+    from app.cities import parse_city_filter_list
     from app.experience_bands import experience_clause, normalize_experience
     from app.job_role_families import ROLE_FAMILY_REGEX
     from app.sectors import normalize_sector
     from app.seniority import fresher_title_safe_clause, mandatory_fresher_clause
 
     sector = normalize_sector(sector)
-    city = normalize_city_filter(city)
+    city_keys = parse_city_filter_list(city)
     experience = normalize_experience(experience)
     track = (track or '').strip().lower() or None
     if track not in (None, 'fresher', 'signal'):
@@ -231,8 +231,14 @@ def list_jobs(
     )
     if sector:
         query = query.where(JobMaster.sector == sector)
-    if city:
-        query = query.where(JobMaster.city_key == city)
+    if city_keys:
+        if len(city_keys) == 1:
+            query = query.where(JobMaster.city_key == city_keys[0])
+        else:
+            query = query.where(JobMaster.city_key.in_(city_keys))
+    elif city is not None and str(city).strip() and city_keys == []:
+        # Explicit unknown city filter → match nothing (honest empty), not all.
+        query = query.where(JobMaster.id < 0)
     exp = experience_clause(experience)
     if exp is not None:
         query = query.where(exp)
@@ -261,12 +267,12 @@ def list_jobs(
         # ever passes explicit_fresher without verified.
         query = query.where(mandatory_fresher_clause())
     if skill:
-        needle = re.escape(skill.strip().lower())
+        # skill:data_analyst → "data analyst"; word-bounded so skill=sql
+        # never matches "MySQL". Searched in title, card text, AND full
+        # description (where employers actually list required skills).
+        needle = re.escape(re.sub(r'[_]+', ' ', skill.strip().lower()).strip())
         if needle:
             skill_pattern = rf'(^|[^a-z0-9]){needle}([^a-z0-9]|$)'
-            # Word-bounded so skill=sql never matches "MySQL"; searched in
-            # the title, the card details text, AND the stored full
-            # description (where employers actually list required skills).
             query = query.where(or_(
                 JobMaster.title.op('~*')(skill_pattern),
                 JobMaster.raw_text.op('~*')(skill_pattern),
@@ -318,6 +324,8 @@ def list_jobs(
             job_url=job.job_url,
             posted_date=job.posted_date,
             scraped_at=job.scraped_at,
+            salary_text=getattr(job, 'salary_text', None),
+            industry=getattr(job, 'industry', None),
         ))
     return out
 

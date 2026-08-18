@@ -348,7 +348,11 @@ Collection therefore flips from role-first to **company-first**:
 - One company-scoped fresher search per giant (quoted company keywords +
   LinkedIn Internship/Entry + India, daily staggered). At insert only jobs
   whose card company matches the target are kept; the AI relevance filter
-  is skipped (company match IS relevance — every role at a giant counts).
+  is skipped (company match IS relevance). **GTM insert gates (2026-08-18):**
+  only allowlisted entry/trainee/intern/analyst titles
+  (`app/target_roles.py`) in **Chennai · Bengaluru · Remote**
+  (`app/cities.py::COLLECTION_CITY_KEYS`) are stored — other cities and
+  off-list roles are discarded at insert.
 - The list grows from Ashok's phone: **`/addcompany <name>`** → watched
   company + daily search + immediate first scrape.
 - **Detail enrich returned to full** (Ashok sign-off 2026-08-14): focused

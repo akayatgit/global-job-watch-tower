@@ -132,18 +132,29 @@ PENDING_PUSH_TTL_S = 600
 PENDING_RESET_TTL_S = 600
 # /topfreshers — video-gem mining. Filters are key:value tokens; a value
 # runs until the next key or the trailing experience number, so multi-word
-# companies ("company:Tata Consultancy Services 0") parse whole.
+# companies ("company:Tata Consultancy Services 0") parse whole. city: and
+# time: added 2026-08-18; trailing 0 is optional (defaults to fresher gems).
 TOPFRESHERS_FILTER_RE = re.compile(
-    r'(company|skill|role)\s*:\s*(.+?)(?=\s+(?:company|skill|role)\s*:|\s+\d+\s*$|\s*$)',
+    r'(company|skill|role|city|time)\s*:\s*(.+?)(?=\s+(?:company|skill|role|city|time)\s*:|\s+\d+\s*$|\s*$)',
     re.IGNORECASE,
 )
 TOPFRESHERS_LEVEL_RE = re.compile(r'(?:^|\s)(\d+)\s*$')
-TOPFRESHERS_FETCH = 200
-TOPFRESHERS_SHOW = 30
+TOPFRESHERS_PAGE_SIZE = 10
+TOPFRESHERS_API_FETCH = 40  # fetch ahead so we can detect "has more"
 TOPFRESHERS_USAGE = (
-    'Usage: /topfreshers [company:<name>] [skill:<term>] [role:<term>] 0\n'
-    'Examples: /topfreshers 0 · /topfreshers company:Deloitte 0 · '
-    '/topfreshers skill:sql 0 · /topfreshers role:data 0'
+    'Usage: /topfreshers [company:<name>] [skill:<term>] '
+    '[role:<term>] [city:<chennai/bangalore/remote>] [time:<24hrs>] [0]\n'
+    'Examples: /topfreshers 0 · /topfreshers skill:data_analyst '
+    'city:chennai/bangalore/remote time:24hrs · '
+    '/topfreshers company:Deloitte 0'
+)
+TOPFRESHERS_TIME_RE = re.compile(
+    r'^(?:'
+    r'(?P<h24>24\s*h(?:rs?|ours?)?)|'
+    r'(?P<d>(?P<days>\d+)\s*d(?:ays?)?)|'
+    r'(?P<n>\d+)'
+    r')$',
+    re.IGNORECASE,
 )
 # Ashok-only self-test toggle: no second phone needed to see the guest
 # experience. Always dispatched off the REAL owner check (never the
@@ -474,7 +485,7 @@ class JobMasterTelegramBot:
         arg: str,
         *,
         update_id: int | None,
-    ) -> str:
+    ) -> str | ButtonReply:
         if command == 'help':
             return self._owner_help()
         if command in OWNER_MANAGEMENT_COMMANDS:
@@ -552,7 +563,7 @@ class JobMasterTelegramBot:
         days = hours // 24
         return f'{days}d ago'
 
-    def _management_reply(self, chat_id: str, command: str, arg: str) -> str:
+    def _management_reply(self, chat_id: str, command: str, arg: str) -> str | ButtonReply:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
         if command == 'push':
@@ -565,7 +576,7 @@ class JobMasterTelegramBot:
         if command == 'pushstats':
             return self._push_stats()
         if command == 'topfreshers':
-            return self._topfreshers_reply(arg)
+            return self._topfreshers_reply(chat_id, arg)
         if command == 'addcompany':
             return self._add_company_reply(arg)
         if command == 'companies':
@@ -891,10 +902,30 @@ class JobMasterTelegramBot:
             )
         return '\n'.join(lines)
 
-    def _topfreshers_reply(self, arg: str) -> str:
-        """/topfreshers — the video gems: detail-checked jobs whose employer
-        EXPLICITLY said fresher / 0 experience in the title or details.
-        Silence-stamped rows (LinkedIn Entry tag only) never qualify."""
+    @staticmethod
+    def _parse_topfreshers_time(raw: str | None) -> int | None:
+        """Map time: tokens to /api/jobs days window. 24hrs → 0 (rolling 24h)."""
+        if not raw:
+            return None
+        text = raw.strip().lower().replace('_', '')
+        match = TOPFRESHERS_TIME_RE.match(text)
+        if not match:
+            return None
+        if match.group('h24'):
+            return 0
+        if match.group('days') is not None:
+            days = int(match.group('days'))
+        else:
+            days = int(match.group('n'))
+        if days == 24:
+            # Bare "24" means hours, same as 24hrs — not 24 calendar days.
+            return 0
+        if days in (0, 1, 2, 4, 7, 14, 30):
+            return days
+        return None
+
+    def _topfreshers_reply(self, chat_id: str, arg: str) -> str | ButtonReply:
+        """/topfreshers — video gems, 10 at a time, More until the end."""
         text = (arg or '').strip()
         filters = {
             m.group(1).lower(): m.group(2).strip()
@@ -908,45 +939,124 @@ class JobMasterTelegramBot:
                 'Only 0 is supported — /topfreshers lists jobs that '
                 'explicitly say fresher or 0 experience.\n' + TOPFRESHERS_USAGE
             )
+        days = self._parse_topfreshers_time(filters.get('time'))
+        if filters.get('time') and days is None:
+            return (
+                'time: must be 24hrs (or 1 / 2 / 4 / 7 / 14 / 30).\n'
+                + TOPFRESHERS_USAGE
+            )
+        intent = {
+            'kind': 'topfreshers',
+            'company': filters.get('company') or '',
+            'skill': filters.get('skill') or '',
+            'role': filters.get('role') or '',
+            'city': filters.get('city') or '',
+            'days': days,
+        }
+        return self._topfreshers_page(chat_id, intent, seen_ids=[], page=0)
+
+    def _topfreshers_page(
+        self,
+        chat_id: str,
+        intent: dict[str, Any],
+        *,
+        seen_ids: list[str],
+        page: int,
+    ) -> str | ButtonReply:
         params: dict[str, Any] = {
-            'limit': TOPFRESHERS_FETCH,
+            'limit': TOPFRESHERS_API_FETCH,
             'verified': 1,
             'explicit_fresher': 1,
         }
-        if filters.get('company'):
-            params['company'] = filters['company']
-        if filters.get('skill'):
-            params['skill'] = filters['skill']
-        role = filters.get('role', '')
+        if intent.get('company'):
+            params['company'] = intent['company']
+        if intent.get('skill'):
+            params['skill'] = intent['skill']
+        if intent.get('city'):
+            params['city'] = intent['city']
+        if intent.get('days') is not None:
+            params['days'] = intent['days']
+        role = (intent.get('role') or '').strip()
         if role:
             if role.lower() in ROLE_FAMILY_LABELS:
                 params['role_family'] = role.lower()
             else:
                 params['title_terms'] = role
+
+        prior = set(seen_ids)
+        collected: list[dict[str, Any]] = []
+        new_ids: list[str] = []
+        offset = 0
+        has_more = False
         try:
-            rows = self.engine.api_get('/api/jobs', params)
+            while len(collected) <= TOPFRESHERS_PAGE_SIZE and offset < 2000:
+                batch = self.engine.api_get(
+                    '/api/jobs', {**params, 'offset': offset},
+                )
+                if not isinstance(batch, list):
+                    batch = []
+                if not batch:
+                    break
+                for job in batch:
+                    key = str(
+                        job.get('linkedin_job_id')
+                        or job.get('job_url')
+                        or job.get('id')
+                        or ''
+                    )
+                    if not key or key in prior:
+                        continue
+                    prior.add(key)
+                    if len(collected) < TOPFRESHERS_PAGE_SIZE:
+                        collected.append(job)
+                        new_ids.append(key)
+                    else:
+                        has_more = True
+                        break
+                if has_more or len(batch) < params['limit']:
+                    break
+                offset += len(batch)
         except Exception:
             return 'Tower is unreachable right now — try /topfreshers again in a minute.'
-        if not isinstance(rows, list):
-            rows = []
-        applied = ' · '.join(
-            f'{key}: {filters[key]}'
-            for key in ('company', 'skill', 'role')
-            if filters.get(key)
-        )
-        if not rows:
+
+        applied_bits = []
+        for key in ('company', 'skill', 'role', 'city'):
+            if intent.get(key):
+                applied_bits.append(f'{key}: {intent[key]}')
+        if intent.get('days') is not None:
+            applied_bits.append(
+                'time: 24hrs' if intent['days'] == 0 else f"time: {intent['days']}d"
+            )
+        applied = ' · '.join(applied_bits)
+
+        if not collected:
+            if page > 0:
+                body = 'No more fresher gems for these filters.'
+                self.sessions.apply_result(
+                    chat_id,
+                    body,
+                    intent=intent,
+                    page=page,
+                    seen_ids=seen_ids,
+                )
+                return body
             scope = f' for {applied}' if applied else ''
             return (
                 f'No checked explicit-fresher gems{scope} yet.\n'
                 'Verification may still be draining — /health shows the queue. '
                 'Widen the filters or check back shortly.\n' + TOPFRESHERS_USAGE
             )
-        total = f'{TOPFRESHERS_FETCH}+' if len(rows) >= TOPFRESHERS_FETCH else str(len(rows))
-        lines = [f'🎬 TOP FRESHER GEMS · {total} checked · fresher in title / 0–1 yrs stated']
+
+        start = page * TOPFRESHERS_PAGE_SIZE + 1
+        lines = [
+            f'🎬 TOP FRESHER GEMS · {start}–{start + len(collected) - 1}'
+            f'{" · more available" if has_more else " · end"}'
+            ' · fresher in title / 0–1 yrs stated'
+        ]
         if applied:
             lines.append(f'Filters: {applied}')
         lines.append('')
-        for i, job in enumerate(rows[:TOPFRESHERS_SHOW], 1):
+        for i, job in enumerate(collected, start):
             place = (
                 city_label(job.get('city_key')) if job.get('city_key') else None
             ) or job.get('location') or 'India'
@@ -954,19 +1064,38 @@ class JobMasterTelegramBot:
                 f"{i}. {job.get('title') or 'Untitled'} — "
                 f"{job.get('company') or 'Unknown company'} — {place}"
             )
-            # Employer-stated salary (AI quote-grounded) — gold for videos.
             salary = job.get('salary_text')
             if salary:
                 row += f' — 💰 {salary}'
             lines.append(row)
             lines.append(str(job.get('job_url') or ''))
-        if len(rows) > TOPFRESHERS_SHOW:
+        if has_more:
             lines.append('')
-            lines.append(
-                f'…and {len(rows) - TOPFRESHERS_SHOW} more gems — '
-                'narrow with company:/skill:/role:.'
-            )
-        return '\n'.join(lines)
+            lines.append('Reply more for 10 more gems.')
+
+        body = '\n'.join(lines)
+        self.sessions.apply_result(
+            chat_id,
+            body,
+            intent=intent,
+            page=page,
+            seen_ids=[*seen_ids, *new_ids],
+        )
+        if has_more:
+            return ButtonReply(body, [[('More gems ▸', 'more')]])
+        return body
+
+    def _continue_topfreshers(self, chat_id: str) -> str | ButtonReply | None:
+        """Paginate a saved /topfreshers session. None = not a gems session."""
+        saved = self.sessions.load_search(chat_id)
+        if not saved:
+            return None
+        intent, page, seen_ids = saved
+        if (intent or {}).get('kind') != 'topfreshers':
+            return None
+        return self._topfreshers_page(
+            chat_id, intent, seen_ids=list(seen_ids or []), page=page + 1,
+        )
 
     def _owner_help(self) -> str:
         """/help for Ashok — every command with its options on one sheet."""
@@ -974,8 +1103,9 @@ class JobMasterTelegramBot:
             'JOBMASTER · ALL COMMANDS',
             '',
             'With options:',
-            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0 — '
-            'checked jobs that explicitly say fresher/0-exp (the video gems)',
+            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '
+            '[city:<chennai/bangalore/remote>] [time:<24hrs>] [0] — '
+            'checked fresher gems, 10 at a time (More for next page)',
             '/companyjobs <company> [24h | 7 | 30] — jobs at one company '
             '(also today, 1, 2, 4, 14)',
             '/fresh · /towerinsights · /hiringsignals · /watchlist [days] — '
@@ -1466,6 +1596,23 @@ class JobMasterTelegramBot:
             # a NUL prefix can never appear in a real Telegram text message,
             # so this can never collide with anything a guest actually types.
             payload = clean[len(BTN_PREFIX):]
+            # Owner /topfreshers "More gems ▸" must page the gems session
+            # before the guest ButtonFlow hijacks a bare `more` callback.
+            if payload == 'more' and self._effective_is_owner(chat_id):
+                gems = self._continue_topfreshers(chat_id)
+                if gems is not None:
+                    if isinstance(gems, ButtonReply):
+                        self._send_button_reply(chat_id, gems, update_id=update_id)
+                    else:
+                        if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                            self.sessions.save_update_reply(update_id, gems)
+                        self.api.send(chat_id, gems)
+                    if self.health_enabled:
+                        self._write_health(
+                            status='running', last_result='ok', last_chat=chat_id,
+                            last_kind='topfreshers_more',
+                        )
+                    return
             button_reply = (
                 self._handle_alert_or_push_callback(chat_id, payload)
                 or self.button_flow.handle_callback(chat_id, payload)
@@ -1476,6 +1623,24 @@ class JobMasterTelegramBot:
                     status='running', last_result='ok', last_chat=chat_id, last_kind='button',
                 )
             return
+        # Typed "more" after /topfreshers — same pagination as the button.
+        if MORE_RE.match(clean) and self._effective_is_owner(chat_id):
+            gems = self._continue_topfreshers(chat_id)
+            if gems is not None:
+                if isinstance(gems, ButtonReply):
+                    self._send_button_reply(chat_id, gems, update_id=update_id)
+                else:
+                    if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                        self.sessions.save_update_reply(update_id, gems)
+                    self.api.send(chat_id, gems)
+                self._page_count += 1
+                if self.health_enabled:
+                    self._write_health(
+                        status='running', last_result='ok', last_chat=chat_id,
+                        last_kind='topfreshers_more', last_text='more',
+                        page_count=self._page_count,
+                    )
+                return
         parsed = self._command(clean)
         # /help is owner-only as a COMMAND surface: Ashok gets the full
         # command sheet; guests keep the simple engine help line (Gate 3.0 —
@@ -1503,9 +1668,12 @@ class JobMasterTelegramBot:
                     reply = 'That VIGIL command could not reach live tower data. Try again shortly.'
             else:
                 reply = 'JobMaster can help you find verified jobs. Ask naturally in any sentence.'
-            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
-                self.sessions.save_update_reply(update_id, reply)
-            self.api.send(chat_id, reply)
+            if isinstance(reply, ButtonReply):
+                self._send_button_reply(chat_id, reply, update_id=update_id)
+            else:
+                if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                    self.sessions.save_update_reply(update_id, reply)
+                self.api.send(chat_id, reply)
             if self.health_enabled:
                 self._write_health(
                     status='running',
