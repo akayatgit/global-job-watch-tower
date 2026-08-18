@@ -7,7 +7,7 @@ from sqlalchemy import desc, select
 
 from app import config as app_config
 from app.celery_app import celery
-from app.cities import normalize_city
+from app.cities import is_collection_city, normalize_city
 from app.console import console_log
 from app.db import SessionLocal
 from app.mnc_watchlist import company_matches_target
@@ -17,6 +17,7 @@ from app.runtime_settings import get_detail_enrich_mode
 from app.scraper.linkedin import PageResult, TransientFetchError, scrape_search
 from app.scraper.requirements import JobRequirements, extract_requirements
 from app.seniority import FRESHER_TRACK_SILENCE_LABEL, title_seniority_veto
+from app.target_roles import title_matches_target_role
 
 logger = logging.getLogger(__name__)
 
@@ -398,14 +399,21 @@ def run_scrape(self, scrape_run_id: int):
 
             target = (getattr(cfg, 'target_company', None) or '').strip()
             if target:
-                # MNC-first company search (2026-08-14): the company match IS
-                # the relevance — keep EVERY role at the target company,
-                # reject everything else, and skip the AI filter entirely
-                # (deterministic precision, zero Ollama heat).
-                relevant = [
-                    job for job in page_result.jobs
-                    if company_matches_target(job.company, target)
-                ]
+                # MNC-first company search (2026-08-14) + GTM gates
+                # (2026-08-18): company match IS relevance (skip AI), but
+                # only STORE allowlisted role titles in Chennai /
+                # Bengaluru / Remote. Other cities and off-list titles are
+                # discarded at insert — never invented, never served.
+                relevant = []
+                for job in page_result.jobs:
+                    if not company_matches_target(job.company, target):
+                        continue
+                    if not title_matches_target_role(job.title):
+                        continue
+                    city_key = normalize_city(job.location, job.title)
+                    if not is_collection_city(city_key):
+                        continue
+                    relevant.append(job)
                 rejected_total += len(page_result.jobs) - len(relevant)
                 persist_kept(relevant)
             else:

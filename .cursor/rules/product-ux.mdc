@@ -696,20 +696,24 @@ it, shows recipient count) → `/pushconfirm`
  `— 💰 <salary_text>` only when stated; the `skill=` filter now also
  searches the stored full description (still word-bounded); `JobOut`
  carries `salary_text` + `industry`.
-- **/topfreshers video gems + owner /help (2026-08-14):** Owner command
- `/topfreshers [company:<name>] [skill:<term>] [role:<term>] 0` lists the
- video gems: detail-verified jobs whose employer EXPLICITLY said fresher /
- fresh graduate / no experience / 0 years in the title or details (or a
- parsed stated minimum of 0 years / stated fresher label). Explicit means
- stated — LinkedIn's Entry tag and the `Fresher track (LinkedIn
- Internship/Entry)` silence-stamp label NEVER qualify
- (`app/seniority.py::explicit_fresher_clause`, exposed as
- `/api/jobs?explicit_fresher=1`; `skill=` is a word-bounded match on title
- + details so `sql` never matches "MySQL"). Only 0 is supported — any other
- trailing number gets an honest refusal + usage, never a loosened result.
- Lists cap at 30 with an honest "…and N more gems" line. Owner `/help`
- shows the full command sheet with options; guests keep the simple
- JobMaster help line — the ops deck stays invisible to customer chats.
+- **/topfreshers video gems + owner /help (2026-08-14, paginated 2026-08-18):**
+ Owner command `/topfreshers [company:<name>] [skill:<term>] [role:<term>]
+ [city:<chennai/bangalore/remote>] [time:<24hrs>] [0]` lists the video
+ gems: detail-verified jobs whose employer EXPLICITLY said fresher /
+ fresh graduate / no experience / 0–1 years (mandatory fresher law).
+ Trailing `0` is optional (defaults to gems). Lists show **10 at a time**
+ with a **More gems ▸** button (and typed `more`) until the end — never
+ dump the whole list. `city:` accepts slash/comma lists (bangalore→
+ bengaluru); `time:24hrs` maps to the rolling 24h catch window (`days=0`).
+ `skill:data_analyst` underscores normalize to spaces. Owner `/help`
+ shows the full command sheet; guests never see the ops deck.
+- **GTM collection gates — roles + cities (2026-08-18):** MNC company
+ scrapes only STORE jobs whose TITLE matches the allowlisted entry/
+ trainee/intern/analyst phrases (`app/target_roles.py`) AND whose
+ `city_key` is Chennai, Bengaluru, or Remote
+ (`app/cities.py::COLLECTION_CITY_KEYS`). India-wide LinkedIn search still
+ runs (one geo); the insert gate is the precision cut. Off-list titles and
+ other cities are discarded at insert.
 - **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
  "very few will click on set alert option... why can't we automatically
  send one alert per day on the telegram guest's last search, so we can

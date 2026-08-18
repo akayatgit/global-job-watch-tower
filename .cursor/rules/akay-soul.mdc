@@ -278,6 +278,13 @@ need to be told twice.
  grounding trick that keeps Telegram boards honest keeps the fresher law
  honest: LLM comprehension inside, deterministic evidence at every door.
 
+- **2026-08-18 · GTM role+city gates + paginated /topfreshers.** Ashok named
+ the exact entry/trainee/intern/analyst titles to store, and only Chennai /
+ Bangalore / Remote. Collection insert gates enforce both
+ (`app/target_roles.py` + `COLLECTION_CITY_KEYS`). `/topfreshers` gained
+ `skill:` / `city:` / `time:24hrs`, shows 10 gems at a time with More until
+ the end — never dump the whole list.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

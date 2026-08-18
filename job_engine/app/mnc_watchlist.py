@@ -13,8 +13,9 @@ Mechanics:
   + India geo + past-24h window. At insert, only jobs whose card company
   matches the target are kept (see ``company_matches_target``) — precision
   is guaranteed by the post-filter, and the AI relevance filter is skipped
-  entirely (the company match IS the relevance; every role at a giant
-  counts, and Ollama heat is saved for nothing).
+  entirely (the company match IS the relevance). GTM insert gates
+  (2026-08-18) further keep only allowlisted role titles
+  (``app/target_roles.py``) in Chennai / Bengaluru / Remote.
 - ``target_company`` holds pipe-separated match needles; the FIRST needle
   is the canonical display name. Extra needles absorb LinkedIn's own naming
   drift ("JPMorganChase" vs "JPMorgan Chase & Co.").
