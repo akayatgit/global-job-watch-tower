@@ -7,8 +7,9 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/jobmaster-gate3-v1` (accepted JobMaster baseline, 2026-08-04) · `milestone/eureka-telegram-bot` · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **Gate 3.0 JobMaster capability #1 accepted and locked** |
+| **Status as of** | 2026-08-19 — **Walk-in Timetable pivot in planning** (feasibility doc; no build yet) |
 | **Stage lock** | **Collects = base complete** → **Map with Students** → **Gate 3.0 JobMaster conversation OS** → **Predict for Government** |
+| **Active planning** | Walk-in Timetable (South India) — see [`walkin-timetable-feasibility.md`](./walkin-timetable-feasibility.md) + PRD §4B |
 | **Agent stack** | JobMaster Telegram gateway · constrained intent intelligence · Watch Tower capabilities · deterministic fact renderers |
 
 ---

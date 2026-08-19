@@ -374,6 +374,31 @@ Collection therefore flips from role-first to **company-first**:
   caught data (keeps definitions, watchlist, guests, alerts, history) and
   every search re-runs automatically, one by one.
 
+### 4B. Walk-in Timetable pivot — planning (Ashok meeting 2026-08-19)
+
+**Problem locked in meeting:** commodity “Company X is hiring” social posts
+are saturated; LinkedIn Jobs fresher filters lie; apply links often open the
+wrong thing; our job bucket went empty under narrow gates. Differentiation
+must be **hope you can act on** — not another scraped job dump.
+
+**Proposed product (planning — not built yet):** become the **South India
+walk-in timetable** (Bengaluru · Chennai · Hyderabad · Kochi): date · time ·
+venue · role · experience · source URL. Niches that clear the entry barrier:
+**(1) walk-in / walk-in drive** (future dates only) and **(2) immediate
+assessment / assured interview path**. MVP source = **LinkedIn posts**
+(hashtags / keywords), not LinkedIn Jobs board scrape as the base. Later
+sources (walk-in websites) optional. Voice process is out of the *guest*
+niche preference; full timetable research may still catalogue voice for
+volume truth.
+
+**Feasibility snapshot (19 Aug 2026):** public sweep found recurring supply —
+LinkedIn Jobs `walkin` inventory ~128 Bengaluru · ~109 Chennai · 1000+
+Hyderabad (inflated) · ~8 Kochi; estimated **~20–40 distinct events/week**
+across the four cities when counting mega drives + rolling windows. Full
+verifiable table with links:
+[`documents/walkin-timetable-feasibility.md`](walkin-timetable-feasibility.md).
+**No collector code until Ashok accepts the feasibility links.**
+
 ---
 
 ## 5. Product architecture (conceptual)
