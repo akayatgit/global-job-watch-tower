@@ -259,3 +259,36 @@ These are **not apps**. They are **feeds**. They are the real near-term competit
 4. Any new “walk-in calendar” app on Play Store  
 
 **Phase 0 rule stands:** crack 10k views / 100 comments on our reel before building against any of the above.
+
+---
+
+## 10. Phase 0 social test — reel-by-reel results log (updated 19 Aug 2026)
+
+Raw Instagram "Reel insights" screen numbers only — nothing invented.
+
+| Metric | Reel 1 — Cognizant (Hyderabad walk-in) | Reel 2 — CIEL HR (Bengaluru walk-in, "Mine") |
+|---|---|---|
+| Duration | ~13 sec | 8 sec |
+| Views | *(not captured)* | 439 (337 unique viewers) |
+| Skip rate | 83.7% vs typical **71.1%** (+12.6 pts — hook underperforming own baseline) | 72.8% vs typical **70.1%** (+2.7 pts — close to baseline) |
+| Avg watch time | 4 sec of 13 (~31% of runtime) | 4 sec of 8 (~50% of runtime) |
+| Follower / non-follower reach | *(not captured)* | 18.3% / **81.7%** non-follower |
+| Top traffic sources | *(not captured)* | Reels tab 61.4% · Feed 18.4% · Explore 17.1% (≈78% algorithm-driven, not our own following) |
+| Interactions | 0 comments (despite CTA) | 9 total — **4 shares · 3 saves · 2 likes · 0 comments · 0 reposts** |
+| Cumulative toward goal | Views: running total below 10,000. **Comments: 0 combined — still 0% of the 100-comment leg.** | |
+
+### 10.1 Reading the pattern (2 data points, directional not final)
+
+1. **Shorter runtime wins.** CIEL's 8-sec cut held viewers to ~50% completion and a near-baseline skip rate; Cognizant's 13-sec cut lost most viewers by the 4-sec mark (~31% completion). → **Keep future walk-in reels at 8–10 sec, front-load company/city/date in the first 2–3 seconds** since most viewers never reach the back half.
+2. **Distribution is not the problem.** 81.7% non-follower views and ~78% of traffic from Reels tab + Explore means Instagram's algorithm is already willing to push "walk-in alert" content to strangers. The bottleneck is **turning a view into a comment**, not reach.
+3. **Shares (4) + saves (3) with zero comments is a real signal, just the wrong shape for the goal.** People found this useful enough to privately forward or bookmark — that *is* product-market signal — but it doesn't count toward the public 100-comment bar and gives us zero visible social proof for new visitors.
+4. **Zero comments on both reels = the CTA is too weak or absent.** Need a one-word, zero-effort comment bait tied to the walk-in itself, e.g. *"Comment 'DONE' if you're walking in tomorrow"* or *"Comment your city 📍 for tomorrow's list"* — low friction, and doubles as a lead-capture signal for whichever city to prioritize next.
+
+### 10.2 Standing action for the next reel(s)
+
+- Cut to 8–10 sec max; date/company/city visible in frame 1.
+- Add an explicit, low-friction comment-bait line (not just "link in bio").
+- Keep leaning into shares/saves as a secondary success signal, but they do **not** replace the 100-comment or 10k-view gate Ashok set — log every reel here so the cumulative count stays honest.
+- Views total is still unknown for Reel 1 — capture it retroactively if Ashok has the screenshot, otherwise track from Reel 2 onward.
+
+**Phase 0 rule stands:** crack 10k views / 100 comments (cumulative, logged here) before any collector gets coded.
