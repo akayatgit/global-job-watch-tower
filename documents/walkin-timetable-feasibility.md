@@ -192,8 +192,70 @@ Coding starts only after Ashok accepts this feasibility + verifies links.
 
 ## 8. Recommended next step (decision, not build)
 
-1. Ashok opens §3 links and marks trust (good / bad / fake).  
-2. If trust holds → lock product name: **Walk-in Timetable** (South India · BLR/CHN/HYD/Kochi).  
-3. Only then write the build plan (collector → normalize → future-date gate → Telegram/board publish).  
+1. **Phase 0 (live now):** social water-test — Instagram reel for a real walk-in; target **10k views OR 100 comments** before any product build. No leads → no users → no product.  
+2. Ashok opens §3 links and marks trust (good / bad / fake).  
+3. If social + trust hold → lock product name: **Walk-in Timetable / Walk-in Calendar** (South India · BLR/CHN/HYD/Kochi).  
+4. Only then write the build plan (collector → normalize → future-date gate → Telegram/board publish).  
 
-**No scraper code in this PR — analysis only.**
+**No scraper code until Phase 0 cracks. Analysis only.**
+
+---
+
+## 9. Competitor map — “walk-in calendar” idea (researched 19 Aug 2026)
+
+**Headline:** Many people *post* walk-ins. Almost nobody owns a trusted **calendar**. The lane is crowded at the feed layer and empty at the timetable layer.
+
+### 9.1 Closest product competitors (dedicated walk-in lists)
+
+| Player | What they are | Strength | Weakness vs us |
+|---|---|---|---|
+| **[Saarthi](https://joinsaarthi.com/drives/walk-in)** | Fresher job app + **Walk-In Drives** page (“today’s walk-ins”, Ongoing/Scheduled, city pages, claims 100+ drives / 15+ cities) | Closest to a productized walk-in hub; filter UI | Not a day/week **calendar**; date ranges on cards looked mushy (many “14 Aug–11 Sep”); trust/freshness unclear; national, not South-India obsessed |
+| **[Freshershunt](https://freshershunt.in/)** | SEO city guides (“Walk in Interview in Bangalore/Chennai/Hyderabad”) + Telegram/WhatsApp; claims 5L+ | Strong city SEO + verified-list language | Blog list, not calendar; weekly refresh lag; competes for Google, not Instagram reel habit |
+| **foundthejob.com / freshersindia.in / jobscoupe / telugucareershub / freshersjobs24** | SEO blog farms that copy LinkedIn/HR posts into articles | High Google surface area; daily spam volume | Commodity posts; often paraphrased; no brand trust; not a calendar |
+
+### 9.2 Big boards (walk-in as a filter, not the product)
+
+| Player | Walk-in angle | Why not the real rival |
+|---|---|---|
+| **Naukri** | `walkin` job search | Generic job board; seeker goes for jobs, not “this week’s timetable” |
+| **Foundit (Monster)** | Huge “walkin jobs” inventory | Same — search dump, not calendar |
+| **Shine / Freshersworld** | Walk-in category pages | Thin counts vs noise; not city timetable UX |
+| **LinkedIn Jobs** | 100–1000+ “walkin” cards per city | Source of truth *and* noise; expired titles stay; we already decided Jobs board is not our MVP face |
+
+### 9.3 Social / chat competitors (who fight Ashok’s reel for attention)
+
+| Channel type | Examples | How they win attention |
+|---|---|---|
+| **Instagram walk-in pages** | [@walkins_everyday](https://www.instagram.com/walkins_everyday) (WhatsApp in bio) | Daily reels/posts → WhatsApp funnel — **same surface Ashok is testing** |
+| **Telegram walk-in channels** | [@dailywalkinjobs](https://t.me/dailywalkinjobs), [@Walk_in_Interview](https://t.me/Walk_in_Interview) (+ WhatsApp twin) | High-frequency text alerts with date/venue; 3k–5k+ views/post common on hot alerts |
+| **City job Telegram nets** | e.g. Bengaluru_Jobs and TN city mesh | Forward storms; walk-ins mixed with every other vacancy |
+| **LinkedIn HR / placement digests** | Company TA posts; weekly digests (e.g. Manimaran-style) | Primary source of real drives — also the people *we* remix |
+
+These are **not apps**. They are **feeds**. They are the real near-term competitors for Phase 0 (views/comments), not Saarthi’s website.
+
+### 9.4 Competitive gap (where we can win)
+
+| Gap | Why it matters |
+|---|---|
+| No strong **“Walk-in Calendar” brand** | Name + day/week view is unowned |
+| Feeds don’t **kill past dates** | Seekers waste trips; trust dies |
+| Aggregators often **hide the source** | We show LinkedIn/HR proof (Ashok’s reel already does this) |
+| Voice/BPO spam floods fresher IT hope | Niche filter (fresher · IT/non-voice · South cities) can be the wedge *after* the full calendar earns trust |
+| Lead magnet is rare | “Comment Link for prep PDF” is a funnel; most channels only dump the drive |
+
+### 9.5 Positioning cheat-sheet
+
+| If someone says… | We say… |
+|---|---|
+| “Naukri already has walk-ins” | They have a search box. We have **this week’s timetable**. |
+| “Telegram already posts walk-ins” | They dump. We **calendar + verify + drop expired**. |
+| “Saarthi is the same” | Closest product rival — we beat them on **date honesty, source proof, South-India focus, and social-first lead**. |
+
+### 9.6 Watch list (re-check monthly)
+
+1. Saarthi walk-in page quality + app ratings  
+2. Freshershunt Telegram growth  
+3. @walkins_everyday / similar IG pages engagement  
+4. Any new “walk-in calendar” app on Play Store  
+
+**Phase 0 rule stands:** crack 10k views / 100 comments on our reel before building against any of the above.
