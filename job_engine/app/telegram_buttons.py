@@ -121,20 +121,12 @@ ROLE_BUTTONS: dict[str, list[tuple[str, list[str]]]] = {
     ],
 }
 
-# Favourites first, matching the web dashboard's standing city-chip order
-# (product-ux.mdc, 2026-08-02), then the rest, then Remote and Any city.
+# GTM collection cities only (Ashok 2026-08-19): the tower stores jobs in
+# Chennai, Bengaluru, and Remote — offering other cities here would promise
+# results the collection can never deliver.
 CITY_BUTTONS: list[tuple[str, str]] = [
     ('Bengaluru', 'bengaluru'),
     ('Chennai', 'chennai'),
-    ('Kerala', 'kerala'),
-    ('Hyderabad', 'hyderabad'),
-    ('Pune', 'pune'),
-    ('Mumbai', 'mumbai'),
-    ('Delhi NCR', 'delhi'),
-    ('Gurugram', 'gurugram'),
-    ('Noida', 'noida'),
-    ('Ahmedabad', 'ahmedabad'),
-    ('Kolkata', 'kolkata'),
     ('Remote', 'remote'),
     ('Any city', ''),
 ]

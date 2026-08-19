@@ -71,18 +71,3 @@ def title_matches_target_role(title: str | None) -> bool:
     if not text:
         return False
     return any(p.search(text) for p in _TARGET_PATTERNS)
-
-
-def target_role_sql_clause():
-    """SQLAlchemy OR of title ~* patterns — for serving filters if needed."""
-    from sqlalchemy import or_
-
-    from app.models import JobMaster
-
-    clauses = []
-    for phrase in sorted(set(TARGET_ROLE_PHRASES), key=lambda s: (-len(s), s.lower())):
-        parts = [re.escape(p) for p in phrase.lower().split() if p]
-        body = r'[\s\-_\/]+'.join(parts)
-        # Postgres ~* : drop the (?i) flag; case-insensitive op handles it.
-        clauses.append(JobMaster.title.op('~*')(rf'(^|[^a-z0-9]){body}([^a-z0-9]|$)'))
-    return or_(*clauses)

@@ -99,12 +99,14 @@ def build_search_url(
     geo_id: str,
     start: int = 0,
     experience_filter: str | None = None,
+    work_type_filter: str | None = None,
 ) -> str:
     """Build a LinkedIn jobs search URL.
 
     ``experience_filter`` is LinkedIn ``f_E`` codes, comma-joined:
     1=Internship, 2=Entry level, 3=Associate, 4=Mid-Senior, 5=Director, 6=Executive.
     Fresher track uses ``1,2``. Empty/None omits the filter (Market Signal).
+    ``work_type_filter`` is LinkedIn ``f_WT``: 1=on-site, 2=remote, 3=hybrid.
     """
     url = (
         'https://www.linkedin.com/jobs/search/'
@@ -116,6 +118,9 @@ def build_search_url(
     if filt:
         # LinkedIn expects comma-separated codes URL-encoded (1%2C2)
         url += f'&f_E={quote(filt, safe="")}'
+    work = (work_type_filter or '').strip()
+    if work:
+        url += f'&f_WT={quote(work, safe="")}'
     if start:
         url += f'&start={start}'
     return url
@@ -167,7 +172,8 @@ def _fetch_with_retries(engine, url: str, label: str, say) -> tuple[object, floa
 def scrape_search(keywords: str, geo_id: str, max_pages: int,
                   on_page=None, should_continue=None, log=None,
                   run_id: int | None = None,
-                  experience_filter: str | None = None) -> list[PageResult]:
+                  experience_filter: str | None = None,
+                  work_type_filter: str | None = None) -> list[PageResult]:
     """Scrape a LinkedIn job search, page by page, in one browser session.
 
     ``on_page(PageResult)`` is called after each page so the caller can
@@ -325,6 +331,7 @@ def scrape_search(keywords: str, geo_id: str, max_pages: int,
                 keywords, geo_id,
                 start=page_num * config.PAGE_SIZE,
                 experience_filter=experience_filter,
+                work_type_filter=work_type_filter,
             )
             logger.info('fetching page %s: %s', page_num + 1, url)
 

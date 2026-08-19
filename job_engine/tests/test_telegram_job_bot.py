@@ -60,6 +60,19 @@ class FakeEngine:
             'active_searches': ['MNC · Deloitte — Fresher'],
         }
         self.companies_roster: dict = {'total': 0, 'companies': []}
+        self.funnel_data: dict = {
+            'hours': 24,
+            'caught': 42,
+            'in_collection_cities': 30,
+            'role_matched': 25,
+            'detail_verified': 18,
+            'servable_fresher': 7,
+            'pending_verification': 24,
+            'total_all_time': 500,
+            'enabled_searches': 84,
+            'runs_in_window': 60,
+            'last_catch_at': '2026-08-19T04:00:00+00:00',
+        }
         self.jobs_rows: list[dict] = [
             {
                 'title': 'Data Analyst (Fresher)',
@@ -92,6 +105,8 @@ class FakeEngine:
             return self.reset_preview
         if path == '/api/watchlist/companies':
             return self.companies_roster
+        if path == '/api/jobs/funnel':
+            return self.funnel_data
         if path == '/api/jobs':
             rows = list(self.jobs_rows)
             # Honour limit/offset so /topfreshers pagination tests exercise
@@ -2029,6 +2044,72 @@ class TopFreshersCommandTests(unittest.TestCase):
             'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
         )
         self.assertEqual(self.engine.api_calls, [])
+
+
+class FunnelCommandTests(unittest.TestCase):
+    """/funnel — where jobs die between LinkedIn and the bot (owner-only)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
+        self.guests_patch = patch.object(
+            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
+        )
+        self.env_patch = patch.object(
+            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
+        )
+        self.guests_patch.start()
+        self.env_patch.start()
+        self.api = FakeTelegramAPI()
+        self.engine = FakeEngine()
+        self.bot = JobMasterTelegramBot(
+            self.api,
+            engine=self.engine,
+            sessions=self.sessions,
+            health_enabled=False,
+            owner_chat_ids={'42'},
+        )
+
+    def tearDown(self):
+        self.env_patch.stop()
+        self.guests_patch.stop()
+        self.tmp.cleanup()
+
+    def test_funnel_shows_every_gate_count(self):
+        self.bot.process('42', '/funnel')
+        text = self.api.sent[-1][1]
+        self.assertIn('JOB FUNNEL · last 24h', text)
+        self.assertIn('Caught: 42', text)
+        self.assertIn('in Chennai/Bengaluru/Remote: 30', text)
+        self.assertIn('GTM role titles: 25', text)
+        self.assertIn('detail-verified: 18', text)
+        self.assertIn('servable fresher gems: 7', text)
+        self.assertIn('Pending verification: 24', text)
+
+    def test_funnel_accepts_a_custom_window(self):
+        self.bot.process('42', '/funnel 48')
+        params = [p for path, p in self.engine.api_calls if path == '/api/jobs/funnel'][-1]
+        self.assertEqual(params.get('hours'), 48)
+
+    def test_bad_window_gets_usage(self):
+        self.bot.process('42', '/funnel yesterday')
+        self.assertIn('Usage: /funnel', self.api.sent[-1][1])
+
+    def test_guests_never_reach_funnel(self):
+        self.bot.process('guest-3', '/funnel')
+        self.assertEqual(
+            self.api.sent[-1][1],
+            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+        )
+        self.assertEqual(self.engine.api_calls, [])
+
+    def test_empty_topfreshers_includes_the_funnel_snapshot(self):
+        self.engine.jobs_rows = []
+        self.bot.process('42', '/topfreshers 0')
+        text = self.api.sent[-1][1]
+        self.assertIn('No checked explicit-fresher gems', text)
+        self.assertIn('Funnel 24h: 42 caught · 18 verified · 7 servable', text)
+        self.assertIn('/funnel', text)
 
 
 if __name__ == '__main__':

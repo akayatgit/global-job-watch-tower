@@ -142,11 +142,13 @@ def _config_name(display: str) -> str:
 def _existing_company_configs(db) -> tuple[dict[str, SearchConfig], int]:
     """(every lowercase needle → its config, count of company configs) —
     keyed by ALL needles so /addcompany TCS can never duplicate the
-    'Tata Consultancy Services|TCS' catalogue entry."""
+    'Tata Consultancy Services|TCS' catalogue entry. GTM sentinel configs
+    (target_company '*', app/gtm_role_searches.py) are not companies."""
     by_needle: dict[str, SearchConfig] = {}
     count = 0
     for cfg in db.execute(select(SearchConfig)).scalars():
-        if (cfg.target_company or '').strip():
+        target = (cfg.target_company or '').strip()
+        if target and target != '*':
             count += 1
             for needle in needles(cfg.target_company):
                 by_needle[needle.lower()] = cfg
@@ -219,7 +221,8 @@ def watchlist_roster(db, *, now=None) -> list[dict]:
     rows: list[dict] = []
     for cfg in db.execute(select(SearchConfig)).scalars():
         target = (cfg.target_company or '').strip()
-        if not target:
+        if not target or target == '*':
+            # '*' = GTM role×city hunting search, not a company row.
             continue
         jobs_total = db.query(JobMaster).filter(
             JobMaster.search_config_id == cfg.id

@@ -714,6 +714,16 @@ it, shows recipient count) → `/pushconfirm`
  (`app/cities.py::COLLECTION_CITY_KEYS`). India-wide LinkedIn search still
  runs (one geo); the insert gate is the precision cut. Off-list titles and
  other cities are discarded at insert.
+- **Hunt where the roles are (2026-08-19, outage law):** store-gates without
+ aimed searches empty the tower — company-name searches never surface the
+ allowlisted roles. Every serving scope MUST have collection searches
+ pointed at it: `app/gtm_role_searches.py` runs role-group × city searches
+ (Chennai/Bengaluru geoIds + Remote `f_WT=2`), sentinel `target_company='*'`
+ = any watched company qualifies at insert. Owner `/funnel [hours]` (+
+ `/api/jobs/funnel`) is the standing diagnostic: caught → in-cities →
+ role-matched → verified → servable, so "no data" is diagnosable from the
+ phone in one command. Guest city buttons offer ONLY collection cities —
+ never promise a city the tower doesn't collect.
 - **Auto daily alert on the guest's last search (2026-08-09):** Ashok:
  "very few will click on set alert option... why can't we automatically
  send one alert per day on the telegram guest's last search, so we can

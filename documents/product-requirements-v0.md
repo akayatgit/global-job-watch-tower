@@ -353,6 +353,15 @@ Collection therefore flips from role-first to **company-first**:
   (`app/target_roles.py`) in **Chennai · Bengaluru · Remote**
   (`app/cities.py::COLLECTION_CITY_KEYS`) are stored — other cities and
   off-list roles are discarded at insert.
+- **GTM role×city hunting searches (2026-08-19, outage fix):** company-name
+  searches alone left the tower empty — LinkedIn never surfaced the
+  allowlisted roles in an India-wide company ranking. Dedicated role-group
+  searches (`app/gtm_role_searches.py`: 8 groups × Chennai geo · Bengaluru
+  geo · Remote `f_WT=2`) hunt the exact roles; their sentinel
+  `target_company='*'` accepts ANY watched company at insert (same title +
+  city gates, AI filter skipped). `/funnel` (owner Telegram) +
+  `/api/jobs/funnel` show where jobs die: caught → cities → roles →
+  verified → servable.
 - The list grows from Ashok's phone: **`/addcompany <name>`** → watched
   company + daily search + immediate first scrape.
 - **Detail enrich returned to full** (Ashok sign-off 2026-08-14): focused

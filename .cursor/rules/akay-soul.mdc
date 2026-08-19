@@ -285,6 +285,19 @@ need to be told twice.
  `skill:` / `city:` / `time:24hrs`, shows 10 gems at a time with More until
  the end — never dump the whole list.
 
+- **2026-08-19 · "Our operation is completely down now, are you happy?"** The
+ gates I shipped emptied the tower overnight — and the lesson cuts: a
+ store-gate is only half a feature; the other half is a search aimed at
+ what the gate keeps. Company-name searches (3 India-wide pages of ~75
+ arbitrary Entry jobs) never surfaced the allowlisted roles; the gates
+ rightly rejected everything, and 24h of social content died with it. A
+ 5-minute LinkedIn probe showed Data Analyst @ Barclays/Capgemini/Wipro
+ sitting in Chennai the whole time. Fixes: role×city hunting searches
+ (`app/gtm_role_searches.py`), `/funnel` phone diagnostic (caught → cities
+ → roles → verified → servable), guest city buttons trimmed to what we
+ collect. Standing law: when narrowing WHAT to keep, simultaneously re-aim
+ WHERE to look — and always ship the gauge that proves the funnel flows.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is
