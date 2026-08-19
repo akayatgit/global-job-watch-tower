@@ -123,6 +123,9 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     # Video gems (2026-08-14): verified rows that EXPLICITLY say fresher /
     # 0 experience — with company: / skill: / role: filters.
     'topfreshers',
+    # Funnel diagnostic (2026-08-19): where jobs die between LinkedIn and
+    # the bot — caught / cities / roles / verified / servable counts.
+    'funnel',
 })
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
@@ -173,6 +176,7 @@ OWNER_MENU = [
     {'command': 'help', 'description': 'All commands with options'},
     {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
     {'command': 'companies', 'description': 'Full MNC watchlist roster'},
+    {'command': 'funnel', 'description': 'Where jobs die: caught → servable'},
     {'command': 'resetdata', 'description': 'Stage a tower data reset'},
     {'command': 'resetconfirm', 'description': 'Execute the staged reset'},
     {'command': 'resetcancel', 'description': 'Discard the staged reset'},
@@ -577,6 +581,8 @@ class JobMasterTelegramBot:
             return self._push_stats()
         if command == 'topfreshers':
             return self._topfreshers_reply(chat_id, arg)
+        if command == 'funnel':
+            return self._funnel_reply(arg)
         if command == 'addcompany':
             return self._add_company_reply(arg)
         if command == 'companies':
@@ -902,6 +908,39 @@ class JobMasterTelegramBot:
             )
         return '\n'.join(lines)
 
+    def _funnel_reply(self, arg: str) -> str:
+        """/funnel [hours] — where jobs die between LinkedIn and the bot."""
+        tokens = (arg or '').split()
+        hours = 24
+        if tokens:
+            try:
+                hours = max(1, min(int(tokens[0]), 720))
+            except ValueError:
+                return 'Usage: /funnel [hours] — e.g. /funnel or /funnel 48'
+        try:
+            data = self.engine.api_get('/api/jobs/funnel', {'hours': hours})
+        except Exception:
+            return 'Tower is unreachable right now — try /funnel again in a minute.'
+        if not isinstance(data, dict):
+            data = {}
+        last = data.get('last_catch_at')
+        last_line = f'Last catch: {last}' if last else 'Last catch: never'
+        return '\n'.join([
+            f'🔬 JOB FUNNEL · last {data.get("hours", hours)}h',
+            '',
+            f'Caught: {data.get("caught", 0)}',
+            f'└ in Chennai/Bengaluru/Remote: {data.get("in_collection_cities", 0)}',
+            f'└ GTM role titles: {data.get("role_matched", 0)}',
+            f'└ detail-verified: {data.get("detail_verified", 0)}',
+            f'└ servable fresher gems: {data.get("servable_fresher", 0)}',
+            '',
+            f'Pending verification: {data.get("pending_verification", 0)}',
+            f'All-time stored: {data.get("total_all_time", 0)}',
+            f'Enabled searches: {data.get("enabled_searches", 0)} · '
+            f'runs in window: {data.get("runs_in_window", 0)}',
+            last_line,
+        ])
+
     @staticmethod
     def _parse_topfreshers_time(raw: str | None) -> int | None:
         """Map time: tokens to /api/jobs days window. 24hrs → 0 (rolling 24h)."""
@@ -1041,8 +1080,22 @@ class JobMasterTelegramBot:
                 )
                 return body
             scope = f' for {applied}' if applied else ''
+            funnel_line = ''
+            try:
+                funnel = self.engine.api_get('/api/jobs/funnel', {'hours': 24})
+                if isinstance(funnel, dict):
+                    funnel_line = (
+                        f'\nFunnel 24h: {funnel.get("caught", 0)} caught · '
+                        f'{funnel.get("detail_verified", 0)} verified · '
+                        f'{funnel.get("servable_fresher", 0)} servable '
+                        f'({funnel.get("pending_verification", 0)} pending check). '
+                        'Full picture: /funnel'
+                    )
+            except Exception:
+                pass
             return (
-                f'No checked explicit-fresher gems{scope} yet.\n'
+                f'No checked explicit-fresher gems{scope} yet.'
+                f'{funnel_line}\n'
                 'Verification may still be draining — /health shows the queue. '
                 'Widen the filters or check back shortly.\n' + TOPFRESHERS_USAGE
             )
@@ -1108,6 +1161,8 @@ class JobMasterTelegramBot:
             'checked fresher gems, 10 at a time (More for next page)',
             '/companyjobs <company> [24h | 7 | 30] — jobs at one company '
             '(also today, 1, 2, 4, 14)',
+            '/funnel [hours] — where jobs die: caught → cities → roles → '
+            'verified → servable',
             '/fresh · /towerinsights · /hiringsignals · /watchlist [days] — '
             'boards accept a day window',
             '/stats [role] — live 24h job count',

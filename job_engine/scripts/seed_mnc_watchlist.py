@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.db import SessionLocal
+from app.gtm_role_searches import GTM_ROLE_GROUPS, seed_gtm_role_searches
 from app.mnc_watchlist import MNC_CATALOGUE, seed_watchlist
 from app.runtime_settings import get_detail_enrich_mode, set_detail_enrich_mode
 
@@ -26,6 +27,7 @@ from app.runtime_settings import get_detail_enrich_mode, set_detail_enrich_mode
 def main() -> None:
     with SessionLocal() as db:
         result = seed_watchlist(db)
+        gtm = seed_gtm_role_searches(db)
     mode_before = get_detail_enrich_mode()
     if mode_before != 'full':
         set_detail_enrich_mode('full')
@@ -34,6 +36,11 @@ def main() -> None:
         f"{result['existing']} already watched "
         f"(catalogue {len(MNC_CATALOGUE)}); "
         f"role searches put to sleep: {result['role_searches_slept']}."
+    )
+    print(
+        f"GTM role×city hunting searches: {gtm['created']} created, "
+        f"{gtm['updated']} refreshed "
+        f"({len(GTM_ROLE_GROUPS)} role groups × Chennai/Bengaluru/Remote)."
     )
     print(
         'Detail enrich mode: full'

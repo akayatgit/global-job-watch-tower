@@ -330,6 +330,78 @@ def list_jobs(
     return out
 
 
+@router.get('/jobs/funnel')
+def job_funnel(hours: int = 24, db: Session = Depends(get_db)):
+    """Collection→serving funnel counts — the outage diagnostic (2026-08-19).
+
+    Answers "is the data empty, or is a gate eating everything?" with one
+    call: how many jobs were caught in the window, how many survive each
+    serving law, plus catalogue/run vitals. Gate checks use the Python
+    twins of the serving clauses (one law, two runtimes — app/seniority.py)
+    so the numbers can never drift from what the bot actually serves.
+    """
+    from app.cities import COLLECTION_CITY_KEYS
+    from app.seniority import is_mandatory_fresher
+    from app.target_roles import title_matches_target_role
+
+    hours = max(1, min(int(hours or 24), 24 * 30))
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(hours=hours)
+
+    rows = db.execute(
+        select(
+            JobMaster.title,
+            JobMaster.city_key,
+            JobMaster.requirements_enriched_at,
+            JobMaster.experience_min_years,
+            JobMaster.experience_max_years,
+            JobMaster.ai_fresher_verdict,
+        ).where(JobMaster.scraped_at >= window_start)
+    ).all()
+
+    caught = len(rows)
+    in_cities = role_matched = verified = servable = pending = 0
+    for title, city_key, enriched_at, min_y, max_y, ai_verdict in rows:
+        if (city_key or '') in COLLECTION_CITY_KEYS:
+            in_cities += 1
+        if title_matches_target_role(title):
+            role_matched += 1
+        if enriched_at is not None:
+            verified += 1
+            if is_mandatory_fresher(title, min_y, max_y, ai_verdict):
+                servable += 1
+        else:
+            pending += 1
+
+    total_all_time = int(
+        db.execute(select(func.count(JobMaster.id))).scalar_one() or 0
+    )
+    enabled_searches = int(db.execute(
+        select(func.count(SearchConfig.id)).where(SearchConfig.enabled.is_(True))
+    ).scalar_one() or 0)
+    last_catch = db.execute(
+        select(func.max(JobMaster.scraped_at))
+    ).scalar_one()
+    runs_window = int(db.execute(
+        select(func.count(ScrapeRun.id)).where(ScrapeRun.created_at >= window_start)
+    ).scalar_one() or 0)
+    return {
+        'hours': hours,
+        'caught': caught,
+        'in_collection_cities': in_cities,
+        'role_matched': role_matched,
+        'detail_verified': verified,
+        'servable_fresher': servable,
+        'pending_verification': pending,
+        'total_all_time': total_all_time,
+        'enabled_searches': enabled_searches,
+        'runs_in_window': runs_window,
+        'last_catch_at': (
+            last_catch.isoformat() if last_catch is not None else None
+        ),
+    }
+
+
 @router.get('/jobs/insights')
 def job_insights(
     days: int = 7,

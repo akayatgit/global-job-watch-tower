@@ -10,6 +10,7 @@ from app.celery_app import celery
 from app.cities import is_collection_city, normalize_city
 from app.console import console_log
 from app.db import SessionLocal
+from app.gtm_role_searches import gather_watchlist_needles, is_watchlist_any
 from app.mnc_watchlist import company_matches_target
 from app.models import Company, ConsoleLog, JobMaster, RequestLog, ScrapeRun, SearchConfig
 from app.relevance import filter_relevant
@@ -404,9 +405,22 @@ def run_scrape(self, scrape_run_id: int):
                 # only STORE allowlisted role titles in Chennai /
                 # Bengaluru / Remote. Other cities and off-list titles are
                 # discarded at insert — never invented, never served.
+                # Sentinel '*' (2026-08-19): role×city hunting searches
+                # accept ANY watched company (app/gtm_role_searches.py).
+                if is_watchlist_any(target):
+                    watch_needles = gather_watchlist_needles(db)
+
+                    def company_ok(name: str | None) -> bool:
+                        return any(
+                            company_matches_target(name, needle)
+                            for needle in watch_needles
+                        )
+                else:
+                    def company_ok(name: str | None) -> bool:
+                        return company_matches_target(name, target)
                 relevant = []
                 for job in page_result.jobs:
-                    if not company_matches_target(job.company, target):
+                    if not company_ok(job.company):
                         continue
                     if not title_matches_target_role(job.title):
                         continue
@@ -445,6 +459,7 @@ def run_scrape(self, scrape_run_id: int):
                 log=lambda msg: console_log('scraper', msg, run_id=run.id),
                 run_id=run.id,
                 experience_filter=getattr(cfg, 'experience_filter', None),
+                work_type_filter=getattr(cfg, 'work_type_filter', None),
             )
         except Exception as exc:
             db.rollback()
