@@ -79,6 +79,11 @@ need to be told twice.
   safety, no deploy), but **merge to main rarely**: every merge fires the
   ThinkPad deploy and cancels live searches. Merge only on Ashok's word or
   when a real code slice ships anyway.
+- **2026-08-04 · Security lock parked.** Ashok: Cloudflare Access gate is
+  not a priority — URL stays private, never shared. Respect the call, stop
+  re-pitching it; raise it again only if the URL is about to be shared
+  (investor/public) or Gate 2 content starts pointing people anywhere near
+  the tower.
 - **2026-08-04 · Speak like a human.** Short, digestible, visually pleasing
   replies. No walls of text. Ashok skipped a buried question because I
   talked too big — never again.
