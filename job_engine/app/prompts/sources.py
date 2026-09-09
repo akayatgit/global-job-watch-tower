@@ -64,13 +64,18 @@ def browser_fetch(url: str) -> str:
     from scrapling.fetchers import StealthySession
 
     from app import config
+    from app.runtime_settings import get_headless
 
     with StealthySession(
-        headless=config.HEADLESS,
+        headless=get_headless(),
+        real_chrome=True,
         user_data_dir=str(config.CHROME_BOT_PROFILE),
     ) as session:
-        page = session.fetch(url, timeout=60_000)
-        return str(getattr(page, 'html_content', '') or getattr(page, 'body', '') or '')
+        page = session.fetch(url)
+        raw = getattr(page, 'html_content', None) or getattr(page, 'body', None) or ''
+        if isinstance(raw, bytes):
+            raw = raw.decode('utf-8', errors='replace')
+        return str(raw)
 
 
 def extract_prompt_blocks(text: str) -> list[str]:
