@@ -160,9 +160,10 @@ def performance_score(rating: int | None, performance: dict | None) -> float | N
     return round(total, 1) if have_any else None
 
 
-def promote_winners(db: Session, *, min_performance: float = 48.0, min_rating: int = 4) -> int:
+def promote_winners(db: Session, *, min_performance: float = 24.0, min_rating: int = 4) -> int:
     """Mark proven prompts as exemplars: rated ≥4 by Ashok OR strong
-    engagement. Idempotent — returns how many rows changed."""
+    engagement (24 pts ≈ 1,000 weighted interactions on the log scale).
+    Idempotent — returns how many rows changed."""
     changed = 0
     rows = db.execute(select(VideoPrompt).where(VideoPrompt.exemplar.is_(False))).scalars().all()
     for row in rows:

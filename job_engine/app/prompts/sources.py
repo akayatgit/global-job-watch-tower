@@ -160,7 +160,15 @@ def html_to_blocks(page_html: str) -> list[str]:
     body = html.unescape(TAG_RE.sub(' ', body))
     body = re.sub(r'[ \t]+', ' ', body)
     blocks.extend(extract_prompt_blocks(body))
-    return blocks
+    seen: set[str] = set()
+    unique: list[str] = []
+    for block in blocks:
+        key = read_prompt(block).fingerprint
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(block)
+    return unique
 
 
 def web_candidates(urls: Iterable[str], *, fetch: Fetcher = http_fetch) -> list[Candidate]:
