@@ -10,7 +10,8 @@
 | **Stakeholders** | Ashok (Vision Owner / Yes–No Authority) · Akay (AI Lead — full build agency) |
 | **North star** | Make the investor-accepted pitch come true — scalable, reliable, secure |
 | **Source safety (absolute)** | **First priority above all features:** local git must keep Watch Tower source recoverable; never risk corruption/deletion of Ashok’s vision codebase |
-| **First-mover mandate** | Collector stays live (coverage never stops). **From 2026-08-03 delivery stage:** product priority shifts to **Map with Students**, then **Predict for Government** — collect base is set enough to start |
+| **PIVOT (Ashok 2026-09-09) — "Jobs are now prompts"** | The product is now **Prompt Tower**: daily top-10 AI video prompts for D2C product videos, scored by Hermes, delivered to Ashok on Telegram, rendered to video via Replicate into the AvatarPitch asset root, posted on Instagram for authority, sold later as prompt + video packs. The LinkedIn jobs stack is **asleep, not deleted** (`TOWER_MODE=prompts`). Full spec: [`documents/prompt-tower.md`](prompt-tower.md). |
+| **First-mover mandate** | Collector stays live (coverage never stops). **From 2026-08-03 delivery stage:** product priority shifts to **Map with Students**, then **Predict for Government** — collect base is set enough to start. **Superseded 2026-09-09 by the Prompt Tower pivot above.** |
 | **Delivery stage lock (2026-08-03)** | **Collects → Map Students → Predict Government.** Agile detail: [`documents/roadmap.md`](roadmap.md) |
 | **Runtime home (where Akay / the tower are alive)** | **Lenovo ThinkPad P16 Gen 1 · hostname `user-ThinkPad-P16-Gen-1` · Ubuntu 24.04 LTS · local-only** — all services run on this laptop (`job_engine` on `127.0.0.1:8001`, Postgres `:5433`, Redis `:6379`, Celery worker+beat, Ollama). Not cloud. |
 | **Remote browser access (2026-08-03)** | **Tunnel LIVE:** `https://tower.jobmaster.agency` → ThinkPad `127.0.0.1:8001` (`watch-tower` / `watch-tower-tunnel`). **Access:** intended allow `ashokofficial55@gmail.com` — confirm OTP gate in Incognito before sharing URL (see [`documents/remote-access-cloudflare.md`](remote-access-cloudflare.md)). Not Vercel / not Supabase. |
@@ -548,9 +549,22 @@ Principles: append-friendly facts; derived intelligence tables; never destroy se
 
 ## 11. Roadmap (living — Akay maintains)
 
-> **Stage lock (Ashok 2026-08-03):** We are past “build the collector.”  
+> **PIVOT (Ashok 2026-09-09): "Jobs are now prompts. We don't need jobs."**  
+> Current product = **Prompt Tower** ([`documents/prompt-tower.md`](prompt-tower.md)):
+> collect video prompts daily → Hermes scores detail + flow against RAG winners →
+> top-10 to Ashok on Telegram → tap → product image → AI video + Instagram card →
+> rate/perform → RAG learns for tomorrow. Jobs stack sleeps behind `TOWER_MODE`.
+>
+> **Stage lock (Ashok 2026-08-03, superseded):** We are past “build the collector.”  
 > **Collects = base complete** → **Map with Students (now)** → **Predict for Government (next).**  
 > Day-to-day sprint board: [`documents/roadmap.md`](roadmap.md).
+
+### Phase P — Prompt Tower (2026-09-09 → ) — SHIPPED v1, awaiting Ashok's live acceptance
+
+- Daily pipeline (sources → normalize → RAG → Hermes score → top-10) on Celery beat
+- Telegram owner deck: `/prompts` buttons → 📸 product photo → ✅ video → ⭐ / 📣 / `/promptperf`
+- Video creator (Replicate image→video) + Instagram card → AvatarPitch asset root; `/api/partner/v1/prompts`
+- Next: Instagram Graph API auto-publish · Instagram source verified live · sell prompt+video packs (Vigil 2.0 lane)
 
 ### Phase 0 — Foundation truth — DONE (seed hardened)
 

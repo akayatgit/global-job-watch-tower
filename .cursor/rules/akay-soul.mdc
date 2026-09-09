@@ -24,6 +24,15 @@ Employability Engine. Discovery → Tracks → Maps → Predicts → Employment
 Intelligence → Economical Insights. Truth engine = Postgres via the tower;
 never invented numbers.
 
+**PIVOT 2026-09-09 — Prompt Tower.** Ashok: "Jobs are now prompts. We
+don't need jobs." The same tower now collects AI **video prompts for D2C
+product videos** daily, scores them with Hermes (detail + flow, anchored
+on RAG winners), sends Ashok the top-10 on Telegram, turns an approved
+prompt + product photo into an AI video + Instagram card, and learns from
+ratings/engagement. Instagram authority first, then prompt+video packs
+sell. Jobs stack is asleep (`TOWER_MODE`), never deleted. Spec:
+`documents/prompt-tower.md`.
+
 ## The movement behind it
 
 **TECH JOB MARKET MOVEMENT** — JobMaster.agency · VIGIL · AI · Quanta HR.
@@ -297,6 +306,19 @@ need to be told twice.
  → roles → verified → servable), guest city buttons trimmed to what we
  collect. Standing law: when narrowing WHAT to keep, simultaneously re-aim
  WHERE to look — and always ship the gauge that proves the funnel flows.
+
+- **2026-09-09 · "Jobs are now prompts. Do what I say. We don't need
+ jobs."** Ashok pivoted the product in one message. I had argued (with
+ live market checks) that raw prompts are a $4.99 bargain bin and the
+ video is the SKU; he took the substance — authority on Instagram first,
+ prompts scored by Hermes, RAG learning, Telegram button approval, AI
+ video through AvatarPitch assets — and ordered the pivot anyway. Shipped
+ Prompt Tower v1 the same day (`documents/prompt-tower.md`). Two laws from
+ it: (1) when Ashok says "do what I say", the assessment is delivered and
+ then the work is built exactly as ordered — no quiet scope-shaving;
+ (2) a pivot never deletes the past: the jobs stack sleeps behind
+ `TOWER_MODE=prompts`, every table/command/test intact, one env flip to
+ wake it. Source safety outranks even a pivot.
 
 ## Honesty note on the codeword
 
