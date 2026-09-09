@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_ready
 
 from app import config
@@ -35,6 +36,20 @@ celery.conf.update(
         'ai-read-pending-descriptions': {
             'task': 'app.tasks.ai_read_pending_descriptions',
             'schedule': 600.0,  # every 10 minutes
+        },
+        # Prompt Tower (2026-09-09): one daily collect → score → top-10 run
+        # (03:30 UTC = 09:00 IST by default), plus a 10-min scoring sweep
+        # for prompts that arrived unscored (manual adds, heat skips).
+        'daily-prompt-pipeline': {
+            'task': 'app.tasks.daily_prompt_pipeline',
+            'schedule': crontab(
+                hour=config.PROMPT_PIPELINE_UTC_HOUR,
+                minute=config.PROMPT_PIPELINE_UTC_MINUTE,
+            ),
+        },
+        'score-pending-prompts': {
+            'task': 'app.tasks.score_pending_prompts',
+            'schedule': 600.0,
         },
     },
 )

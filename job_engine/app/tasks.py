@@ -183,6 +183,13 @@ def enqueue_due_work():
     """Beat task: dispatch due recurring configs and due one-off runs."""
     from app import thermal
 
+    # Prompt Tower pivot (2026-09-09): in prompts mode the browser lane and
+    # Ollama belong to prompt collection/scoring. Job searches sleep — their
+    # definitions, data and code stay intact (source-safety law); flip
+    # TOWER_MODE=jobs to wake them.
+    if getattr(app_config, 'TOWER_MODE', 'prompts') == 'prompts':
+        return {'dispatched': 0, 'mode': 'prompts', 'paused': True}
+
     now = utcnow()
     dispatched = 0
     with SessionLocal() as db:
@@ -782,3 +789,85 @@ def ai_read_pending_descriptions():
 def enrich_pending_companies():
     """Beat: backfill company logos / followers / punchlines (after job scrapes)."""
     return enrich_company_profiles(company_ids=None, run_id=None)
+
+
+# ====================== Prompt Tower (pivot 2026-09-09) ======================
+
+@celery.task(name='app.tasks.daily_prompt_pipeline', bind=True, max_retries=1, default_retry_delay=900)
+def daily_prompt_pipeline(self, force: bool = False):
+    """Beat (daily) + /promptscan: collect prompts from every source, score
+    the new ones with Hermes, refresh the winners' baseline, build today's
+    top-10. The Telegram bot picks the shortlist up and sends it to Ashok."""
+    from app.prompts import pipeline as prompt_pipeline
+
+    console_log('beat', 'Prompt Tower — daily collection + scoring started')
+    try:
+        with SessionLocal() as db:
+            summary = prompt_pipeline.run_daily(db, force=force)
+    except Exception as exc:
+        console_log('beat', f'Prompt Tower daily run failed: {exc}', level='error')
+        raise self.retry(exc=exc)
+    console_log(
+        'beat',
+        f"Prompt Tower — {summary['candidates']} candidates · "
+        f"{summary['created']} new · {summary['scored']} scored · "
+        f"{summary['shortlisted']} shortlisted for {summary['day']}",
+    )
+    summary.pop('top', None)
+    return summary
+
+
+@celery.task(name='app.tasks.score_pending_prompts')
+def score_pending_prompts():
+    """Beat (10 min): grade prompts that arrived unscored (manual adds,
+    heat-skipped rows) so the shortlist never waits for tomorrow."""
+    from app import thermal
+    from app.prompts import pipeline as prompt_pipeline
+
+    if not thermal.ollama_path_open():
+        return {'scored': 0, 'skipped': 'ollama closed (heat/gpu)'}
+    with SessionLocal() as db:
+        scored = prompt_pipeline.score_pending(db, limit=20)
+    return {'scored': scored}
+
+
+@celery.task(name='app.tasks.render_prompt_video', bind=True, max_retries=0)
+def render_prompt_video(self, render_id: int):
+    """Approved prompt + product image → Replicate video → asset URL.
+    Status lives on prompt_renders; the bot polls it and sends the video."""
+    from app.models import PromptRender, VideoPrompt
+    from app.prompts import video_creator
+
+    with SessionLocal() as db:
+        render = db.get(PromptRender, int(render_id))
+        if render is None:
+            return {'ok': False, 'error': 'render not found'}
+        prompt = db.get(VideoPrompt, render.prompt_id)
+        if prompt is None:
+            render.status = 'failed'
+            render.error = 'prompt missing'
+            db.commit()
+            return {'ok': False, 'error': 'prompt missing'}
+        render.status = 'running'
+        render.started_at = utcnow()
+        db.commit()
+        try:
+            image_path = video_creator.assets_root() / (render.product_image_key or '')
+            if not render.product_image_key or not image_path.is_file():
+                raise RuntimeError('product image missing')
+            result = video_creator.create_video(prompt.text, image_path, prompt_id=prompt.id)
+            render.video_key = result.video_key
+            render.video_url = result.video_url
+            render.model = result.model
+            render.status = 'done'
+            render.finished_at = utcnow()
+            db.commit()
+            console_log('worker', f'Prompt #{prompt.id} video rendered → {result.video_url}')
+            return {'ok': True, 'video_url': result.video_url}
+        except Exception as exc:
+            render.status = 'failed'
+            render.error = str(exc)[:2000]
+            render.finished_at = utcnow()
+            db.commit()
+            console_log('worker', f'Prompt #{prompt.id} video FAILED: {exc}', level='error')
+            return {'ok': False, 'error': str(exc)[:500]}
