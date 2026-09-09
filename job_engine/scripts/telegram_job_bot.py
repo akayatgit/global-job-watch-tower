@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -40,6 +41,7 @@ from app.telegram_job_search import (  # noqa: E402
     RESET_RE,
     ROLE_FAMILY_LABELS,
     JobMasterEngine,
+    _http_get as _http_get_default,
     _http_post,
     parse_window_token,
 )
@@ -58,6 +60,11 @@ from app.telegram_guests import (  # noqa: E402
     list_guests,
     list_usernames,
     observe_identity,
+)
+from app.telegram_prompts import (  # noqa: E402
+    CALLBACK_PREFIX as PROMPT_CALLBACK_PREFIX,
+    STATE_PHOTO as PROMPT_PHOTO_STATE,
+    PromptDeck,
 )
 from app.telegram_sessions import (  # noqa: E402
     AmbiguousTelegramIdentity,
@@ -126,7 +133,20 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     # Funnel diagnostic (2026-08-19): where jobs die between LinkedIn and
     # the bot — caught / cities / roles / verified / servable counts.
     'funnel',
+    # Prompt Tower (2026-09-09 pivot): daily top-10 video prompts, manual
+    # adds, scan-now, performance feedback, tower stats.
+    'prompts',
+    'promptscan',
+    'addprompt',
+    'promptstats',
+    'promptperf',
 })
+PROMPT_COMMANDS = frozenset({'prompts', 'promptscan', 'addprompt', 'promptstats', 'promptperf'})
+# Synthetic tap the poll loop queues when the OWNER sends a photo with no
+# caption — the durable inbox is text-only, and the prompt flow needs the
+# photo itself to be an event ("here is the product image").
+PROMPT_PHOTO_TAP = f'{BTN_PREFIX}{PROMPT_CALLBACK_PREFIX}photo'
+PROMPT_DAILY_CHECK_S = 600  # bot-side check for a fresh daily shortlist
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
 PENDING_PUSH_TTL_S = 600
@@ -172,8 +192,13 @@ OWNER_COMMANDS = frozenset((
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
 OWNER_MENU = [
-    {'command': 'topfreshers', 'description': 'Video gems — explicit fresher/0-exp, checked'},
+    {'command': 'prompts', 'description': "Today's top-10 video prompts (tap to open)"},
+    {'command': 'promptscan', 'description': 'Collect + score prompts now'},
+    {'command': 'addprompt', 'description': 'Add a prompt you found'},
+    {'command': 'promptperf', 'description': 'Teach the ranker: likes/comments/saves'},
+    {'command': 'promptstats', 'description': 'Prompt Tower numbers'},
     {'command': 'help', 'description': 'All commands with options'},
+    {'command': 'topfreshers', 'description': 'Video gems — explicit fresher/0-exp, checked'},
     {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
     {'command': 'companies', 'description': 'Full MNC watchlist roster'},
     {'command': 'funnel', 'description': 'Where jobs die: caught → servable'},
@@ -346,6 +371,58 @@ class TelegramAPI:
         if text:
             self.send_keyboard(chat_id, text, keyboard)
 
+    def _multipart(self, method: str, fields: dict[str, str], file_field: str, filename: str, data: bytes, content_type: str, timeout: int = 300) -> dict:
+        """multipart/form-data upload (sendPhoto/sendVideo with real bytes —
+        the tower sits behind Cloudflare Access, so Telegram cannot fetch
+        our asset URLs itself)."""
+        boundary = f'----PromptTower{uuid.uuid4().hex}'
+        body = bytearray()
+        for key, value in fields.items():
+            body += (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'
+            ).encode('utf-8')
+        body += (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+            f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
+        ).encode('utf-8')
+        body += data
+        body += f'\r\n--{boundary}--\r\n'.encode('utf-8')
+        req = urllib.request.Request(
+            f'{self.base}/{method}',
+            data=bytes(body),
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}'},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+        if not payload.get('ok'):
+            raise RuntimeError(f'Telegram {method} failed: {payload.get("description", "unknown")}')
+        return payload
+
+    def send_photo_bytes(self, chat_id: str, data: bytes, caption: str = '') -> None:
+        fields = {'chat_id': str(chat_id)}
+        if caption:
+            fields['caption'] = _truncate_utf16(caption, 1024)
+        self._multipart('sendPhoto', fields, 'photo', 'card.png', data, 'image/png')
+
+    def send_video_bytes(self, chat_id: str, data: bytes, caption: str = '') -> None:
+        fields = {'chat_id': str(chat_id), 'supports_streaming': 'true'}
+        if caption:
+            fields['caption'] = _truncate_utf16(caption, 1024)
+        self._multipart('sendVideo', fields, 'video', 'prompt.mp4', data, 'video/mp4', timeout=600)
+
+    def get_file_bytes(self, file_id: str) -> tuple[bytes, str]:
+        """Download a photo the owner sent (Bot API getFile → file path)."""
+        info = self.call('getFile', {'file_id': file_id}).get('result') or {}
+        path = str(info.get('file_path') or '')
+        if not path:
+            raise RuntimeError('Telegram getFile returned no file_path')
+        token = self.base.rsplit('/bot', 1)[1]
+        url = f'https://api.telegram.org/file/bot{token}/{path}'
+        with urllib.request.urlopen(url, timeout=120) as resp:
+            data = resp.read()
+        content_type = 'image/png' if path.lower().endswith('.png') else 'image/jpeg'
+        return data, content_type
+
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
         try:
             data: dict[str, Any] = {'callback_query_id': callback_query_id}
@@ -394,6 +471,20 @@ class JobMasterTelegramBot:
         self.health_enabled = health_enabled
         self.owner_chat_ids = {str(chat_id) for chat_id in (owner_chat_ids or set())}
         self.board_renderer = board_renderer or render_board
+        # Prompt Tower deck (2026-09-09): owner-only, tower API only. Asset
+        # bytes come from the LOCAL tower (127.0.0.1) and are uploaded to
+        # Telegram as multipart — Telegram can't pass Cloudflare Access.
+        self.deck = PromptDeck(
+            self.sessions,
+            api_get=getattr(self.engine, 'api_get', None) or _http_get_default,
+            api_post=self.tower_post,
+            download_photo=getattr(self.api, 'get_file_bytes', None),
+            fetch_asset=self._fetch_local_asset,
+            send_photo_bytes=getattr(self.api, 'send_photo_bytes', None),
+            send_video_bytes=getattr(self.api, 'send_video_bytes', None),
+            send_text=self.api.send,
+            on_render_started=self._start_render_watch,
+        )
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
         self._chat_locks_guard = threading.Lock()
@@ -409,6 +500,31 @@ class JobMasterTelegramBot:
         if not match:
             return None
         return match.group(1).lower(), (match.group(2) or '').strip()
+
+    @staticmethod
+    def _fetch_local_asset(key: str) -> bytes:
+        """Rendered card / video bytes straight from the local tower."""
+        from app.telegram_job_search import BASE as TOWER_BASE
+
+        url = f'{TOWER_BASE}/api/partner/v1/assets/{urllib.parse.quote(key)}'
+        with urllib.request.urlopen(url, timeout=300) as resp:
+            return resp.read()
+
+    def _start_render_watch(self, chat_id: str, render_id: int) -> None:
+        """Background watcher: polls the render row, uploads card + video."""
+        thread = threading.Thread(
+            target=self._watch_render_safely,
+            args=(chat_id, render_id),
+            daemon=True,
+            name=f'prompt-render-{render_id}',
+        )
+        thread.start()
+
+    def _watch_render_safely(self, chat_id: str, render_id: int) -> None:
+        try:
+            self.deck.watch_render(chat_id, render_id)
+        except Exception:
+            LOG.exception('render watch crashed render=%s', render_id)
 
     @staticmethod
     def _identity(raw: str) -> tuple[str, str] | None:
@@ -570,6 +686,8 @@ class JobMasterTelegramBot:
     def _management_reply(self, chat_id: str, command: str, arg: str) -> str | ButtonReply:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
+        if command in PROMPT_COMMANDS:
+            return self.deck.handle_command(chat_id, command, arg)
         if command == 'push':
             return self._stage_push(chat_id, arg)
         if command == 'pushcancel':
@@ -1155,7 +1273,16 @@ class JobMasterTelegramBot:
         lines = [
             'JOBMASTER · ALL COMMANDS',
             '',
-            'With options:',
+            'Prompt Tower (daily video prompts):',
+            "/prompts [YYYY-MM-DD] — today's top-10 with buttons: tap a number → "
+            'full prompt → 📸 send product image → ✅ make video · ⭐ rate · 📣 posted',
+            '/promptscan — collect from every source + score with Hermes now',
+            '/addprompt <text> — add a prompt you found (scored immediately)',
+            '/promptperf <id> likes=.. comments=.. saves=.. shares=.. views=.. — '
+            "Instagram numbers after posting; winners calibrate tomorrow's scoring",
+            '/promptstats — prompts, winners baseline, sources, videos',
+            '',
+            'Jobs (asleep while TOWER_MODE=prompts):',
             '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '
             '[city:<chennai/bangalore/remote>] [time:<24hrs>] [0] — '
             'checked fresher gems, 10 at a time (More for next page)',
@@ -1651,6 +1778,16 @@ class JobMasterTelegramBot:
             # a NUL prefix can never appear in a real Telegram text message,
             # so this can never collide with anything a guest actually types.
             payload = clean[len(BTN_PREFIX):]
+            # Prompt Tower deck taps (and the owner's photo event) — owner
+            # only; a guest tapping a leaked pt: button gets the normal flow.
+            if payload.startswith(PROMPT_CALLBACK_PREFIX) and self._effective_is_owner(chat_id):
+                deck_reply = self.deck.handle_callback(chat_id, payload)
+                self._send_button_reply(chat_id, deck_reply, update_id=update_id)
+                if self.health_enabled:
+                    self._write_health(
+                        status='running', last_result='ok', last_chat=chat_id, last_kind='prompt_deck',
+                    )
+                return
             # Owner /topfreshers "More gems ▸" must page the gems session
             # before the guest ButtonFlow hijacks a bare `more` callback.
             if payload == 'more' and self._effective_is_owner(chat_id):
@@ -1928,6 +2065,15 @@ class JobMasterTelegramBot:
                         is_callback, chat, sender, text, callback_id, photo_file_id = (
                             self._normalize_update(update)
                         )
+                        if (
+                            text is None
+                            and photo_file_id
+                            and chat.get('id') is not None
+                            and self._is_owner(str(chat['id']))
+                        ):
+                            # Owner photo with no caption = "here is the
+                            # product image" for the prompt deck.
+                            text = PROMPT_PHOTO_TAP
                         if chat.get('type') == 'private' and chat.get('id'):
                             if isinstance(text, str):
                                 chat_id = str(chat['id'])
@@ -1964,6 +2110,9 @@ class JobMasterTelegramBot:
                                     self.sessions.set_state(
                                         f'pending_push_photo:{chat_id}', photo_file_id,
                                     )
+                                    self.sessions.set_state(
+                                        PROMPT_PHOTO_STATE.format(chat=chat_id), photo_file_id,
+                                    )
                                 if self.sessions.queue_update(
                                     update_id,
                                     chat_id,
@@ -1975,6 +2124,9 @@ class JobMasterTelegramBot:
                                         self._is_owner(chat_id)
                                         and parsed
                                         and parsed[0] in OWNER_MANAGEMENT_COMMANDS
+                                        # Prompt commands can wait on Ollama
+                                        # scoring — never block the poll loop.
+                                        and parsed[0] not in PROMPT_COMMANDS
                                     ):
                                         # Access changes are a barrier in the
                                         # global Telegram update order. Apply
@@ -2079,6 +2231,26 @@ def _run_alert_dispatch_loop(bot: 'JobMasterTelegramBot') -> None:
             time.sleep(10)
 
 
+def _run_prompt_daily_loop(bot: 'JobMasterTelegramBot') -> None:
+    """Prompt Tower daily deck: the Celery beat builds today's top-10; this
+    loop notices it and sends it to Ashok exactly once per UTC day —
+    proactive, never waiting for him to remember /prompts."""
+    while not STOP:
+        try:
+            if bot.owner_chat_ids and bot.deck.daily_push_due():
+                if bot.deck.deliver_daily(
+                    bot.owner_chat_ids,
+                    lambda cid, text, kb: bot.api.send_keyboard(cid, text, kb),
+                ):
+                    LOG.info('prompt daily deck delivered')
+        except Exception:
+            LOG.exception('prompt daily deck failed')
+        for _ in range(PROMPT_DAILY_CHECK_S // 10):
+            if STOP:
+                return
+            time.sleep(10)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='JobMaster Telegram service')
     parser.add_argument('command', nargs='?', default='run', choices=['run', 'smoke'])
@@ -2113,6 +2285,10 @@ def main(argv: list[str] | None = None) -> int:
         target=_run_alert_dispatch_loop, args=(bot,), daemon=True, name='jobmaster-alert-dispatch',
     )
     dispatch_thread.start()
+    prompt_thread = threading.Thread(
+        target=_run_prompt_daily_loop, args=(bot,), daemon=True, name='prompt-daily-deck',
+    )
+    prompt_thread.start()
     return bot.run()
 
 

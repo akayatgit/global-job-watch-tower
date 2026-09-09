@@ -99,6 +99,39 @@ HEAT_COOLDOWN_RETRIES = int(os.getenv('HEAT_COOLDOWN_RETRIES', '3'))
 HEAT_REQUIRE_GPU = os.getenv('HEAT_REQUIRE_GPU', 'true').lower() == 'true'
 OLLAMA_BATCH_SIZE = int(os.getenv('OLLAMA_BATCH_SIZE', '8'))
 
+# --- Prompt Tower pivot (Ashok, 2026-09-09: "Jobs are now prompts") ---
+# TOWER_MODE decides who owns the browser lane + Ollama:
+#   prompts = daily video-prompt collection/scoring; job scrapes are asleep
+#   jobs    = legacy LinkedIn collection (kept, never deleted)
+TOWER_MODE = os.getenv('TOWER_MODE', 'prompts').strip().lower()
+# UTC hour:minute the daily prompt pipeline runs (03:30 UTC = 09:00 IST)
+PROMPT_PIPELINE_UTC_HOUR = int(os.getenv('PROMPT_PIPELINE_UTC_HOUR', '3'))
+PROMPT_PIPELINE_UTC_MINUTE = int(os.getenv('PROMPT_PIPELINE_UTC_MINUTE', '30'))
+# Comma-separated subreddits whose new posts are read as prompt sources
+PROMPT_REDDIT_SUBS = os.getenv(
+    'PROMPT_REDDIT_SUBS',
+    'aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts',
+).strip()
+# Comma-separated public web pages to mine (prompt blogs, galleries)
+PROMPT_WEB_URLS = os.getenv('PROMPT_WEB_URLS', '').strip()
+# Comma-separated Instagram hashtags (no #) — needs the logged-in Chrome
+# profile; empty = Instagram source off
+PROMPT_INSTAGRAM_TAGS = os.getenv('PROMPT_INSTAGRAM_TAGS', '').strip()
+# Max candidates fetched per source per run (keeps Ollama load bounded)
+PROMPT_SOURCE_LIMIT = int(os.getenv('PROMPT_SOURCE_LIMIT', '40'))
+PROMPT_SHORTLIST_SIZE = int(os.getenv('PROMPT_SHORTLIST_SIZE', '10'))
+# Minimum final score to be eligible for the daily top-10
+PROMPT_MIN_SCORE = float(os.getenv('PROMPT_MIN_SCORE', '55'))
+# Ollama embedding model for the prompt RAG (dedupe + exemplar retrieval)
+PROMPT_EMBED_MODEL = os.getenv('PROMPT_EMBED_MODEL', 'nomic-embed-text').strip()
+# Replicate video model (image → video). Must include :version when the
+# model requires it; bare owner/name works for official models.
+REPLICATE_VIDEO_MODEL = os.getenv('REPLICATE_VIDEO_MODEL', 'kwaivgi/kling-v2.1').strip()
+PROMPT_VIDEO_DURATION_S = int(os.getenv('PROMPT_VIDEO_DURATION_S', '10'))
+# Where rendered prompt videos / cards / product images live — same asset
+# root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
+PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')
+
 # Partner API (/api/partner/v1/ — AvatarPitch integration, 2026-08-14).
 # Static bearer token; AvatarPitch (Vercel) calls over the Cloudflare
 # tunnel. Unset = the partner surface answers 503 (disabled by default).

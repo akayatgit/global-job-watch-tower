@@ -7,11 +7,26 @@
 | **Narrative PRD** | [`documents/product-requirements-v0.md`](./product-requirements-v0.md) |
 | **Locked recover** | `milestone/jobmaster-gate3-v1` (accepted JobMaster baseline, 2026-08-04) · `milestone/eureka-telegram-bot` · `milestone/singularity-core-v1` · older `milestone/pre-neural-core-v0` |
 | **Owner** | Akay — update this file in place after every accepted slice |
-| **Status as of** | 2026-08-04 — **Gate 3.0 JobMaster capability #1 accepted and locked** |
-| **Stage lock** | **Collects = base complete** → **Map with Students** → **Gate 3.0 JobMaster conversation OS** → **Predict for Government** |
+| **Status as of** | 2026-09-09 — **PIVOT: Prompt Tower v1 shipped** ("Jobs are now prompts") — awaiting Ashok's live acceptance on the phone |
+| **Stage lock** | **Prompt Tower** (Instagram authority → daily top-10 → Telegram approve → AI video → RAG learning → sell packs). Jobs stages below are **asleep** behind `TOWER_MODE=prompts`, not deleted. Spec: [`documents/prompt-tower.md`](./prompt-tower.md) |
 | **Agent stack** | JobMaster Telegram gateway · constrained intent intelligence · Watch Tower capabilities · deterministic fact renderers |
 
 ---
+
+## 🟣 Current — Prompt Tower (Ashok 2026-09-09: "Jobs are now prompts")
+
+| Slice | Status |
+|---|---|
+| P1 Daily collect → normalize → RAG → Hermes score → top-10 (Celery beat 09:00 IST) | ✅ shipped |
+| P2 Telegram owner deck: `/prompts` → tap → 📸 photo → ✅ video · ⭐ · 📣 · `/promptperf` · once-a-day push | ✅ shipped |
+| P3 Video creator (Replicate image→video) + Instagram card → AvatarPitch asset root · `/api/partner/v1/prompts` | ✅ shipped |
+| P4 RAG learning loop: winners (⭐≥4 / engagement) → few-shot anchors + baseline → 🔥 outliers | ✅ shipped |
+| P5 **Ashok live acceptance** — first deck on the phone, first video, first Instagram post | ⏳ open |
+| P6 Instagram Graph API auto-publish (Business account + app review) | queued |
+| P7 Instagram hashtag source verified live (`PROMPT_INSTAGRAM_TAGS`) | queued |
+| P8 Sell: prompt + video packs to D2C brands (Vigil 2.0 lane — vision only until Ashok's go) | vision |
+
+Everything below this line is the **jobs era** — kept for the record and for `TOWER_MODE=jobs`.
 
 ## Delivery stage (Ashok 2026-08-03)
 

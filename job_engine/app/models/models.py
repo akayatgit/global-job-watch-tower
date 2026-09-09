@@ -161,6 +161,103 @@ class JobMaster(Base):
     )
 
 
+class VideoPrompt(Base):
+    """One collected AI video prompt (Prompt Tower, 2026-09-09 pivot).
+
+    Prompts are the product now. Every row keeps its provenance (where it
+    was found, who wrote it) so the Instagram post can credit the source
+    and so the scorer can never be fed text nobody actually published.
+    """
+
+    __tablename__ = 'video_prompts'
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    # sha1 of the normalized text — exact-duplicate guard across sources
+    fingerprint: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    text: Mapped[str] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # reddit | instagram | web | promptbase | manual
+    source: Mapped[str] = mapped_column(String(40), index=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # Which video model the prompt targets when stated (veo | kling | sora | runway | …)
+    model_hint: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Product category guess from the text (perfume, skincare, beverage, …)
+    category: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    # Deterministic pre-score (0–100) from vocabulary/structure — never LLM-authored
+    heuristic_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Hermes/Ollama rubric: detail + flow (0–100 each), overall, reasons
+    ai_detail: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_flow: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Blend of heuristic + AI; the number the shortlist ranks on
+    final_score: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    # Baseline snapshot used when this row was scored (mean/std of proven
+    # winners in the RAG) and whether it beat the baseline by > 1σ
+    baseline_mean: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_std: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_outlier: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # new | shortlisted | posted | rejected
+    status: Mapped[str] = mapped_column(String(20), default='new', index=True)
+    # Owner rating 1–5 (Telegram ⭐ buttons) + Instagram performance after posting
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    performance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    performance_score: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Proven winner — used as a few-shot exemplar + baseline for scoring
+    exemplar: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    shortlists: Mapped[list['PromptShortlist']] = relationship(back_populates='prompt')
+    renders: Mapped[list['PromptRender']] = relationship(back_populates='prompt')
+
+
+class PromptShortlist(Base):
+    """Top-10 of one UTC day — the list Ashok gets on Telegram."""
+
+    __tablename__ = 'prompt_shortlists'
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    day: Mapped[datetime] = mapped_column(Date, index=True)
+    rank: Mapped[int] = mapped_column(Integer)
+    prompt_id: Mapped[int] = mapped_column(ForeignKey('video_prompts.id'), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    prompt: Mapped['VideoPrompt'] = relationship(back_populates='shortlists')
+
+    __table_args__ = (
+        Index('ux_prompt_shortlists_day_rank', 'day', 'rank', unique=True),
+    )
+
+
+class PromptRender(Base):
+    """One approved prompt + product image → AI video job."""
+
+    __tablename__ = 'prompt_renders'
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    prompt_id: Mapped[int] = mapped_column(ForeignKey('video_prompts.id'), index=True)
+    chat_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Partner asset keys (served by /api/partner/v1/assets/{key})
+    product_image_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    card_image_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    video_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # queued | running | done | failed
+    status: Mapped[str] = mapped_column(String(20), default='queued', index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    prompt: Mapped['VideoPrompt'] = relationship(back_populates='renders')
+
+
 class RequestLog(Base):
     __tablename__ = 'request_log'
 

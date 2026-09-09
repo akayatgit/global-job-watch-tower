@@ -22,6 +22,33 @@ pitch/PRD). Anything that's "fix this now" lives here; anything that's
 
 ## In Progress
 
+### 20. Prompt Tower pivot — "Jobs are now prompts" (2026-09-09)
+
+**Request:** Ashok — "Instead of linkedin, search for videoprompts for product
+videos, for D2C brand to recreate… create an authority through Instagram in
+the video format of attached reference… select the best prompt through
+scoring it through hermes agent… shortlist the top 10 of the best ones
+scraped on the day. After posting allow to rank the prompt and store in rag
+for the baseline quality to find outlier in selecting for the next day…
+Telegram to send me the top 10 prompts of the day, also button based
+selection to reply to send image and after approval make video through AI
+(all through our avatarpitch)… Jobs are now prompts. Do what i say. We
+don't need jobs."
+
+**Shipped (PR on `cursor/prompt-tower-pivot-9e25`):** `app/prompts/`
+(normalize · sources · rag · scoring · pipeline · video_creator · post_card),
+`app/api/prompts.py`, partner `/api/partner/v1/prompts`,
+`app/telegram_prompts.py` + bot wiring, Celery `daily_prompt_pipeline` /
+`score_pending_prompts` / `render_prompt_video`, migration `b7c3e9a12d45`,
+`TOWER_MODE` gate (job beat asleep, nothing deleted). 616 tests green.
+Spec: [`prompt-tower.md`](./prompt-tower.md).
+
+**Acceptance (open):** Ashok receives the first `/prompts` deck on the
+phone, renders one video from a product photo, posts once on Instagram,
+rates it — then this card moves to Done. Fast-follows: Instagram Graph API
+publish, live-verify the Instagram hashtag source, attribution line on the
+card.
+
 ### 15. Job alerts ("Set alert every day") + owner push notifications
 
 **Request (2026-08-07):** Ashok — "job alerts is all the guests who search

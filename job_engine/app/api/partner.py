@@ -336,3 +336,39 @@ def partner_health(db: Session = Depends(get_db)):
     jobs_total = db.execute(select(func.count()).select_from(JobMaster)).scalar_one()
     freshest = db.execute(select(func.max(JobMaster.scraped_at))).scalar_one()
     return PartnerHealth(ok=True, jobs_total=int(jobs_total), freshest_scrape_at=freshest)
+
+
+# ---------- Prompt Tower (pivot 2026-09-09) ----------
+
+@router.get('/prompts', dependencies=[Depends(require_partner_token)])
+def partner_prompts(
+    day: str | None = Query(default=None, description='UTC day YYYY-MM-DD (default today)'),
+    db: Session = Depends(get_db),
+):
+    """The day's top-10 video prompts for AvatarPitch — full text, scores,
+    provenance and any rendered video/card asset URLs. Rows verbatim; the
+    tower owns scoring, AvatarPitch only renders/presents."""
+    from app.models import PromptRender
+    from app.prompts import pipeline, video_creator
+
+    try:
+        when = date.fromisoformat(day) if day else datetime.now(timezone.utc).date()
+    except ValueError as exc:
+        raise HTTPException(422, 'day must be YYYY-MM-DD') from exc
+    rows = pipeline.shortlist_for_day(db, when)
+    out = []
+    for entry, prompt in rows:
+        item = pipeline.serialize_prompt(prompt, rank=entry.rank, full=True)
+        latest = db.execute(
+            select(PromptRender)
+            .where(PromptRender.prompt_id == prompt.id, PromptRender.status == 'done')
+            .order_by(PromptRender.finished_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        item['video_url'] = latest.video_url if latest else None
+        item['card_image_url'] = (
+            video_creator.public_url(latest.card_image_key) if latest and latest.card_image_key else None
+        )
+        out.append(item)
+    return {'day': when.isoformat(), 'total': len(out), 'prompts': out,
+            'generated_at': datetime.now(timezone.utc).isoformat()}

@@ -743,3 +743,27 @@ it, shows recipient count) → `/pushconfirm`
  "More jobs ▸" page), and deterministic job rows all hold unchanged; auto
  alert messages say "— from your last search" so the guest knows why they
  got it. Never silently re-enrol someone who said stop.
+- **PROMPT TOWER PIVOT (Ashok 2026-09-09): "Jobs are now prompts. Do what I
+ say. We don't need jobs."** The product is daily **AI video prompts for
+ D2C product videos** (`documents/prompt-tower.md`). Laws: (1) **Hermes
+ scores, never authors** — the local model grades DETAIL + FLOW 0–100
+ relative to RAG winners; the reply is strictly validated and blended
+ 35/65 with a deterministic heuristic; an unjudged prompt caps at 70 so it
+ never tops a judged one. (2) **Top-10 per UTC day, ≤3 per source, min
+ score 55, outliers (> winners' mean + 1σ) first and flagged 🔥.**
+ (3) **RAG learns only from real feedback** — ⭐≥4 from Ashok or genuine
+ Instagram engagement promotes a prompt to exemplar/baseline; nothing is
+ promoted by score alone. (4) **Owner-only deck on Telegram**, button
+ flow: `/prompts` → tap number → full prompt verbatim → 📸 send product
+ photo (no caption needed) → pairing confirmation → ✅ make video → card
+ + MP4 uploaded into the chat; ⭐ rate, 📣 posted, `/promptperf` numbers.
+ Top-10 auto-delivered once a day the moment the shortlist exists — never
+ wait for Ashok to remember `/prompts`. Guests see none of it. (5) **Prompt
+ text is used verbatim** on the card and in the video render — we never
+ rewrite someone's prompt on the way out; every stored prompt keeps
+ `source_url` + `author`. (6) **Assets ride the AvatarPitch root**
+ (`PARTNER_ASSETS_DIR`, public capability URLs, 48h GC); the bot uploads
+ bytes to Telegram as multipart because Telegram cannot pass Cloudflare
+ Access. (7) **Jobs sleep, never die** — `TOWER_MODE=prompts` pauses the
+ job beat; every job table, search, command and test stays intact; one
+ env flip wakes it. Never delete the jobs stack without Ashok's word.
