@@ -247,6 +247,12 @@ class PromptRender(Base):
     card_image_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
     video_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # The post asset: raw clip composited into the card template as a video
+    # (title · clip · storyboard | scrolling prompt). Missing = reel failed;
+    # reel_error says why (ffmpeg absent…) while the raw clip is still usable.
+    reel_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    reel_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    reel_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # queued | running | done | failed
     status: Mapped[str] = mapped_column(String(20), default='queued', index=True)

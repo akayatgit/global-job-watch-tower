@@ -905,11 +905,32 @@ def render_prompt_video(self, render_id: int):
             render.video_key = result.video_key
             render.video_url = result.video_url
             render.model = result.model
+            db.commit()
+            console_log('worker', f'Prompt #{prompt.id} clip rendered → {result.video_url}')
+            # The post asset is the reel (clip inside the card template). A
+            # reel failure never loses the clip: keep it, record the reason.
+            try:
+                from app.prompts import post_card
+
+                reel = video_creator.create_reel(
+                    result.video_path,
+                    prompt_id=prompt.id,
+                    prompt_text=prompt.text,
+                    keyword=post_card.keyword_for(prompt.category, prompt.title),
+                )
+                render.reel_key = reel.reel_key
+                render.reel_url = reel.reel_url
+                console_log(
+                    'worker',
+                    f'Prompt #{prompt.id} reel composed ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}',
+                )
+            except Exception as exc:
+                render.reel_error = str(exc)[:2000]
+                console_log('worker', f'Prompt #{prompt.id} reel FAILED (clip kept): {exc}', level='error')
             render.status = 'done'
             render.finished_at = utcnow()
             db.commit()
-            console_log('worker', f'Prompt #{prompt.id} video rendered → {result.video_url}')
-            return {'ok': True, 'video_url': result.video_url}
+            return {'ok': True, 'video_url': result.video_url, 'reel_url': render.reel_url}
         except Exception as exc:
             render.status = 'failed'
             render.error = str(exc)[:2000]
