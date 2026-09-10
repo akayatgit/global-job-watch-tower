@@ -64,6 +64,7 @@ from app.telegram_guests import (  # noqa: E402
 from app.telegram_prompts import (  # noqa: E402
     CALLBACK_PREFIX as PROMPT_CALLBACK_PREFIX,
     STATE_PHOTO as PROMPT_PHOTO_STATE,
+    STATE_VIDEO as PROMPT_VIDEO_STATE,
     PromptDeck,
 )
 from app.telegram_sessions import (  # noqa: E402
@@ -140,12 +141,23 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'addprompt',
     'promptstats',
     'promptperf',
+    # Reverse prompt (2026-09-10): Instagram / Pinterest URL → Gemini
+    # timestamped prompt → same reel template.
+    'igtovid',
+    'pintovid',
+    'pintovideo',
+    'reverseprompt',
 })
-PROMPT_COMMANDS = frozenset({'prompts', 'promptscan', 'addprompt', 'promptstats', 'promptperf'})
+PROMPT_COMMANDS = frozenset({
+    'prompts', 'promptscan', 'addprompt', 'promptstats', 'promptperf',
+    'igtovid', 'pintovid', 'pintovideo', 'reverseprompt',
+})
 # Synthetic tap the poll loop queues when the OWNER sends a photo with no
 # caption — the durable inbox is text-only, and the prompt flow needs the
 # photo itself to be an event ("here is the product image").
 PROMPT_PHOTO_TAP = f'{BTN_PREFIX}{PROMPT_CALLBACK_PREFIX}photo'
+# Same shape for a forwarded video (the reverse-prompt source clip).
+PROMPT_VIDEO_TAP = f'{BTN_PREFIX}{PROMPT_CALLBACK_PREFIX}video'
 PROMPT_DAILY_CHECK_S = 600  # bot-side check for a fresh daily shortlist
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
@@ -197,6 +209,8 @@ OWNER_MENU = [
     {'command': 'addprompt', 'description': 'Add a prompt you found'},
     {'command': 'promptperf', 'description': 'Teach the ranker: likes/comments/saves'},
     {'command': 'promptstats', 'description': 'Prompt Tower numbers'},
+    {'command': 'igtovid', 'description': 'Reverse prompt from an Instagram reel'},
+    {'command': 'pintovid', 'description': 'Reverse prompt from a Pinterest pin'},
     {'command': 'help', 'description': 'All commands with options'},
     {'command': 'topfreshers', 'description': 'Video gems — explicit fresher/0-exp, checked'},
     {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
@@ -411,16 +425,25 @@ class TelegramAPI:
         self._multipart('sendVideo', fields, 'video', 'prompt.mp4', data, 'video/mp4', timeout=600)
 
     def get_file_bytes(self, file_id: str) -> tuple[bytes, str]:
-        """Download a photo the owner sent (Bot API getFile → file path)."""
+        """Download a photo or video the owner sent (Bot API getFile → file path).
+        Videos use a longer timeout; Telegram's bot-download ceiling is 20 MB
+        — larger clips must arrive as a link, not a forwarded file."""
         info = self.call('getFile', {'file_id': file_id}).get('result') or {}
         path = str(info.get('file_path') or '')
         if not path:
             raise RuntimeError('Telegram getFile returned no file_path')
         token = self.base.rsplit('/bot', 1)[1]
         url = f'https://api.telegram.org/file/bot{token}/{path}'
-        with urllib.request.urlopen(url, timeout=120) as resp:
+        lower = path.lower()
+        is_video = lower.endswith(('.mp4', '.mov', '.m4v', '.webm', '.mkv'))
+        with urllib.request.urlopen(url, timeout=180 if is_video else 120) as resp:
             data = resp.read()
-        content_type = 'image/png' if path.lower().endswith('.png') else 'image/jpeg'
+        if is_video:
+            content_type = 'video/webm' if lower.endswith('.webm') else 'video/mp4'
+        elif lower.endswith('.png'):
+            content_type = 'image/png'
+        else:
+            content_type = 'image/jpeg'
         return data, content_type
 
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
@@ -484,6 +507,7 @@ class JobMasterTelegramBot:
             send_video_bytes=getattr(self.api, 'send_video_bytes', None),
             send_text=self.api.send,
             on_render_started=self._start_render_watch,
+            on_reverse_started=self._start_reverse_watch,
         )
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
@@ -525,6 +549,22 @@ class JobMasterTelegramBot:
             self.deck.watch_render(chat_id, render_id)
         except Exception:
             LOG.exception('render watch crashed render=%s', render_id)
+
+    def _start_reverse_watch(self, chat_id: str, reverse_id: int) -> None:
+        """Background watcher: polls the reverse-prompt row, uploads reel + text."""
+        thread = threading.Thread(
+            target=self._watch_reverse_safely,
+            args=(chat_id, reverse_id),
+            daemon=True,
+            name=f'prompt-reverse-{reverse_id}',
+        )
+        thread.start()
+
+    def _watch_reverse_safely(self, chat_id: str, reverse_id: int) -> None:
+        try:
+            self.deck.watch_reverse(chat_id, reverse_id)
+        except Exception:
+            LOG.exception('reverse watch crashed reverse=%s', reverse_id)
 
     @staticmethod
     def _identity(raw: str) -> tuple[str, str] | None:
@@ -1273,6 +1313,11 @@ class JobMasterTelegramBot:
         lines = [
             'JOBMASTER · ALL COMMANDS',
             '',
+            'Prompt Tower — two workflows:',
+            '1) prompt to video: /prompts → tap a number → 📸 product photo → ✅ reel',
+            '2) reverse prompt: /igtovid or /pintovid → Instagram / Pinterest URL '
+            '(or forward the video) → Gemini writes the timestamped prompt → same reel',
+            '',
             'Prompt Tower (daily video prompts):',
             "/prompts [YYYY-MM-DD] — today's top-10 with buttons: tap a number → "
             'full prompt → 📸 send product image → ✅ make video · ⭐ rate · 📣 posted',
@@ -1281,6 +1326,8 @@ class JobMasterTelegramBot:
             '/promptperf <id> likes=.. comments=.. saves=.. shares=.. views=.. — '
             "Instagram numbers after posting; winners calibrate tomorrow's scoring",
             '/promptstats — prompts, winners baseline, sources, videos',
+            '/igtovid [url] · /pintovid [url] — reverse prompt from a best-performing '
+            'reel / pin (or send the video file). Same reel template as prompt-to-video.',
             '',
             'Jobs (asleep while TOWER_MODE=prompts):',
             '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '
@@ -1875,6 +1922,19 @@ class JobMasterTelegramBot:
                     last_text=f'/{command}',
                 )
             return
+        # Reverse prompt: an Instagram / Pinterest URL after /igtovid, or a
+        # reel / pin link pasted on its own. Owner only — guests stay in
+        # the job button flow even if they paste a social URL.
+        if self._effective_is_owner(chat_id):
+            reverse = self.deck.maybe_take_url(chat_id, clean)
+            if reverse is not None:
+                self._send_button_reply(chat_id, reverse, update_id=update_id)
+                if self.health_enabled:
+                    self._write_health(
+                        status='running', last_result='ok', last_chat=chat_id,
+                        last_kind='reverse_prompt', last_text=clean[:120],
+                    )
+                return
         is_reset = bool(RESET_RE.match(clean))
         if clean.lower() == '/start':
             # /start is an explicit "let's begin" — always launches the
@@ -1985,7 +2045,11 @@ class JobMasterTelegramBot:
         A photo message's caption stands in for `text` (so "/push <msg>" as
         a photo caption parses exactly like a typed command), and the
         largest photo size's file_id is returned separately — used only by
-        the owner /push flow (see run()); guests never send photos here."""
+        the owner /push flow (see run()); guests never send photos here.
+
+        A forwarded video (or a video document) keeps its file_id in the
+        same extra slot as a photo when there is no photo — the poll loop
+        distinguishes via `_video_file_id` on the raw message."""
         callback = update.get('callback_query')
         if callback:
             message = callback.get('message') or {}
@@ -2000,9 +2064,21 @@ class JobMasterTelegramBot:
         photo_sizes = message.get('photo') or []
         photo_file_id = str(photo_sizes[-1].get('file_id') or '') if photo_sizes else ''
         text = message.get('text')
-        if text is None and photo_file_id:
+        if text is None and (photo_file_id or JobMasterTelegramBot._video_file_id(message)):
             text = message.get('caption')
         return False, chat, sender, text, None, photo_file_id
+
+    @staticmethod
+    def _video_file_id(message: dict) -> str:
+        """Telegram `message.video` or a document whose mime is video/*."""
+        video = (message or {}).get('video') or {}
+        if video.get('file_id'):
+            return str(video['file_id'])
+        document = (message or {}).get('document') or {}
+        mime = str(document.get('mime_type') or '')
+        if mime.startswith('video/') and document.get('file_id'):
+            return str(document['file_id'])
+        return ''
 
     def run(self) -> int:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
@@ -2065,6 +2141,10 @@ class JobMasterTelegramBot:
                         is_callback, chat, sender, text, callback_id, photo_file_id = (
                             self._normalize_update(update)
                         )
+                        video_file_id = (
+                            '' if is_callback
+                            else self._video_file_id(update.get('message') or {})
+                        )
                         if (
                             text is None
                             and photo_file_id
@@ -2074,6 +2154,14 @@ class JobMasterTelegramBot:
                             # Owner photo with no caption = "here is the
                             # product image" for the prompt deck.
                             text = PROMPT_PHOTO_TAP
+                        elif (
+                            text is None
+                            and video_file_id
+                            and chat.get('id') is not None
+                            and self._is_owner(str(chat['id']))
+                        ):
+                            # Owner forwarded a video = reverse-prompt source.
+                            text = PROMPT_VIDEO_TAP
                         if chat.get('type') == 'private' and chat.get('id'):
                             if isinstance(text, str):
                                 chat_id = str(chat['id'])
@@ -2112,6 +2200,10 @@ class JobMasterTelegramBot:
                                     )
                                     self.sessions.set_state(
                                         PROMPT_PHOTO_STATE.format(chat=chat_id), photo_file_id,
+                                    )
+                                elif video_file_id:
+                                    self.sessions.set_state(
+                                        PROMPT_VIDEO_STATE.format(chat=chat_id), video_file_id,
                                     )
                                 if self.sessions.queue_update(
                                     update_id,

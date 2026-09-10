@@ -156,6 +156,15 @@ PROMPT_VIDEO_DURATION_S = int(os.getenv('PROMPT_VIDEO_DURATION_S', '10'))
 # prediction (a 10 s Kling 1080p render takes minutes; the Telegram watcher
 # waits 20 min).
 PROMPT_VIDEO_TIMEOUT_S = int(os.getenv('PROMPT_VIDEO_TIMEOUT_S', '900'))
+# Reverse prompt (2026-09-10): the vision model that watches a downloaded
+# Instagram / Pinterest clip and writes the timestamped prompt. Replicate
+# google/gemini-* take `prompt`, `videos[]`, `system_instruction`.
+REPLICATE_VISION_MODEL = os.getenv('REPLICATE_VISION_MODEL', 'google/gemini-2.5-flash').strip()
+# The exemplar prompt the model is shown as the quality bar (Ashok's "best
+# prompt on the internet"). Empty = the bundled default next to the module.
+PROMPT_REVERSE_EXEMPLAR_PATH = os.getenv('PROMPT_REVERSE_EXEMPLAR_PATH', '').strip()
+# Largest source clip we download / accept (Telegram uploads are ≤20 MB)
+PROMPT_REVERSE_MAX_VIDEO_MB = int(os.getenv('PROMPT_REVERSE_MAX_VIDEO_MB', '80'))
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')

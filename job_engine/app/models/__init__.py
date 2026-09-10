@@ -4,6 +4,7 @@ from app.models.models import (  # noqa: F401
     JobMaster,
     PromptRender,
     PromptShortlist,
+    ReversePrompt,
     SearchConfig,
     ScrapeRun,
     RequestLog,

@@ -230,6 +230,7 @@ def create_reel(
     prompt_text: str,
     keyword: str,
     handle: str = '@jobmaster.agency',
+    kind: str = 'reel',
 ) -> ReelAsset:
     """Raw clip → post-ready reel MP4 in the asset root (title · clip ·
     storyboard | scrolling prompt). Raises post_reel.ReelError with an
@@ -237,7 +238,7 @@ def create_reel(
     keeps the raw clip and surfaces the reason instead of failing the render."""
     from app.prompts import post_reel
 
-    key = asset_key('reel', prompt_id=prompt_id, suffix='mp4')
+    key = asset_key(kind, prompt_id=prompt_id, suffix='mp4')
     target = assets_root() / key
     tmp = target.with_name(target.name + '.part.mp4')
     result = post_reel.compose_reel(

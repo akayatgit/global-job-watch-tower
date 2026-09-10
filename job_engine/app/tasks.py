@@ -942,3 +942,105 @@ def render_prompt_video(self, render_id: int):
             db.commit()
             console_log('worker', f'Prompt #{prompt.id} video FAILED: {exc}', level='error')
             return {'ok': False, 'error': str(exc)[:500]}
+
+
+@celery.task(name='app.tasks.reverse_prompt_video', bind=True, max_retries=0)
+def reverse_prompt_video(self, reverse_id: int):
+    """Reverse prompt (2026-09-10): Instagram / Pinterest URL (or an uploaded
+    clip) → download → Gemini writes the timestamped prompt → same reel
+    template → post-ready MP4. Status lives on reverse_prompts; the bot
+    polls it. The clip and the prompt survive a reel failure."""
+    from app.models import ReversePrompt
+    from app.prompts import post_reel, reverse_prompt, video_creator
+    from app.prompts.pipeline import ingest
+    from app.prompts.sources import Candidate
+
+    with SessionLocal() as db:
+        row = db.get(ReversePrompt, int(reverse_id))
+        if row is None:
+            return {'ok': False, 'error': 'reverse prompt not found'}
+        tag = f'Reverse #{row.id}'
+        log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
+        row.started_at = utcnow()
+        try:
+            if not row.video_key:
+                row.status = 'downloading'
+                db.commit()
+                log(f'downloading {row.platform} video from {row.source_url}')
+                engine, _report = post_reel.resolve_engine()
+                fetched = reverse_prompt.fetch_video(
+                    row.source_url or '',
+                    browser_fetch=_reverse_browser_fetch,
+                    ffmpeg=getattr(engine, 'exe', None),
+                )
+                row.media_url = fetched.media_url[:2000]
+                row.platform = fetched.platform
+                row.video_key = video_creator.asset_key('source', prompt_id=row.id, suffix='mp4')
+                video_creator.store_bytes(row.video_key, fetched.data, content_type='video/mp4')
+                row.video_url = video_creator.public_url(row.video_key)
+                db.commit()
+                log(f'clip stored ({len(fetched.data) // 1024} KB) → {row.video_url}')
+            video_path = video_creator.assets_root() / row.video_key
+            if not video_path.is_file():
+                raise RuntimeError('stored clip is missing from the asset root')
+            info = post_reel.probe(video_path)
+            row.duration_s = round(info.duration_s, 2) if info.duration_s else None
+
+            if not row.prompt_text:
+                row.status = 'describing'
+                db.commit()
+                reading = reverse_prompt.describe_video(video_path, duration_s=info.duration_s, log=log)
+                row.keyword = reading.keyword
+                row.prompt_text = reading.prompt
+                row.model = reading.model
+                db.commit()
+                log(f'prompt written by {reading.model} ({len(reading.prompt)} chars, keyword {reading.keyword})')
+                try:  # into the catalogue when the prompt gate accepts it
+                    catalogue, outcome = ingest(db, Candidate(
+                        text=reading.prompt, source='reverse', source_url=row.source_url,
+                        author=row.platform,
+                    ))
+                    if catalogue is not None:
+                        row.prompt_id = catalogue.id
+                    db.commit()
+                    log(f'catalogue: {outcome}')
+                except Exception as exc:
+                    db.rollback()
+                    log(f'catalogue ingest skipped: {exc}')
+
+            row.status = 'composing'
+            db.commit()
+            try:
+                reel = video_creator.create_reel(
+                    video_path, prompt_id=row.id, prompt_text=row.prompt_text or '',
+                    keyword=row.keyword or 'PRODUCT', kind='rreel',
+                )
+                row.reel_key = reel.reel_key
+                row.reel_url = reel.reel_url
+                row.reel_error = None
+                log(f'reel composed via {reel.engine} ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}')
+            except Exception as exc:
+                row.reel_error = str(exc)[:2000]
+                console_log('worker', f'{tag} reel FAILED (clip + prompt kept): {exc}', level='error')
+            row.status = 'done'
+            row.finished_at = utcnow()
+            db.commit()
+            return {'ok': True, 'reel_url': row.reel_url, 'prompt_id': row.prompt_id}
+        except Exception as exc:
+            db.rollback()
+            row = db.get(ReversePrompt, int(reverse_id))
+            if row is not None:
+                row.status = 'failed'
+                row.error = str(exc)[:2000]
+                row.finished_at = utcnow()
+                db.commit()
+            console_log('worker', f'{tag} FAILED: {exc}', level='error')
+            return {'ok': False, 'error': str(exc)[:500]}
+
+
+def _reverse_browser_fetch(url: str) -> str:
+    """Instagram hides media behind a login wall for plain HTTP — the
+    logged-in stealth Chrome profile (the LinkedIn lane's) reads the page."""
+    from app.prompts.sources import browser_fetch
+
+    return browser_fetch(url)

@@ -8,6 +8,7 @@
 | **Owner surface** | **VIGIL admin** at `http://127.0.0.1:8001` is the collection cockpit (Tower · Prompts · Scores · Sources · Activity · Live · Health). Telegram is delivery + approve-to-video, not the monitor. |
 
 | **Learning loop** | RAG of proven winners (rated ≥4 or strong engagement) → few-shot anchors + baseline for tomorrow's scoring → outliers flagged 🔥 |
+| **Two workflows (Ashok 2026-09-10)** | **prompt to video** — daily top-10 → Telegram ✅ + product photo → Kling → reel. **reverse prompt** — `/igtovid` · `/pintovid` → Instagram / Pinterest URL (or forwarded video) → Gemini on Replicate writes a timestamped prompt → **the same reel template**. |
 | **Render** | Replicate image→video (`REPLICATE_VIDEO_MODEL`, default `kwaivgi/kling-v2.1`) → MP4 + Instagram card stored in the AvatarPitch asset root, served at `/api/partner/v1/assets/{key}` |
 | **Jobs stack** | **Asleep, not deleted.** `TOWER_MODE=prompts` (default) pauses the job beat; `TOWER_MODE=jobs` wakes it. Every job table, search, command and test stays intact (source-safety law). |
 | **Code** | `job_engine/app/prompts/` · `app/api/prompts.py` · `app/telegram_prompts.py` · tasks in `app/tasks.py` · migration `b7c3e9a12d45` |
@@ -58,6 +59,7 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | `/addprompt <text>` | Manual ingest (rejects captions), scored right away. |
 | `/promptscan` | Runs the daily pipeline now (Celery). |
 | `/promptstats` | Prompts, scored/pending, shortlisted today, posted, videos, winners, baseline μ±σ, sources, last catch. |
+| `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). Ask for an Instagram reel / Pinterest pin (or accept the URL on the command). Forwarding the video file itself is the fallback when the page is login-walled. |
 
 Guests never see any of it: `pt:` taps and prompt commands are gated on the real owner check; a guest's photo is ignored exactly as before.
 
@@ -80,6 +82,30 @@ Storyboard          | Prompt
 - **Engine hunt (2026-09-10, Ashok away from the ThinkPad: "something for video creation must be there, check properly").** The service PATH has no `ffmpeg` and nobody can install one remotely, so `reel_engines.discover()` looks instead of demanding, in order: (1) an **ffmpeg binary** anywhere plausible — `REEL_FFMPEG`, PATH, the interpreter's own `bin`, `CONDA_PREFIX`, every conda root (`anaconda3 / miniconda3 / miniforge3 / mambaforge`: `bin`, `envs/*/bin`, `pkgs/ffmpeg-*/bin`), imageio-ffmpeg's bundled static binary in any env / `~/.local` / pipx venv / `~/.hermes` venv, `~/.imageio`, Playwright's download, `~/bin`, `~/ffmpeg*`, `~/Downloads/ffmpeg*`, `/usr/local/bin`, `/snap/bin`, `/opt/conda/bin` — each candidate is **verified** (`-decoders` must list `h264`, `-encoders` must list `libx264` / `libopenh264` / `mpeg4`; Playwright's stripped build is rejected with the reason). No `ffprobe` next to it? The clip is probed from `ffmpeg -i` output. (2) **PyAV** (`av`) — ffmpeg's libraries linked into Python, libx264 in-process, audio packets copied. (3) **OpenCV** (`cv2`) — decodes anything, writes MPEG-4 **without audio**, the last resort so a finished clip is never left without its reel. The result is cached (a failed hunt retries every 10 min, so a later install is picked up without a restart).
 - **Readable from the phone:** `GET /api/prompts/stats` → `reel_engine` (`engine` ffmpeg|pyav|opencv|none, path, version, codec, audio, every location `searched`, each `rejected` path with its reason, python libs, fix hint) plus `reels_done` / `reels_failed`; `/promptstats` prints one line ("Reels 3 · failed 0 · engine ffmpeg (libx264) at …" or "⚠️ no video engine — 14 ffmpeg spot(s) checked, av/cv2 absent · fix: sudo apt install -y ffmpeg"). The worker console says which engine composed each reel; `reel_error` carries the full hunt summary when none exists. Deploy runs `python -m app.prompts.reel_engines` in the `ai` env and logs `reel engine — …` (a `WARNING:` line when none).
 
+### 3b. Reverse prompt — a best-performing post → the prompt behind it (2026-09-10)
+
+Ashok: "/igtovid or /pintovid … ask for the Instagram or Pinterest url, download the video, take 6 frames, pass the video to Gemini to get a timestamp-based prompt … place the video, the prompt and the screenshots as storyboard frames in the same final template." This is the high-value path: reverse the prompt from a post that already performed, then re-post it.
+
+```
+URL or forwarded clip
+  → fetch_video (HTTP + stealth Chrome + ffmpeg HLS)
+  → store source MP4
+  → Gemini on Replicate (google/gemini-2.5-flash) watches the clip
+  → keyword + timestamped prompt (verbatim)
+  → post_reel.compose_reel (same template as prompt-to-video)
+  → reel lands in Telegram + the prompt text
+```
+
+| Step | Law |
+|---|---|
+| Intake | `/igtovid` · `/pintovid` · `/pintovideo` · `/reverseprompt`. URL on the command starts now; otherwise the next Instagram / Pinterest link (or a forwarded video) starts it. A stray direct `.mp4` in chat does **not** start a run unless he already typed the command. Cancel clears the wait. |
+| Download | `app/prompts/reverse_prompt.py::fetch_video`. Plain HTTP with a Safari UA first (Pinterest pages often carry the mp4 in JSON). Instagram login walls fall through to the logged-in stealth Chrome profile (`sources.browser_fetch`). HLS playlists are stitched by ffmpeg. Cap `PROMPT_REVERSE_MAX_VIDEO_MB` (80). Telegram forwarded files are ≤20 MB — larger clips must arrive as a link. |
+| Describe | Gemini via Replicate (`REPLICATE_VISION_MODEL`), **the same create-then-poll as Kling** (`video_creator.replicate_render`, 10 min budget) so we never hit the 60 s `Prefer: wait` timeout again. System instruction lists product / set / lighting / camera / motion / textures / action / reveal / emotion / style, and shows an exemplar as the quality bar (`PROMPT_REVERSE_EXEMPLAR_PATH` or the bundled coffee-dripper at `app/prompts/reverse_exemplar.txt`). Returns strict JSON `{keyword, prompt}`; fences / prose / a bare prompt are tolerated. **This is the one place an AI authors a prompt** — stored and shown verbatim, never rewritten. |
+| Reel | Same composer, same 6 storyboard frames from **the source clip**, prompt scrolls verbatim. Keys `prompts/<day>/rreel-<id>-….mp4`. A reel failure keeps the clip + prompt (`reel_error`); the row is still `done`. |
+| Catalogue | Best-effort ingest through the existing `read_prompt` gate (`source='reverse'`). Rejection is fine — the reverse row still holds the text. |
+
+Owner-only. Guests never see these commands.
+
 ## 4. API
 
 Owner surface (local tower, `/api/prompts`):
@@ -94,16 +120,19 @@ Owner surface (local tower, `/api/prompts`):
 | `POST /{id}/rate {rating 1–5}` · `POST /{id}/performance {likes…}` · `POST /{id}/posted` | Feedback → RAG |
 | `POST /{id}/render {image_base64, chat_id, content_type}` | Store image, render card, queue video → render row |
 | `GET /renders/{id}` | `queued | running | done | failed`, `video_url` (raw clip), `reel_url` (post asset) or `reel_error`, `card_image_url` (preview) |
+| `POST /reverse {source_url \| video_base64, chat_id}` | Queue a reverse-prompt run (must stay registered **before** `GET /{id}`) |
+| `GET /reverse` · `GET /reverse/{id}` | Recent rows / one row: `queued \| downloading \| describing \| composing \| done \| failed`, clip + prompt + reel |
 
 Partner surface (AvatarPitch, bearer `PARTNER_API_TOKEN`): **`GET /api/partner/v1/prompts?day=`** — the day's top-10 with full text, scores, provenance and any finished `video_url` (raw clip) / `reel_url` (post asset) / `card_image_url`. Rows verbatim; the tower owns scoring, AvatarPitch renders/presents.
 
-## 5. Data model (migrations `b7c3e9a12d45` → `c8d4f0b23e56`)
+## 5. Data model (migrations `b7c3e9a12d45` → `d9e5a1c47f02`)
 
 - `video_prompts` — text, fingerprint (unique), source/source_url/author/source_posted_at, model_hint, category, heuristic_score, ai_detail/ai_flow/ai_score/ai_reasons, final_score, baseline_mean/std, is_outlier, embedding (JSON), status (`new | shortlisted | posted | rejected`), rating, performance (JSON), performance_score, posted_at, exemplar.
 - `prompt_shortlists` — (day, rank) unique → prompt_id.
 - `prompt_renders` — prompt_id, chat_id, product_image_key, card_image_key, video_key, video_url, **reel_key, reel_url, reel_error** (migration `c8d4f0b23e56`), model, status, error, timestamps.
+- `reverse_prompts` (migration `d9e5a1c47f02`) — platform (`instagram \| pinterest \| direct \| upload`), source/media URL, stored clip, duration, **keyword + prompt_text** (verbatim from Gemini), optional `prompt_id` into the catalogue, reel key/url/error, status (`queued \| downloading \| describing \| composing \| done \| failed`).
 
-Guest/alert/broadcast SQLite state is untouched; the deck's pending states live in the same `bot_state` table (`prompt_selected:`, `prompt_await_image:`, `pending_prompt_photo:`, `prompt_daily_sent:<day>`).
+Guest/alert/broadcast SQLite state is untouched; the deck's pending states live in the same `bot_state` table (`prompt_selected:`, `prompt_await_image:`, `pending_prompt_photo:`, `prompt_await_url:`, `pending_prompt_video:`, `prompt_daily_sent:<day>`).
 
 ## 6. Configuration (`job_engine/.env`)
 
@@ -123,6 +152,9 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 | `PROMPT_VIDEO_DURATION_S` | `10` | Kling 5/10 · Veo 8 |
 | `PROMPT_VIDEO_TIMEOUT_S` | `900` | How long the worker polls the video model before cancelling the prediction. **Why (2026-09-10):** both #29 renders died with `The read operation timed out` — `replicate.Client.run()` sends `Prefer: wait` and holds ONE HTTP call open with a 60.5 s read timeout while the server waits up to 60 s; a 10 s Kling 1080p render takes minutes. `video_creator.replicate_render` now creates the prediction without waiting, polls every 5 s (status changes land in the worker console: `starting → processing`), tolerates 12 consecutive poll blips, cancels at the budget so nothing keeps billing, and surfaces the model's own error text (`video model failed: …`). |
 | `PROMPT_ASSET_PREFIX` | `prompts` | Under `PARTNER_ASSETS_DIR` (48h GC applies — download/post within 2 days) |
+| `REPLICATE_VISION_MODEL` | `google/gemini-2.5-flash` | Reverse prompt: the vision model that watches the downloaded clip. Inputs: `prompt`, `videos[]`, `system_instruction`. |
+| `PROMPT_REVERSE_EXEMPLAR_PATH` | empty | Quality-bar prompt shown to Gemini. Empty = bundled `app/prompts/reverse_exemplar.txt` (placeholder until Ashok pastes the real "best prompt on the internet"). |
+| `PROMPT_REVERSE_MAX_VIDEO_MB` | `80` | Largest source clip we download or accept as base64. Telegram uploads are still capped at 20 MB by the Bot API. |
 
 ## 7. Deploy checklist (ThinkPad)
 

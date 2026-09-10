@@ -17,8 +17,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import config
 from app.db import get_db
-from app.models import PromptRender, VideoPrompt
+from app.models import PromptRender, ReversePrompt, VideoPrompt
 from app.prompts import admin as prompt_admin
 from app.prompts import pipeline, rag, reel_engines, video_creator
 from app.prompts.sources import manual_candidate
@@ -151,6 +152,103 @@ def stats(db: Session = Depends(get_db)):
         'baseline_std': base.std,
         'last_collected_at': last.isoformat() if last else None,
     }
+
+
+# ------------------------------------------------------- reverse prompt
+
+MAX_VIDEO_BYTES = config.PROMPT_REVERSE_MAX_VIDEO_MB * 1024 * 1024
+
+
+class ReverseIn(BaseModel):
+    source_url: str | None = None
+    video_base64: str | None = None
+    chat_id: str | None = None
+
+
+def _serialize_reverse(row: ReversePrompt) -> dict:
+    return {
+        'id': row.id,
+        'status': row.status,
+        'error': row.error,
+        'platform': row.platform,
+        'source_url': row.source_url,
+        'media_url': row.media_url,
+        'video_key': row.video_key,
+        'video_url': row.video_url,
+        'duration_s': row.duration_s,
+        'keyword': row.keyword,
+        'prompt_text': row.prompt_text,
+        'model': row.model,
+        'prompt_id': row.prompt_id,
+        'reel_key': row.reel_key,
+        'reel_url': row.reel_url,
+        'reel_error': row.reel_error,
+        'requested_at': row.requested_at.isoformat() if row.requested_at else None,
+        'finished_at': row.finished_at.isoformat() if row.finished_at else None,
+    }
+
+
+@router.post('/reverse', status_code=201)
+def reverse(payload: ReverseIn, db: Session = Depends(get_db)):
+    """Reverse prompt (owner /igtovid · /pintovid): an Instagram / Pinterest
+    URL — or the clip itself, base64 — is queued for download → Gemini
+    prompt → reel. Returns the row the bot polls."""
+    from app.prompts import reverse_prompt
+
+    url = (payload.source_url or '').strip()
+    video: bytes | None = None
+    if payload.video_base64:
+        try:
+            video = base64.b64decode(payload.video_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise HTTPException(422, 'video_base64 is not valid base64') from exc
+        if not video or len(video) > MAX_VIDEO_BYTES:
+            raise HTTPException(413, f'video must be 1 byte – {config.PROMPT_REVERSE_MAX_VIDEO_MB} MB')
+        if not reverse_prompt.looks_like_video(video):
+            raise HTTPException(422, 'that file is not a video (mp4 / mov / webm)')
+    elif url:
+        if reverse_prompt.detect_platform(url) is None:
+            raise HTTPException(422, 'send an Instagram reel, a Pinterest pin or a direct video link')
+    else:
+        raise HTTPException(422, 'send source_url or video_base64')
+
+    row = ReversePrompt(
+        chat_id=payload.chat_id,
+        platform=reverse_prompt.detect_platform(url) if url else 'upload',
+        source_url=reverse_prompt.canonical_url(url) if url else None,
+        status='queued',
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    if video is not None:
+        row.video_key = video_creator.asset_key('source', prompt_id=row.id, suffix='mp4')
+        video_creator.store_bytes(row.video_key, video, content_type='video/mp4')
+        row.video_url = video_creator.public_url(row.video_key)
+        db.commit()
+    from app.tasks import reverse_prompt_video
+
+    try:
+        reverse_prompt_video.delay(row.id)
+    except Exception as exc:
+        row.status = 'failed'
+        row.error = f'worker queue unavailable: {exc}'
+        db.commit()
+    return _serialize_reverse(row)
+
+
+@router.get('/reverse')
+def reverse_recent(limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)):
+    rows = db.execute(select(ReversePrompt).order_by(ReversePrompt.id.desc()).limit(limit)).scalars().all()
+    return {'total': db.scalar(select(func.count(ReversePrompt.id))) or 0, 'items': [_serialize_reverse(r) for r in rows]}
+
+
+@router.get('/reverse/{reverse_id}')
+def reverse_status(reverse_id: int, db: Session = Depends(get_db)):
+    row = db.get(ReversePrompt, int(reverse_id))
+    if row is None:
+        raise HTTPException(404, 'reverse prompt not found')
+    return _serialize_reverse(row)
 
 
 @router.get('/renders/{render_id}')

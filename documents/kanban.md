@@ -89,6 +89,18 @@ reel stage with `The read operation timed out` — `client.run()`'s
 `Prefer: wait` 60.5 s read timeout vs a minutes-long Kling render. Fixed:
 create-then-poll with a 15-min budget + cancel (`PROMPT_VIDEO_TIMEOUT_S`).
 
+**Follow (2026-09-10, reverse prompt):** Ashok named the second workflow:
+"/igtovid or /pintovid — ask for the Instagram or Pinterest url, download
+the video, take 6 frames, pass the video to Gemini to get a
+timestamp-based prompt, place the video + prompt + screenshots in the
+same final template." High-value path: reverse a best-performing post
+and re-post it. Code: `app/prompts/reverse_prompt.py`, Celery
+`reverse_prompt_video`, `POST /api/prompts/reverse`, Telegram
+`/igtovid` · `/pintovid`, migration `d9e5a1c47f02`. Same reel composer.
+Gemini via Replicate with the create-then-poll already used for Kling.
+Placeholder exemplar at `app/prompts/reverse_exemplar.txt` until Ashok
+pastes the real one.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

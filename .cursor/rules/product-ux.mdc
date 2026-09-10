@@ -775,3 +775,12 @@ it, shows recipient count) → `/pushconfirm`
   and-post deck. A jobs-era stall banner must never fire just because the
   job beat is asleep. Never ship a backend pivot without remapping this
   panel — Ashok cannot watch what he cannot see.
+- **Two Prompt Tower workflows, named (Ashok 2026-09-10).** (1) **prompt
+  to video** — `/prompts` top-10 → 📸 product photo → ✅ Kling reel.
+  (2) **reverse prompt** — `/igtovid` · `/pintovid` → Instagram reel or
+  Pinterest pin URL (or the forwarded video file) → Gemini writes a
+  timestamped generation prompt → the **same** reel template (clip ·
+  6-frame storyboard · scrolling prompt). Owner-only. The reverse prompt
+  is shown verbatim in chat so it can be copied into a caption. A
+  login-walled page is not a dead end — "forward the video here instead."
+  Never invent a second reel layout for this path.
