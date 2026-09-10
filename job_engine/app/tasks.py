@@ -989,7 +989,9 @@ def reverse_prompt_video(self, reverse_id: int):
             if not row.prompt_text:
                 row.status = 'describing'
                 db.commit()
-                reading = reverse_prompt.describe_video(video_path, duration_s=info.duration_s, log=log)
+                reading = reverse_prompt.describe_video(
+                    video_path, duration_s=info.duration_s, log=log, public_url=row.video_url,
+                )
                 row.keyword = reading.keyword
                 row.prompt_text = reading.prompt
                 row.model = reading.model

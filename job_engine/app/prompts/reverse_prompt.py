@@ -27,6 +27,7 @@ it is a creative reverse-engineering, not a fact about the world.
 
 from __future__ import annotations
 
+import base64
 import html as html_lib
 import json
 import logging
@@ -52,6 +53,18 @@ DOWNLOAD_TIMEOUT_S = 600
 MIN_VIDEO_BYTES = 50_000
 DESCRIBE_BUDGET_S = 600
 DEFAULT_KEYWORD = 'PRODUCT'
+# Data-URI ceiling: Telegram's bot download is 20 MB; Instagram reels sit
+# well under this. Larger clips ride a public .mp4 URL so Gemini can see
+# the suffix (Replicate's Files API URL has none — that is what killed #1).
+DATA_URI_MAX_BYTES = 20 * 1024 * 1024
+VIDEO_MIME = {
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.mpeg': 'video/mpeg',
+    '.mpg': 'video/mpeg',
+}
 
 URL_RE = re.compile(r'https?://[^\s<>"\']+', re.I)
 INSTAGRAM_RE = re.compile(r'https?://(?:www\.|m\.)?instagram\.com/(?:[\w.]+/)?(?:reels?|p|tv)/([\w-]+)', re.I)
@@ -368,6 +381,40 @@ def _output_text(output) -> str:
     return str(output)
 
 
+def mime_for_video(path: Path | str) -> str:
+    """Gemini requires an explicit mime; never application/octet-stream."""
+    ext = Path(path).suffix.lower()
+    return VIDEO_MIME.get(ext, 'video/mp4')
+
+
+def video_input_for_vision(path: Path, *, public_url: str | None = None) -> str:
+    """What Gemini-on-Replicate receives as `videos[0]`.
+
+    A raw file handle is uploaded to Replicate's Files API; that URL has
+    no extension. The Cog then hands Google a nameless file and Google
+    raises: "Unknown mime type… please set the `mime_type` argument"
+    (reverse #1, 2026-09-10). So we never pass a handle.
+
+    Small clips become an explicit ``data:video/mp4;base64,…`` URI.
+    Larger ones use our public ``.mp4`` asset URL (same suffix Google
+    needs to guess).
+    """
+    url = (public_url or '').strip()
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    if (
+        size > DATA_URI_MAX_BYTES
+        and url.lower().startswith(('http://', 'https://'))
+        and DIRECT_RE.search(url.split('#', 1)[0])
+    ):
+        return url
+    data = path.read_bytes()
+    mime = mime_for_video(path)
+    return f'data:{mime};base64,{base64.standard_b64encode(data).decode("ascii")}'
+
+
 def describe_video(
     video_path: Path,
     *,
@@ -375,6 +422,7 @@ def describe_video(
     run: Callable[..., object] | None = None,
     log: Callable[[str], None] | None = None,
     exemplar: str | None = None,
+    public_url: str | None = None,
 ) -> ReverseReading:
     """Gemini (Replicate) watches the clip and returns keyword + timestamped
     prompt. `run(model, input) -> output` is injectable for tests."""
@@ -392,16 +440,12 @@ def describe_video(
         def run(model, input):  # noqa: A001
             return replicate_render(client, model, input=input, budget_s=DESCRIBE_BUDGET_S, log=log)
 
-    handle = open(video_path, 'rb')  # noqa: SIM115 — closed after the call
     inputs = {
         'prompt': USER_PROMPT.format(duration=_duration_label(duration_s)),
-        'videos': [handle],
+        'videos': [video_input_for_vision(video_path, public_url=public_url)],
         'system_instruction': build_instruction(duration_s=duration_s, exemplar=exemplar),
         'temperature': 0.7,
         'max_output_tokens': 4096,
     }
-    try:
-        output = run(model, input=inputs)
-    finally:
-        handle.close()
+    output = run(model, input=inputs)
     return parse_reading(_output_text(output), model=model)
