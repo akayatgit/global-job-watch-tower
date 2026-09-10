@@ -113,7 +113,8 @@ class UrlAndParseTests(unittest.TestCase):
         self.assertIn('EXEMPLAR BODY', text)
         self.assertIn('"keyword"', text)
         bundled = reverse_prompt.load_exemplar()
-        self.assertIn('coffee dripper', bundled.lower())
+        self.assertIn('pacific chill', bundled.lower())
+        self.assertIn('louis vuitton', bundled.lower())
 
 
 class FetchAndDescribeTests(unittest.TestCase):

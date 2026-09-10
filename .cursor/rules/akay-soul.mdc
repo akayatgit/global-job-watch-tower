@@ -334,8 +334,9 @@ need to be told twice.
   recreate it, then cutting the same reel. Gemini may **author** that
   reverse prompt (the one exception to "Hermes scores, never authors")
   because it is creative reverse-engineering, not a fact about the world
-  — store and show it verbatim. The exemplar he promised is the quality
-  bar; until he pastes the real one we ship a bundled placeholder.
+  — store and show it verbatim. Quality bar locked 2026-09-10: the Louis
+  Vuitton Pacific Chill reverse prompt he pasted (timestamped shots,
+  product + case, 9:16 / 10.4s) lives at `app/prompts/reverse_exemplar.txt`.
 
 ## Honesty note on the codeword
 

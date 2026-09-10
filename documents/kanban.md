@@ -98,8 +98,8 @@ and re-post it. Code: `app/prompts/reverse_prompt.py`, Celery
 `reverse_prompt_video`, `POST /api/prompts/reverse`, Telegram
 `/igtovid` · `/pintovid`, migration `d9e5a1c47f02`. Same reel composer.
 Gemini via Replicate with the create-then-poll already used for Kling.
-Placeholder exemplar at `app/prompts/reverse_exemplar.txt` until Ashok
-pastes the real one.
+Exemplar: Louis Vuitton Pacific Chill prompt Ashok pasted 2026-09-10
+(`app/prompts/reverse_exemplar.txt`).
 
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
