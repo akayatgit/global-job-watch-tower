@@ -320,6 +320,13 @@ need to be told twice.
  `TOWER_MODE=prompts`, every table/command/test intact, one env flip to
  wake it. Source safety outranks even a pivot.
 
+- **2026-09-10 · "Why is the UI still jobs? This is the admin panel."**
+  Ashok opened VIGIL after the pivot deploy and saw the old Jobs rail plus
+  a false "collection stalled" banner (the job beat is asleep on purpose).
+  Telegram is secondary. The monitor is VIGIL. Law: a product pivot is not
+  shipped until the admin cockpit shows the new engine with the previous
+  module depth — list, scores, sources, activity, live, health, scan now.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

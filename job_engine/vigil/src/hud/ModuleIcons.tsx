@@ -25,9 +25,8 @@ export function ModuleIcon({ id }: { id: PanelId | string }) {
     case 'jobs':
       return (
         <svg {...common}>
-          <rect x="3" y="7" width="18" height="13" rx="2" />
-          <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          <path d="M3 12h18" />
+          <rect x="4" y="5" width="16" height="14" rx="2" />
+          <path d="M8 9h8M8 13h5" />
         </svg>
       )
     case 'signals':

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CityChips } from '../components/CityChips'
-import { ExperienceChips } from '../components/ExperienceChips'
+import { CategoryChips, SourceChips } from '../components/SourceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
-import { SectorChips } from '../components/SectorChips'
 import { api, chipLabel, WINDOW_FALLBACK } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
@@ -10,50 +8,37 @@ import { PanelShell } from './PanelShell'
 export function SignalsPanel() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
-  const sectorFilter = useVigilStore((s) => s.sectorFilter)
-  const cityFilter = useVigilStore((s) => s.cityFilter)
-  const experienceFilter = useVigilStore((s) => s.experienceFilter)
-  const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
-  const setCityOptions = useVigilStore((s) => s.setCityOptions)
-  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
-  const openRoleHire = useVigilStore((s) => s.openRoleHire)
-  const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
+  const setSourceOptions = useVigilStore((s) => s.setSourceOptions)
+  const setCategoryOptions = useVigilStore((s) => s.setCategoryOptions)
+  const setCategoryFilter = useVigilStore((s) => s.setCategoryFilter)
+  const setSourceFilter = useVigilStore((s) => s.setSourceFilter)
+  const openPanel = useVigilStore((s) => s.openPanel)
 
   useEffect(() => {
     let alive = true
     api
-      .signals(days, sectorFilter, cityFilter, experienceFilter)
+      .promptSignals(days)
       .then((d) => {
         if (!alive) return
         setData(d)
-        if (d?.sector_options?.length) setSectorOptions(d.sector_options)
-        if (d?.city_options?.length) setCityOptions(d.city_options)
-        if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
+        if (d?.source_options?.length) setSourceOptions(d.source_options)
+        if (d?.category_options?.length) setCategoryOptions(d.category_options)
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [
-    days,
-    sectorFilter,
-    cityFilter,
-    experienceFilter,
-    setSectorOptions,
-    setCityOptions,
-    setExperienceOptions,
-  ])
+  }, [days, setSourceOptions, setCategoryOptions])
 
   const s = data?.signals
   const windows = data?.window_options || WINDOW_FALLBACK
-  const growing = (s?.growing_roles || []).slice(0, 8)
-  const fastest = (s?.fastest_companies || []).slice(0, 8)
+  const growing = (s?.growing_categories || []).slice(0, 8)
+  const fastest = (s?.fastest_sources || []).slice(0, 8)
 
   return (
     <PanelShell id="signals">
-      <SectorChips actionPrefix="signals-sector" />
-      <CityChips actionPrefix="signals-city" />
-      <ExperienceChips actionPrefix="signals-experience" />
+      <SourceChips actionPrefix="signals-source" />
+      <CategoryChips actionPrefix="signals-category" />
       <div className="chip-row wrap">
         {windows.map((w: { days: number; label: string }) => (
           <button
@@ -68,53 +53,71 @@ export function SignalsPanel() {
         ))}
       </div>
       {!s ? (
-        <div className="empty">Reading hiring signals…</div>
+        <div className="empty">Reading score signals…</div>
       ) : (
         <>
           <div className="signal-hero">
             <div className="stat-grid">
               <div className="stat-card signal-stat">
                 <div className="n">{s.recent_total}</div>
-                <div className="l">Recent</div>
+                <div className="l">Caught</div>
               </div>
               <div className="stat-card">
-                <div className="n">{s.prior_total}</div>
-                <div className="l">Prior</div>
+                <div className="n">{s.scored}</div>
+                <div className="l">Scored</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{s.mean_score ?? '—'}</div>
+                <div className="l">Mean</div>
+              </div>
+              <div className="stat-card">
+                <div className="n">{s.outliers}</div>
+                <div className="l">Outliers</div>
               </div>
             </div>
-            <p className="signal-headline">{s.headline}</p>
           </div>
-
           <GlassCompareChart
-            title="Growing roles"
-            subtitle="Open companies hiring for these rises"
-            actionPrefix="sig-role"
+            title="Score bands"
+            subtitle="Hermes blend in this window"
+            actionPrefix="signals-band"
+            maxItems={4}
+            items={(s.score_bands || []).map((b: any) => ({
+              id: b.id,
+              label: b.label,
+              value: b.n,
+            }))}
+          />
+          <GlassCompareChart
+            title="Growing categories"
+            subtitle="Vs previous window — tap to filter"
+            actionPrefix="signals-cat"
             maxItems={8}
-            emptyText="No growing roles in this window"
             items={growing.map((r: any) => ({
-              id: String(r.search_id),
-              label: r.name,
-              value: r.recent,
+              id: r.id,
+              label: r.label,
+              value: r.n,
               meta: r.delta > 0 ? `+${r.delta}` : String(r.delta),
             }))}
-            onSelect={(item) => openRoleHire(Number(item.id), item.label, days)}
+            onSelect={(item) => {
+              setCategoryFilter(item.id)
+              openPanel('jobs')
+            }}
           />
-
           <GlassCompareChart
-            title="Fastest companies"
-            subtitle="Open jobs at the hottest hirers"
-            actionPrefix="sig-co"
+            title="Fastest sources"
+            subtitle="Vs previous window"
+            actionPrefix="signals-src"
             maxItems={8}
-            emptyText="No company pace yet in this window"
-            items={fastest.map((c: any) => ({
-              id: String(c.company_id),
-              label: c.name,
-              value: c.recent,
-              meta: c.delta > 0 ? `+${c.delta}` : String(c.delta),
+            items={fastest.map((r: any) => ({
+              id: r.id,
+              label: r.label,
+              value: r.n,
+              meta: r.delta > 0 ? `+${r.delta}` : String(r.delta),
             }))}
-            onSelect={(item) =>
-              openCompanyJobs(Number(item.id), item.label, days)
-            }
+            onSelect={(item) => {
+              setSourceFilter(item.id)
+              openPanel('jobs')
+            }}
           />
         </>
       )}

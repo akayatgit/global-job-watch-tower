@@ -33,9 +33,9 @@ export function LivePanel() {
 
   return (
     <PanelShell id="live">
-      <div className="muted" style={{ marginBottom: 8 }}>Live feed · auto-scroll newest</div>
+      <div className="muted" style={{ marginBottom: 8 }}>Live feed · prompt engine logs, auto-scroll newest</div>
       {rows.length === 0 ? (
-        <div className="empty">Waiting for tower logs…</div>
+        <div className="empty">Waiting for prompt engine logs… tap Scan now on Tower</div>
       ) : (
         [...rows].reverse().slice(0, 50).map((r) => (
           <div className="list-row" key={r.id}>

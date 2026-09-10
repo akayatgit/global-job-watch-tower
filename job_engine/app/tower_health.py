@@ -98,6 +98,10 @@ class TowerVitals:
     # Engine stall — the tower must never say "healthy" while collection is dead
     stalled: bool
     stall_detail: str
+    # Prompt Tower overlay (TOWER_MODE=prompts) — jobs beat is asleep
+    tower_mode: str
+    pending_score: int
+    last_collected_at: datetime | None
 
 
 def _mem() -> tuple[int, int, float]:
@@ -508,25 +512,69 @@ def compute_vitals(db: Session) -> TowerVitals:
         allow_new=allow_new,
         now=now,
     )
+
+    tower_mode = (getattr(config, 'TOWER_MODE', 'prompts') or 'prompts').strip().lower()
+    pending_score = 0
+    last_collected_at = None
+    searches_today = _count_runs(db, day_start)
+    searches_24h = _count_runs(db, since_24h)
+    scrape_is_running = running is not None
+    if tower_mode == 'prompts':
+        from app.prompts.admin import pulse as prompt_pulse
+        pulse = prompt_pulse(db, now=now)
+        searches_today = pulse['collected_today']
+        searches_24h = pulse['collected_24h']
+        pending_score = pulse['pending_score']
+        last_collected_at = pulse['last_collected_at']
+        stalled = bool(pulse['stalled'])
+        stall_detail = pulse['stall_detail'] or ''
+        scrape_is_running = bool(pulse['running'])
+        running_name = 'Daily prompt scan' if scrape_is_running else '—'
+        sched = {
+            'when': pulse['next_at'],
+            'name': 'Daily prompt scan',
+            'secs': pulse['next_secs'],
+            'backlog': pending_score,
+            'mode': 'scheduled',
+        }
+        next_at = sched['when']
+        next_name = sched['name']
+        next_secs = sched['secs']
+
     if stalled and alert.get('level') != 'blocked':
         alert = dict(alert)
         alert['level'] = 'stalled'
-        alert['label'] = 'Collection stalled — engine not running'
+        alert['label'] = (
+            'Prompt collection stalled — engine not running'
+            if tower_mode == 'prompts'
+            else 'Collection stalled — engine not running'
+        )
 
     ollama_at, ollama_live, ollama_lbl = _last_ollama_pulse(db, now)
     if ollama_live:
         phase = 'filtering'
     next_label = _fmt_next_label(
-        scrape_running=running is not None,
+        scrape_running=scrape_is_running,
         running_name=running_name,
-        phase=phase,
+        phase=phase if tower_mode != 'prompts' else ('scoring' if scrape_is_running else ''),
         heat_level=snap.level,
         allow_new=allow_new,
         sched=sched,
     )
+    if tower_mode == 'prompts' and scrape_is_running:
+        next_label = 'Scoring prompts with Hermes'
+    elif tower_mode == 'prompts' and not stalled:
+        secs = int(sched.get('secs') or 0)
+        if secs < 60:
+            next_label = f'In {secs}s · Daily prompt scan'
+        elif secs < 3600:
+            next_label = f'In {secs // 60}m · Daily prompt scan'
+        else:
+            h, rem = divmod(secs, 3600)
+            next_label = f'In {h}h {rem // 60}m · Daily prompt scan'
     avg_secs = _avg_search_secs(db)
     cd_mode, cd_secs, cd_title, cd_role, scrape_started = _countdown_clock(
-        running=running,
+        running=None if tower_mode == 'prompts' else running,
         running_name=running_name,
         sched=sched,
         allow_new=allow_new,
@@ -534,10 +582,14 @@ def compute_vitals(db: Session) -> TowerVitals:
         avg_secs=avg_secs,
         now=now,
     )
+    if tower_mode == 'prompts' and scrape_is_running:
+        cd_mode, cd_secs = 'searching', 180
+        cd_title, cd_role = 'Scoring prompts', 'Daily prompt scan'
+        scrape_started = now
     if stalled:
         # Never keep claiming "Searching X" for a run the dead engine abandoned
         cd_mode, cd_secs = 'stalled', 0
-        if running is not None:
+        if scrape_is_running and tower_mode != 'prompts' and running is not None:
             short = running_name if len(running_name) <= 36 else running_name[:33] + '…'
             cd_title = f'Stuck · {short} — engine down?'
             next_label = f'Stalled · {short}'
@@ -557,8 +609,8 @@ def compute_vitals(db: Session) -> TowerVitals:
         last_ollama_at=ollama_at,
         last_keyword_at=last_kw,
         last_browser_at=_last_event(db, 'browser_open'),
-        searches_today=_count_runs(db, day_start),
-        searches_24h=_count_runs(db, since_24h),
+        searches_today=searches_today,
+        searches_24h=searches_24h,
         ollama_today=ollama_today,
         ollama_24h=ollama_24h,
         keyword_today=_count_events(db, 'keyword_filter', day_start),
@@ -570,7 +622,7 @@ def compute_vitals(db: Session) -> TowerVitals:
         next_search_at=next_at,
         next_search_name=next_name,
         next_search_secs=next_secs,
-        scrape_running=running is not None,
+        scrape_running=scrape_is_running,
         scrape_running_name=running_name,
         filter_mode_policy=config.RELEVANCE_MODE,
         alert_level=alert['level'],
@@ -596,6 +648,9 @@ def compute_vitals(db: Session) -> TowerVitals:
         detail_pending=int(detail_pending),
         stalled=stalled,
         stall_detail=stall_detail,
+        tower_mode=tower_mode,
+        pending_score=int(pending_score),
+        last_collected_at=last_collected_at,
     )
 
 
@@ -603,7 +658,7 @@ def vitals_dict(db: Session) -> dict:
     v = compute_vitals(db)
     d = asdict(v)
     for key in ('last_ollama_at', 'last_keyword_at', 'last_browser_at', 'next_search_at',
-                'scrape_started_at'):
+                'scrape_started_at', 'last_collected_at'):
         val = d.get(key)
         d[key] = val.isoformat() if isinstance(val, datetime) else None
     d['vitals'] = v

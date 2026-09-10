@@ -767,3 +767,11 @@ it, shows recipient count) → `/pushconfirm`
  Access. (7) **Jobs sleep, never die** — `TOWER_MODE=prompts` pauses the
  job beat; every job table, search, command and test stays intact; one
  env flip wakes it. Never delete the jobs stack without Ashok's word.
+- **VIGIL is the prompt collection cockpit (Ashok 2026-09-10).** The admin
+  panel at `:8001` is how we monitor the engine — not Telegram. Rail:
+  Prompts · Scores · Categories · Hermes vs Recipe · Sources · Activity ·
+  Live · Health · Winners. Same DoD as the old jobs widgets (live filters,
+  counts, newest first, drill-down, Scan now). Telegram stays the approve-
+  and-post deck. A jobs-era stall banner must never fire just because the
+  job beat is asleep. Never ship a backend pivot without remapping this
+  panel — Ashok cannot watch what he cannot see.
