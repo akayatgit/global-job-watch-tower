@@ -36,6 +36,12 @@ class FakeTelegramAPI:
     ) -> None:
         self.photos_sent.append((chat_id, photo_file_id, caption, keyboard))
 
+    def get_file_bytes(self, file_id: str) -> tuple[bytes, str]:
+        """Owner photo / forwarded video the deck downloads via Bot API."""
+        if 'vid' in file_id:
+            return b'\x00\x00\x00\x18ftyp' + file_id.encode(), 'video/mp4'
+        return b'JPEG-' + file_id.encode(), 'image/jpeg'
+
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
         pass
 
@@ -1882,6 +1888,35 @@ class NormalizeUpdateTests(unittest.TestCase):
         self.assertFalse(is_callback)
         self.assertIsNone(text)
         self.assertEqual(photo_file_id, 'only')
+
+    def test_a_video_message_yields_its_file_id(self):
+        update = {
+            'update_id': 7,
+            'message': {
+                'chat': {'id': 42, 'type': 'private'},
+                'from': {'username': 'ashok', 'id': 42},
+                'video': {'file_id': 'vid-1', 'mime_type': 'video/mp4', 'duration': 8},
+            },
+        }
+        self.assertEqual(
+            JobMasterTelegramBot._video_file_id(update['message']), 'vid-1',
+        )
+        is_callback, _chat, _sender, text, _cb, photo_file_id = (
+            JobMasterTelegramBot._normalize_update(update)
+        )
+        self.assertFalse(is_callback)
+        self.assertIsNone(text)
+        self.assertEqual(photo_file_id, '')
+
+    def test_a_video_document_yields_its_file_id(self):
+        message = {
+            'document': {'file_id': 'doc-vid', 'mime_type': 'video/mp4', 'file_name': 'clip.mp4'},
+        }
+        self.assertEqual(JobMasterTelegramBot._video_file_id(message), 'doc-vid')
+        self.assertEqual(
+            JobMasterTelegramBot._video_file_id({'document': {'file_id': 'x', 'mime_type': 'application/pdf'}}),
+            '',
+        )
 
 
 class TopFreshersCommandTests(unittest.TestCase):

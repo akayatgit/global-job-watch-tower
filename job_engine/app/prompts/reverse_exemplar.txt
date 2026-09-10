@@ -1,0 +1,21 @@
+Recreate the supplied Louis Vuitton Pacific Chill reference video as a photorealistic CGI-style luxury fragrance animation. Match the reference product, composition, motion, lighting, and four-shot sequence. Portrait 9:16, 720 × 1280, 30 fps, approximately 10.4 seconds.
+
+PRODUCT: A clear cylindrical glass Pacific Chill fragrance bottle with transparent sea-green appearance, rounded shoulders, narrow neck, thick rounded base, and glossy black stepped circular cap. Preserve the LV emblem on the cap, dark uppercase “PACIFIC CHILL” lettering, and subtle “LOUIS VUITTON” beneath it. Match the elongated white reflections, bright shoulder highlights, small rounded bubble-like forms visible through the early close-ups, and luminous elliptical reflections around the base.
+
+CASE: Emerald-green cylindrical fragrance case with pale mint LV initials and floral/diamond monogram motifs, fine edge stitching, green interior, attached hinged cylindrical lid, and polished silver-colored clasp. Keep the perfume cap attached throughout.
+
+0.00 –1.433 seconds: @f5c87ad6-3657-4fd1-a3c2-330c61d98f04@c463c888-6e89-4e46-8067-2d2687d8243d@80057d83-ef21-47b8-b72d-50d427bba2c5Extreme low-angle macro of the suspended bottle, leaning from upper-left toward lower-right. Begin with the thick glass base dominating the image. Move the framing upward along the subtly turning bottle to reveal the body, branding, shoulder, and cap. Deep teal background with strong white/mint glass reflections.
+
+1.433–3.167 seconds: @80057d83-ef21-47b8-b72d-50d427bba2c5@d2ff0c43-a908-419e-9e41-d30582839c55@a264700b-fc33-4db0-bee6-c9c7fc06ce8eHard cut to a close-up of the black cap, transparent neck, and shoulder, initially cropped against the right edge. Use a bright mint rectangular light field, darker upper background, and soft foliage shadows. Glide across the bottle and raise the viewpoint until the LV emblem on the cap’s top is visible.
+
+3.167–4.367 seconds: @a264700b-fc33-4db0-bee6-c9c7fc06ce8e@67e078a7-b3d9-470e-a559-f45d14103f89@67e078a7-b3d9-470e-a559-f45d14103f89Hard cut to the entire bottle floating centrally against the green wall and leaf-shadow pattern. Gently turn it toward upright, preserving the bright glass base and front lettering.
+
+4.367–6.40 seconds: @67e078a7-b3d9-470e-a559-f45d14103f89@263db73a-4fe3-48fe-affc-33a9e718be6d@263db73a-4fe3-48fe-affc-33a9e718be6dHard cut to the bottle floating directly above the open green case. The attached lid begins on screen-left. Lower the bottle into the aligning case until its shoulders and black cap remain exposed. Rotate the assembly/viewpoint so the open lid passes across the foreground from left to right, briefly showing its circular outer end, then appears open at upper-right. Preserve its hinge connection.
+
+6.40–7.80 seconds: @a277bc07-e454-4587-9ff2-114aa830f4ca@8c8fe37f-d0c9-4963-8d97-d84ad1d6ae7fContinue the same shot with a rapid smooth pullback, revealing a textured beige-gray sand mound. Lower the open case onto the mound while rotating the clasp toward the viewer and the lid behind the bottle.
+
+7.80–9.20 seconds:@0d2255a1-c2d9-4107-a3a2-3e310501f9e8 @386b3a2a-568f-473a-904b-8c89004fd78bKeep the case upright on the sand. Surround it with dark forked driftwood entering from the left, a large cream-colored open shell on the right, small pale shell-like fragments, sparse dry grasses, and an orange-brown starfish near the lower-left edge. Gradually pivot the attached lid forward and downward, closing flush by approximately 9.2 seconds.
+
+9.20–10.39 seconds: @386b3a2a-568f-473a-904b-8c89004fd78b@1ad5596c-3061-4046-a204-5bda767b5966Hold on the closed emerald monogram case, centered on the dune crest, with its silver clasp slightly right-facing. Maintain a soft mint glow fading into deep teal and generous empty space above.
+
+Match realistic glass refraction, crisp reflections, fine case texture, stable monograms, reflective metal, smooth floating motion, and grounded contact shadows. Preserve the original soundtrack. No additional captions, title cards, people, fruit, liquid splashes, extra cuts, or fade-to-black ending.

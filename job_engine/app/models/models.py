@@ -264,6 +264,41 @@ class PromptRender(Base):
     prompt: Mapped['VideoPrompt'] = relationship(back_populates='renders')
 
 
+class ReversePrompt(Base):
+    """Reverse prompt (2026-09-10): a best-performing Instagram / Pinterest
+    product video → download → Gemini writes the timestamped prompt that
+    would recreate it → the same reel template (clip · storyboard ·
+    scrolling prompt) → post-ready MP4. Owner /igtovid · /pintovid."""
+
+    __tablename__ = 'reverse_prompts'
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    chat_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # instagram | pinterest | direct | upload (video file sent in Telegram)
+    platform: Mapped[str] = mapped_column(String(20), default='upload')
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Where the media actually came from (the resolved mp4 / m3u8 URL)
+    media_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    video_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What the vision model wrote — stored verbatim, the reel shows it as-is
+    keyword: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # The catalogue row this prompt also became (when the gate accepted it)
+    prompt_id: Mapped[int | None] = mapped_column(ForeignKey('video_prompts.id'), nullable=True)
+    reel_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    reel_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    reel_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # queued | downloading | describing | composing | done | failed
+    status: Mapped[str] = mapped_column(String(20), default='queued', index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class RequestLog(Base):
     __tablename__ = 'request_log'
 

@@ -2,8 +2,10 @@
 
 Everything here is deterministic formatting over the tower API: the list,
 the full prompt, the ⭐ rating, the "📸 product image → ✅ make video" flow,
-and the render watcher that uploads the finished MP4 + Instagram card back
-into the chat. No model composes anything a human reads on this surface.
+the render watcher that uploads the finished MP4 + Instagram card back
+into the chat, and reverse prompt (`/igtovid` · `/pintovid`) which delivers
+the Gemini-authored timestamped prompt verbatim. No model composes job
+facts; reverse prompt is the one place a model authors a generation prompt.
 
 Callback data prefix: ``pt:``. Owner photo without a caption arrives as the
 synthetic ``pt:photo`` tap (see scripts/telegram_job_bot.py) so the durable
@@ -31,6 +33,19 @@ STATE_SELECTED = 'prompt_selected:{chat}'
 STATE_AWAIT_IMAGE = 'prompt_await_image:{chat}'
 STATE_PHOTO = 'pending_prompt_photo:{chat}'
 STATE_DAILY_SENT = 'prompt_daily_sent:{day}'
+# Reverse prompt (2026-09-10): /igtovid · /pintovid → waiting for the URL
+# (or the video file itself) → tower row polled by watch_reverse.
+STATE_AWAIT_URL = 'prompt_await_url:{chat}'
+STATE_VIDEO = 'pending_prompt_video:{chat}'
+REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
+REVERSE_POLL_S = 15
+REVERSE_MAX_WAIT_S = 25 * 60
+TELEGRAM_TEXT_LIMIT = 3900
+REVERSE_USAGE = (
+    'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
+    "I'll download it, take 6 frames, have Gemini write the timestamped prompt behind it, "
+    'and cut the post-ready reel — clip · storyboard · scrolling prompt.'
+)
 
 PROMPTS_USAGE = (
     'Usage: /prompts [YYYY-MM-DD] — today\'s top-10 video prompts with buttons.\n'
@@ -91,9 +106,11 @@ class PromptDeck:
         send_video_bytes: Callable[[str, bytes, str], None] | None = None,
         send_text: Callable[[str, str], None] | None = None,
         on_render_started: Callable[[str, int], None] | None = None,
+        on_reverse_started: Callable[[str, int], None] | None = None,
     ):
         self.sessions = sessions
         self.on_render_started = on_render_started
+        self.on_reverse_started = on_reverse_started
         self.api_get = api_get
         self.api_post = api_post
         self.download_photo = download_photo
@@ -115,6 +132,8 @@ class PromptDeck:
             return self.stats_reply()
         if command == 'promptperf':
             return self.performance_reply(arg)
+        if command in REVERSE_COMMANDS:
+            return self.reverse_reply(chat_id, arg)
         return PROMPTS_USAGE
 
     def list_reply(self, chat_id: str, day: str | None = None) -> str | ButtonReply:
@@ -243,6 +262,8 @@ class PromptDeck:
     # ----------------------------------------------------------- callbacks
 
     def handle_callback(self, chat_id: str, payload: str) -> ButtonReply:
+        if payload == f'{CALLBACK_PREFIX}video':
+            return self.video_reply(chat_id)
         body = payload[len(CALLBACK_PREFIX):] if payload.startswith(CALLBACK_PREFIX) else payload
         parts = body.split(':')
         action = parts[0]
@@ -402,6 +423,149 @@ class PromptDeck:
             [[('◂ Top 10', 'pt:list')]],
         )
 
+    # ------------------------------------------------- reverse prompt
+
+    def reverse_reply(self, chat_id: str, arg: str) -> ButtonReply:
+        """/igtovid · /pintovid [url] — start now when the URL is in the
+        command, otherwise wait for the next message to carry it."""
+        from app.prompts.reverse_prompt import find_url
+
+        url = find_url(arg or '')
+        if url:
+            return self._start_reverse(chat_id, source_url=url)
+        self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+        return ButtonReply(f'🎞 Reverse prompt — {REVERSE_USAGE}', [[('✖ Cancel', 'pt:cancel')]])
+
+    def maybe_take_url(self, chat_id: str, text: str) -> ButtonReply | None:
+        """Owner text carrying an Instagram / Pinterest link: after /igtovid
+        any fetchable link counts; without the command only reel / pin
+        links start a run (a stray direct .mp4 link in chat does not)."""
+        from app.prompts.reverse_prompt import detect_platform, find_url
+
+        url = find_url(text or '')
+        if not url:
+            return None
+        awaiting = self.sessions.get_state(STATE_AWAIT_URL.format(chat=chat_id), '') == '1'
+        platform = detect_platform(url)
+        if platform is None or (not awaiting and platform == 'direct'):
+            return None
+        return self._start_reverse(chat_id, source_url=url)
+
+    def video_reply(self, chat_id: str) -> ButtonReply:
+        """The owner forwarded a video file — the source clip itself."""
+        file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
+        if not file_id or self.download_photo is None:
+            return ButtonReply('I could not read that video — send it as a video (not a file), or send the link.')
+        try:
+            data, _content_type = self.download_photo(file_id)
+        except Exception as exc:
+            logger.exception('telegram video download failed')
+            hint = ' (Telegram lets bots download files up to 20 MB — send the link instead)' if 'too big' in str(exc).lower() or '400' in str(exc) else ''
+            return ButtonReply(f'Could not download the video from Telegram{hint}.')
+        self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
+        return self._start_reverse(chat_id, video=data)
+
+    def _start_reverse(self, chat_id: str, *, source_url: str | None = None, video: bytes | None = None) -> ButtonReply:
+        payload: dict[str, Any] = {'chat_id': str(chat_id)}
+        if video is not None:
+            payload['video_base64'] = base64.b64encode(video).decode('ascii')
+        else:
+            payload['source_url'] = source_url
+        try:
+            row = self.api_post('/api/prompts/reverse', payload)
+        except Exception as exc:
+            text = str(exc)
+            if '422' in text:
+                return ButtonReply('That link is not an Instagram reel, a Pinterest pin or a direct video — send one of those.')
+            if '413' in text:
+                return ButtonReply('That video is too large (80 MB max) — send a shorter clip or the link.')
+            logger.exception('reverse request failed')
+            return ButtonReply('Tower could not start the reverse prompt — check /health and try again.')
+        self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
+        if not isinstance(row, dict) or not row.get('id'):
+            return ButtonReply('Tower could not start the reverse prompt — check /health and try again.')
+        if row.get('status') == 'failed':
+            return ButtonReply(f"Reverse prompt failed to queue: {row.get('error') or 'unknown error'}")
+        if self.on_reverse_started is not None:
+            try:
+                self.on_reverse_started(str(chat_id), int(row['id']))
+            except Exception:
+                logger.exception('reverse watcher failed to start id=%s', row.get('id'))
+        where = {'instagram': 'the Instagram reel', 'pinterest': 'the Pinterest pin', 'direct': 'the video link'}.get(
+            str(row.get('platform') or ''), 'your video',
+        )
+        return ButtonReply(
+            f"🎞 Reverse prompt #{row['id']} started from {where}. Downloading → Gemini writes the "
+            'timestamped prompt → I cut the reel (clip · 6-frame storyboard · scrolling prompt). '
+            'Usually 2–5 minutes; the reel and the prompt text land here.',
+        )
+
+    def watch_reverse(
+        self,
+        chat_id: str,
+        reverse_id: int,
+        *,
+        poll_s: float = REVERSE_POLL_S,
+        max_wait_s: float = REVERSE_MAX_WAIT_S,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> str:
+        """Block until the reverse prompt finishes, deliver reel + prompt."""
+        waited = 0.0
+        announced: set[str] = set()
+        while True:
+            try:
+                row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
+            except Exception:
+                row = None
+            if isinstance(row, dict):
+                status = str(row.get('status') or '')
+                if status == 'describing' and status not in announced and self.send_text:
+                    announced.add(status)
+                    self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — Gemini is watching it now.")
+                if status == 'done':
+                    self._deliver_reverse(chat_id, row)
+                    return 'done'
+                if status == 'failed':
+                    if self.send_text:
+                        self.send_text(chat_id, f"❌ Reverse prompt #{reverse_id} failed: {row.get('error') or 'unknown error'}")
+                    return 'failed'
+            if waited >= max_wait_s:
+                if self.send_text:
+                    self.send_text(chat_id, f'⏳ Reverse prompt #{reverse_id} is still running after {int(max_wait_s // 60)} min — I will stop watching.')
+                return 'timeout'
+            sleep(poll_s)
+            waited += poll_s
+
+    def _deliver_reverse(self, chat_id: str, row: dict[str, Any]) -> None:
+        """Reel first (or the source clip with the reason), then the prompt
+        text verbatim so it can be copied straight into the caption."""
+        rid = row.get('id')
+        model = f" · {row['model']}" if row.get('model') else ''
+        catalogue = f" · catalogue #{row['prompt_id']}" if row.get('prompt_id') else ''
+        if row.get('reel_key'):
+            caption = f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}\nSource clip: {row.get('video_url') or ''}".strip()
+            key = row.get('reel_key')
+        else:
+            caption = (
+                f"🎞 Reverse prompt #{rid} — source clip{model}{catalogue}\n"
+                f"⚠️ Reel not composed: {row.get('reel_error') or 'unknown reason'}\n{row.get('video_url') or ''}"
+            ).strip()
+            key = row.get('video_key')
+        sent = False
+        if key and self.fetch_asset and self.send_video_bytes:
+            try:
+                self.send_video_bytes(chat_id, self.fetch_asset(key), caption)
+                sent = True
+            except Exception:
+                logger.exception('reverse video upload failed id=%s', rid)
+        if not sent and self.send_text:
+            self.send_text(chat_id, caption)
+        if self.send_text:
+            head = f"📝 Prompt #{rid} · keyword {row.get('keyword') or 'PRODUCT'}\n"
+            for chunk in _chunks(str(row.get('prompt_text') or '(no prompt text)'), TELEGRAM_TEXT_LIMIT - len(head)):
+                self.send_text(chat_id, head + chunk)
+                head = ''
+
     # ----------------------------------------------------- render watcher
 
     def watch_render(
@@ -511,10 +675,41 @@ class PromptDeck:
     def _clear_pending(self, chat_id: str) -> None:
         self.sessions.set_state(STATE_AWAIT_IMAGE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PHOTO.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
 
 
 def _as_reply(value: str | ButtonReply) -> ButtonReply:
     return value if isinstance(value, ButtonReply) else ButtonReply(value)
+
+
+def _seconds(value: Any) -> str:
+    try:
+        return f'{float(value):.1f}s'
+    except (TypeError, ValueError):
+        return 'length unknown'
+
+
+def _chunks(text: str, size: int) -> list[str]:
+    """Split on line breaks so a timestamped segment is never cut mid-way
+    when the prompt is longer than one Telegram message."""
+    size = max(size, 200)
+    if len(text) <= size:
+        return [text]
+    out: list[str] = []
+    current = ''
+    for line in text.split('\n'):
+        while len(line) > size:
+            out.append(line[:size])
+            line = line[size:]
+        if len(current) + len(line) + 1 > size and current:
+            out.append(current)
+            current = line
+        else:
+            current = f'{current}\n{line}' if current else line
+    if current:
+        out.append(current)
+    return out
 
 
 def _ago(iso: str | None) -> str:

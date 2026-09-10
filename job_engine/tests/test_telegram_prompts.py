@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.telegram_buttons import BTN_PREFIX, ButtonReply
-from app.telegram_prompts import PromptDeck, STATE_AWAIT_IMAGE, STATE_PHOTO
+from app.telegram_prompts import PromptDeck, STATE_AWAIT_IMAGE, STATE_AWAIT_URL, STATE_PHOTO, STATE_VIDEO
 from app.telegram_sessions import TelegramSessionStore
-from scripts.telegram_job_bot import PROMPT_PHOTO_TAP, JobMasterTelegramBot
+from scripts.telegram_job_bot import PROMPT_PHOTO_TAP, PROMPT_VIDEO_TAP, JobMasterTelegramBot
 from tests.test_telegram_job_bot import FakeEngine, FakeTelegramAPI
 
 TODAY = datetime.now(timezone.utc).date().isoformat()
@@ -59,9 +59,21 @@ class FakeTower:
             'rejected': {}, 'hint': None,
         }
         self.fail_404 = False
+        self.reverses: list[dict] = []
+        self.reverse_status: dict | None = None
 
     def get(self, path: str, params: dict | None = None):
         self.gets.append((path, params))
+        if path == '/api/prompts/reverse':
+            return {'total': len(self.reverses), 'items': list(self.reverses)}
+        if path.startswith('/api/prompts/reverse/'):
+            rid = int(path.rsplit('/', 1)[1])
+            if self.reverse_status and self.reverse_status.get('id') == rid:
+                return dict(self.reverse_status)
+            for row in self.reverses:
+                if row['id'] == rid:
+                    return dict(row)
+            raise urllib.error.HTTPError(path, 404, 'Not Found', {}, None)
         if path == '/api/prompts/today':
             return {'day': (params or {}).get('day') or TODAY, 'total': len(self.prompts), 'prompts': self.prompts}
         if path == '/api/prompts/stats':
@@ -97,6 +109,21 @@ class FakeTower:
             return {'status': 'posted'}
         if path.endswith('/render'):
             return {'id': 77, 'prompt_id': 3, 'status': 'queued'}
+        if path == '/api/prompts/reverse':
+            row = {
+                'id': 11,
+                'status': 'queued',
+                'platform': 'instagram' if 'instagram' in str((payload or {}).get('source_url') or '') else (
+                    'pinterest' if 'pinterest' in str((payload or {}).get('source_url') or '') or 'pin.it' in str((payload or {}).get('source_url') or '') else (
+                        'direct' if (payload or {}).get('source_url') else 'upload'
+                    )
+                ),
+                'source_url': (payload or {}).get('source_url'),
+                'error': None,
+            }
+            self.reverses.append(row)
+            self.reverse_status = dict(row)
+            return row
         raise AssertionError(path)
 
 
@@ -119,6 +146,7 @@ class DeckTests(unittest.TestCase):
             send_video_bytes=lambda c, d, cap: self.sent_videos.append((c, d, cap)),
             send_text=lambda c, t: self.texts.append((c, t)),
             on_render_started=lambda c, r: self.started.append((c, r)),
+            on_reverse_started=lambda c, r: self.started.append((c, r)),
         )
 
     def tearDown(self):
@@ -293,6 +321,86 @@ class DeckTests(unittest.TestCase):
         self.assertFalse(self.deck.deliver_daily({'1'}, lambda c, t, k: sent.append((c, t, k))))
         self.assertEqual(len(sent), 2)
 
+    def test_igtovid_without_url_waits_then_url_starts_reverse(self):
+        reply = self.deck.handle_command('1', 'igtovid', '')
+        self.assertIn('Instagram reel or Pinterest pin', reply.text)
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '1')
+        self.assertEqual(reply.keyboard, [[('✖ Cancel', 'pt:cancel')]])
+        started = self.deck.maybe_take_url('1', 'see https://www.instagram.com/reel/AbC123/')
+        self.assertIsNotNone(started)
+        self.assertIn('Reverse prompt #11 started', started.text)
+        self.assertIn('the Instagram reel', started.text)
+        self.assertEqual(self.started, [('1', 11)])
+        self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse')
+        self.assertEqual(self.tower.posts[-1][1]['source_url'], 'https://www.instagram.com/reel/AbC123/')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '')
+
+    def test_pintovid_with_url_in_the_command_starts_immediately(self):
+        reply = self.deck.handle_command('1', 'pintovid', 'https://www.pinterest.com/pin/123456/')
+        self.assertIn('Reverse prompt #11 started', reply.text)
+        self.assertIn('the Pinterest pin', reply.text)
+        self.assertEqual(self.started, [('1', 11)])
+
+    def test_stray_direct_mp4_without_command_is_ignored(self):
+        self.assertIsNone(self.deck.maybe_take_url('1', 'https://cdn.example.com/clip.mp4'))
+        self.assertEqual(self.tower.posts, [])
+
+    def test_direct_mp4_after_igtovid_starts_reverse(self):
+        self.deck.handle_command('1', 'igtovid', '')
+        reply = self.deck.maybe_take_url('1', 'https://cdn.example.com/clip.mp4')
+        self.assertIsNotNone(reply)
+        self.assertIn('the video link', reply.text)
+
+    def test_cancel_clears_await_url(self):
+        self.deck.handle_command('1', 'igtovid', '')
+        self.deck.handle_callback('1', 'pt:cancel')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '')
+        self.assertIsNone(self.deck.maybe_take_url('1', 'https://cdn.example.com/clip.mp4'))
+
+    def test_forwarded_video_uploads_and_starts_reverse(self):
+        self.sessions.set_state(STATE_VIDEO.format(chat='1'), 'vid-9')
+        reply = self.deck.handle_callback('1', 'pt:video')
+        self.assertIn('Reverse prompt #11 started', reply.text)
+        self.assertIn('your video', reply.text)
+        payload = self.tower.posts[-1][1]
+        self.assertIn('video_base64', payload)
+        self.assertEqual(base64.b64decode(payload['video_base64']), b'JPEGBYTES-vid-9')
+        self.assertEqual(self.sessions.get_state(STATE_VIDEO.format(chat='1'), ''), '')
+
+    def test_watch_reverse_delivers_reel_then_chunked_prompt(self):
+        long_prompt = '\n'.join(f'[{i}.0s–{i + 1}.0s] shot detail ' + ('x' * 80) for i in range(60))
+        self.tower.reverse_status = {
+            'id': 11, 'status': 'done', 'keyword': 'COFFEE',
+            'prompt_text': long_prompt, 'model': 'google/gemini-2.5-flash',
+            'prompt_id': 44, 'reel_key': 'prompts/d/rreel.mp4',
+            'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+        }
+        self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/rreel.mp4')
+        self.assertIn('reel ready, post this', self.sent_videos[0][2])
+        prompt_texts = [t for _c, t in self.texts if t.startswith('📝 Prompt #11') or t.startswith('[')]
+        self.assertGreaterEqual(len(prompt_texts), 2)
+        joined = ''.join(prompt_texts)
+        self.assertIn(long_prompt.split('\n', 1)[0], joined)
+        self.assertIn('keyword COFFEE', self.texts[0][1])
+
+    def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
+        states = iter([
+            {'id': 11, 'status': 'describing', 'duration_s': 8.2},
+            {
+                'id': 11, 'status': 'done', 'keyword': 'WATCH',
+                'prompt_text': '[0.0s–8.0s] a hero watch on wet slate.',
+                'video_key': 'prompts/d/src.mp4', 'reel_key': None,
+                'reel_error': 'no video engine',
+            },
+        ])
+        self.tower.get = lambda path, params=None: next(states)
+        self.deck.api_get = self.tower.get
+        self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertIn('Gemini is watching', self.texts[0][1])
+        self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
+        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
+
 
 class BotWiringTests(unittest.TestCase):
     def setUp(self):
@@ -341,6 +449,30 @@ class BotWiringTests(unittest.TestCase):
         text = self.bot._owner_help()
         self.assertLess(text.index('Prompt Tower'), text.index('/topfreshers'))
         self.assertIn('/promptperf', text)
+        self.assertIn('/igtovid', text)
+        self.assertIn('/pintovid', text)
+        self.assertIn('reverse prompt', text.lower())
+
+    def test_owner_igtovid_asks_for_url_then_url_starts_reverse(self):
+        self.bot._process_locked('100', '/igtovid')
+        _chat, text, keyboard = self.api.keyboards_sent[-1]
+        self.assertIn('Instagram reel or Pinterest pin', text)
+        self.assertEqual(keyboard, [[('✖ Cancel', 'pt:cancel')]])
+        self.bot._process_locked('100', 'https://www.instagram.com/reel/AbC123xyz/')
+        self.assertIn('Reverse prompt #11 started', self.api.keyboards_sent[-1][1])
+        self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse')
+
+    def test_guest_cannot_start_reverse_from_command_or_url(self):
+        self.bot._process_locked('555', '/igtovid')
+        self.assertFalse(any('Reverse prompt' in text for _c, text in self.api.sent))
+        self.bot._process_locked('555', 'https://www.instagram.com/reel/AbC123xyz/')
+        self.assertEqual([p for p, _ in self.tower.posts if p == '/api/prompts/reverse'], [])
+
+    def test_owner_video_tap_uploads_the_clip(self):
+        self.sessions.set_state(STATE_VIDEO.format(chat='100'), 'tg-vid')
+        self.bot._process_locked('100', PROMPT_VIDEO_TAP)
+        self.assertIn('Reverse prompt #11 started', self.api.keyboards_sent[-1][1])
+        self.assertIn('video_base64', self.tower.posts[-1][1])
 
     def test_normalize_update_keeps_photo_file_id(self):
         update = {'message': {'chat': {'id': 100, 'type': 'private'}, 'from': {'username': 'ashok'},
