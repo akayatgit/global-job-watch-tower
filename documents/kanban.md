@@ -83,7 +83,11 @@ Playwright's download — each verified for an H.264 decoder + MP4
 encoder), else PyAV, else OpenCV (silent MPEG-4, last resort). Same
 composer, four verbs per engine. `/api/prompts/stats.reel_engine` and
 `/promptstats` say which engine won and everywhere it looked, so the
-answer is readable from the phone without a shell.
+answer is readable from the phone without a shell. Checking the live
+tower also showed the real blocker for #29: both renders FAILED before the
+reel stage with `The read operation timed out` — `client.run()`'s
+`Prefer: wait` 60.5 s read timeout vs a minutes-long Kling render. Fixed:
+create-then-poll with a 15-min budget + cancel (`PROMPT_VIDEO_TIMEOUT_S`).
 
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real

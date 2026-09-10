@@ -121,6 +121,7 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 | `PROMPT_EMBED_MODEL` | `nomic-embed-text` | `ollama pull nomic-embed-text` on the ThinkPad |
 | `REPLICATE_VIDEO_MODEL` | `kwaivgi/kling-v2.1` | Also handled: `google/veo-3*`, `bytedance/seedance*`, `minimax/*`, `wan-video/*` |
 | `PROMPT_VIDEO_DURATION_S` | `10` | Kling 5/10 · Veo 8 |
+| `PROMPT_VIDEO_TIMEOUT_S` | `900` | How long the worker polls the video model before cancelling the prediction. **Why (2026-09-10):** both #29 renders died with `The read operation timed out` — `replicate.Client.run()` sends `Prefer: wait` and holds ONE HTTP call open with a 60.5 s read timeout while the server waits up to 60 s; a 10 s Kling 1080p render takes minutes. `video_creator.replicate_render` now creates the prediction without waiting, polls every 5 s (status changes land in the worker console: `starting → processing`), tolerates 12 consecutive poll blips, cancels at the budget so nothing keeps billing, and surfaces the model's own error text (`video model failed: …`). |
 | `PROMPT_ASSET_PREFIX` | `prompts` | Under `PARTNER_ASSETS_DIR` (48h GC applies — download/post within 2 days) |
 
 ## 7. Deploy checklist (ThinkPad)

@@ -667,6 +667,116 @@ class VideoCreatorTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     video_creator.create_video('x', image, prompt_id=1, run=lambda m, input: [BytesIO(b'tiny')])
 
+
+class _FakePrediction:
+    def __init__(self, statuses: list[str], *, output=None, error=None, reload_errors: int = 0):
+        self._statuses = list(statuses)
+        self.status = self._statuses.pop(0)
+        self.output = output
+        self.error = error
+        self.id = 'pred_x1'
+        self.cancelled = False
+        self.reloads = 0
+        self._reload_errors = reload_errors
+
+    def reload(self):
+        self.reloads += 1
+        if self._reload_errors:
+            self._reload_errors -= 1
+            raise ConnectionError('wifi blip')
+        if self._statuses:
+            self.status = self._statuses.pop(0)
+
+    def cancel(self):
+        self.cancelled = True
+        self.status = 'canceled'
+
+
+class _FakeClient:
+    def __init__(self, prediction):
+        self.prediction = prediction
+        self.calls: list[tuple] = []
+        outer = self
+
+        class _Preds:
+            def create(self, **kw):
+                outer.calls.append(('predictions', kw))
+                return outer.prediction
+
+        class _ModelPreds:
+            def create(self, **kw):
+                outer.calls.append(('models', kw))
+                return outer.prediction
+
+        class _Models:
+            predictions = _ModelPreds()
+
+        self.predictions = _Preds()
+        self.models = _Models()
+
+
+class ReplicateRenderTests(unittest.TestCase):
+    """Both #29 renders died with 'The read operation timed out' (2026-09-10):
+    client.run() holds one HTTP call open with a 60.5 s read timeout while a
+    10 s Kling render takes minutes. Create without waiting, then poll."""
+
+    def test_creates_without_prefer_wait_and_polls_to_success(self):
+        pred = _FakePrediction(['starting', 'processing', 'processing', 'succeeded'], output='https://r.example/out.mp4')
+        client = _FakeClient(pred)
+        slept: list[float] = []
+        lines: list[str] = []
+        out = video_creator.replicate_render(
+            client, 'kwaivgi/kling-v2.1', input={'prompt': 'x'}, budget_s=900, poll_s=5, sleep=slept.append, log=lines.append,
+        )
+        self.assertEqual(out, 'https://r.example/out.mp4')
+        self.assertEqual(client.calls, [('models', {'model': 'kwaivgi/kling-v2.1', 'input': {'prompt': 'x'}})])
+        self.assertEqual(slept, [5, 5, 5])
+        self.assertEqual(lines, [
+            'video model kwaivgi/kling-v2.1 prediction pred_x1: starting',
+            'video model kwaivgi/kling-v2.1 prediction pred_x1: processing',
+        ])
+        self.assertFalse(pred.cancelled)
+
+    def test_versioned_ref_uses_the_versions_endpoint(self):
+        pred = _FakePrediction(['succeeded'], output=['https://r.example/a.mp4'])
+        client = _FakeClient(pred)
+        out = video_creator.replicate_render(client, 'owner/model:abc123', input={}, budget_s=10, sleep=lambda s: None)
+        self.assertEqual(out, ['https://r.example/a.mp4'])
+        self.assertEqual(client.calls[0][0], 'predictions')
+        self.assertEqual(client.calls[0][1]['version'], 'abc123')
+
+    def test_budget_exceeded_cancels_the_prediction(self):
+        pred = _FakePrediction(['processing'] * 50)
+        client = _FakeClient(pred)
+        clock = iter([0.0, 0.0, 100.0, 200.0, 1000.0, 1000.0])
+        with mock.patch('time.monotonic', side_effect=lambda: next(clock)):
+            with self.assertRaises(RuntimeError) as ctx:
+                video_creator.replicate_render(client, 'kwaivgi/kling-v2.1', input={}, budget_s=900, sleep=lambda s: None)
+        self.assertIn('still processing after 900s — cancelled', str(ctx.exception))
+        self.assertTrue(pred.cancelled)
+
+    def test_model_failure_carries_its_own_reason(self):
+        pred = _FakePrediction(['processing', 'failed'], error='NSFW content detected')
+        with self.assertRaises(RuntimeError) as ctx:
+            video_creator.replicate_render(_FakeClient(pred), 'kwaivgi/kling-v2.1', input={}, budget_s=900, sleep=lambda s: None)
+        self.assertEqual(str(ctx.exception), 'video model failed: NSFW content detected')
+
+    def test_poll_blips_are_tolerated_then_fatal(self):
+        pred = _FakePrediction(['processing', 'succeeded'], output='https://r.example/o.mp4', reload_errors=3)
+        out = video_creator.replicate_render(_FakeClient(pred), 'm/x', input={}, budget_s=900, sleep=lambda s: None)
+        self.assertEqual(out, 'https://r.example/o.mp4')
+        dead = _FakePrediction(['processing'], reload_errors=99)
+        with self.assertRaises(RuntimeError) as ctx:
+            video_creator.replicate_render(_FakeClient(dead), 'm/x', input={}, budget_s=900, sleep=lambda s: None)
+        self.assertIn('lost contact', str(ctx.exception))
+        self.assertEqual(dead.reloads, video_creator.POLL_ERRORS_TOLERATED)
+
+    def test_success_without_a_file_is_an_error(self):
+        pred = _FakePrediction(['succeeded'], output=[])
+        with self.assertRaises(RuntimeError) as ctx:
+            video_creator.replicate_render(_FakeClient(pred), 'm/x', input={}, budget_s=900, sleep=lambda s: None)
+        self.assertIn('returned no file', str(ctx.exception))
+
     def test_build_input_branches_per_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             image = Path(tmp) / 'p.png'

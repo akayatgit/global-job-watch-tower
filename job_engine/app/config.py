@@ -152,6 +152,10 @@ PROMPT_EMBED_MODEL = os.getenv('PROMPT_EMBED_MODEL', 'nomic-embed-text').strip()
 # model requires it; bare owner/name works for official models.
 REPLICATE_VIDEO_MODEL = os.getenv('REPLICATE_VIDEO_MODEL', 'kwaivgi/kling-v2.1').strip()
 PROMPT_VIDEO_DURATION_S = int(os.getenv('PROMPT_VIDEO_DURATION_S', '10'))
+# How long the worker waits for the video model before cancelling the
+# prediction (a 10 s Kling 1080p render takes minutes; the Telegram watcher
+# waits 20 min).
+PROMPT_VIDEO_TIMEOUT_S = int(os.getenv('PROMPT_VIDEO_TIMEOUT_S', '900'))
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')
