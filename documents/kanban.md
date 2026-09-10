@@ -55,8 +55,19 @@ lane and did **not** kick the prompt pipeline until 03:30 UTC. Fix: RSS
 fallback + GitHub prompt-handbook defaults + idle kick when the catalogue
 is empty/stale. Live: per-source `fetched/kept/error` in Live.
 
+**Follow (2026-09-10, product focus):** first 19 stored prompts included
+samurai / eagle / stadium scenes and Chinese README headers — the gate was
+product-*or*-motion with substring product words. Fix: product **required**
+(whole-word nouns or a category), templates (>2 `[slots]`), CJK pages, and
+explainer prose (FAQ / "use this when" / reader-facing vocabulary)
+rejected; README chrome never merges into a prompt block. Every scan
+re-audits stored unrated rows and rebuilds a touched day's top-10. Reddit
+paced 8 s/sub, 403 → RSS-only, 429 → stop for the run. Default web sources
+= six D2C ad-prompt handbooks (probe: 75 real prompts kept / 40 junk out).
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
-taps Scan now, watches Live fill **with a non-zero prompt count**, then
+taps Scan now, watches Live fill **with a non-zero prompt count of real
+product prompts (no samurai)**, then
 renders one video from a product photo and posts once on Instagram.
 Fast-follows: Instagram Graph API publish, live-verify the Instagram
 hashtag source, attribution line on the card.
