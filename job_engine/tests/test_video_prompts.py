@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import urllib.error
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -51,6 +52,27 @@ SNEAKER = (
     'brand logo untouched. Final beat: the shoe lands, splash, camera pushes in on the logo.'
 )
 CAPTION = 'Comment PERFUME for the prompt! Follow for more AI video prompts every day.'
+# Cinematic, camera-rich — and not a product video. Stored on 2026-09-10 by
+# the old product-or-motion gate; the samurai must never read as a prompt.
+SAMURAI = (
+    'A lone samurai stands on a windswept cliff at golden hour, cherry blossoms drifting '
+    'through the frame. Slow dolly push-in on a 50 mm lens, shallow depth of field, rim light '
+    'catching the edge of the blade, long shadows across the wet rock. He slowly draws the sword, '
+    'the camera tilts up to the storm clouds, 24 fps, cinematic 16:9, photorealistic, 4K render. '
+    'Rain begins to fall, each droplet glinting in the backlight as the scene settles into silence.'
+)
+TEMPLATE = (
+    'Create a [duration]-second [aspect ratio] product ad for [product] by [brand]. '
+    'Camera: [camera movement] on a [lens] lens with shallow depth of field. Lighting: [lighting style] '
+    'with soft rim light and gentle reflections on the glass bottle. Motion: the product slowly rotates '
+    'and floats above [surface]. Keep the logo and packaging exact, photorealistic, 4K, 30 fps.'
+)
+PROSE = (
+    'How does each block change the output? Camera is the block most beginners under-use and the one '
+    'Google ranks first in its own guide. If you leave lighting out, the model usually picks flat studio '
+    'light for a product shot; if you state golden hour and a rim light on the bottle, the render follows. '
+    'A strong prompt is specific enough to protect the product and flexible enough to let Veo 3 produce motion.'
+)
 
 
 def make_session():
@@ -105,6 +127,62 @@ class NormalizeTests(unittest.TestCase):
         self.assertGreater(with_numbers, stripped)
         self.assertIn('single run-on sentence — weak shot flow', reasons)
 
+    def test_gate_requires_a_product_as_a_whole_word(self):
+        reading = normalize.read_prompt(SAMURAI)
+        self.assertFalse(reading.is_prompt)
+        self.assertIn('no product — not a D2C video prompt', reading.reasons)
+        # substring matches that fooled the old gate: 'can' in candle/scan, 'ad' in shadow
+        self.assertEqual(normalize.product_word_hits('long shadows, a wide scan of the stadium'), 0)
+        self.assertEqual(normalize.product_word_hits('the perfume bottle and its cap'), 2)
+        for text in (PERFUME, COFFEE, SNEAKER):
+            self.assertTrue(normalize.read_prompt(text).is_prompt, text[:40])
+
+    def test_fill_in_template_is_not_a_finished_prompt(self):
+        reading = normalize.read_prompt(TEMPLATE)
+        self.assertFalse(reading.is_prompt)
+        self.assertIn('fill-in template, not a finished prompt', reading.reasons)
+        # one or two slots ("[brand]") are how public handbooks anonymise — allowed
+        self.assertTrue(normalize.read_prompt(PERFUME.replace('luxury-fragrance', '[brand] fragrance')).is_prompt)
+
+    def test_non_english_index_page_is_rejected(self):
+        cjk = '产品视频提示词 ' * 30 + COFFEE
+        self.assertGreater(normalize.cjk_ratio(cjk), normalize.MAX_CJK_RATIO)
+        self.assertFalse(normalize.read_prompt(cjk).is_prompt)
+        self.assertEqual(normalize.cjk_ratio(COFFEE), 0.0)
+
+    def test_explainer_prose_about_prompting_is_rejected(self):
+        reading = normalize.read_prompt(PROSE)
+        self.assertFalse(reading.is_prompt)
+        self.assertIn('explainer prose about prompting, not a prompt', reading.reasons)
+        self.assertTrue(normalize.looks_like_prose('Use this when the product is visually attractive: skincare, jewelry.'))
+        self.assertTrue(normalize.looks_like_prose('0-2s: Hook — a visual interruption. 2-7s: Demo — show the product.'))
+        self.assertTrue(normalize.looks_like_prose('Want these turned into finished ad videos? Try HeyDreaming.'))
+        # Real prompts survive: constraint words, "model" as a person, a name-dropped tool
+        self.assertFalse(normalize.looks_like_prose(PERFUME))
+        self.assertFalse(normalize.looks_like_prose(
+            'A model holds the serum bottle to the light; the camera should orbit slowly and avoid '
+            'harsh shadows. Notes of vanilla drift as text. Made for Veo 3.'
+        ))
+        self.assertTrue(normalize.read_prompt(f'Here is my Veo 3 prompt: {COFFEE}').is_prompt)
+
+    def test_strip_markdown_drops_readme_chrome_and_keeps_slots(self):
+        raw = (
+            '## Product Showcase\n'
+            '- [Candle explainer](#candle) | - [UGC](#ugc)\n'
+            '`6s · 9:16` · `skincare`\n'
+            '| Model | Notes |\n'
+            '⬆ [Back to top](#top)\n'
+            '> 💡 Tip: swap the brand\n'
+            '**Premium** feature explainer for a [brand] soy candle, see [the guide](https://x.y/z).\n'
+        )
+        text = normalize.strip_markdown(raw)
+        self.assertNotIn('Product Showcase', text)
+        self.assertNotIn('Back to top', text)
+        self.assertNotIn('| Model', text)
+        self.assertNotIn('💡', text)
+        self.assertIn('Premium feature explainer for a [brand] soy candle, see the guide.', text)
+        self.assertNotIn('https://', text)
+
 
 class SourcesTests(unittest.TestCase):
     def test_reddit_listing_yields_candidates_with_provenance(self):
@@ -152,12 +230,56 @@ class SourcesTests(unittest.TestCase):
                 return rss
             raise AssertionError(url)
 
-        out = sources.reddit_candidates(['aivideo'], fetch=fetch)
+        paused: list[float] = []
+        out = sources.reddit_candidates(['aivideo'], fetch=fetch, pause_s=8, pause=paused.append)
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].source, 'reddit')
         self.assertEqual(out[0].author, 'promptsmith')
         self.assertEqual(out[0].source_url, 'https://www.reddit.com/r/aivideo/comments/abc/lv/')
         self.assertIn('Preserve the exact', out[0].text)
+        # A failed JSON call breathes (capped at 3s) before the RSS retry
+        self.assertEqual(paused, [3.0])
+
+    def test_reddit_paces_subs_and_403_switches_to_rss_only(self):
+        calls: list[str] = []
+        paused: list[float] = []
+
+        def fetch(url: str) -> str:
+            calls.append(url)
+            if 'new.json' in url:
+                raise urllib.error.HTTPError(url, 403, 'Blocked', hdrs=None, fp=None)
+            return '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+
+        reports: list[sources.SourceReport] = []
+        out = sources.reddit_candidates(
+            ['aivideo', 'VeoAI', 'KlingAI'], fetch=fetch, reports=reports,
+            pause_s=8, pause=paused.append,
+        )
+        self.assertEqual(out, [])
+        # JSON tried once, then RSS-only for the remaining subs
+        self.assertEqual(sum('new.json' in u for u in calls), 1)
+        self.assertEqual(sum(u.endswith('.rss') for u in calls), 3)
+        # 8s between subs (twice), 3s breather after the failed JSON call
+        self.assertEqual(paused, [3.0, 8, 8])
+        self.assertEqual(len(reports), 3)
+
+    def test_reddit_429_stops_touching_reddit_for_the_run(self):
+        calls: list[str] = []
+
+        def fetch(url: str) -> str:
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 429, 'Too Many Requests', hdrs=None, fp=None)
+
+        reports: list[sources.SourceReport] = []
+        out = sources.reddit_candidates(
+            ['aivideo', 'VeoAI', 'KlingAI'], fetch=fetch, reports=reports,
+            pause_s=0, pause=lambda _s: None,
+        )
+        self.assertEqual(out, [])
+        self.assertEqual(len(calls), 1)  # first JSON call 429s, nothing else is fetched
+        self.assertEqual(len(reports), 3)
+        self.assertIn('429', reports[0].error)
+        self.assertTrue(all(r.error.startswith('skipped') for r in reports[1:]))
 
     def test_web_page_pre_blocks_and_body_paragraphs(self):
         page = f'<html><body><h1>Prompts</h1><pre>{PERFUME}</pre><p>{CAPTION}</p><p>{COFFEE}</p></body></html>'
@@ -167,6 +289,24 @@ class SourcesTests(unittest.TestCase):
         self.assertTrue(all(c.source == 'promptbase' for c in out))
         self.assertTrue(any('fragrance' in t for t in texts))
         self.assertTrue(any('cold brew' in t for t in texts))
+
+    def test_readme_toc_and_cjk_headers_never_merge_into_a_prompt(self):
+        readme = (
+            '# Awesome Ad Video Prompts\n\n'
+            '- Product Showcase (6) | - UGC & Authentic (6) | - Before & After (4)\n'
+            '- Unboxing (3) | - Lifestyle (5)\n\n'
+            '产品展示 · 开箱 · 生活方式\n\n'
+            f'{PERFUME}\n\n'
+            '`10s · 9:16` · `perfume`\n\n'
+            f'{COFFEE}\n'
+        )
+        blocks = sources.extract_prompt_blocks(readme)
+        self.assertEqual(len(blocks), 2)
+        self.assertTrue(blocks[0].startswith('Create a 10-second'))
+        self.assertTrue(blocks[1].startswith('A 8-second'))
+        self.assertTrue(sources._is_chrome_paragraph('- Product Showcase (6) | - UGC (6)\n- Unboxing (3)'))
+        self.assertTrue(sources._is_chrome_paragraph('产品展示 · 开箱 · 生活方式'))
+        self.assertFalse(sources._is_chrome_paragraph(COFFEE))
 
     def test_instagram_captions_parsed_from_embedded_json(self):
         caption = json.dumps(PERFUME)[1:-1]
@@ -339,6 +479,38 @@ class PipelineTests(unittest.TestCase):
         )
         kinds = [row.kind for row in self.db.query(TowerEvent).all()]
         self.assertIn('prompt_scan', kinds)
+
+    def test_reaudit_rejects_stored_non_product_rows_and_rebuilds_shortlist(self):
+        day = date(2026, 9, 10)
+        # Simulate the pre-product-gate catalogue: the samurai slipped in and got shortlisted.
+        stored = pipeline.ingest(self.db, Candidate(text=PERFUME, source='web'))[0]
+        samurai = VideoPrompt(
+            text=SAMURAI, fingerprint=normalize.fingerprint(SAMURAI), source='web',
+            status='shortlisted', heuristic_score=70.0, title='Samurai cliff',
+        )
+        self.db.add(samurai)
+        self.db.commit()
+        self.db.add_all([
+            PromptShortlist(day=day, rank=1, prompt_id=samurai.id),
+            PromptShortlist(day=day, rank=2, prompt_id=stored.id),
+        ])
+        self.db.commit()
+
+        rejected, touched = pipeline.reaudit_stored(self.db)
+        self.assertEqual(rejected, 1)
+        self.assertEqual(touched, {day})
+        self.db.refresh(samurai)
+        self.assertEqual(samurai.status, 'rejected')
+        self.assertEqual([e.prompt_id for e in self.db.query(PromptShortlist).all()], [stored.id])
+
+        # run_daily on that day re-audits and rebuilds the shortlist without the samurai
+        summary = pipeline.run_daily(
+            self.db, day=day, candidates=[Candidate(text=COFFEE, source='web')], chat=fake_chat_factory(),
+        )
+        self.assertEqual(summary['reaudited'], 0)
+        ids = {p.id for _e, p in pipeline.shortlist_for_day(self.db, day)}
+        self.assertNotIn(samurai.id, ids)
+        self.assertIn(stored.id, ids)
 
     def test_idle_scan_reason_kicks_empty_and_stale_but_not_a_fresh_retry(self):
         now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
