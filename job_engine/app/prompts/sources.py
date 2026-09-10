@@ -4,7 +4,8 @@ Sources are pluggable and independent: one failing (Instagram login gone,
 Reddit rate-limit) never blocks the others. All network access goes through
 an injectable fetcher so the extractors are unit-testable offline.
 
-- reddit    public JSON listings of prompt subreddits (no auth)
+- reddit    public JSON listings, with Atom RSS fallback (JSON is 403-blocked
+            from datacenter IPs as of 2026-09-10)
 - web       any public page listed in PROMPT_WEB_URLS (blogs, galleries)
 - instagram hashtag pages through the tower's logged-in stealth browser
             (best effort — Instagram is hostile to scraping; off by default)
@@ -19,6 +20,7 @@ import logging
 import re
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable
@@ -29,8 +31,9 @@ logger = logging.getLogger(__name__)
 
 USER_AGENT = (
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
-    'Chrome/128.0 Safari/537.36 PromptTower/1.0'
+    'Chrome/128.0.0.0 Safari/537.36'
 )
+ATOM = '{http://www.w3.org/2005/Atom}'
 FENCE_RE = re.compile(r'```(?:[a-z]*\n)?(.*?)```', re.S)
 TAG_RE = re.compile(r'<[^>]+>')
 SCRIPT_RE = re.compile(r'<(script|style)[^>]*>.*?</\1>', re.S | re.I)
@@ -52,8 +55,30 @@ class Candidate:
     posted_at: datetime | None = None
 
 
+@dataclass
+class SourceReport:
+    source: str
+    fetched: int = 0
+    kept: int = 0
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, int | str | None]:
+        return {
+            'source': self.source,
+            'fetched': self.fetched,
+            'kept': self.kept,
+            'error': self.error,
+        }
+
+
 def http_fetch(url: str, *, timeout: int = 30) -> str:
-    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': '*/*'})
+    req = urllib.request.Request(
+        url,
+        headers={
+            'User-Agent': USER_AGENT,
+            'Accept': 'application/json, application/atom+xml, application/rss+xml, text/html, */*',
+        },
+    )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode('utf-8', errors='replace')
 
@@ -111,47 +136,6 @@ def extract_prompt_blocks(text: str) -> list[str]:
     return out
 
 
-# ---------------------------------------------------------------- reddit
-
-def reddit_candidates(
-    subreddits: Iterable[str], *, limit: int = 40, fetch: Fetcher = http_fetch,
-) -> list[Candidate]:
-    out: list[Candidate] = []
-    for sub in subreddits:
-        sub = sub.strip().lstrip('r/').strip('/')
-        if not sub:
-            continue
-        url = f'https://www.reddit.com/r/{sub}/new.json?limit={min(max(limit, 1), 100)}&raw_json=1'
-        try:
-            payload = json.loads(fetch(url))
-        except Exception as exc:
-            logger.warning('reddit source failed r/%s: %s', sub, exc)
-            continue
-        children = ((payload.get('data') or {}).get('children') or []) if isinstance(payload, dict) else []
-        for child in children:
-            data = child.get('data') or {}
-            body = str(data.get('selftext') or '')
-            if not body:
-                continue
-            permalink = data.get('permalink') or ''
-            posted = data.get('created_utc')
-            posted_at = (
-                datetime.fromtimestamp(float(posted), tz=timezone.utc) if posted else None
-            )
-            for block in extract_prompt_blocks(body):
-                out.append(Candidate(
-                    text=block,
-                    source='reddit',
-                    source_url=f'https://www.reddit.com{permalink}' if permalink else None,
-                    author=str(data.get('author') or '') or None,
-                    title=str(data.get('title') or '')[:300] or None,
-                    posted_at=posted_at,
-                ))
-    return out
-
-
-# ------------------------------------------------------------------- web
-
 def html_to_blocks(page_html: str) -> list[str]:
     """Prefer <pre>/<code>/<blockquote>; then the stripped body text."""
     cleaned = SCRIPT_RE.sub(' ', page_html or '')
@@ -176,23 +160,234 @@ def html_to_blocks(page_html: str) -> list[str]:
     return unique
 
 
-def web_candidates(urls: Iterable[str], *, fetch: Fetcher = http_fetch) -> list[Candidate]:
+def _err_text(exc: BaseException) -> str:
+    code = getattr(exc, 'code', None)
+    reason = getattr(exc, 'reason', None)
+    if code is not None:
+        return f'HTTP {code} {reason or ""}'.strip()
+    return str(exc)[:220]
+
+
+def _strip_html(raw: str) -> str:
+    text = html.unescape(raw or '')
+    text = SCRIPT_RE.sub(' ', text)
+    text = re.sub(r'<(br|/p|/div|/li|/h\d)[^>]*>', '\n', text, flags=re.I)
+    text = html.unescape(TAG_RE.sub(' ', text))
+    return re.sub(r'[ \t]+', ' ', text).strip()
+
+
+def _parse_iso_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------- reddit
+
+def _posts_from_json(payload: object) -> list[dict]:
+    children = ((payload.get('data') or {}).get('children') or []) if isinstance(payload, dict) else []
+    posts: list[dict] = []
+    for child in children:
+        data = (child or {}).get('data') or {}
+        permalink = str(data.get('permalink') or '')
+        url = f'https://www.reddit.com{permalink}' if permalink.startswith('/') else (permalink or None)
+        posted = data.get('created_utc')
+        posted_at = (
+            datetime.fromtimestamp(float(posted), tz=timezone.utc) if posted else None
+        )
+        posts.append({
+            'title': str(data.get('title') or ''),
+            'selftext': str(data.get('selftext') or ''),
+            'html': '',
+            'url': url,
+            'author': str(data.get('author') or '') or None,
+            'posted_at': posted_at,
+        })
+    return posts
+
+
+def _atom_text(el: ET.Element | None) -> str:
+    if el is None:
+        return ''
+    if el.text:
+        return el.text
+    return ''.join(el.itertext())
+
+
+def _posts_from_feed(xml_text: str) -> list[dict]:
+    root = ET.fromstring(xml_text)
+    posts: list[dict] = []
+    entries = root.findall(f'{ATOM}entry')
+    if entries:
+        for entry in entries:
+            title = _atom_text(entry.find(f'{ATOM}title')).strip()
+            link = entry.find(f'{ATOM}link')
+            href = (link.get('href') if link is not None else '') or ''
+            if not href:
+                href = _atom_text(entry.find(f'{ATOM}id')).strip()
+            author_el = entry.find(f'{ATOM}author/{ATOM}name')
+            author = _atom_text(author_el).lstrip('/').removeprefix('u/').removeprefix('user/') or None
+            content_el = entry.find(f'{ATOM}content')
+            if content_el is None:
+                content_el = entry.find(f'{ATOM}summary')
+            html_body = html.unescape(_atom_text(content_el))
+            posts.append({
+                'title': title,
+                'selftext': _strip_html(html_body),
+                'html': html_body,
+                'url': href or None,
+                'author': author,
+                'posted_at': _parse_iso_dt(_atom_text(entry.find(f'{ATOM}updated'))),
+            })
+        return posts
+
+    channel = root.find('channel')
+    items = (channel.findall('item') if channel is not None else []) or root.findall('item')
+    for item in items:
+        title = (item.findtext('title') or '').strip()
+        href = (item.findtext('link') or '').strip()
+        html_body = html.unescape(item.findtext('{http://purl.org/rss/1.0/modules/content/}encoded') or item.findtext('description') or '')
+        author = (item.findtext('author') or '').lstrip('/').removeprefix('u/') or None
+        posts.append({
+            'title': title,
+            'selftext': _strip_html(html_body),
+            'html': html_body,
+            'url': href or None,
+            'author': author,
+            'posted_at': None,
+        })
+    return posts
+
+
+def _candidates_from_posts(posts: list[dict]) -> list[Candidate]:
+    out: list[Candidate] = []
+    seen: set[str] = set()
+    for post in posts:
+        title = str(post.get('title') or '').strip()
+        body = str(post.get('selftext') or '').strip()
+        html_body = str(post.get('html') or '').strip()
+        combined = body
+        if title and title.lower() not in body.lower():
+            combined = f'{title}\n\n{body}' if body else title
+        blocks: list[str] = []
+        if html_body:
+            blocks.extend(html_to_blocks(html_body))
+        if not blocks:
+            blocks.extend(extract_prompt_blocks(combined))
+        url = post.get('url')
+        author = post.get('author')
+        posted_at = post.get('posted_at')
+        for block in blocks:
+            reading = read_prompt(block)
+            if not reading.is_prompt or reading.fingerprint in seen:
+                continue
+            seen.add(reading.fingerprint)
+            out.append(Candidate(
+                text=reading.text,
+                source='reddit',
+                source_url=url,
+                author=author,
+                title=(title or reading.title or '')[:300] or None,
+                posted_at=posted_at,
+            ))
+    return out
+
+
+def _json_has_bodies(posts: list[dict]) -> bool:
+    return any((p.get('selftext') or '').strip() for p in posts)
+
+
+def reddit_candidates(
+    subreddits: Iterable[str],
+    *,
+    limit: int = 40,
+    fetch: Fetcher = http_fetch,
+    reports: list[SourceReport] | None = None,
+) -> list[Candidate]:
+    """JSON first; Atom RSS when JSON 403s or returns link-only posts."""
+    out: list[Candidate] = []
+    cap = min(max(int(limit), 1), 100)
+    for sub in subreddits:
+        sub = sub.strip().lstrip('r/').strip('/')
+        if not sub:
+            continue
+        report = SourceReport(source=f'reddit r/{sub}')
+        json_url = f'https://www.reddit.com/r/{sub}/new.json?limit={cap}&raw_json=1'
+        rss_url = f'https://www.reddit.com/r/{sub}/new.rss'
+        posts: list[dict] = []
+        errors: list[str] = []
+        try:
+            payload = json.loads(fetch(json_url))
+            posts = _posts_from_json(payload)
+        except Exception as exc:
+            errors.append(_err_text(exc))
+            logger.warning('reddit JSON failed r/%s: %s', sub, exc)
+
+        if not _json_has_bodies(posts):
+            try:
+                rss_posts = _posts_from_feed(fetch(rss_url))
+                if rss_posts:
+                    posts = rss_posts
+                    errors = []
+            except Exception as exc:
+                errors.append(_err_text(exc))
+                logger.warning('reddit RSS failed r/%s: %s', sub, exc)
+
+        report.fetched = len(posts)
+        kept = _candidates_from_posts(posts)
+        report.kept = len(kept)
+        if errors and not kept:
+            report.error = ' · '.join(errors)
+        out.extend(kept)
+        if reports is not None:
+            reports.append(report)
+    return out
+
+
+# ------------------------------------------------------------------- web
+
+def web_candidates(
+    urls: Iterable[str],
+    *,
+    fetch: Fetcher = http_fetch,
+    reports: list[SourceReport] | None = None,
+) -> list[Candidate]:
     out: list[Candidate] = []
     for url in urls:
         url = url.strip()
         if not url:
             continue
+        host = urllib.parse.urlparse(url).netloc.lower()
+        source = 'promptbase' if 'promptbase' in host else 'web'
+        report = SourceReport(source=f'web {host or url[:40]}')
         try:
             page = fetch(url)
         except Exception as exc:
+            report.error = _err_text(exc)
             logger.warning('web source failed %s: %s', url, exc)
+            if reports is not None:
+                reports.append(report)
             continue
-        host = urllib.parse.urlparse(url).netloc.lower()
-        source = 'promptbase' if 'promptbase' in host else 'web'
-        for block in html_to_blocks(page):
+        kept: list[Candidate] = []
+        raw_blocks = html_to_blocks(page)
+        # Markdown / raw GitHub pages have no HTML tags — still mine fences + paragraphs
+        if not raw_blocks:
+            raw_blocks = extract_prompt_blocks(page)
+        report.fetched = len(raw_blocks)
+        for block in raw_blocks:
             reading = read_prompt(block)
             if reading.is_prompt:
-                out.append(Candidate(text=reading.text, source=source, source_url=url, author=host))
+                kept.append(Candidate(
+                    text=reading.text, source=source, source_url=url, author=host or None,
+                    title=reading.title,
+                ))
+        report.kept = len(kept)
+        out.extend(kept)
+        if reports is not None:
+            reports.append(report)
     return out
 
 
@@ -212,26 +407,42 @@ def instagram_captions(page_html: str) -> list[tuple[str, str | None]]:
     return out
 
 
-def instagram_candidates(tags: Iterable[str], *, fetch: Fetcher = browser_fetch) -> list[Candidate]:
+def instagram_candidates(
+    tags: Iterable[str],
+    *,
+    fetch: Fetcher = browser_fetch,
+    reports: list[SourceReport] | None = None,
+) -> list[Candidate]:
     out: list[Candidate] = []
     for tag in tags:
         tag = tag.strip().lstrip('#')
         if not tag:
             continue
         url = f'https://www.instagram.com/explore/tags/{urllib.parse.quote(tag)}/'
+        report = SourceReport(source=f'instagram #{tag}')
         try:
             page = fetch(url)
         except Exception as exc:
+            report.error = _err_text(exc)
             logger.warning('instagram source failed #%s: %s', tag, exc)
+            if reports is not None:
+                reports.append(report)
             continue
-        for caption, code in instagram_captions(page):
+        captions = instagram_captions(page)
+        report.fetched = len(captions)
+        kept: list[Candidate] = []
+        for caption, code in captions:
             for block in extract_prompt_blocks(caption):
-                out.append(Candidate(
+                kept.append(Candidate(
                     text=block,
                     source='instagram',
                     source_url=f'https://www.instagram.com/p/{code}/' if code else url,
                     title=f'#{tag}',
                 ))
+        report.kept = len(kept)
+        out.extend(kept)
+        if reports is not None:
+            reports.append(report)
     return out
 
 
@@ -249,19 +460,34 @@ def manual_candidate(text: str, *, author: str | None = None, source_url: str | 
 
 # --------------------------------------------------------------- gather
 
-def gather_candidates(*, fetch: Fetcher = http_fetch, browser: Fetcher | None = None) -> list[Candidate]:
-    """Every configured source, in one list. Never raises."""
+def gather_with_reports(
+    *, fetch: Fetcher = http_fetch, browser: Fetcher | None = None,
+) -> tuple[list[Candidate], list[dict]]:
+    """Every configured source, plus a per-source fetched/kept/error report.
+    Never raises."""
     from app import config
 
     limit = int(getattr(config, 'PROMPT_SOURCE_LIMIT', 40))
     out: list[Candidate] = []
+    reports: list[SourceReport] = []
     subs = [s for s in (getattr(config, 'PROMPT_REDDIT_SUBS', '') or '').split(',') if s.strip()]
     if subs:
-        out.extend(reddit_candidates(subs, limit=limit, fetch=fetch))
+        out.extend(reddit_candidates(subs, limit=limit, fetch=fetch, reports=reports))
     urls = [u for u in (getattr(config, 'PROMPT_WEB_URLS', '') or '').split(',') if u.strip()]
     if urls:
-        out.extend(web_candidates(urls, fetch=fetch))
+        out.extend(web_candidates(urls, fetch=fetch, reports=reports))
     tags = [t for t in (getattr(config, 'PROMPT_INSTAGRAM_TAGS', '') or '').split(',') if t.strip()]
     if tags:
-        out.extend(instagram_candidates(tags, fetch=browser or browser_fetch))
-    return out
+        out.extend(instagram_candidates(tags, fetch=browser or browser_fetch, reports=reports))
+    if not subs and not urls and not tags:
+        reports.append(SourceReport(
+            source='config',
+            error='no sources configured (PROMPT_REDDIT_SUBS / PROMPT_WEB_URLS empty)',
+        ))
+    return out, [r.as_dict() for r in reports]
+
+
+def gather_candidates(*, fetch: Fetcher = http_fetch, browser: Fetcher | None = None) -> list[Candidate]:
+    """Every configured source, in one list. Never raises."""
+    candidates, _reports = gather_with_reports(fetch=fetch, browser=browser)
+    return candidates

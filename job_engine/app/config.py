@@ -112,8 +112,21 @@ PROMPT_REDDIT_SUBS = os.getenv(
     'PROMPT_REDDIT_SUBS',
     'aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts',
 ).strip()
-# Comma-separated public web pages to mine (prompt blogs, galleries)
-PROMPT_WEB_URLS = os.getenv('PROMPT_WEB_URLS', '').strip()
+# Comma-separated public web pages to mine (prompt blogs, galleries).
+# Default = public GitHub prompt handbooks so the first Scan now is not empty
+# when Reddit JSON is 403-blocked (2026-09-10).
+_DEFAULT_PROMPT_WEB_URLS = (
+    'https://raw.githubusercontent.com/cclank/lanshu-awesome-ai-video-kit/main/prompts/kling/README.md,'
+    'https://raw.githubusercontent.com/cclank/lanshu-awesome-ai-video-kit/main/prompts/veo/README.md'
+)
+# Blank env (PROMPT_WEB_URLS=) must not wipe the default — ThinkPad .env
+# often sets the key empty, which would otherwise override the fallback.
+_raw_prompt_web_urls = os.getenv('PROMPT_WEB_URLS')
+PROMPT_WEB_URLS = (
+    _raw_prompt_web_urls.strip()
+    if _raw_prompt_web_urls and _raw_prompt_web_urls.strip()
+    else _DEFAULT_PROMPT_WEB_URLS
+)
 # Comma-separated Instagram hashtags (no #) — needs the logged-in Chrome
 # profile; empty = Instagram source off
 PROMPT_INSTAGRAM_TAGS = os.getenv('PROMPT_INSTAGRAM_TAGS', '').strip()

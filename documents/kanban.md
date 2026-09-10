@@ -48,11 +48,18 @@ Spec: [`prompt-tower.md`](./prompt-tower.md).
 Scores / Sources / Activity / Live / Health / Winners. Job stall banner
 off while prompts mode. Real npm for VIGIL build.
 
+**Follow (2026-09-10, 0 prompts):** Scan now was not collecting. Reddit
+JSON listings return HTTP 403 Blocked; default `PROMPT_WEB_URLS` was empty
+(and a blank `.env` key wiped the fallback); the 90s beat slept the job
+lane and did **not** kick the prompt pipeline until 03:30 UTC. Fix: RSS
+fallback + GitHub prompt-handbook defaults + idle kick when the catalogue
+is empty/stale. Live: per-source `fetched/kept/error` in Live.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
-taps Scan now, watches Live fill, then renders one video from a product
-photo and posts once on Instagram. Fast-follows: Instagram Graph API
-publish, live-verify the Instagram hashtag source, attribution line on the
-card.
+taps Scan now, watches Live fill **with a non-zero prompt count**, then
+renders one video from a product photo and posts once on Instagram.
+Fast-follows: Instagram Graph API publish, live-verify the Instagram
+hashtag source, attribution line on the card.
 
 ### 15. Job alerts ("Set alert every day") + owner push notifications
 

@@ -178,6 +178,44 @@ def _is_retryable(exc: Exception) -> bool:
     return any(marker in msg for marker in RETRYABLE_MARKERS)
 
 
+def _maybe_dispatch_idle_prompt_scan() -> dict:
+    """Job scrapes stay asleep in prompts mode, but an empty catalogue
+    should not wait until 03:30 UTC. Kick the daily pipeline when idle."""
+    from sqlalchemy import func
+
+    from app.models import TowerEvent, VideoPrompt
+    from app.prompts.pipeline import idle_scan_reason
+
+    now = utcnow()
+    with SessionLocal() as db:
+        prompt_count = int(db.scalar(select(func.count(VideoPrompt.id))) or 0)
+        last_caught = db.scalar(select(func.max(VideoPrompt.collected_at)))
+        last_scan = db.scalar(
+            select(func.max(TowerEvent.ts)).where(TowerEvent.kind == 'prompt_scan')
+        )
+    reason = idle_scan_reason(
+        prompt_count=prompt_count,
+        last_collected_at=last_caught,
+        last_scan_at=last_scan,
+        now=now,
+    )
+    if not reason:
+        return {'dispatched': 0, 'mode': 'prompts', 'kicked': False, 'reason': 'fresh'}
+
+    try:
+        import redis
+        client = redis.Redis.from_url(app_config.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        locked = bool(client.set('prompt-tower:idle-scan', '1', nx=True, ex=20 * 60))
+    except Exception:
+        locked = True
+    if not locked:
+        return {'dispatched': 0, 'mode': 'prompts', 'kicked': False, 'reason': 'locked'}
+
+    console_log('beat', f'Prompt Tower idle kick — {reason}. Starting a scan.')
+    daily_prompt_pipeline.delay()
+    return {'dispatched': 1, 'mode': 'prompts', 'kicked': True, 'reason': reason}
+
+
 @celery.task(name='app.tasks.enqueue_due_work')
 def enqueue_due_work():
     """Beat task: dispatch due recurring configs and due one-off runs."""
@@ -188,7 +226,7 @@ def enqueue_due_work():
     # definitions, data and code stay intact (source-safety law); flip
     # TOWER_MODE=jobs to wake them.
     if getattr(app_config, 'TOWER_MODE', 'prompts') == 'prompts':
-        return {'dispatched': 0, 'mode': 'prompts', 'paused': True}
+        return _maybe_dispatch_idle_prompt_scan()
 
     now = utcnow()
     dispatched = 0
@@ -807,6 +845,13 @@ def daily_prompt_pipeline(self, force: bool = False):
     except Exception as exc:
         console_log('beat', f'Prompt Tower daily run failed: {exc}', level='error')
         raise self.retry(exc=exc)
+    for report in summary.get('sources') or []:
+        err = f" — {report['error']}" if report.get('error') else ''
+        console_log(
+            'beat',
+            f"{report.get('source')}: fetched {report.get('fetched', 0)}, "
+            f"kept {report.get('kept', 0)}{err}",
+        )
     console_log(
         'beat',
         f"Prompt Tower — {summary['candidates']} candidates · "

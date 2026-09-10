@@ -17,13 +17,48 @@ from sqlalchemy.orm import Session
 from app.models import PromptShortlist, VideoPrompt
 from app.prompts import rag, scoring
 from app.prompts.normalize import read_prompt
-from app.prompts.sources import Candidate, gather_candidates
+from app.prompts.sources import Candidate, gather_with_reports
 
 logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def idle_scan_reason(
+    *,
+    prompt_count: int,
+    last_collected_at: datetime | None,
+    last_scan_at: datetime | None,
+    now: datetime | None = None,
+    stale_after: timedelta = timedelta(hours=6),
+    retry_after: timedelta = timedelta(minutes=25),
+) -> str | None:
+    """Why the 90s beat should kick a prompt scan, or None to wait.
+
+    Daily crontab is 03:30 UTC. After a deploy the catalogue stays at 0
+    until tomorrow unless Scan now fires — so an empty or stale catalogue
+    triggers an extra run. A recent scan that stored nothing waits
+    `retry_after` so we do not hammer Reddit."""
+    now = now or utcnow()
+    last_collected_at = _aware(last_collected_at)
+    last_scan_at = _aware(last_scan_at)
+    if last_scan_at is not None and now - last_scan_at < retry_after:
+        return None
+    if prompt_count <= 0:
+        return 'empty-catalogue'
+    if last_collected_at is None or now - last_collected_at >= stale_after:
+        return 'stale-catalogue'
+    return None
 
 
 # ---------------------------------------------------------------- ingest
@@ -261,13 +296,32 @@ def run_daily(
     """The whole day in one call. `candidates` overrides live sources
     (tests / manual re-runs); `chat` overrides the model."""
     day = day or utcnow().date()
+    source_reports: list[dict[str, Any]] = []
     if candidates is None:
-        candidates = gather_candidates()
+        candidates, source_reports = gather_with_reports()
     counts = ingest_many(db, candidates)
     scored = score_pending(db, chat=chat)
     promoted = rag.promote_winners(db)
     db.commit()
     shortlist = build_shortlist(db, day, force=force)
+    try:
+        from app.tower_health import record_event
+        bits = []
+        for report in source_reports[:10]:
+            bit = (
+                f"{report.get('source')}: fetched {report.get('fetched', 0)} "
+                f"kept {report.get('kept', 0)}"
+            )
+            if report.get('error'):
+                bit += f" err={report['error']}"
+            bits.append(bit)
+        detail = (
+            f"{len(candidates)} cand · {counts.get('created', 0)} new"
+            + ('; ' + '; '.join(bits) if bits else '')
+        )
+        record_event(db, 'prompt_scan', detail=detail[:1000])
+    except Exception:
+        logger.exception('prompt_scan event failed')
     return {
         'day': day.isoformat(),
         'candidates': len(candidates),
@@ -275,5 +329,6 @@ def run_daily(
         'scored': scored,
         'promoted': promoted,
         'shortlisted': len(shortlist),
+        'sources': source_reports,
         'top': [serialize_prompt(prompt, rank=entry.rank) for entry, prompt in shortlist],
     }
