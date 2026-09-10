@@ -330,14 +330,20 @@ cd "$JOB_ENGINE"
 log "applying migrations..."
 alembic upgrade head
 
-# Prompt Tower reel composer (2026-09-10) shells out to the system ffmpeg.
-# Missing ffmpeg does not fail the deploy — the raw clip still ships and the
-# Telegram caption says why — but say it loudly here so it gets installed.
-if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
-  log "ffmpeg present: $(ffmpeg -version 2>/dev/null | head -n1)"
-else
-  log "WARNING: ffmpeg/ffprobe not installed — reels will not compose. Fix: sudo apt install -y ffmpeg"
-fi
+# Prompt Tower reel composer (2026-09-10): hunts for a video engine the
+# machine already has — an ffmpeg binary anywhere (PATH, conda envs,
+# imageio-ffmpeg, Playwright…), else PyAV, else OpenCV. A missing engine does
+# not fail the deploy — the raw clip still ships and the Telegram caption
+# says why — but say it loudly here. Same discovery the worker runs, same
+# interpreter, so what prints here is what /api/prompts/stats will report.
+REEL_ENGINE="$(python -m app.prompts.reel_engines 2>/dev/null || true)"
+[ -n "$REEL_ENGINE" ] || REEL_ENGINE='none — discovery crashed'
+case "$REEL_ENGINE" in
+  none*)
+    log "WARNING: reel engine — $REEL_ENGINE" ;;
+  *)
+    log "reel engine — $REEL_ENGINE" ;;
+esac
 
 # MNC-first collection base (2026-08-14): idempotent — upserts the giant
 # catalogue, sleeps role-keyword searches, asserts detail enrich = full.

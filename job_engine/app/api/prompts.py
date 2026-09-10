@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import PromptRender, VideoPrompt
 from app.prompts import admin as prompt_admin
-from app.prompts import pipeline, rag, video_creator
+from app.prompts import pipeline, rag, reel_engines, video_creator
 from app.prompts.sources import manual_candidate
 
 router = APIRouter(prefix='/api/prompts')
@@ -129,6 +129,8 @@ def stats(db: Session = Depends(get_db)):
     last = db.scalar(select(func.max(VideoPrompt.collected_at)))
     base = rag.baseline(db)
     renders_done = db.scalar(select(func.count(PromptRender.id)).where(PromptRender.status == 'done')) or 0
+    reels_done = db.scalar(select(func.count(PromptRender.id)).where(PromptRender.reel_key.is_not(None))) or 0
+    reels_failed = db.scalar(select(func.count(PromptRender.id)).where(PromptRender.reel_error.is_not(None))) or 0
     return {
         'total': total,
         'scored': scored,
@@ -139,6 +141,12 @@ def stats(db: Session = Depends(get_db)):
         'by_source': by_source,
         'shortlisted_today': len(pipeline.shortlist_for_day(db, today_day)),
         'renders_done': renders_done,
+        'reels_done': reels_done,
+        'reels_failed': reels_failed,
+        # Which video engine THIS machine composes reels with (ffmpeg binary
+        # found anywhere / PyAV / OpenCV) and everywhere it looked — readable
+        # from the phone, no shell needed (2026-09-10).
+        'reel_engine': reel_engines.describe_engine(),
         'baseline_mean': base.mean,
         'baseline_std': base.std,
         'last_collected_at': last.isoformat() if last else None,
