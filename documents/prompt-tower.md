@@ -21,7 +21,9 @@
 - Authority first: a daily Instagram post in the reference format builds the audience that later buys prompt+video packs.
 - Ashok's ordering: **Instagram authority → daily top-10 via Hermes scoring → rank + RAG learning → Telegram button flow → AI video through AvatarPitch assets.**
 
-## 2. Daily pipeline (Celery beat, 03:30 UTC = 09:00 IST)
+## 2. Daily pipeline (Celery beat, 03:30 UTC = 09:00 IST + idle kick)
+
+The crontab still fires at 09:00 IST. If the catalogue is **empty** or the last catch is **older than 6 hours**, the 90-second beat also kicks one scan (Redis lock, 25-minute retry after a zero result) so a deploy does not sit at 0 prompts until tomorrow. **Scan now** is the same pipeline.
 
 ```
 sources ──► normalize/dedupe ──► RAG embed ──► Hermes score ──► top-10 ──► Telegram deck
@@ -89,8 +91,8 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 |---|---|---|
 | `TOWER_MODE` | `prompts` | `prompts` = job beat asleep · `jobs` = legacy collection |
 | `PROMPT_PIPELINE_UTC_HOUR` / `_MINUTE` | `3` / `30` | Daily run (09:00 IST) |
-| `PROMPT_REDDIT_SUBS` | `aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts` | Public JSON listings |
-| `PROMPT_WEB_URLS` | empty | Public pages to mine (blogs, galleries, PromptBase listings) |
+| `PROMPT_REDDIT_SUBS` | `aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts` | Public listings. **JSON is 403-blocked** from typical server IPs — collector tries `.json` then falls back to Atom `.rss`. |
+| `PROMPT_WEB_URLS` | Kling + Veo GitHub prompt handbooks (see `.env.example`) | Public pages to mine. Blank `PROMPT_WEB_URLS=` in `.env` still uses this default. |
 | `PROMPT_INSTAGRAM_TAGS` | empty (off) | Hashtags via the logged-in stealth Chrome profile |
 | `PROMPT_SOURCE_LIMIT` | `40` | Per-source fetch cap |
 | `PROMPT_SHORTLIST_SIZE` / `PROMPT_MIN_SCORE` | `10` / `55` | Deck size, eligibility floor |

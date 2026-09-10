@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
+import html
 
 from PIL import Image
 from sqlalchemy import create_engine
@@ -132,6 +133,32 @@ class SourcesTests(unittest.TestCase):
             raise OSError('rate limited')
         self.assertEqual(sources.reddit_candidates(['aivideo'], fetch=boom), [])
 
+    def test_reddit_rss_fallback_when_json_blocked(self):
+        rss = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<feed xmlns="http://www.w3.org/2005/Atom">'
+            '<entry>'
+            '<title>LV perfume ad recreated</title>'
+            '<link href="https://www.reddit.com/r/aivideo/comments/abc/lv/"/>'
+            '<author><name>/u/promptsmith</name></author>'
+            f'<content type="html">{html.escape(f"<pre><code>{PERFUME}</code></pre>")}</content>'
+            '</entry></feed>'
+        )
+
+        def fetch(url: str) -> str:
+            if 'new.json' in url:
+                raise OSError('HTTP Error 403: Blocked')
+            if url.endswith('.rss'):
+                return rss
+            raise AssertionError(url)
+
+        out = sources.reddit_candidates(['aivideo'], fetch=fetch)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].source, 'reddit')
+        self.assertEqual(out[0].author, 'promptsmith')
+        self.assertEqual(out[0].source_url, 'https://www.reddit.com/r/aivideo/comments/abc/lv/')
+        self.assertIn('Preserve the exact', out[0].text)
+
     def test_web_page_pre_blocks_and_body_paragraphs(self):
         page = f'<html><body><h1>Prompts</h1><pre>{PERFUME}</pre><p>{CAPTION}</p><p>{COFFEE}</p></body></html>'
         out = sources.web_candidates(['https://promptbase.com/x'], fetch=lambda url: page)
@@ -165,12 +192,16 @@ class SourcesTests(unittest.TestCase):
 
             def fetch(url: str) -> str:
                 calls.append(url)
-                if 'reddit' in url:
+                if 'new.json' in url:
                     return json.dumps({'data': {'children': []}})
+                if url.endswith('.rss'):
+                    return '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>'
                 return f'<pre>{SNEAKER}</pre>'
             out = sources.gather_candidates(fetch=fetch)
         self.assertEqual(len(out), 1)
-        self.assertEqual(len(calls), 2)
+        self.assertTrue(any('new.json' in url for url in calls))
+        self.assertTrue(any(url.endswith('.rss') for url in calls))
+        self.assertTrue(any('example.com' in url for url in calls))
 
 
 class RagTests(unittest.TestCase):
@@ -298,6 +329,50 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(again['duplicate'], 3)
         self.assertEqual(again['shortlisted'], 3)
         self.assertEqual(self.db.query(PromptShortlist).count(), 3)
+
+    def test_run_daily_records_a_prompt_scan_event(self):
+        from app.models import TowerEvent
+        pipeline.run_daily(
+            self.db, day=date(2026, 9, 10),
+            candidates=[Candidate(text=PERFUME, source='web')],
+            chat=fake_chat_factory(),
+        )
+        kinds = [row.kind for row in self.db.query(TowerEvent).all()]
+        self.assertIn('prompt_scan', kinds)
+
+    def test_idle_scan_reason_kicks_empty_and_stale_but_not_a_fresh_retry(self):
+        now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            pipeline.idle_scan_reason(
+                prompt_count=0, last_collected_at=None, last_scan_at=None, now=now,
+            ),
+            'empty-catalogue',
+        )
+        self.assertIsNone(
+            pipeline.idle_scan_reason(
+                prompt_count=0,
+                last_collected_at=None,
+                last_scan_at=now - timedelta(minutes=5),
+                now=now,
+            ),
+        )
+        self.assertEqual(
+            pipeline.idle_scan_reason(
+                prompt_count=4,
+                last_collected_at=now - timedelta(hours=7),
+                last_scan_at=now - timedelta(hours=7),
+                now=now,
+            ),
+            'stale-catalogue',
+        )
+        self.assertIsNone(
+            pipeline.idle_scan_reason(
+                prompt_count=4,
+                last_collected_at=now - timedelta(hours=1),
+                last_scan_at=now - timedelta(hours=1),
+                now=now,
+            ),
+        )
 
     def test_shortlist_respects_min_score_and_source_cap(self):
         texts = [f'{SNEAKER} Variation {i}: extra {"detail " * i}shot of the {i} mm lens.' for i in range(1, 6)]
@@ -440,6 +515,28 @@ class PostCardTests(unittest.TestCase):
         self.assertEqual(post_card.keyword_for(None, 'Sneaker night shot'), 'SNEAKER')
         no_hero = post_card.render_card('short', hero=None, keyword='X')
         self.assertEqual(no_hero.size, (1080, 1920))
+
+
+class IdleKickTests(unittest.TestCase):
+    def test_empty_catalogue_dispatches_prompt_scan(self):
+        from app import tasks
+
+        db = make_session()
+
+        class _Ctx:
+            def __enter__(self):
+                return db
+
+            def __exit__(self, *args):
+                return False
+
+        with mock.patch.object(tasks, 'SessionLocal', lambda: _Ctx()), \
+                mock.patch.object(tasks, 'daily_prompt_pipeline') as pipe, \
+                mock.patch.object(tasks, 'console_log'):
+            result = tasks._maybe_dispatch_idle_prompt_scan()
+        self.assertTrue(result['kicked'])
+        self.assertEqual(result['reason'], 'empty-catalogue')
+        pipe.delay.assert_called_once()
 
 
 if __name__ == '__main__':

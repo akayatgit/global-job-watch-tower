@@ -608,7 +608,10 @@ def compute_vitals(db: Session) -> TowerVitals:
         cpu_label=_cpu_label(snap.load1, snap.level),
         last_ollama_at=ollama_at,
         last_keyword_at=last_kw,
-        last_browser_at=_last_event(db, 'browser_open'),
+        last_browser_at=(
+            _last_event(db, 'prompt_scan') if tower_mode == 'prompts'
+            else _last_event(db, 'browser_open')
+        ),
         searches_today=searches_today,
         searches_24h=searches_24h,
         ollama_today=ollama_today,

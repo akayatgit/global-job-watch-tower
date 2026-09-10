@@ -73,13 +73,16 @@ class PromptsApiTests(unittest.TestCase):
 
     def test_today_empty_then_populated_by_inline_scan(self):
         self.assertEqual(self.client.get('/api/prompts/today').json()['total'], 0)
-        with mock.patch('app.prompts.pipeline.gather_candidates') as gather:
+        with mock.patch('app.prompts.pipeline.gather_with_reports') as gather:
             from app.prompts.sources import Candidate
 
-            gather.return_value = [
-                Candidate(text=PERFUME, source='reddit', author='a', source_url='https://r/x'),
-                Candidate(text=COFFEE, source='web'),
-            ]
+            gather.return_value = (
+                [
+                    Candidate(text=PERFUME, source='reddit', author='a', source_url='https://r/x'),
+                    Candidate(text=COFFEE, source='web'),
+                ],
+                [],
+            )
             summary = self._seed_shortlist()
         self.assertFalse(summary['queued'])
         self.assertEqual(summary['shortlisted'], 2)
@@ -204,10 +207,13 @@ class PromptsApiTests(unittest.TestCase):
         self.assertEqual(row.model, 'kwaivgi/kling-v2.1')
 
     def test_partner_prompts_endpoint_is_token_gated_and_verbatim(self):
-        with mock.patch('app.prompts.pipeline.gather_candidates') as gather:
+        with mock.patch('app.prompts.pipeline.gather_with_reports') as gather:
             from app.prompts.sources import Candidate
 
-            gather.return_value = [Candidate(text=SNEAKER, source='instagram', source_url='https://www.instagram.com/p/abc/')]
+            gather.return_value = (
+                [Candidate(text=SNEAKER, source='instagram', source_url='https://www.instagram.com/p/abc/')],
+                [],
+            )
             self._seed_shortlist()
         self.assertEqual(self.client.get('/api/partner/v1/prompts').status_code, 401)
         response = self.client.get('/api/partner/v1/prompts', headers={'Authorization': 'Bearer secret-token'})
