@@ -8,8 +8,10 @@ the tests all run the exact same code. Network (sources) and the model
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -193,6 +195,19 @@ def shortlist_for_day(db: Session, day: date) -> list[tuple[PromptShortlist, Vid
     return [(entry, prompt) for entry, prompt in rows]
 
 
+def prompt_origin(prompt: VideoPrompt) -> str:
+    """Where a prompt came from, at the granularity the diversity cap means:
+    a subreddit for Reddit rows, the page host for web rows, else source."""
+    url = prompt.source_url or ''
+    if prompt.source == 'reddit':
+        match = re.search(r'/r/([^/?#]+)', url)
+        return f'reddit:{match.group(1).lower()}' if match else 'reddit'
+    if prompt.source in ('web', 'promptbase'):
+        host = urlparse(url).netloc.lower() if url else ''
+        return f'web:{host}' if host else prompt.source
+    return prompt.source
+
+
 def build_shortlist(
     db: Session,
     day: date,
@@ -228,18 +243,30 @@ def build_shortlist(
             VideoPrompt.collected_at >= since,
         )
     ).scalars().all()
-    # Outliers first (they beat the proven baseline), then raw score;
-    # at most 3 per source so one subreddit cannot own the day.
+    # Outliers first (they beat the proven baseline), then raw score.
+    # Diversity pass: at most 3 per ORIGIN (a subreddit, a web page's host)
+    # so one page cannot own the day — keyed on `source` alone, all six web
+    # handbooks counted as one source and the deck stalled at 3 rows
+    # (2026-09-10). Fill pass: if the diverse pick is still short, the best
+    # leftovers top it up — a thin day is never a 3-row "top 10".
     candidates.sort(key=lambda p: (not p.is_outlier, -(p.final_score or 0.0), p.id))
-    per_source: dict[str, int] = {}
+    per_origin: dict[str, int] = {}
     chosen: list[VideoPrompt] = []
+    leftovers: list[VideoPrompt] = []
     for prompt in candidates:
-        if per_source.get(prompt.source, 0) >= 3 and prompt.source != 'manual':
+        origin = prompt_origin(prompt)
+        if per_origin.get(origin, 0) >= 3 and prompt.source != 'manual':
+            leftovers.append(prompt)
             continue
-        per_source[prompt.source] = per_source.get(prompt.source, 0) + 1
+        per_origin[origin] = per_origin.get(origin, 0) + 1
         chosen.append(prompt)
         if len(chosen) >= size:
             break
+    for prompt in leftovers:
+        if len(chosen) >= size:
+            break
+        chosen.append(prompt)
+    chosen.sort(key=lambda p: (not p.is_outlier, -(p.final_score or 0.0), p.id))
     out: list[tuple[PromptShortlist, VideoPrompt]] = []
     for rank, prompt in enumerate(chosen, 1):
         entry = PromptShortlist(day=day, rank=rank, prompt_id=prompt.id, created_at=utcnow())
