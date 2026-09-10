@@ -366,6 +366,7 @@ def partner_prompts(
             .limit(1)
         ).scalar_one_or_none()
         item['video_url'] = latest.video_url if latest else None
+        item['reel_url'] = latest.reel_url if latest else None
         item['card_image_url'] = (
             video_creator.public_url(latest.card_image_key) if latest and latest.card_image_key else None
         )

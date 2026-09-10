@@ -229,9 +229,28 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(status, 'done')
         self.assertEqual(len(self.sent_photos), 1)  # card once, not per poll
         self.assertEqual(self.sent_photos[0][1], b'ASSET:prompts/d/card.png')
+        self.assertIn('Preview card', self.sent_photos[0][2])
+        # No reel could be composed → the raw clip goes out with the reason
         self.assertEqual(len(self.sent_videos), 1)
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/video.mp4')
-        self.assertIn('video ready · kwaivgi/kling-v2.1', self.sent_videos[0][2])
+        self.assertIn('raw clip ready · kwaivgi/kling-v2.1', self.sent_videos[0][2])
+        self.assertIn('Reel not composed', self.sent_videos[0][2])
+
+    def test_watch_render_delivers_the_reel_as_the_post_asset(self):
+        self.tower.render_status = {
+            'id': 79, 'prompt_id': 3, 'status': 'done',
+            'video_key': 'prompts/d/video.mp4',
+            'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/video.mp4',
+            'reel_key': 'prompts/d/reel.mp4',
+            'reel_url': 'https://tower.example/api/partner/v1/assets/prompts/d/reel.mp4',
+            'model': 'kwaivgi/kling-v2.1',
+        }
+        self.assertEqual(self.deck.watch_render('1', 79, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(len(self.sent_videos), 1)
+        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/reel.mp4')
+        caption = self.sent_videos[0][2]
+        self.assertIn('reel ready, post this', caption)
+        self.assertIn('Raw clip: https://tower.example/api/partner/v1/assets/prompts/d/video.mp4', caption)
 
     def test_watch_render_reports_failure_and_timeout(self):
         self.tower.render_status = {'id': 77, 'prompt_id': 3, 'status': 'failed', 'error': 'model 500'}

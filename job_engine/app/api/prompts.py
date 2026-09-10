@@ -264,6 +264,9 @@ def _serialize_render(render: PromptRender) -> dict:
         'card_image_url': video_creator.public_url(render.card_image_key) if render.card_image_key else None,
         'video_key': render.video_key,
         'video_url': render.video_url,
+        'reel_key': render.reel_key,
+        'reel_url': render.reel_url,
+        'reel_error': render.reel_error,
         'requested_at': render.requested_at.isoformat() if render.requested_at else None,
         'finished_at': render.finished_at.isoformat() if render.finished_at else None,
     }

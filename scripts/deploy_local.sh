@@ -330,6 +330,15 @@ cd "$JOB_ENGINE"
 log "applying migrations..."
 alembic upgrade head
 
+# Prompt Tower reel composer (2026-09-10) shells out to the system ffmpeg.
+# Missing ffmpeg does not fail the deploy — the raw clip still ships and the
+# Telegram caption says why — but say it loudly here so it gets installed.
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+  log "ffmpeg present: $(ffmpeg -version 2>/dev/null | head -n1)"
+else
+  log "WARNING: ffmpeg/ffprobe not installed — reels will not compose. Fix: sudo apt install -y ffmpeg"
+fi
+
 # MNC-first collection base (2026-08-14): idempotent — upserts the giant
 # catalogue, sleeps role-keyword searches, asserts detail enrich = full.
 log "seeding MNC watchlist..."

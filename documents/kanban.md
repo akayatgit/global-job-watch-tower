@@ -65,6 +65,15 @@ re-audits stored unrated rows and rebuilds a touched day's top-10. Reddit
 paced 8 s/sub, 403 → RSS-only, 429 → stop for the run. Default web sources
 = six D2C ad-prompt handbooks (probe: 75 real prompts kept / 40 junk out).
 
+**Follow (2026-09-10, reel):** Ashok's first render (#29 retinol serum)
+came back as a static card with the title off-screen. Ruling: the post is
+a **video** — the AI clip plays in the hero box, the title shrinks to fit,
+and below the clip a horizontal split holds a 6-frame **storyboard** (clip
+aspect, left half) and the **prompt scrolling** over the clip's duration
+(right half). `app/prompts/post_reel.py` (system ffmpeg + Pillow, audio
+kept), `prompt_renders.reel_*`, Telegram delivers the reel as the post
+asset and the raw clip only when the reel could not be composed.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

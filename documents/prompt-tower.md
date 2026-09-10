@@ -51,7 +51,7 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | tap `N` (`pt:sel:<id>`) | Full prompt verbatim + Detail/Flow/Structure/baseline + Hermes reasons + source URL. Buttons: `📸 Send product image → video`, `⭐1…5`, `📣 Posted on Instagram`, `◂ Top 10`. |
 | `📸` (`pt:img:<id>`) | Bot waits for a photo. Owner sends a photo **with no caption** → poll loop stashes the `file_id` and queues the synthetic `pt:photo` tap. |
 | `pt:photo` | "Prompt #N + your product photo are paired" → `✅ Make video` / `✖ Cancel`. |
-| `✅` (`pt:go:<id>`) | Bot downloads the photo (Bot API `getFile`), POSTs base64 to `/api/prompts/{id}/render`. Tower stores the product image, renders the **Instagram card** immediately (Pillow, reference layout), queues the Celery video render. A watcher thread polls `/api/prompts/renders/{rid}` (15 s, max 20 min), uploads the card, then the MP4 (multipart — Telegram cannot fetch our Cloudflare-protected URLs). |
+| `✅` (`pt:go:<id>`) | Bot downloads the photo (Bot API `getFile`), POSTs base64 to `/api/prompts/{id}/render`. Tower stores the product image, renders the **preview card** immediately (Pillow), queues the Celery video render. The worker gets the AI clip from Replicate, then **composes the reel** (§3a) — the post asset. A watcher thread polls `/api/prompts/renders/{rid}` (15 s, max 20 min), uploads the preview card, then the **reel MP4** ("reel ready, post this", raw-clip link in the caption). If the reel could not be composed (e.g. ffmpeg missing) the raw clip is sent with the reason — a finished video is never hidden. |
 | `⭐n` | `/api/prompts/{id}/rate` → winner promotion when n ≥ 4. |
 | `📣 Posted` | Marks posted; reply asks for `/promptperf <id> likes=.. comments=.. saves=.. shares=.. views=..`. |
 | `/promptperf` | Stores Instagram numbers → performance score → RAG winner when strong. |
@@ -60,6 +60,24 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | `/promptstats` | Prompts, scored/pending, shortlisted today, posted, videos, winners, baseline μ±σ, sources, last catch. |
 
 Guests never see any of it: `pt:` taps and prompt commands are gated on the real owner check; a guest's photo is ignored exactly as before.
+
+### 3a. The reel — the post is a video, not a picture (2026-09-10)
+
+Ashok: "wherever the image is you need to place the video … this entire template should come out as a video … the prompt scrolls … storyboard: six frames in the same aspect ratio next to each other in the other half." `app/prompts/post_reel.py` composes a 1080×1920 MP4 with the system `ffmpeg` (no new Python package — the ThinkPad deploy does not `pip install`):
+
+```
+Comment "SKINCARE" for prompts        ← bold, shrinks 64→30 pt until it fits the width
+[ AI clip plays here, rounded ]       ← the card's hero box (900×820), cover-fit, no letterbox
+Storyboard          | Prompt
+[6 stills, grid]    | prompt text scrolling over the clip's duration
+@jobmaster.agency
+```
+
+- **Storyboard** (left half): six stills at the mid-points of six equal slices, in the clip's own aspect ratio; the grid (3×2 for 9:16, 2×3 for 16:9) is the largest that fits the half-column (`storyboard_layout`).
+- **Prompt** (right half): the stored prompt **verbatim, never truncated**, rendered as one tall strip; the visible window holds for the first 12 % of the clip, slides linearly so the last line arrives at the bottom by 88 %, then holds. Short prompts sit still.
+- Frame rate = the clip's (capped at 30), duration = the clip's, **audio copied** when the clip has a track (Veo). ffmpeg decodes already cover-fitted to the hero box; Pillow composites; ffmpeg encodes H.264 yuv420p `+faststart` for iPhone playback.
+- Stored as `prompts/<day>/reel-<id>-<rand>.mp4` next to the raw clip; `prompt_renders.reel_key / reel_url`. A composition failure sets `reel_error` and keeps the clip — the render is still `done`.
+- Deploy logs a loud `WARNING` when `ffmpeg`/`ffprobe` are missing (`sudo apt install -y ffmpeg`).
 
 ## 4. API
 
@@ -74,15 +92,15 @@ Owner surface (local tower, `/api/prompts`):
 | `POST /ingest {text, author, source_url}` | Manual add + immediate score (422 when it isn't a prompt) |
 | `POST /{id}/rate {rating 1–5}` · `POST /{id}/performance {likes…}` · `POST /{id}/posted` | Feedback → RAG |
 | `POST /{id}/render {image_base64, chat_id, content_type}` | Store image, render card, queue video → render row |
-| `GET /renders/{id}` | `queued | running | done | failed`, `video_url`, `card_image_url` |
+| `GET /renders/{id}` | `queued | running | done | failed`, `video_url` (raw clip), `reel_url` (post asset) or `reel_error`, `card_image_url` (preview) |
 
-Partner surface (AvatarPitch, bearer `PARTNER_API_TOKEN`): **`GET /api/partner/v1/prompts?day=`** — the day's top-10 with full text, scores, provenance and any finished `video_url` / `card_image_url`. Rows verbatim; the tower owns scoring, AvatarPitch renders/presents.
+Partner surface (AvatarPitch, bearer `PARTNER_API_TOKEN`): **`GET /api/partner/v1/prompts?day=`** — the day's top-10 with full text, scores, provenance and any finished `video_url` (raw clip) / `reel_url` (post asset) / `card_image_url`. Rows verbatim; the tower owns scoring, AvatarPitch renders/presents.
 
-## 5. Data model (migration `b7c3e9a12d45`, chained from `a9d5e3f81c60`)
+## 5. Data model (migrations `b7c3e9a12d45` → `c8d4f0b23e56`)
 
 - `video_prompts` — text, fingerprint (unique), source/source_url/author/source_posted_at, model_hint, category, heuristic_score, ai_detail/ai_flow/ai_score/ai_reasons, final_score, baseline_mean/std, is_outlier, embedding (JSON), status (`new | shortlisted | posted | rejected`), rating, performance (JSON), performance_score, posted_at, exemplar.
 - `prompt_shortlists` — (day, rank) unique → prompt_id.
-- `prompt_renders` — prompt_id, chat_id, product_image_key, card_image_key, video_key, video_url, model, status, error, timestamps.
+- `prompt_renders` — prompt_id, chat_id, product_image_key, card_image_key, video_key, video_url, **reel_key, reel_url, reel_error** (migration `c8d4f0b23e56`), model, status, error, timestamps.
 
 Guest/alert/broadcast SQLite state is untouched; the deck's pending states live in the same `bot_state` table (`prompt_selected:`, `prompt_await_image:`, `pending_prompt_photo:`, `prompt_daily_sent:<day>`).
 

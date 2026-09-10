@@ -150,3 +150,42 @@ def create_video(
     key = asset_key('video', prompt_id=prompt_id, suffix='mp4')
     path = store_bytes(key, data, content_type='video/mp4')
     return RenderResult(video_key=key, video_path=path, video_url=public_url(key), model=model)
+
+
+@dataclass
+class ReelAsset:
+    reel_key: str
+    reel_path: Path
+    reel_url: str
+    frames: int
+    duration_s: float
+
+
+def create_reel(
+    video_path: Path,
+    *,
+    prompt_id: int,
+    prompt_text: str,
+    keyword: str,
+    handle: str = '@jobmaster.agency',
+) -> ReelAsset:
+    """Raw clip → post-ready reel MP4 in the asset root (title · clip ·
+    storyboard | scrolling prompt). Raises post_reel.ReelError with an
+    operator-readable reason (e.g. ffmpeg missing) — the caller keeps the
+    raw clip and surfaces the reason instead of failing the render."""
+    from app.prompts import post_reel
+
+    key = asset_key('reel', prompt_id=prompt_id, suffix='mp4')
+    target = assets_root() / key
+    tmp = target.with_name(target.name + '.part.mp4')
+    result = post_reel.compose_reel(
+        video_path, tmp, prompt_text=prompt_text, keyword=keyword, handle=handle,
+    )
+    tmp.replace(target)
+    meta = assets_root() / '.meta' / key
+    meta.parent.mkdir(parents=True, exist_ok=True)
+    meta.write_text('video/mp4', encoding='utf-8')
+    return ReelAsset(
+        reel_key=key, reel_path=target, reel_url=public_url(key),
+        frames=result.frames, duration_s=result.duration_s,
+    )
