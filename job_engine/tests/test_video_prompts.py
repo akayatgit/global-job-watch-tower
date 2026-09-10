@@ -7,6 +7,8 @@ Everything runs offline: sqlite in-memory, a fake model, a fake Replicate.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 import urllib.error
@@ -24,7 +26,7 @@ from sqlalchemy.pool import StaticPool
 from app import config
 from app.db import Base
 from app.models import PromptShortlist, VideoPrompt
-from app.prompts import normalize, pipeline, post_card, rag, scoring, sources, video_creator
+from app.prompts import normalize, pipeline, post_card, post_reel, rag, scoring, sources, video_creator
 from app.prompts.sources import Candidate
 
 PERFUME = (
@@ -687,6 +689,94 @@ class PostCardTests(unittest.TestCase):
         self.assertEqual(post_card.keyword_for(None, 'Sneaker night shot'), 'SNEAKER')
         no_hero = post_card.render_card('short', hero=None, keyword='X')
         self.assertEqual(no_hero.size, (1080, 1920))
+
+    def test_title_shrinks_to_fit_the_screen(self):
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(Image.new('RGB', (10, 10)))
+        short_font, short_w = post_card.fit_title(draw, 'Comment "TEA" for prompts', post_card.W - 2 * post_card.MARGIN)
+        long_font, long_w = post_card.fit_title(
+            draw, 'Comment "SUPPLEMENTSXXXXXXXX" for prompts', post_card.W - 2 * post_card.MARGIN,
+        )
+        self.assertLessEqual(long_w, post_card.W - 2 * post_card.MARGIN)
+        self.assertLess(long_font.size, short_font.size)
+        self.assertLessEqual(short_w, post_card.W - 2 * post_card.MARGIN)
+        self.assertGreaterEqual(long_font.size, post_card.TITLE_MIN_PT)
+
+
+def _synthetic_clip(path: Path, *, size: str = '90x160', seconds: int = 2, fps: int = 12, audio: bool = True) -> None:
+    cmd = ['ffmpeg', '-y', '-v', 'error', '-f', 'lavfi', '-i', f'testsrc2=size={size}:rate={fps}:duration={seconds}']
+    if audio:
+        cmd += ['-f', 'lavfi', '-i', f'sine=frequency=440:duration={seconds}', '-c:a', 'aac', '-shortest']
+    cmd += ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(path)]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+class PostReelTests(unittest.TestCase):
+    def test_storyboard_grid_keeps_the_clip_aspect_and_fits_the_column(self):
+        cols, rows, cw, ch = post_reel.storyboard_layout(9 / 16)
+        self.assertEqual(cols * rows >= 6, True)
+        self.assertAlmostEqual(cw / ch, 9 / 16, delta=0.02)
+        self.assertLessEqual(cols * cw + (cols - 1) * post_reel.STORYBOARD_GAP, post_reel.COL_W)
+        self.assertLessEqual(rows * ch + (rows - 1) * post_reel.STORYBOARD_GAP, post_reel.CONTENT_H)
+        wide_cols, wide_rows, ww, wh = post_reel.storyboard_layout(16 / 9)
+        self.assertAlmostEqual(ww / wh, 16 / 9, delta=0.03)
+        self.assertLessEqual(wide_rows * wh + (wide_rows - 1) * post_reel.STORYBOARD_GAP, post_reel.CONTENT_H)
+
+    def test_prompt_scrolls_from_top_to_the_last_line_and_holds_both_ends(self):
+        text_h, box_h, dur = 2000, 660, 10.0
+        self.assertEqual(post_reel.scroll_offset(0.0, dur, text_h, box_h), 0)
+        self.assertEqual(post_reel.scroll_offset(1.0, dur, text_h, box_h), 0)  # hold
+        mid = post_reel.scroll_offset(5.0, dur, text_h, box_h)
+        self.assertGreater(mid, 0)
+        self.assertLess(mid, text_h - box_h)
+        self.assertEqual(post_reel.scroll_offset(9.5, dur, text_h, box_h), text_h - box_h)
+        self.assertEqual(post_reel.scroll_offset(10.0, dur, text_h, box_h), text_h - box_h)
+        # Short prompts sit still
+        self.assertEqual(post_reel.scroll_offset(5.0, dur, 300, box_h), 0)
+
+    def test_prompt_column_is_verbatim_and_never_truncated(self):
+        long_text = ' '.join([PERFUME] * 4)
+        strip = post_reel.render_prompt_column(long_text)
+        self.assertEqual(strip.width, post_reel.COL_W)
+        self.assertGreater(strip.height, post_reel.CONTENT_H)
+        from PIL import ImageDraw
+        lines = post_reel.wrap_by_width(ImageDraw.Draw(Image.new('RGB', (1, 1))), long_text, post_reel._font(28), post_reel.COL_W - 6)
+        self.assertEqual(' '.join(lines), ' '.join(long_text.split()))
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg not installed')
+    def test_compose_reel_from_a_real_clip_keeps_duration_audio_and_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / 'clip.mp4'
+            _synthetic_clip(clip)
+            out = Path(tmp) / 'reel.mp4'
+            result = post_reel.compose_reel(clip, out, prompt_text=PERFUME, keyword='SKINCARE')
+            self.assertTrue(out.is_file())
+            self.assertEqual(result.frames, 24)
+            self.assertEqual(result.storyboard_frames, 6)
+            info = post_reel.probe(out)
+            self.assertEqual((info.width, info.height), (1080, 1920))
+            self.assertTrue(info.has_audio)
+            self.assertAlmostEqual(info.duration_s, 2.0, delta=0.15)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg not installed')
+    def test_create_reel_lands_in_the_asset_root_with_meta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / 'clip.mp4'
+            _synthetic_clip(clip, audio=False, seconds=1)
+            with mock.patch.object(config, 'PARTNER_ASSETS_DIR', tmp), \
+                    mock.patch.object(config, 'PARTNER_PUBLIC_BASE_URL', 'https://tower.example'):
+                reel = video_creator.create_reel(clip, prompt_id=5, prompt_text=COFFEE, keyword='BEVERAGE')
+            self.assertTrue(reel.reel_path.is_file())
+            self.assertIn('/reel-5-', reel.reel_url)
+            self.assertEqual((Path(tmp) / '.meta' / reel.reel_key).read_text(), 'video/mp4')
+            self.assertFalse(list(Path(tmp).rglob('*.part.mp4')))
+
+    def test_missing_ffmpeg_is_an_operator_readable_error(self):
+        with mock.patch.object(post_reel.shutil, 'which', return_value=None), \
+                mock.patch.dict('sys.modules', {'imageio_ffmpeg': None}):
+            with self.assertRaises(post_reel.ReelError) as ctx:
+                post_reel.ffmpeg_exe()
+        self.assertIn('sudo apt install', str(ctx.exception))
 
 
 class IdleKickTests(unittest.TestCase):
