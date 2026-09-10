@@ -169,6 +169,28 @@ class FetchAndDescribeTests(unittest.TestCase):
         self.assertEqual(fetched.platform, 'direct')
         self.assertEqual(fetched.data, FAKE_MP4)
 
+    def test_mime_and_vision_payload_never_use_a_nameless_file_handle(self):
+        self.assertEqual(reverse_prompt.mime_for_video('clip.mp4'), 'video/mp4')
+        self.assertEqual(reverse_prompt.mime_for_video('clip.MOV'), 'video/quicktime')
+        self.assertEqual(reverse_prompt.mime_for_video('clip.webm'), 'video/webm')
+        self.assertEqual(reverse_prompt.mime_for_video('clip'), 'video/mp4')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'source-1-abc.mp4'
+            path.write_bytes(FAKE_MP4)
+            payload = reverse_prompt.video_input_for_vision(path)
+            self.assertTrue(payload.startswith('data:video/mp4;base64,'))
+            raw = base64.b64decode(payload.split(',', 1)[1])
+            self.assertEqual(raw, FAKE_MP4)
+            huge = Path(tmp) / 'huge.mp4'
+            huge.write_bytes(FAKE_MP4)
+            with mock.patch.object(reverse_prompt, 'DATA_URI_MAX_BYTES', 10):
+                self.assertEqual(
+                    reverse_prompt.video_input_for_vision(
+                        huge, public_url='https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
+                    ),
+                    'https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
+                )
+
     def test_describe_video_uses_injected_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'clip.mp4'
@@ -179,8 +201,9 @@ class FetchAndDescribeTests(unittest.TestCase):
                 seen['model'] = model
                 seen['keys'] = sorted(input)
                 seen['prompt'] = input['prompt']
-                handle = input['videos'][0]
-                self.assertTrue(hasattr(handle, 'read'))
+                video = input['videos'][0]
+                self.assertIsInstance(video, str)
+                self.assertTrue(video.startswith('data:video/mp4;base64,'))
                 return json.dumps({
                     'keyword': 'COFFEE',
                     'prompt': '[0.0s–8.0s] a ceramic dripper under morning light.',
