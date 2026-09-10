@@ -856,7 +856,8 @@ def daily_prompt_pipeline(self, force: bool = False):
         'beat',
         f"Prompt Tower — {summary['candidates']} candidates · "
         f"{summary['created']} new · {summary['scored']} scored · "
-        f"{summary['shortlisted']} shortlisted for {summary['day']}",
+        + (f"{summary['reaudited']} re-audited out · " if summary.get('reaudited') else '')
+        + f"{summary['shortlisted']} shortlisted for {summary['day']}",
     )
     summary.pop('top', None)
     return summary

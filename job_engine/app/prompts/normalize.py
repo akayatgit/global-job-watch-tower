@@ -85,9 +85,69 @@ CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('toys', ('toy', 'lego', 'plush', 'puzzle')),
 )
 
+# Product words that must appear as whole words for the D2C gate. The
+# family counter above is substring-based (fine for scoring), but 'can'
+# inside "candle"/"scan", 'cap' inside "capture", 'ad' inside "shadow" made
+# samurai and stadium scenes pass as product videos (2026-09-10 audit).
+WEAK_PRODUCT_WORDS = frozenset({'can', 'cap', 'ad', 'box', 'bag'})
+PRODUCT_WORD_RE = re.compile(
+    r'(?<![a-z0-9])(' + '|'.join(
+        re.escape(w) for w in VOCAB_FAMILIES['product'] if w not in WEAK_PRODUCT_WORDS
+    ) + r')s?(?![a-z0-9])'
+)
+# "[product]" / "[camera movement]" slots — a template, not a prompt. One
+# or two slots (e.g. "[brand]") are fine; three or more is a fill-in form.
+PLACEHOLDER_RE = re.compile(r'\[[^\[\]\n]{2,40}\]')
+MAX_PLACEHOLDERS = 2
+CJK_RE = re.compile(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]')
+MAX_CJK_RATIO = 0.15
+
+# Blog / README prose ABOUT prompting name-drops camera, lighting and
+# product too, so vocabulary alone let "How does each block change the
+# output?" and FAQ answers through (2026-09-10 six-source probe). A finished
+# prompt describes a shot; it does not explain, advise, or ask.
+PROSE_HARD_RE = re.compile(
+    r'(?i)(?<![a-z])(?:'
+    r'use this when|this (?:guide|article|checklist|pack|post|template)|'
+    r'frequently asked|faq|how to write|step \d|table of contents|read more|'
+    r'subscribe|sign up|click here|try it (?:now|free)|what (?:the|a|your|it) |'
+    r'\d+\s*-\s*\d+s:\s*(?:hook|demo|proof|cta)\b'
+    r')'
+)
+# Constraint words a real prompt uses ("should", "avoid", "keep") and
+# product vocabulary ("model", "notes", "gives a soft glow") are NOT here on
+# purpose — only words that explain, advise, or address a reader.
+PROSE_STRONG_RE = re.compile(
+    r"(?i)(?<![a-z])(?:"
+    r"prompts?|prompting|guides?|articles?|checklists?|formulas?|workflows?|"
+    r"generators?|ai video|purpose:|variants?|structure|approach|teams?|"
+    r"founders?|sellers?|shoppers?|media buyers?|paid traffic|target audience|"
+    r"dtc|d2c|shopify|amazon|google|outputs?|fps|examples?|e\.g\.|such as|"
+    r"for example|usually|often|because|if you|if the|when you|instead|"
+    r"rather than|not just|skip|works best|tends? to|helps?|useful|matters?|"
+    r"decides?|enough to|yes\."
+    r")(?![a-z])"
+)
+PROSE_WEAK_RE = re.compile(
+    r'(?i)(?<![a-z])(?:veo|kling|sora|runway|midjourney|pika|luma|hailuo|seedance)(?![a-z])'
+)
+QUESTION_RE = re.compile(r'\?')
+
 URL_RE = re.compile(r'https?://\S+')
 WS_RE = re.compile(r'\s+')
 SENTENCE_RE = re.compile(r'[.!?;]\s+|\n+')
+MD_LINK_RE = re.compile(r'\[([^\]]*)\]\((?:[^)\s]+)(?:\s+"[^"]*")?\)')
+MD_IMAGE_RE = re.compile(r'!\[[^\]]*\]\([^)]*\)')
+MD_NOISE_LINE_RE = re.compile(
+    r'^\s*(?:'
+    r'#{1,6}\s.*'                         # headings
+    r'|(?:-{3,}|\*{3,}|_{3,})\s*'         # horizontal rules
+    r'|\|.*\|\s*'                         # table rows
+    r'|(?:`[^`]*`\s*(?:[·•|,]\s*)?)+'     # tag lines: `6s · 9:16` · `skincare`
+    r'|\*{0,2}\[?[⬆▶►→↑]\s.*'             # nav / CTA lines
+    r'|>\s*💡.*'                          # callout tips
+    r')$'
+)
 
 
 @dataclass
@@ -103,9 +163,66 @@ class PromptReading:
     reasons: list[str] = field(default_factory=list)
 
 
+def strip_markdown(raw: str) -> str:
+    """Drop README chrome (headings, nav links, tag lines, tables) and
+    unwrap inline links/emphasis. Bracket slots like "[brand]" survive."""
+    text = MD_IMAGE_RE.sub('', raw or '')
+    text = MD_LINK_RE.sub(r'\1', text)
+    kept: list[str] = []
+    for line in text.split('\n'):
+        if MD_NOISE_LINE_RE.match(line):
+            kept.append('')
+            continue
+        line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)
+        line = re.sub(r'(?<!\w)\*(?!\s)(.*?)\*(?!\w)', r'\1', line)
+        line = re.sub(r'^\s*>\s?', '', line)
+        line = re.sub(r'`([^`]*)`', r'\1', line)
+        kept.append(line)
+    return '\n'.join(kept)
+
+
+def product_word_hits(text: str) -> int:
+    return len(PRODUCT_WORD_RE.findall((text or '').lower()))
+
+
+def placeholder_count(text: str) -> int:
+    return len(PLACEHOLDER_RE.findall(text or ''))
+
+
+def cjk_ratio(text: str) -> float:
+    letters = [c for c in (text or '') if not c.isspace()]
+    if not letters:
+        return 0.0
+    return len(CJK_RE.findall(''.join(letters))) / len(letters)
+
+
+def looks_like_prose(text: str) -> bool:
+    """True when the block explains prompting instead of being a prompt.
+
+    Hard markers ("use this when", FAQ, "0-2s: Hook —" outlines) reject on
+    their own. Otherwise reader-facing vocabulary is counted: two hits in a
+    short block, two hits plus a model name-drop, or three hits anywhere is
+    prose. A question mark is prose too unless the block is long dialogue
+    with no meta vocabulary (UGC scripts may ask "have you tried this?").
+    """
+    body = text or ''
+    if PROSE_HARD_RE.search(body):
+        return True
+    strong = len(PROSE_STRONG_RE.findall(body))
+    weak = len(PROSE_WEAK_RE.findall(body))
+    words = len(body.split())
+    if strong >= 3:
+        return True
+    if strong >= 2 and (weak >= 1 or words < 120):
+        return True
+    if QUESTION_RE.search(body) and (strong >= 1 or words < 60):
+        return True
+    return False
+
+
 def clean_text(raw: str) -> str:
     """Collapse whitespace, strip URLs and marketplace boilerplate, cap length."""
-    text = (raw or '').replace('\r', '\n')
+    text = strip_markdown((raw or '').replace('\r', '\n'))
     text = URL_RE.sub('', text)
     # Common "engagement bait" lines around reposted prompts
     text = re.sub(
@@ -226,14 +343,28 @@ def read_prompt(raw: str) -> PromptReading:
     model_hint = detect_model_hint(text)
     category = detect_category(text)
     covered = sum(1 for hits in families.values() if hits)
-    # A prompt must be long enough and touch at least camera-or-lighting
-    # AND product-or-motion — otherwise it is a caption, not a recipe.
+    # A prompt must be long enough, touch camera-or-lighting, and be ABOUT
+    # a product (category detected, or a whole-word product noun) — Ashok
+    # 2026-09-10: samurai / eagle / stadium scenes are not D2C videos.
+    # Fill-in templates ("[product] ... [camera movement]") and non-English
+    # index pages are not prompts either.
+    has_product = category is not None or product_word_hits(text) > 0
+    prose = looks_like_prose(text)
     is_prompt = (
         len(text) >= MIN_PROMPT_CHARS
         and covered >= 3
         and (families.get('camera', 0) or families.get('lighting', 0))
-        and (families.get('product', 0) or families.get('motion', 0))
+        and has_product
+        and placeholder_count(text) <= MAX_PLACEHOLDERS
+        and cjk_ratio(text) <= MAX_CJK_RATIO
+        and not prose
     )
+    if not has_product:
+        reasons.append('no product — not a D2C video prompt')
+    if placeholder_count(text) > MAX_PLACEHOLDERS:
+        reasons.append('fill-in template, not a finished prompt')
+    if prose:
+        reasons.append('explainer prose about prompting, not a prompt')
     return PromptReading(
         text=text,
         fingerprint=fingerprint(text),
