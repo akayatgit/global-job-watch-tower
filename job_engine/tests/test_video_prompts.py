@@ -26,7 +26,7 @@ from sqlalchemy.pool import StaticPool
 from app import config
 from app.db import Base
 from app.models import PromptShortlist, VideoPrompt
-from app.prompts import normalize, pipeline, post_card, post_reel, rag, scoring, sources, video_creator
+from app.prompts import normalize, pipeline, post_card, post_reel, rag, reel_engines, scoring, sources, video_creator
 from app.prompts.sources import Candidate
 
 PERFUME = (
@@ -753,6 +753,7 @@ class PostReelTests(unittest.TestCase):
             self.assertTrue(out.is_file())
             self.assertEqual(result.frames, 24)
             self.assertEqual(result.storyboard_frames, 6)
+            self.assertEqual(result.engine, 'ffmpeg')
             info = post_reel.probe(out)
             self.assertEqual((info.width, info.height), (1080, 1920))
             self.assertTrue(info.has_audio)
@@ -771,12 +772,179 @@ class PostReelTests(unittest.TestCase):
             self.assertEqual((Path(tmp) / '.meta' / reel.reel_key).read_text(), 'video/mp4')
             self.assertFalse(list(Path(tmp).rglob('*.part.mp4')))
 
-    def test_missing_ffmpeg_is_an_operator_readable_error(self):
-        with mock.patch.object(post_reel.shutil, 'which', return_value=None), \
-                mock.patch.dict('sys.modules', {'imageio_ffmpeg': None}):
+    def test_no_engine_anywhere_is_an_operator_readable_error(self):
+        with mock.patch.object(reel_engines, 'ffmpeg_candidates', return_value=[]), \
+                mock.patch.object(reel_engines, 'python_libs', return_value={'av': None, 'cv2': None, 'imageio_ffmpeg': None, 'numpy': '2.0'}), \
+                mock.patch.object(reel_engines, '_cached', None):
             with self.assertRaises(post_reel.ReelError) as ctx:
                 post_reel.ffmpeg_exe()
+            report = reel_engines.describe_engine()
         self.assertIn('sudo apt install', str(ctx.exception))
+        self.assertEqual(report['engine'], 'none')
+        self.assertFalse(report['ok'])
+        self.assertIn('no video engine', report['hint'])
+
+
+FAKE_FFMPEG = """#!/bin/sh
+case "$1 $2" in
+  "-hide_banner -version") echo "ffmpeg version 6.1.1-fake Copyright" ;;
+  "-hide_banner -decoders") printf ' V....D h264                 H.264\\n A....D aac                  AAC\\n' ;;
+  "-hide_banner -encoders") printf ' V..... %s              fake\\n A....D aac                  AAC\\n' "$FAKE_ENCODER" ;;
+esac
+"""
+# Playwright's stripped build: only vp8 out, no H.264 in.
+FAKE_PLAYWRIGHT_FFMPEG = """#!/bin/sh
+case "$1 $2" in
+  "-hide_banner -version") echo "ffmpeg version playwright-build-1010" ;;
+  "-hide_banner -decoders") printf ' V....D mjpeg                Motion JPEG\\n' ;;
+  "-hide_banner -encoders") printf ' V..... libvpx               libvpx VP8\\n' ;;
+esac
+"""
+
+
+def _fake_binary(path: Path, script: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(script)
+    path.chmod(0o755)
+    return path
+
+
+class ReelEngineDiscoveryTests(unittest.TestCase):
+    """The ThinkPad has no `ffmpeg` on the service PATH and nobody can install
+    one from outside the house — the composer must find what is already
+    there (2026-09-10)."""
+
+    def test_finds_ffmpeg_hidden_in_a_conda_env_and_reads_its_codecs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            exe = _fake_binary(home / 'anaconda3' / 'envs' / 'vision' / 'bin' / 'ffmpeg', FAKE_FFMPEG.replace('$FAKE_ENCODER', 'libx264'))
+            env = {k: v for k, v in reel_engines.os.environ.items() if k not in ('CONDA_PREFIX', 'CONDA_EXE')}
+            with mock.patch.object(reel_engines.shutil, 'which', return_value=None), \
+                    mock.patch.object(reel_engines.config, 'REEL_FFMPEG', ''), \
+                    mock.patch.dict('os.environ', env, clear=True), \
+                    mock.patch.object(reel_engines.sys, 'executable', str(home / 'nowhere' / 'python')):
+                candidates = reel_engines.ffmpeg_candidates(home)
+                self.assertEqual(candidates[0], str(exe))  # conda envs outrank /usr/bin
+                caps, reason = reel_engines.inspect_ffmpeg(str(exe))
+        self.assertEqual(reason, 'ok')
+        self.assertEqual(caps.video_encoder, 'libx264')
+        self.assertEqual(caps.audio_encoder, 'aac')
+        self.assertTrue(caps.version.startswith('ffmpeg version 6.1.1-fake'))
+
+    def test_imageio_ffmpeg_static_binary_in_any_env_is_a_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            exe = _fake_binary(
+                home / 'anaconda3' / 'envs' / 'ai' / 'lib' / 'python3.11' / 'site-packages' / 'imageio_ffmpeg' / 'binaries' / 'ffmpeg-linux-x86_64-v7.0.2',
+                FAKE_FFMPEG.replace('$FAKE_ENCODER', 'mpeg4'),
+            )
+            pipx = _fake_binary(home / '.local' / 'share' / 'pipx' / 'venvs' / 'yt-dlp' / 'lib' / 'python3.12' / 'site-packages' / 'imageio_ffmpeg' / 'binaries' / 'ffmpeg-linux-x86_64-v7.1', FAKE_FFMPEG.replace('$FAKE_ENCODER', 'libopenh264'))
+            with mock.patch.object(reel_engines.shutil, 'which', return_value=None), \
+                    mock.patch.object(reel_engines.config, 'REEL_FFMPEG', ''):
+                candidates = reel_engines.ffmpeg_candidates(home)
+            self.assertIn(str(exe), candidates)
+            self.assertIn(str(pipx), candidates)
+            caps, _ = reel_engines.inspect_ffmpeg(str(exe))
+            self.assertEqual(caps.video_encoder, 'mpeg4')
+
+    def test_playwrights_stripped_ffmpeg_is_rejected_with_the_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            exe = _fake_binary(home / '.cache' / 'ms-playwright' / 'ffmpeg-1010' / 'ffmpeg-linux', FAKE_PLAYWRIGHT_FFMPEG)
+            with mock.patch.object(reel_engines.shutil, 'which', return_value=None), \
+                    mock.patch.object(reel_engines.config, 'REEL_FFMPEG', ''):
+                self.assertIn(str(exe), reel_engines.ffmpeg_candidates(home))
+                caps, reason = reel_engines.inspect_ffmpeg(str(exe))
+        self.assertIsNone(caps)
+        self.assertIn('no H.264 decoder', reason)
+
+    def test_discover_falls_through_ffmpeg_to_pyav_to_opencv_to_none(self):
+        libs_av = {'av': '18.0', 'cv2': '4.10', 'imageio_ffmpeg': None, 'numpy': '2.0'}
+        libs_cv = {'av': None, 'cv2': '4.10', 'imageio_ffmpeg': None, 'numpy': '2.0'}
+        libs_none = {'av': None, 'cv2': None, 'imageio_ffmpeg': None, 'numpy': None}
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = _fake_binary(Path(tmp) / 'ffmpeg-linux', FAKE_PLAYWRIGHT_FFMPEG)
+            with mock.patch.object(reel_engines, 'ffmpeg_candidates', return_value=[str(bad)]):
+                with mock.patch.object(reel_engines, 'python_libs', return_value=libs_av), \
+                        mock.patch.object(reel_engines, '_av_has_codec', return_value=True):
+                    engine, report = reel_engines.discover()
+                    self.assertEqual((engine.name, report.engine, report.audio), ('pyav', 'pyav', True))
+                    self.assertEqual(report.rejected, {str(bad): "no H.264 decoder (a stripped build, e.g. Playwright's)"})
+                with mock.patch.object(reel_engines, 'python_libs', return_value=libs_cv):
+                    engine, report = reel_engines.discover()
+                    self.assertEqual((engine.name, report.engine, report.audio, report.video_codec), ('opencv', 'opencv', False, 'mpeg4'))
+                with mock.patch.object(reel_engines, 'python_libs', return_value=libs_none):
+                    engine, report = reel_engines.discover()
+        self.assertIsNone(engine)
+        self.assertEqual(report.engine, 'none')
+        self.assertIn('1 candidate(s) checked', report.hint)
+        self.assertIn('sudo apt install -y ffmpeg', report.hint)
+        self.assertEqual(report.as_dict()['searched'], [str(bad)])
+
+    def test_explicit_reel_ffmpeg_setting_comes_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = _fake_binary(Path(tmp) / 'my-ffmpeg', FAKE_FFMPEG.replace('$FAKE_ENCODER', 'libx264'))
+            with mock.patch.object(reel_engines.config, 'REEL_FFMPEG', str(exe)):
+                self.assertEqual(reel_engines.ffmpeg_candidates(Path(tmp))[0], str(exe))
+
+    def test_ffmpeg_banner_replaces_a_missing_ffprobe(self):
+        banner = """Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':
+  Duration: 00:00:08.04, start: 0.000000, bitrate: 1839 kb/s
+  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 720x1280 [SAR 1:1 DAR 9:16], 1700 kb/s, 24 fps, 24 tbr, 12288 tbn (default)
+  Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 128 kb/s (default)
+At least one output file must be specified"""
+        info = reel_engines.parse_ffmpeg_banner(banner)
+        self.assertEqual((info.width, info.height), (720, 1280))
+        self.assertEqual(info.fps, 24.0)
+        self.assertAlmostEqual(info.duration_s, 8.04)
+        self.assertTrue(info.has_audio)
+        silent = reel_engines.parse_ffmpeg_banner(banner.split('\n  Stream #0:1')[0] + '\nAt least one')
+        self.assertFalse(silent.has_audio)
+        with self.assertRaises(reel_engines.ReelError):
+            reel_engines.parse_ffmpeg_banner('clip.mp4: Invalid data found when processing input')
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg not installed')
+    def test_ffmpeg_engine_without_ffprobe_composes_the_same_reel(self):
+        caps, _ = reel_engines.inspect_ffmpeg(shutil.which('ffmpeg'))
+        caps.ffprobe = None
+        engine = reel_engines.FfmpegEngine(caps)
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / 'clip.mp4'
+            _synthetic_clip(clip)
+            info = engine.probe(clip)
+            self.assertEqual((info.width, info.height, info.has_audio), (90, 160, True))
+            result = post_reel.compose_reel(clip, Path(tmp) / 'reel.mp4', prompt_text=PERFUME, keyword='SKINCARE', engine=engine)
+        self.assertEqual(result.frames, 24)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and reel_engines.python_libs().get('av'), 'PyAV not installed')
+    def test_pyav_engine_composes_with_audio_and_fps_cap(self):
+        engine = reel_engines.PyAvEngine()
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / 'clip.mp4'
+            _synthetic_clip(clip, seconds=1, fps=60)
+            info = engine.probe(clip)
+            self.assertEqual((info.width, info.height, info.has_audio), (90, 160, True))
+            self.assertAlmostEqual(info.fps, 60.0, delta=0.5)
+            out = Path(tmp) / 'reel.mp4'
+            result = post_reel.compose_reel(clip, out, prompt_text=PERFUME, keyword='SKINCARE', engine=engine)
+            self.assertEqual((result.engine, result.fps, result.frames, result.storyboard_frames), ('pyav', 30, 30, 6))
+            check = reel_engines.probe_with_ffprobe(out, shutil.which('ffprobe'))
+        self.assertEqual((check.width, check.height, check.has_audio), (1080, 1920, True))
+        self.assertAlmostEqual(check.duration_s, 1.0, delta=0.15)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and reel_engines.python_libs().get('cv2'), 'OpenCV not installed')
+    def test_opencv_engine_composes_a_silent_reel_as_last_resort(self):
+        engine = reel_engines.OpenCvEngine()
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / 'clip.mp4'
+            _synthetic_clip(clip, seconds=1)
+            info = engine.probe(clip)
+            self.assertEqual((info.width, info.height, info.has_audio), (90, 160, False))
+            out = Path(tmp) / 'reel.mp4'
+            result = post_reel.compose_reel(clip, out, prompt_text=PERFUME, keyword='SKINCARE', engine=engine)
+            self.assertEqual((result.engine, result.frames, result.storyboard_frames), ('opencv', 12, 6))
+            check = reel_engines.probe_with_ffprobe(out, shutil.which('ffprobe'))
+        self.assertEqual((check.width, check.height, check.has_audio), (1080, 1920, False))
 
 
 class IdleKickTests(unittest.TestCase):
