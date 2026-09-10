@@ -1,37 +1,32 @@
 import { useEffect, useState } from 'react'
-import { CityChips } from '../components/CityChips'
-import { ExperienceChips } from '../components/ExperienceChips'
+import { CategoryChips, SourceChips } from '../components/SourceChips'
 import { GlassCompareChart } from '../components/GlassCompareChart'
-import { SectorChips } from '../components/SectorChips'
 import { api, relTime } from '../lib/api'
 import { useVigilStore } from '../store/vigilStore'
 import { PanelShell } from './PanelShell'
 
 export function TowerPanel() {
   const [data, setData] = useState<any>(null)
-  const sectorFilter = useVigilStore((s) => s.sectorFilter)
-  const cityFilter = useVigilStore((s) => s.cityFilter)
-  const experienceFilter = useVigilStore((s) => s.experienceFilter)
-  const setSectorOptions = useVigilStore((s) => s.setSectorOptions)
-  const setCityOptions = useVigilStore((s) => s.setCityOptions)
-  const setExperienceOptions = useVigilStore((s) => s.setExperienceOptions)
-  const openRoleHire = useVigilStore((s) => s.openRoleHire)
-  const openCompanyJobs = useVigilStore((s) => s.openCompanyJobs)
-  const openRankList = useVigilStore((s) => s.openRankList)
+  const [scanning, setScanning] = useState(false)
+  const sourceFilter = useVigilStore((s) => s.sourceFilter)
+  const categoryFilter = useVigilStore((s) => s.categoryFilter)
+  const setSourceOptions = useVigilStore((s) => s.setSourceOptions)
+  const setCategoryOptions = useVigilStore((s) => s.setCategoryOptions)
+  const setSourceFilter = useVigilStore((s) => s.setSourceFilter)
+  const setCategoryFilter = useVigilStore((s) => s.setCategoryFilter)
   const openPanel = useVigilStore((s) => s.openPanel)
-  const setCityFilter = useVigilStore((s) => s.setCityFilter)
+  const setStatus = useVigilStore((s) => s.setStatus)
 
   useEffect(() => {
     let alive = true
     const load = () =>
       api
-        .tower(sectorFilter, cityFilter, experienceFilter)
+        .promptInsights(7)
         .then((d) => {
           if (!alive) return
           setData(d)
-          if (d?.sector_options?.length) setSectorOptions(d.sector_options)
-          if (d?.city_options?.length) setCityOptions(d.city_options)
-          if (d?.experience_options?.length) setExperienceOptions(d.experience_options)
+          if (d?.source_options?.length) setSourceOptions(d.source_options)
+          if (d?.category_options?.length) setCategoryOptions(d.category_options)
         })
         .catch(() => {})
     load()
@@ -40,191 +35,162 @@ export function TowerPanel() {
       alive = false
       clearInterval(id)
     }
-  }, [
-    sectorFilter,
-    cityFilter,
-    experienceFilter,
-    setSectorOptions,
-    setCityOptions,
-    setExperienceOptions,
-  ])
+  }, [setSourceOptions, setCategoryOptions])
 
   const stats = data?.stats
-  const top = data?.top_companies || []
-  const roles = (data?.per_role || []).slice(0, 8)
-  const topCities = data?.top_cities || []
-  const latest = data?.latest_jobs || []
-  const moreRoles = (data?.per_role || []).length > 8
+  const sources = data?.top_sources || []
+  const cats = (data?.by_category || []).slice(0, 8)
+  const latest = data?.latest || []
+  const shortlist = data?.shortlist || []
 
   return (
     <PanelShell id="tower">
-      <SectorChips actionPrefix="tower-sector" />
-      <CityChips actionPrefix="tower-city" />
-      <ExperienceChips actionPrefix="tower-experience" />
+      <SourceChips actionPrefix="tower-source" />
+      <CategoryChips actionPrefix="tower-category" />
+      <div className="chip-row wrap">
+        <button
+          type="button"
+          className={`chip ${scanning ? 'active' : ''}`}
+          data-gesture-action="tower-scan"
+          disabled={scanning}
+          onClick={() => {
+            setScanning(true)
+            api
+              .promptScan()
+              .then(() => setStatus('SCAN QUEUED'))
+              .catch(() => setStatus('SCAN BUSY'))
+              .finally(() => setScanning(false))
+          }}
+        >
+          {scanning ? 'Scanning…' : 'Scan now'}
+        </button>
+      </div>
       {!data ? (
-        <div className="empty">Syncing tower insights…</div>
+        <div className="empty">Syncing prompt tower…</div>
       ) : (
         <>
           <div className="signal-hero">
             <div className="stat-grid">
               <div className="stat-card signal-stat">
-                <div className="n">{stats.total_jobs}</div>
-                <div className="l">Jobs</div>
+                <div className="n">{stats.total}</div>
+                <div className="l">Prompts</div>
               </div>
               <div className="stat-card">
-                <div className="n">{stats.jobs_today}</div>
+                <div className="n">{stats.today}</div>
                 <div className="l">Today</div>
               </div>
               <div className="stat-card">
-                <div className="n">{stats.companies}</div>
-                <div className="l">Companies</div>
+                <div className="n">{stats.pending_score}</div>
+                <div className="l">To score</div>
               </div>
               <div className="stat-card">
-                <div className="n">{stats.runs_active}</div>
-                <div className="l">Active</div>
+                <div className="n">{stats.shortlisted_today}</div>
+                <div className="l">Top 10</div>
               </div>
             </div>
           </div>
 
-          {topCities.length > 0 && (
-            <GlassCompareChart
-              title="Top cities for hiring"
-              subtitle="Last 7 days — tap to filter Jobs"
-              actionPrefix="tower-city-bar"
-              maxItems={6}
-              items={topCities.slice(0, 6).map((c: any) => ({
-                id: String(c.city),
-                label: c.label,
-                value: c.recent,
-                meta: c.delta > 0 ? `+${c.delta}` : c.delta < 0 ? String(c.delta) : undefined,
-              }))}
-              onSelect={(item) => {
-                setCityFilter(item.id)
-                openPanel('jobs')
-              }}
-              action={
-                <button
-                  type="button"
-                  className="show-all"
-                  data-gesture-action="tower-show-cities"
-                  onClick={() => openPanel('cities')}
-                >
-                  City signals
-                </button>
-              }
-            />
-          )}
-
           <GlassCompareChart
-            title="Top companies hiring"
-            subtitle="Last 7 days — tap a company for jobs"
-            actionPrefix="tower-co"
+            title="Top sources"
+            subtitle="Last 7 days — tap to open Prompts"
+            actionPrefix="tower-src"
             maxItems={8}
-            items={top.map((c: any) => ({
-              id: String(c.company_id || c.name),
-              label: c.name,
+            items={sources.map((c: any) => ({
+              id: String(c.id),
+              label: c.label,
               value: c.n,
             }))}
             onSelect={(item) => {
-              const id = Number(item.id)
-              if (!Number.isNaN(id)) openCompanyJobs(id, item.label, 7)
+              setSourceFilter(item.id)
+              openPanel('jobs')
             }}
             action={
               <button
                 type="button"
                 className="show-all"
-                data-gesture-action="tower-show-companies"
-                onClick={() => openRankList('companies', 7)}
+                data-gesture-action="tower-show-sources"
+                onClick={() => openPanel('searches')}
               >
-                Show all
+                All sources
               </button>
             }
           />
 
           <GlassCompareChart
-            title="Jobs per role"
-            subtitle="Fair 7-day window — tap for companies"
-            actionPrefix="tower-role"
+            title="Prompts per category"
+            subtitle="Last 7 days — tap to filter"
+            actionPrefix="tower-cat"
             maxItems={8}
-            items={roles.map((r: any) => ({
-              id: String(r.search_id || r.name),
-              label: r.name,
+            items={cats.map((r: any) => ({
+              id: String(r.id),
+              label: r.label,
               value: r.n,
             }))}
             onSelect={(item) => {
-              const id = Number(item.id)
-              if (!Number.isNaN(id)) openRoleHire(id, item.label, 7)
+              setCategoryFilter(item.id)
+              openPanel('jobs')
             }}
             action={
-              moreRoles || roles.length > 0 ? (
-                <button
-                  type="button"
-                  className="show-all"
-                  data-gesture-action="tower-show-roles"
-                  onClick={() => openRankList('roles')}
-                >
-                  Show all
-                </button>
-              ) : null
+              <button
+                type="button"
+                className="show-all"
+                data-gesture-action="tower-show-cats"
+                onClick={() => openPanel('cities')}
+              >
+                All categories
+              </button>
             }
           />
 
-          <section className="insight-block insight-fresh">
-            <header className="insight-block-head">
-              <span className="insight-mark" aria-hidden />
-              <div>
-                <h4>Freshest catches</h4>
-                <p>Newest openings — tap to open</p>
-              </div>
-            </header>
-            {latest.map((j: any) => (
-              <div className="list-row" key={j.id}>
+          <div className="muted" style={{ marginTop: 10 }}>Today’s top 10</div>
+          {shortlist.length === 0 ? (
+            <div className="empty">No shortlist yet — tap Scan now</div>
+          ) : (
+            shortlist.map((p: any) => (
+              <div className="list-row" key={p.id}>
                 <div>
-                  <button
-                    type="button"
-                    className="inline-link title-link"
-                    data-gesture-action={`tower-job-${j.id}`}
-                    onClick={() => {
-                      if (j.job_url) {
-                        window.open(j.job_url, '_blank', 'noopener,noreferrer')
-                        return
-                      }
-                      if (j.company_id) {
-                        openCompanyJobs(j.company_id, j.company || 'Company', 7)
-                      }
-                    }}
-                    title={j.job_url ? 'Open job posting' : 'Open company jobs'}
-                  >
-                    {j.title}
-                  </button>
+                  <div>
+                    {p.rank}. {p.title}
+                  </div>
                   <div className="meta">
-                    {j.company_id ? (
-                      <button
-                        type="button"
-                        className="inline-link"
-                        data-gesture-action={`tower-job-co-${j.company_id}`}
-                        onClick={() =>
-                          openCompanyJobs(j.company_id, j.company || 'Company', 7)
-                        }
-                      >
-                        {j.company || 'Company'}
-                      </button>
-                    ) : (
-                      j.company || '—'
-                    )}
-                    {' · '}
-                    {j.location || '—'}
-                    {j.experience_band
-                      ? ` · ${String(j.experience_band).replace(/\s*years?$/i, '').replace(/^0-1$/, 'Fresher')}`
-                      : ''}
+                    {p.source} · {p.category || '—'} · {p.final_score ?? 'unscored'}
                   </div>
                 </div>
-                <div className="meta" title={j.posted_date || j.scraped_at}>
-                  {relTime(j.posted_date || j.scraped_at)}
-                </div>
+                <div className="meta">{p.is_outlier ? 'outlier' : ''}</div>
               </div>
-            ))}
-          </section>
+            ))
+          )}
+
+          <div className="muted" style={{ marginTop: 10 }}>Freshest catches</div>
+          {latest.length === 0 ? (
+            <div className="empty">Nothing caught yet</div>
+          ) : (
+            latest
+              .filter((p: any) => {
+                if (sourceFilter && p.source !== sourceFilter) return false
+                if (categoryFilter && p.category !== categoryFilter) return false
+                return true
+              })
+              .map((p: any) => (
+                <button
+                  type="button"
+                  className="list-row clickable"
+                  key={p.id}
+                  data-gesture-action={`tower-latest-${p.id}`}
+                  onClick={() => openPanel('jobs')}
+                >
+                  <div>
+                    <div>{p.title}</div>
+                    <div className="meta">
+                      {p.source} · {p.category || '—'}
+                    </div>
+                  </div>
+                  <div className="meta" title={p.collected_at}>
+                    {relTime(p.collected_at)}
+                  </div>
+                </button>
+              ))
+          )}
         </>
       )}
     </PanelShell>

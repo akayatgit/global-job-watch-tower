@@ -5,7 +5,8 @@
 | **Ruling** | Ashok, 2026-09-09: *"Jobs are now prompts. Do what I say. We don't need jobs."* |
 | **Product** | Daily top-10 **AI video prompts for D2C product videos** (Veo / Kling / Sora), scored by Hermes, posted on Instagram for authority, sold later as prompt + video packs |
 | **Authority channel** | Instagram, reference format: `Comment "PERFUME" for prompts` → hero video → **Prompt** text → `@handle` |
-| **Owner surface** | Telegram (owner-only): `/prompts` deck → tap a number → 📸 product image → ✅ make video → ⭐ rate → 📣 posted → `/promptperf` |
+| **Owner surface** | **VIGIL admin** at `http://127.0.0.1:8001` is the collection cockpit (Tower · Prompts · Scores · Sources · Activity · Live · Health). Telegram is delivery + approve-to-video, not the monitor. |
+
 | **Learning loop** | RAG of proven winners (rated ≥4 or strong engagement) → few-shot anchors + baseline for tomorrow's scoring → outliers flagged 🔥 |
 | **Render** | Replicate image→video (`REPLICATE_VIDEO_MODEL`, default `kwaivgi/kling-v2.1`) → MP4 + Instagram card stored in the AvatarPitch asset root, served at `/api/partner/v1/assets/{key}` |
 | **Jobs stack** | **Asleep, not deleted.** `TOWER_MODE=prompts` (default) pauses the job beat; `TOWER_MODE=jobs` wakes it. Every job table, search, command and test stays intact (source-safety law). |
@@ -104,7 +105,29 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 2. `ollama pull nomic-embed-text` (embeddings; hashed fallback works without it, worse dedupe recall).
 3. `job_engine/.env`: `REPLICATE_API_TOKEN` set; optionally `REPLICATE_VIDEO_MODEL`, `PROMPT_WEB_URLS`, `PROMPT_INSTAGRAM_TAGS`.
 4. Restart worker + beat + Telegram bot (the beat now carries `daily-prompt-pipeline` and `score-pending-prompts`; the bot carries the daily deck loop).
-5. From the phone: `/promptscan` → wait for "Scan queued" → `/prompts`. Tap 1 → 📸 → send a product photo → ✅ → card arrives, video follows.
+5. Open VIGIL at `http://127.0.0.1:8001` — Tower should say Prompt Tower, not Jobs. Tap **Scan now**. Watch Live + Activity. Prompts list fills as rows land.
+6. Phone (secondary): `/promptscan` / `/prompts` → tap 1 → 📸 → ✅.
+
+## 7b. VIGIL admin (prompt collection engine)
+
+The left rail is the same modules, remapped:
+
+| Rail | What it shows |
+|---|---|
+| Tower | Caught today, pending scores, top sources, categories, today's top-10, freshest catches, **Scan now** |
+| Prompts | Full catalogue — live source/category chips, search, sort newest/score/rating |
+| Scores | Mean, outliers, score bands, growing categories, fastest sources |
+| Categories | Category mix over a time window |
+| Hermes vs Recipe | Heuristic vs Hermes vs blend |
+| Sources | Reddit / web / Instagram / pasted, last catch, **Scan now** |
+| Activity | Catch / score / video timeline |
+| Live | Engine log stream |
+| Health | Heat, memory, caught today, pending scores, next scan, stall honesty |
+| Winners | RAG exemplars, posted, your ratings |
+
+Job stall banners stay off while `TOWER_MODE=prompts`. The old "Collection stalled — tower engine not running" was a false alarm: the job beat is asleep on purpose.
+
+VIGIL must be built with a real `npm` (never the GitHub Actions runner copy — that npm is missing `lib/cli.js`). `job_engine/restart_app.sh` picks a working npm.
 
 ## 8. Honest limits (today)
 

@@ -30,17 +30,10 @@ export default function App() {
 
   useEffect(() => {
     api
-      .sectors()
+      .promptInsights(7)
       .then((d) => {
-        const opts = d?.sector_options || []
-        if (opts.length) useVigilStore.getState().setSectorOptions(opts)
-      })
-      .catch(() => {})
-    api
-      .citySignals(7)
-      .then((d) => {
-        const opts = d?.city_options || []
-        if (opts.length) useVigilStore.getState().setCityOptions(opts)
+        if (d?.source_options?.length) useVigilStore.getState().setSourceOptions(d.source_options)
+        if (d?.category_options?.length) useVigilStore.getState().setCategoryOptions(d.category_options)
       })
       .catch(() => {})
   }, [])

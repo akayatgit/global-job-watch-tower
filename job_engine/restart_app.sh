@@ -68,10 +68,41 @@ start_unit() {
   fi
 }
 
-# Build VIGIL air ops shell (React / R3F) before API comes up
-NODE_BIN="/home/user/actions-runner/externals/node20/bin"
-if [ -d "$WORKDIR/vigil" ] && [ -x "$NODE_BIN/npm" ]; then
-  echo "[restart] building VIGIL…"
+# Build VIGIL air ops shell (React / R3F) before API comes up.
+# Never use the GitHub Actions runner Node — that copy's npm is missing
+# lib/cli.js (2026-09-10 ThinkPad deploy warning). Prefer a real npm.
+pick_node_bin() {
+  local candidate dir
+  for candidate in \
+    "$(command -v npm 2>/dev/null || true)" \
+    /usr/bin/npm \
+    /usr/local/bin/npm
+  do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    case "$candidate" in
+      */actions-runner/*) continue ;;
+    esac
+    dir="$(dirname "$candidate")"
+    if PATH="$dir:$PATH" npm -v >/dev/null 2>&1; then
+      echo "$dir"
+      return 0
+    fi
+  done
+  # nvm / fnm installs
+  for candidate in "$HOME"/.nvm/versions/node/*/bin/npm /home/user/.nvm/versions/node/*/bin/npm; do
+    [ -x "$candidate" ] || continue
+    dir="$(dirname "$candidate")"
+    if PATH="$dir:$PATH" npm -v >/dev/null 2>&1; then
+      echo "$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
+NODE_BIN="$(pick_node_bin || true)"
+if [ -d "$WORKDIR/vigil" ] && [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN/npm" ]; then
+  echo "[restart] building VIGIL with $NODE_BIN/npm…"
   (
     cd "$WORKDIR/vigil"
     export PATH="$NODE_BIN:$PATH"
@@ -80,6 +111,8 @@ if [ -d "$WORKDIR/vigil" ] && [ -x "$NODE_BIN/npm" ]; then
     fi
     npm run build
   ) || echo "[restart] WARNING: VIGIL build failed — /legacy shell still available"
+elif [ -d "$WORKDIR/vigil" ]; then
+  echo "[restart] WARNING: no working npm on PATH — VIGIL UI not rebuilt"
 fi
 
 echo "[restart] bouncing app processes (Postgres/Redis untouched)..."

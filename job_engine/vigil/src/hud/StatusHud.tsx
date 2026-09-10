@@ -83,7 +83,7 @@ export function StatusHud() {
               <span className="k">Mem</span>
               <span className="v">{v?.mem_pct != null ? `${Math.round(v.mem_pct)}%` : '—'}</span>
             </div>
-            <div className="vital-chip" title="Searches today">
+            <div className="vital-chip" title={v?.tower_mode === 'prompts' ? 'Prompts caught today' : 'Searches today'}>
               <span className="k">Today</span>
               <span className="v">{v?.searches_today ?? '—'}</span>
             </div>
@@ -363,7 +363,7 @@ export function StatusHud() {
         >
           {!cityFocus ? (
             <span className="city-window-hint" title="Applies when you enter a metro">
-              Hiring window
+              {v?.tower_mode === 'prompts' ? 'Prompt window' : 'Hiring window'}
             </span>
           ) : null}
           {WINDOW_FALLBACK.map((w) => (
@@ -381,7 +381,7 @@ export function StatusHud() {
         </div>
       ) : null}
 
-      {v?.alert_level === 'blocked' || v?.block ? (
+      {v?.tower_mode !== 'prompts' && (v?.alert_level === 'blocked' || v?.block) ? (
         <div className="alert-strip interactive">
           <span>LinkedIn wall detected — check live feed</span>
           <button
@@ -395,7 +395,11 @@ export function StatusHud() {
         </div>
       ) : v?.alert_level === 'stalled' ? (
         <div className="alert-strip interactive" title={v?.stall_detail || ''}>
-          <span>Collection stalled — tower engine not running. Restart the stack.</span>
+          <span>
+            {v?.tower_mode === 'prompts'
+              ? 'Prompt collection stalled — open Health, then Scan now.'
+              : 'Collection stalled — tower engine not running. Restart the stack.'}
+          </span>
         </div>
       ) : v?.filter_mode_policy === 'keyword' || v?.alert_level === 'planb' ? (
         <div className="alert-strip planb">Plan B keyword filter — heat/GPU recovery</div>

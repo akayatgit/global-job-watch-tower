@@ -183,6 +183,35 @@ export const api = {
   },
   console: (afterId = 0) => getJson<any[]>(`/api/console?after_id=${afterId}&limit=120`),
   stats: () => getJson<any>('/api/stats'),
+  prompts: (q: {
+    limit?: number
+    q?: string
+    source?: string
+    category?: string
+    status?: string
+    days?: number
+    sort?: string
+    offset?: number
+  } = {}) => {
+    const p = new URLSearchParams()
+    p.set('limit', String(q.limit ?? 80))
+    if (q.q) p.set('q', q.q)
+    if (q.source) p.set('source', q.source)
+    if (q.category) p.set('category', q.category)
+    if (q.status) p.set('status', q.status)
+    if (q.days != null) p.set('days', String(q.days))
+    if (q.sort) p.set('sort', q.sort)
+    if (q.offset) p.set('offset', String(q.offset))
+    return getJson<any>(`/api/prompts?${p}`)
+  },
+  promptInsights: (days = 7) => getJson<any>(`/api/prompts/insights?days=${days}`),
+  promptSignals: (days = 7) => getJson<any>(`/api/prompts/signals?days=${days}`),
+  promptActivity: (limit = 40) => getJson<any>(`/api/prompts/activity?limit=${limit}`),
+  promptSources: () => getJson<any>('/api/prompts/sources'),
+  promptWinners: () => getJson<any>('/api/prompts/winners'),
+  promptMix: (days = 7) => getJson<any>(`/api/prompts/mix?days=${days}`),
+  promptCategories: (days = 7) => getJson<any>(`/api/prompts/categories?days=${days}`),
+  promptScan: () => postJson<any>('/api/prompts/scan', { force: true }),
   toggleHeadless: () => postJson<any>('/api/ultron/toggle-headless'),
   dismissAlert: () => postJson<any>('/api/ultron/dismiss-alert'),
   aiCapacity: () => getJson<any>('/api/ultron/ai-capacity'),

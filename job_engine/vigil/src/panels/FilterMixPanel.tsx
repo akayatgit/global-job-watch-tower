@@ -3,131 +3,79 @@ import { GlassCompareChart } from '../components/GlassCompareChart'
 import { api } from '../lib/api'
 import { PanelShell } from './PanelShell'
 
-const FALLBACK_WINDOWS = [
-  { key: '1h', chip: '1h', label: 'Last 1 hour' },
-  { key: '5h', chip: '5h', label: 'Last 5 hours' },
-  { key: '12h', chip: '12h', label: 'Last 12 hours' },
-  { key: '24h', chip: '24h', label: 'Last 24 hours' },
-  { key: '1d', chip: '1 day', label: 'Today' },
-  { key: '2d', chip: '2d', label: 'Last 2 days' },
-  { key: '5d', chip: '5d', label: 'Last 5 days' },
-  { key: '1w', chip: '1 week', label: 'Last 7 days' },
-  { key: 'last_week', chip: 'Last week', label: 'Previous calendar week' },
-  { key: 'this_month', chip: 'This month', label: 'This calendar month' },
-  { key: 'last_month', chip: 'Last month', label: 'Previous calendar month' },
-]
-
 export function FilterMixPanel() {
-  const [windowKey, setWindowKey] = useState('24h')
+  const [days, setDays] = useState(7)
   const [data, setData] = useState<any>(null)
 
   useEffect(() => {
     let alive = true
     const load = () =>
-      api.filterCompare(windowKey).then((d) => alive && setData(d)).catch(() => {})
+      api.promptMix(days).then((d) => alive && setData(d)).catch(() => {})
     load()
     const id = window.setInterval(load, 8000)
     return () => {
       alive = false
       clearInterval(id)
     }
-  }, [windowKey])
+  }, [days])
 
-  const windows = data?.window_options || FALLBACK_WINDOWS
-  const ai = data?.ai ?? 0
-  const kw = data?.keyword ?? 0
-  const total = data?.total ?? 0
-  const series = data?.series || []
-  const seriesMax = Math.max(data?.series_max ?? 1, 1)
+  const windows = data?.window_options || [
+    { days: 0, label: 'Last 24 hours' },
+    { days: 1, label: 'Today' },
+    { days: 7, label: 'Last 7 days' },
+    { days: 30, label: 'Last 30 days' },
+  ]
 
   return (
     <PanelShell id="filter_mix">
       <div className="chip-row wrap">
-        {windows.map((w: { key: string; chip: string; label: string }) => (
+        {windows.map((w: { days: number; label: string }) => (
           <button
-            key={w.key}
+            key={w.days}
             type="button"
-            className={`chip ${windowKey === w.key ? 'active' : ''}`}
-            data-gesture-action={`filter-mix-${w.key}`}
-            title={w.label}
-            onClick={() => setWindowKey(w.key)}
+            className={`chip ${days === w.days ? 'active' : ''}`}
+            data-gesture-action={`mix-${w.days}`}
+            onClick={() => setDays(w.days)}
           >
-            {w.chip}
+            {w.days === 0 ? '24h' : w.days === 1 ? 'Today' : `${w.days}d`}
           </button>
         ))}
       </div>
-
       {!data ? (
-        <div className="empty">Comparing AI vs keyword filters…</div>
+        <div className="empty">Comparing Hermes vs recipe scores…</div>
       ) : (
         <>
           <div className="stat-grid">
             <div className="stat-card ai-tone">
-              <div className="n">{ai}</div>
-              <div className="l">AI · Ollama</div>
+              <div className="n">{data.ai_mean ?? '—'}</div>
+              <div className="l">Hermes mean</div>
             </div>
             <div className="stat-card kw-tone">
-              <div className="n">{kw}</div>
-              <div className="l">Keyword · Plan B</div>
+              <div className="n">{data.heuristic_mean ?? '—'}</div>
+              <div className="l">Recipe mean</div>
             </div>
             <div className="stat-card">
-              <div className="n">{total}</div>
-              <div className="l">Total filters</div>
+              <div className="n">{data.blended_mean ?? '—'}</div>
+              <div className="l">Blend mean</div>
             </div>
             <div className="stat-card">
-              <div className="n">{total ? `${data.ai_pct}%` : '—'}</div>
-              <div className="l">AI share</div>
+              <div className="n">{data.outliers}</div>
+              <div className="l">Outliers</div>
             </div>
           </div>
-
-          <p className="muted">{data.headline}</p>
-          <div className="muted" style={{ marginTop: 4 }}>
-            {data.label} · {data.start ? new Date(data.start).toLocaleString() : '—'}
-            {' → '}
-            {data.end ? new Date(data.end).toLocaleString() : '—'}
-          </div>
-
           <GlassCompareChart
-            title="Head to head"
-            subtitle={`${total} filter runs in this window`}
-            actionPrefix="filter-mix-h2h"
-            maxItems={2}
-            items={[
-              { id: 'ai', label: 'AI · Ollama', value: ai },
-              { id: 'kw', label: 'Keyword · Plan B', value: kw },
-            ]}
+            title="How we score"
+            subtitle="Recipe is the structure check · Hermes grades detail + flow"
+            actionPrefix="mix-bar"
+            maxItems={3}
+            items={(data.items || []).map((c: any) => ({
+              id: c.id,
+              label: c.label,
+              value: c.value,
+            }))}
           />
-
-          <div className="section-head" style={{ marginTop: 12 }}>
-            <span className="muted">
-              Over time · {data.bucket === 'hour' ? 'hourly' : 'daily'}
-            </span>
-            <span className="meta">{series.length} buckets</span>
-          </div>
-          {series.length === 0 ? (
-            <div className="empty">No filter pulses in this window yet.</div>
-          ) : (
-            <div className="mix-series">
-              {series.slice(-24).map((s: any) => (
-                <div className="mix-bucket" key={s.at} title={s.at}>
-                  <div className="mix-cols">
-                    <div
-                      className="mix-col ai-fill"
-                      style={{ height: `${Math.max(4, (s.ai / seriesMax) * 100)}%` }}
-                    />
-                    <div
-                      className="mix-col kw-fill"
-                      style={{ height: `${Math.max(4, (s.keyword / seriesMax) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="mix-lbl">{s.label}</div>
-                  <div className="mix-nums">{s.ai}/{s.keyword}</div>
-                </div>
-              ))}
-            </div>
-          )}
           <div className="muted" style={{ marginTop: 8 }}>
-            Legend: amber = AI · crimson = Keyword Plan B · ratio AI/Keyword under each bar
+            {data.ai_n} Hermes reads · {data.heuristic_n} recipe scores
           </div>
         </>
       )}

@@ -113,7 +113,7 @@ export function ModuleDock() {
 
       <div
         className="rail-countdown"
-        title={vitals?.countdown_title || 'Next search'}
+        title={vitals?.countdown_title || 'Next prompt scan'}
       >
         {countdownText}
       </div>

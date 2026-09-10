@@ -223,6 +223,66 @@ class PromptsApiTests(unittest.TestCase):
             422,
         )
 
+    def _row(self, **kwargs):
+        from datetime import datetime, timezone
+        from app.prompts.normalize import make_title
+
+        text = kwargs.pop('text', PERFUME)
+        now = datetime.now(timezone.utc)
+        fp = kwargs.pop('fingerprint', None) or f'test-{self.db.query(VideoPrompt).count()}-{now.timestamp()}'
+        row = VideoPrompt(
+            fingerprint=fp[:40],
+            text=text,
+            title=kwargs.pop('title', make_title(text, kwargs.get('category'))),
+            source=kwargs.pop('source', 'reddit'),
+            category=kwargs.pop('category', 'perfume'),
+            collected_at=kwargs.pop('collected_at', now),
+            heuristic_score=kwargs.pop('heuristic_score', 70),
+            final_score=kwargs.pop('final_score', 80),
+            scored_at=kwargs.pop('scored_at', now),
+            status=kwargs.pop('status', 'new'),
+            **kwargs,
+        )
+        self.db.add(row)
+        self.db.commit()
+        return row
+
+    def test_catalog_filters_and_insights_are_verbatim(self):
+        a = self._row(source='reddit', category='perfume', final_score=91, title='Perfume orbit')
+        self._row(text=COFFEE, source='web', category='beverage', final_score=60, title='Cold brew can')
+        catalog = self.client.get('/api/prompts', params={'source': 'reddit'}).json()
+        self.assertEqual(catalog['total'], 1)
+        self.assertEqual(catalog['prompts'][0]['id'], a.id)
+        self.assertEqual(catalog['prompts'][0]['title'], 'Perfume orbit')
+        scored = self.client.get('/api/prompts', params={'sort': 'score'}).json()
+        self.assertEqual(scored['prompts'][0]['final_score'], 91)
+        insights = self.client.get('/api/prompts/insights').json()
+        self.assertEqual(insights['stats']['total'], 2)
+        self.assertEqual(insights['stats']['scored'], 2)
+        labels = {row['id'] for row in insights['top_sources']}
+        self.assertIn('reddit', labels)
+        self.assertIn('web', labels)
+        signals = self.client.get('/api/prompts/signals', params={'days': 7}).json()
+        self.assertEqual(signals['signals']['recent_total'], 2)
+        sources = self.client.get('/api/prompts/sources').json()
+        families = {row['id']: row['n'] for row in sources['by_family']}
+        self.assertEqual(families['reddit'], 1)
+        self.assertEqual(families['web'], 1)
+        mix = self.client.get('/api/prompts/mix').json()
+        self.assertEqual(mix['ai_n'] + mix['heuristic_n'] >= 0, True)
+        cats = self.client.get('/api/prompts/categories').json()
+        self.assertGreaterEqual(cats['total'], 2)
+        activity = self.client.get('/api/prompts/activity').json()
+        self.assertGreaterEqual(activity['total'], 2)
+        winners = self.client.get('/api/prompts/winners').json()
+        self.assertEqual(winners['exemplars'], [])
+
+    def test_catalog_q_matches_title(self):
+        self._row(title='Neon sneaker kick', text=SNEAKER, source='manual', category='footwear')
+        body = self.client.get('/api/prompts', params={'q': 'sneaker'}).json()
+        self.assertEqual(body['total'], 1)
+        self.assertEqual(body['prompts'][0]['source'], 'manual')
+
 
 if __name__ == '__main__':
     unittest.main()

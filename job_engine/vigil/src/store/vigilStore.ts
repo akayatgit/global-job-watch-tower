@@ -91,6 +91,8 @@ function readStoredCityWindow(): number {
 const DEFAULT_SECTOR_FAVS = ['tech_ai', 'tech_digital']
 const DEFAULT_CITY_FAVS = ['bengaluru', 'chennai', 'kerala']
 const DEFAULT_EXPERIENCE_FAVS = ['fresher', '1-2', '3-5']
+const DEFAULT_SOURCE_FAVS = ['reddit', 'web', 'manual']
+const DEFAULT_CATEGORY_FAVS = ['perfume', 'skincare', 'fashion', 'tech']
 
 function readStoredFavs(key: string, fallback: string[]): string[] {
   try {
@@ -178,17 +180,17 @@ const MIN_H = 32
 const MAX_H = 90
 
 const PANEL_META: { id: PanelId; title: string }[] = [
-  { id: 'tower', title: 'TOWER INSIGHTS' },
-  { id: 'signals', title: 'HIRING SIGNALS' },
-  { id: 'watchlist', title: 'WATCHLIST' },
-  { id: 'searches', title: 'SEARCHES' },
+  { id: 'tower', title: 'PROMPT TOWER' },
+  { id: 'signals', title: 'SCORES' },
+  { id: 'watchlist', title: 'WINNERS' },
+  { id: 'searches', title: 'SOURCES' },
   { id: 'activity', title: 'ACTIVITY' },
-  { id: 'jobs', title: 'JOBS' },
+  { id: 'jobs', title: 'PROMPTS' },
   { id: 'live', title: 'LIVE FEED' },
   { id: 'health', title: 'TOWER HEALTH' },
   { id: 'ask', title: 'ASK TOWER' },
-  { id: 'filter_mix', title: 'AI VS KEYWORD' },
-  { id: 'cities', title: 'CITY SIGNALS' },
+  { id: 'filter_mix', title: 'HERMES VS RECIPE' },
+  { id: 'cities', title: 'CATEGORIES' },
   { id: 'director_traces', title: 'WORKFLOW' },
   { id: 'role_hire', title: 'COMPANIES HIRING' },
   { id: 'rank_list', title: 'FULL LIST' },
@@ -225,17 +227,17 @@ export const PINNABLE_PANELS: PanelId[] = [
 
 export const ORBIT_NODES: OrbitNode[] = [
   { id: 'tower', label: 'Tower', angle: -0.95, radius: 2.55 },
-  { id: 'jobs', label: 'Jobs', angle: -0.4, radius: 2.6 },
-  { id: 'signals', label: 'Hiring Signals', angle: 0.35, radius: 2.7 },
-  { id: 'cities', label: 'Cities', angle: 0.52, radius: 2.68 },
-  { id: 'filter_mix', label: 'AI vs Keyword', angle: 0.7, radius: 2.62 },
-  { id: 'searches', label: 'Searches', angle: 1.1, radius: 2.55 },
+  { id: 'jobs', label: 'Prompts', angle: -0.4, radius: 2.6 },
+  { id: 'signals', label: 'Scores', angle: 0.35, radius: 2.7 },
+  { id: 'cities', label: 'Categories', angle: 0.52, radius: 2.68 },
+  { id: 'filter_mix', label: 'Hermes vs Recipe', angle: 0.7, radius: 2.62 },
+  { id: 'searches', label: 'Sources', angle: 1.1, radius: 2.55 },
   { id: 'activity', label: 'Activity', angle: 1.85, radius: 2.65 },
   { id: 'director_traces', label: 'Workflow', angle: 2.15, radius: 2.58 },
   { id: 'live', label: 'Live', angle: 2.55, radius: 2.5 },
   { id: 'health', label: 'Health', angle: 3.4, radius: 2.7 },
   { id: 'ask', label: 'Ask', angle: 4.7, radius: 2.55 },
-  { id: 'watchlist', label: 'Watchlist', angle: 4.2, radius: 2.6 },
+  { id: 'watchlist', label: 'Winners', angle: 4.2, radius: 2.6 },
 ]
 
 type PinLayout = {
@@ -539,6 +541,19 @@ type VigilStore = {
   /** Favourite experience ids (persisted) — shown before Show more */
   experienceFavorites: string[]
   toggleExperienceFavorite: (id: string) => void
+  /** Prompt Tower: source / category filters */
+  sourceFilter: string
+  setSourceFilter: (id: string) => void
+  sourceOptions: CityOption[]
+  setSourceOptions: (opts: CityOption[]) => void
+  sourceFavorites: string[]
+  toggleSourceFavorite: (id: string) => void
+  categoryFilter: string
+  setCategoryFilter: (id: string) => void
+  categoryOptions: CityOption[]
+  setCategoryOptions: (opts: CityOption[]) => void
+  categoryFavorites: string[]
+  toggleCategoryFavorite: (id: string) => void
   openRoleHire: (searchId: number, name: string, days?: number) => void
   openCompanyJobs: (
     companyId: number,
@@ -962,6 +977,84 @@ export const useVigilStore = create<VigilStore>((set, get) => ({
       statusLine: next.includes(id)
         ? `FAVOURITE EXPERIENCE · ${label.toUpperCase()}`
         : `UNFAVOURITE EXPERIENCE · ${label.toUpperCase()}`,
+    })
+  },
+  sourceFilter: (() => {
+    try {
+      return localStorage.getItem('vigil.source') || ''
+    } catch {
+      return ''
+    }
+  })(),
+  setSourceFilter: (id) => {
+    const next = id || ''
+    try {
+      localStorage.setItem('vigil.source', next)
+    } catch {
+      /* ignore */
+    }
+    const opts = get().sourceOptions
+    const label =
+      opts.find((o) => (o.id || '') === next)?.label ||
+      (next ? next : 'All sources')
+    set({
+      sourceFilter: next,
+      statusLine: `SOURCE · ${label.toUpperCase()}`,
+    })
+  },
+  sourceOptions: [],
+  setSourceOptions: (opts) => set({ sourceOptions: opts }),
+  sourceFavorites: readStoredFavs('vigil.sourceFavs', DEFAULT_SOURCE_FAVS),
+  toggleSourceFavorite: (id) => {
+    if (!id) return
+    const cur = get().sourceFavorites
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistFavs('vigil.sourceFavs', next)
+    const label = get().sourceOptions.find((o) => o.id === id)?.label || id
+    set({
+      sourceFavorites: next,
+      statusLine: next.includes(id)
+        ? `FAVOURITE SOURCE · ${label.toUpperCase()}`
+        : `UNFAVOURITE SOURCE · ${label.toUpperCase()}`,
+    })
+  },
+  categoryFilter: (() => {
+    try {
+      return localStorage.getItem('vigil.category') || ''
+    } catch {
+      return ''
+    }
+  })(),
+  setCategoryFilter: (id) => {
+    const next = id || ''
+    try {
+      localStorage.setItem('vigil.category', next)
+    } catch {
+      /* ignore */
+    }
+    const opts = get().categoryOptions
+    const label =
+      opts.find((o) => (o.id || '') === next)?.label ||
+      (next ? next : 'All categories')
+    set({
+      categoryFilter: next,
+      statusLine: `CATEGORY · ${label.toUpperCase()}`,
+    })
+  },
+  categoryOptions: [],
+  setCategoryOptions: (opts) => set({ categoryOptions: opts }),
+  categoryFavorites: readStoredFavs('vigil.categoryFavs', DEFAULT_CATEGORY_FAVS),
+  toggleCategoryFavorite: (id) => {
+    if (!id) return
+    const cur = get().categoryFavorites
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistFavs('vigil.categoryFavs', next)
+    const label = get().categoryOptions.find((o) => o.id === id)?.label || id
+    set({
+      categoryFavorites: next,
+      statusLine: next.includes(id)
+        ? `FAVOURITE CATEGORY · ${label.toUpperCase()}`
+        : `UNFAVOURITE CATEGORY · ${label.toUpperCase()}`,
     })
   },
   openPanel: (id) => {

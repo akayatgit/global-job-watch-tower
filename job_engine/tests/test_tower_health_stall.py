@@ -102,6 +102,50 @@ class DeadBeatTests(unittest.TestCase):
         self.assertFalse(stalled)
 
 
+class PromptModeStallTests(unittest.TestCase):
+    """When TOWER_MODE=prompts the job backlog must not paint the red stall banner."""
+
+    def test_first_day_with_no_prompts_is_not_stalled(self):
+        from app.prompts.admin import pulse
+        from app.db import Base
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+        result = pulse(db, now=now)
+        self.assertFalse(result['stalled'])
+        self.assertEqual(result['collected_today'], 0)
+        db.close()
+
+    def test_old_catch_after_todays_window_is_stalled(self):
+        from app.prompts.admin import pulse
+        from app.db import Base
+        from app.models import VideoPrompt
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+        db.add(VideoPrompt(
+            fingerprint='stall-old',
+            text='x' * 200,
+            source='reddit',
+            collected_at=now - timedelta(hours=30),
+        ))
+        db.commit()
+        result = pulse(db, now=now)
+        self.assertTrue(result['stalled'])
+        self.assertIn('Scan now', result['stall_detail'])
+        db.close()
+
+
 class AgeLabelTests(unittest.TestCase):
     def test_minutes_hours_days(self):
         self.assertEqual(_age_label(timedelta(minutes=42)), '42m')

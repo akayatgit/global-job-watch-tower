@@ -43,9 +43,14 @@ don't need jobs."
 `TOWER_MODE` gate (job beat asleep, nothing deleted). 616 tests green.
 Spec: [`prompt-tower.md`](./prompt-tower.md).
 
-**Acceptance (open):** Ashok receives the first `/prompts` deck on the
-phone, renders one video from a product photo, posts once on Instagram,
-rates it — then this card moves to Done. Fast-follows: Instagram Graph API
+**Follow (2026-09-10):** VIGIL admin remapped to the prompt engine (Ashok:
+"why is the UI still jobs… this is the admin panel"). Tower / Prompts /
+Scores / Sources / Activity / Live / Health / Winners. Job stall banner
+off while prompts mode. Real npm for VIGIL build.
+
+**Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
+taps Scan now, watches Live fill, then renders one video from a product
+photo and posts once on Instagram. Fast-follows: Instagram Graph API
 publish, live-verify the Instagram hashtag source, attribution line on the
 card.
 

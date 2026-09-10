@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import PromptRender, VideoPrompt
+from app.prompts import admin as prompt_admin
 from app.prompts import pipeline, rag, video_creator
 from app.prompts.sources import manual_candidate
 
@@ -55,6 +56,61 @@ def today(day: str | None = Query(default=None), full: int = Query(default=0), d
         'total': len(rows),
         'prompts': [pipeline.serialize_prompt(p, rank=e.rank, full=bool(full)) for e, p in rows],
     }
+
+
+@router.get('')
+@router.get('/')
+def catalog(
+    q: str = Query(default=''),
+    source: str = Query(default=''),
+    category: str = Query(default=''),
+    status: str = Query(default=''),
+    days: int | None = Query(default=None),
+    sort: str = Query(default='newest'),
+    limit: int = Query(default=80),
+    offset: int = Query(default=0),
+    db: Session = Depends(get_db),
+):
+    """Prompt catalogue for the VIGIL admin list — live filters, newest first."""
+    return prompt_admin.list_prompts(
+        db, q=q, source=source, category=category, status=status,
+        days=days, sort=sort, limit=limit, offset=offset,
+    )
+
+
+@router.get('/insights')
+def insights(days: int = Query(default=7), db: Session = Depends(get_db)):
+    return prompt_admin.insights(db, days=days)
+
+
+@router.get('/signals')
+def signals(days: int = Query(default=7), db: Session = Depends(get_db)):
+    return prompt_admin.signals(db, days=days)
+
+
+@router.get('/activity')
+def activity(limit: int = Query(default=40), db: Session = Depends(get_db)):
+    return prompt_admin.activity(db, limit=limit)
+
+
+@router.get('/sources')
+def sources(db: Session = Depends(get_db)):
+    return prompt_admin.sources(db)
+
+
+@router.get('/winners')
+def winners(db: Session = Depends(get_db)):
+    return prompt_admin.winners(db)
+
+
+@router.get('/mix')
+def mix(days: int = Query(default=7), db: Session = Depends(get_db)):
+    return prompt_admin.mix(db, days=days)
+
+
+@router.get('/categories')
+def categories(days: int = Query(default=7), db: Session = Depends(get_db)):
+    return prompt_admin.categories(db, days=days)
 
 
 @router.get('/stats')

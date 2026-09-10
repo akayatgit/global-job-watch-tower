@@ -26,6 +26,7 @@ from app.signals import (
     watchlist_rows,
 )
 from app.ai_capacity import compute_ai_capacity
+from app import config
 from app.cities import city_options, normalize_city_filter
 from app.city_analytics import compare_cities, compute_city_signals
 from app.experience_bands import experience_clause, experience_options, normalize_experience
@@ -105,6 +106,9 @@ def _vitals_json(v) -> dict:
         # Engine stall — honest header when worker/beat is dead
         'stalled': v.stalled,
         'stall_detail': v.stall_detail,
+        'tower_mode': getattr(v, 'tower_mode', None) or 'prompts',
+        'pending_score': getattr(v, 'pending_score', 0) or 0,
+        'last_collected_at': _iso(getattr(v, 'last_collected_at', None)),
         # Build version — bumped once per push (scripts/bump_version.sh).
         # Drives the rail footer number and the orb's dot-color signal.
         'version': get_version(),
@@ -577,15 +581,31 @@ def ultron_health(db: Session = Depends(get_db)):
     checked = db.query(JobMaster).filter(
         JobMaster.requirements_enriched_at.is_not(None)
     ).count()
+    events = [{
+        'id': e.id,
+        'kind': e.kind,
+        'message': e.detail,
+        'created_at': _iso(e.ts),
+    } for e in recent]
+    if getattr(config, 'TOWER_MODE', 'prompts') == 'prompts':
+        from app.models import ConsoleLog
+        logs = db.execute(
+            select(ConsoleLog)
+            .where(ConsoleLog.message.ilike('%prompt%'))
+            .order_by(desc(ConsoleLog.id))
+            .limit(40)
+        ).scalars().all()
+        if logs:
+            events = [{
+                'id': row.id,
+                'kind': row.source or 'log',
+                'message': row.message,
+                'created_at': _iso(row.ts),
+            } for row in logs]
     return {
         'vitals': _vitals_json(vitals),
         'verification': {'unchecked': unchecked, 'checked': checked},
-        'recent_events': [{
-            'id': e.id,
-            'kind': e.kind,
-            'message': e.detail,
-            'created_at': _iso(e.ts),
-        } for e in recent],
+        'recent_events': events,
     }
 
 
