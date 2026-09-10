@@ -192,8 +192,8 @@ class PromptsApiTests(unittest.TestCase):
         def fake_run(model, input):
             return [BytesIO(b'\x01' * 5000)]
 
-        def create_with_fake_replicate(prompt_text, image_path, *, prompt_id):
-            return real_create(prompt_text, image_path, prompt_id=prompt_id, run=fake_run)
+        def create_with_fake_replicate(prompt_text, image_path, *, prompt_id, log=None):
+            return real_create(prompt_text, image_path, prompt_id=prompt_id, run=fake_run, log=log)
 
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
                 mock.patch.object(video_creator, 'create_video', side_effect=create_with_fake_replicate), \

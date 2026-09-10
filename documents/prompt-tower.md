@@ -63,7 +63,7 @@ Guests never see any of it: `pt:` taps and prompt commands are gated on the real
 
 ### 3a. The reel — the post is a video, not a picture (2026-09-10)
 
-Ashok: "wherever the image is you need to place the video … this entire template should come out as a video … the prompt scrolls … storyboard: six frames in the same aspect ratio next to each other in the other half." `app/prompts/post_reel.py` composes a 1080×1920 MP4 with the system `ffmpeg` (no new Python package — the ThinkPad deploy does not `pip install`):
+Ashok: "wherever the image is you need to place the video … this entire template should come out as a video … the prompt scrolls … storyboard: six frames in the same aspect ratio next to each other in the other half." `app/prompts/post_reel.py` composes a 1080×1920 MP4 on whatever video engine the machine already has (`app/prompts/reel_engines.py`, no new Python package — the ThinkPad deploy does not `pip install`):
 
 ```
 Comment "SKINCARE" for prompts        ← bold, shrinks 64→30 pt until it fits the width
@@ -75,9 +75,10 @@ Storyboard          | Prompt
 
 - **Storyboard** (left half): six stills at the mid-points of six equal slices, in the clip's own aspect ratio; the grid (3×2 for 9:16, 2×3 for 16:9) is the largest that fits the half-column (`storyboard_layout`).
 - **Prompt** (right half): the stored prompt **verbatim, never truncated**, rendered as one tall strip; the visible window holds for the first 12 % of the clip, slides linearly so the last line arrives at the bottom by 88 %, then holds. Short prompts sit still.
-- Frame rate = the clip's (capped at 30), duration = the clip's, **audio copied** when the clip has a track (Veo). ffmpeg decodes already cover-fitted to the hero box; Pillow composites; ffmpeg encodes H.264 yuv420p `+faststart` for iPhone playback.
+- Frame rate = the clip's (capped at 30), duration = the clip's, **audio copied** when the clip has a track (Veo). The engine decodes already cover-fitted to the hero box; Pillow composites; the engine encodes H.264 yuv420p `+faststart` for iPhone playback.
 - Stored as `prompts/<day>/reel-<id>-<rand>.mp4` next to the raw clip; `prompt_renders.reel_key / reel_url`. A composition failure sets `reel_error` and keeps the clip — the render is still `done`.
-- Deploy logs a loud `WARNING` when `ffmpeg`/`ffprobe` are missing (`sudo apt install -y ffmpeg`).
+- **Engine hunt (2026-09-10, Ashok away from the ThinkPad: "something for video creation must be there, check properly").** The service PATH has no `ffmpeg` and nobody can install one remotely, so `reel_engines.discover()` looks instead of demanding, in order: (1) an **ffmpeg binary** anywhere plausible — `REEL_FFMPEG`, PATH, the interpreter's own `bin`, `CONDA_PREFIX`, every conda root (`anaconda3 / miniconda3 / miniforge3 / mambaforge`: `bin`, `envs/*/bin`, `pkgs/ffmpeg-*/bin`), imageio-ffmpeg's bundled static binary in any env / `~/.local` / pipx venv / `~/.hermes` venv, `~/.imageio`, Playwright's download, `~/bin`, `~/ffmpeg*`, `~/Downloads/ffmpeg*`, `/usr/local/bin`, `/snap/bin`, `/opt/conda/bin` — each candidate is **verified** (`-decoders` must list `h264`, `-encoders` must list `libx264` / `libopenh264` / `mpeg4`; Playwright's stripped build is rejected with the reason). No `ffprobe` next to it? The clip is probed from `ffmpeg -i` output. (2) **PyAV** (`av`) — ffmpeg's libraries linked into Python, libx264 in-process, audio packets copied. (3) **OpenCV** (`cv2`) — decodes anything, writes MPEG-4 **without audio**, the last resort so a finished clip is never left without its reel. The result is cached (a failed hunt retries every 10 min, so a later install is picked up without a restart).
+- **Readable from the phone:** `GET /api/prompts/stats` → `reel_engine` (`engine` ffmpeg|pyav|opencv|none, path, version, codec, audio, every location `searched`, each `rejected` path with its reason, python libs, fix hint) plus `reels_done` / `reels_failed`; `/promptstats` prints one line ("Reels 3 · failed 0 · engine ffmpeg (libx264) at …" or "⚠️ no video engine — 14 ffmpeg spot(s) checked, av/cv2 absent · fix: sudo apt install -y ffmpeg"). The worker console says which engine composed each reel; `reel_error` carries the full hunt summary when none exists. Deploy runs `python -m app.prompts.reel_engines` in the `ai` env and logs `reel engine — …` (a `WARNING:` line when none).
 
 ## 4. API
 
@@ -86,7 +87,7 @@ Owner surface (local tower, `/api/prompts`):
 | Route | Purpose |
 |---|---|
 | `GET /today?day=&full=1` | Day's shortlist (rank, scores, provenance; `full=1` = whole text) |
-| `GET /stats` | Tower numbers + winners baseline |
+| `GET /stats` | Tower numbers + winners baseline + `reels_done` / `reels_failed` + `reel_engine` (which video engine this machine composes with, everywhere it looked) |
 | `GET /{id}` | One prompt, full text |
 | `POST /scan {force, inline}` | Run the pipeline (Celery by default; `inline` for dev/tests) |
 | `POST /ingest {text, author, source_url}` | Manual add + immediate score (422 when it isn't a prompt) |
@@ -111,6 +112,7 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 | `TOWER_MODE` | `prompts` | `prompts` = job beat asleep · `jobs` = legacy collection |
 | `PROMPT_PIPELINE_UTC_HOUR` / `_MINUTE` | `3` / `30` | Daily run (09:00 IST) |
 | `PROMPT_REDDIT_SUBS` | `aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts` | Public listings. **JSON is 403-blocked** from typical server IPs — collector tries `.json` then falls back to Atom `.rss`. A 403 switches the rest of the run to RSS only; a **429** stops touching Reddit for that run (remaining subs reported as *skipped*, not failed). |
+| `REEL_FFMPEG` | empty | Explicit ffmpeg binary for the reel composer. Empty = hunt the machine (PATH, conda envs, imageio-ffmpeg, Playwright…), then PyAV, then OpenCV (§3a). |
 | `PROMPT_REDDIT_PAUSE_S` | `8` | Seconds between subreddit fetches (+ a ≤3 s breather before an RSS retry). Seven subs in a two-second burst earned HTTP 429 on 2026-09-10. |
 | `PROMPT_WEB_URLS` | Six D2C ad-prompt handbooks: LichAmnesia *awesome-ad-video-prompts*, prompt-architects Veo 3 structure, veo3ai.io product-ads guide, ugcvids.ai Veo 3.1 product ads, cclank Kling + Veo READMEs | Public pages to mine (product-focused first). Blank `PROMPT_WEB_URLS=` in `.env` still uses this default. Probe 2026-09-10: 115 blocks → 75 real prompts kept, 40 prose/TOC/FAQ blocks dropped. |
 | `PROMPT_INSTAGRAM_TAGS` | empty (off) | Hashtags via the logged-in stealth Chrome profile |
@@ -119,6 +121,7 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 | `PROMPT_EMBED_MODEL` | `nomic-embed-text` | `ollama pull nomic-embed-text` on the ThinkPad |
 | `REPLICATE_VIDEO_MODEL` | `kwaivgi/kling-v2.1` | Also handled: `google/veo-3*`, `bytedance/seedance*`, `minimax/*`, `wan-video/*` |
 | `PROMPT_VIDEO_DURATION_S` | `10` | Kling 5/10 · Veo 8 |
+| `PROMPT_VIDEO_TIMEOUT_S` | `900` | How long the worker polls the video model before cancelling the prediction. **Why (2026-09-10):** both #29 renders died with `The read operation timed out` — `replicate.Client.run()` sends `Prefer: wait` and holds ONE HTTP call open with a 60.5 s read timeout while the server waits up to 60 s; a 10 s Kling 1080p render takes minutes. `video_creator.replicate_render` now creates the prediction without waiting, polls every 5 s (status changes land in the worker console: `starting → processing`), tolerates 12 consecutive poll blips, cancels at the budget so nothing keeps billing, and surfaces the model's own error text (`video model failed: …`). |
 | `PROMPT_ASSET_PREFIX` | `prompts` | Under `PARTNER_ASSETS_DIR` (48h GC applies — download/post within 2 days) |
 
 ## 7. Deploy checklist (ThinkPad)

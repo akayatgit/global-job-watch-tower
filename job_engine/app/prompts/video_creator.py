@@ -114,6 +114,62 @@ def _read_output(output) -> bytes:
         return resp.read()
 
 
+TERMINAL_STATES = ('succeeded', 'failed', 'canceled')
+POLL_S = 5.0
+# Consecutive poll errors (home Wi-Fi blips) tolerated before giving up
+POLL_ERRORS_TOLERATED = 12
+
+
+def _create_prediction(client, model: str, inputs: dict):
+    """Start the prediction WITHOUT `Prefer: wait`. `client.run()` blocks the
+    HTTP call with a 60.5 s read timeout while the server holds the
+    connection for up to 60 s — a 10 s Kling render takes minutes, so both
+    #29 renders died with 'The read operation timed out' (2026-09-10)
+    before the model had even finished."""
+    ref, _, version_id = model.partition(':')
+    if version_id:
+        return client.predictions.create(version=version_id, input=inputs)
+    return client.models.predictions.create(model=ref, input=inputs)
+
+
+def replicate_render(client, model: str, *, input: dict, budget_s: float, poll_s: float = POLL_S, sleep=None, log=None):
+    """Create → poll every `poll_s` until a terminal state or `budget_s`
+    elapses (then cancel, so no orphan keeps billing). Returns the output
+    URL(s). Raises RuntimeError with the model's own error text."""
+    import time as _time
+
+    sleep = sleep or _time.sleep
+    prediction = _create_prediction(client, model, input)
+    started = _time.monotonic()
+    errors = 0
+    last_status = None
+    while prediction.status not in TERMINAL_STATES:
+        if prediction.status != last_status:
+            last_status = prediction.status
+            if log:
+                log(f'video model {model} prediction {prediction.id}: {prediction.status}')
+        if _time.monotonic() - started > budget_s:
+            stuck_in = prediction.status
+            try:
+                prediction.cancel()
+            except Exception:  # best effort — the budget is the promise
+                pass
+            raise RuntimeError(f'video model still {stuck_in} after {int(budget_s)}s — cancelled')
+        sleep(poll_s)
+        try:
+            prediction.reload()
+            errors = 0
+        except Exception as exc:
+            errors += 1
+            if errors >= POLL_ERRORS_TOLERATED:
+                raise RuntimeError(f'lost contact with the video model ({exc})') from exc
+    if prediction.status != 'succeeded':
+        raise RuntimeError(f'video model {prediction.status}: {prediction.error or "no reason given"}')
+    if prediction.output in (None, [], ''):
+        raise RuntimeError('video model succeeded but returned no file')
+    return prediction.output
+
+
 def create_video(
     prompt_text: str,
     product_image: Path,
@@ -122,6 +178,7 @@ def create_video(
     aspect_ratio: str = '9:16',
     duration_s: int | None = None,
     run=None,
+    log=None,
 ) -> RenderResult:
     """Render one video. `run(model, input) -> output` is injectable so the
     task and tests never need a Replicate token."""
@@ -136,7 +193,11 @@ def create_video(
         import replicate
 
         client = replicate.Client(api_token=token)
-        run = client.run
+        budget_s = float(getattr(config, 'PROMPT_VIDEO_TIMEOUT_S', 900))
+
+        def run(model, input):  # noqa: A001 — mirrors client.run's shape
+            return replicate_render(client, model, input=input, budget_s=budget_s, log=log)
+
     inputs = build_input(model, prompt_text, product_image, duration_s=duration_s, aspect_ratio=aspect_ratio)
     try:
         output = run(model, input=inputs)
@@ -159,6 +220,7 @@ class ReelAsset:
     reel_url: str
     frames: int
     duration_s: float
+    engine: str = 'ffmpeg'
 
 
 def create_reel(
@@ -171,8 +233,8 @@ def create_reel(
 ) -> ReelAsset:
     """Raw clip → post-ready reel MP4 in the asset root (title · clip ·
     storyboard | scrolling prompt). Raises post_reel.ReelError with an
-    operator-readable reason (e.g. ffmpeg missing) — the caller keeps the
-    raw clip and surfaces the reason instead of failing the render."""
+    operator-readable reason (no video engine on this machine) — the caller
+    keeps the raw clip and surfaces the reason instead of failing the render."""
     from app.prompts import post_reel
 
     key = asset_key('reel', prompt_id=prompt_id, suffix='mp4')
@@ -187,5 +249,5 @@ def create_reel(
     meta.write_text('video/mp4', encoding='utf-8')
     return ReelAsset(
         reel_key=key, reel_path=target, reel_url=public_url(key),
-        frames=result.frames, duration_s=result.duration_s,
+        frames=result.frames, duration_s=result.duration_s, engine=result.engine,
     )

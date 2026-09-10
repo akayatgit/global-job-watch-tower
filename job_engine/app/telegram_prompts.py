@@ -47,6 +47,21 @@ def _score(value: Any) -> str:
         return '–'
 
 
+def _reel_engine_line(engine: Any) -> str:
+    """One phone-readable phrase for the reel engine the tower found."""
+    if not isinstance(engine, dict):
+        return 'engine unknown'
+    kind = str(engine.get('engine') or 'none')
+    if kind == 'ffmpeg':
+        return f"engine ffmpeg ({engine.get('video_codec') or '?'}{'' if engine.get('audio') else ', no audio'}) at {engine.get('ffmpeg')}"
+    if kind == 'pyav':
+        return f"engine PyAV {(engine.get('libs') or {}).get('av') or ''} (libx264 + audio)".replace('  ', ' ')
+    if kind == 'opencv':
+        return f"engine OpenCV {(engine.get('libs') or {}).get('cv2') or ''} (MPEG-4, silent)".replace('  ', ' ')
+    searched = len(engine.get('searched') or [])
+    return f'⚠️ no video engine — {searched} ffmpeg spot(s) checked, av/cv2 absent · fix: sudo apt install -y ffmpeg'
+
+
 def _source_label(prompt: dict[str, Any]) -> str:
     source = str(prompt.get('source') or 'web')
     author = prompt.get('author')
@@ -199,6 +214,7 @@ class PromptDeck:
             '📊 PROMPT TOWER',
             f"Prompts {data.get('total', 0)} · scored {data.get('scored', 0)} · pending {data.get('pending_score', 0)}",
             f"Shortlisted today {data.get('shortlisted_today', 0)} · posted {data.get('posted', 0)} · videos {data.get('renders_done', 0)}",
+            f"Reels {data.get('reels_done', 0)} · failed {data.get('reels_failed', 0)} · {_reel_engine_line(data.get('reel_engine'))}",
             f"Winners in RAG {data.get('exemplars', 0)} · outliers {data.get('outliers', 0)}",
             f'Baseline (winners) {baseline}',
             f'Sources: {sources}',

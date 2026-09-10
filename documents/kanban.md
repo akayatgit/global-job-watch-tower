@@ -74,6 +74,21 @@ aspect, left half) and the **prompt scrolling** over the clip's duration
 kept), `prompt_renders.reel_*`, Telegram delivers the reel as the post
 asset and the raw clip only when the reel could not be composed.
 
+**Follow (2026-09-10, engine hunt):** the deploy said `ffmpeg/ffprobe not
+installed` and Ashok, away from the ThinkPad: "Something for video
+creation must be there, check properly." `app/prompts/reel_engines.py`
+hunts for an ffmpeg binary anywhere on the machine (PATH, interpreter
+bin, every conda env, imageio-ffmpeg static binaries, pipx/Hermes venvs,
+Playwright's download — each verified for an H.264 decoder + MP4
+encoder), else PyAV, else OpenCV (silent MPEG-4, last resort). Same
+composer, four verbs per engine. `/api/prompts/stats.reel_engine` and
+`/promptstats` say which engine won and everywhere it looked, so the
+answer is readable from the phone without a shell. Checking the live
+tower also showed the real blocker for #29: both renders FAILED before the
+reel stage with `The read operation timed out` — `client.run()`'s
+`Prefer: wait` 60.5 s read timeout vs a minutes-long Kling render. Fixed:
+create-then-poll with a 15-min budget + cancel (`PROMPT_VIDEO_TIMEOUT_S`).
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

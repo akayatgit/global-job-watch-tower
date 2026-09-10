@@ -107,6 +107,10 @@ TOWER_MODE = os.getenv('TOWER_MODE', 'prompts').strip().lower()
 # UTC hour:minute the daily prompt pipeline runs (03:30 UTC = 09:00 IST)
 PROMPT_PIPELINE_UTC_HOUR = int(os.getenv('PROMPT_PIPELINE_UTC_HOUR', '3'))
 PROMPT_PIPELINE_UTC_MINUTE = int(os.getenv('PROMPT_PIPELINE_UTC_MINUTE', '30'))
+# Explicit ffmpeg binary for the reel composer. Empty = hunt the machine
+# (PATH, conda envs, imageio-ffmpeg, Playwright…) then fall back to PyAV /
+# OpenCV — see app/prompts/reel_engines.py.
+REEL_FFMPEG = os.getenv('REEL_FFMPEG', '').strip()
 # Comma-separated subreddits whose new posts are read as prompt sources
 PROMPT_REDDIT_SUBS = os.getenv(
     'PROMPT_REDDIT_SUBS',
@@ -148,6 +152,10 @@ PROMPT_EMBED_MODEL = os.getenv('PROMPT_EMBED_MODEL', 'nomic-embed-text').strip()
 # model requires it; bare owner/name works for official models.
 REPLICATE_VIDEO_MODEL = os.getenv('REPLICATE_VIDEO_MODEL', 'kwaivgi/kling-v2.1').strip()
 PROMPT_VIDEO_DURATION_S = int(os.getenv('PROMPT_VIDEO_DURATION_S', '10'))
+# How long the worker waits for the video model before cancelling the
+# prediction (a 10 s Kling 1080p render takes minutes; the Telegram watcher
+# waits 20 min).
+PROMPT_VIDEO_TIMEOUT_S = int(os.getenv('PROMPT_VIDEO_TIMEOUT_S', '900'))
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')

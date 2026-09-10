@@ -53,6 +53,11 @@ class FakeTower:
         self.gets: list[tuple[str, dict | None]] = []
         self.posts: list[tuple[str, dict | None]] = []
         self.render_status = {'id': 77, 'prompt_id': 3, 'status': 'queued', 'card_image_key': 'prompts/d/card.png'}
+        self.reel_engine = {
+            'engine': 'ffmpeg', 'ok': True, 'ffmpeg': '/home/user/anaconda3/envs/ai/bin/ffmpeg', 'ffprobe': None,
+            'video_codec': 'libx264', 'audio': True, 'libs': {'av': None, 'cv2': '4.10.0'}, 'searched': ['/home/user/anaconda3/envs/ai/bin/ffmpeg'],
+            'rejected': {}, 'hint': None,
+        }
         self.fail_404 = False
 
     def get(self, path: str, params: dict | None = None):
@@ -63,6 +68,7 @@ class FakeTower:
             return {
                 'total': 40, 'scored': 38, 'pending_score': 2, 'posted': 3, 'exemplars': 4, 'outliers': 2,
                 'by_source': {'reddit': 30, 'manual': 10}, 'shortlisted_today': 10, 'renders_done': 1,
+                'reels_done': 1, 'reels_failed': 0, 'reel_engine': self.reel_engine,
                 'baseline_mean': 74.5, 'baseline_std': 3.2, 'last_collected_at': datetime.now(timezone.utc).isoformat(),
             }
         if path.startswith('/api/prompts/renders/'):
@@ -213,6 +219,21 @@ class DeckTests(unittest.TestCase):
         self.assertIn('Prompts 40 · scored 38 · pending 2', stats)
         self.assertIn('Baseline (winners) 74 ± 3', stats)
         self.assertIn('Sources: manual 10 · reddit 30', stats)
+        self.assertIn('Reels 1 · failed 0 · engine ffmpeg (libx264) at /home/user/anaconda3/envs/ai/bin/ffmpeg', stats)
+
+    def test_stats_names_the_reel_engine_or_the_fix(self):
+        self.tower.reel_engine = {'engine': 'pyav', 'ok': True, 'libs': {'av': '14.0.1'}, 'audio': True}
+        self.assertIn('engine PyAV 14.0.1 (libx264 + audio)', self.deck.handle_command('1', 'promptstats', ''))
+        self.tower.reel_engine = {'engine': 'opencv', 'ok': True, 'libs': {'cv2': '4.10.0'}, 'audio': False}
+        self.assertIn('engine OpenCV 4.10.0 (MPEG-4, silent)', self.deck.handle_command('1', 'promptstats', ''))
+        self.tower.reel_engine = {
+            'engine': 'none', 'ok': False, 'searched': ['/a/ffmpeg', '/b/ffmpeg'], 'rejected': {'/a/ffmpeg': 'no H.264 decoder'},
+            'hint': 'no video engine: … Fix: sudo apt install -y ffmpeg',
+        }
+        stats = self.deck.handle_command('1', 'promptstats', '')
+        self.assertIn('⚠️ no video engine — 2 ffmpeg spot(s) checked, av/cv2 absent · fix: sudo apt install -y ffmpeg', stats)
+        self.tower.reel_engine = None  # older tower without the field
+        self.assertIn('engine unknown', self.deck.handle_command('1', 'promptstats', ''))
 
     def test_watch_render_sends_card_then_video(self):
         states = iter(['queued', 'running', 'done'])

@@ -901,7 +901,10 @@ def render_prompt_video(self, render_id: int):
             image_path = video_creator.assets_root() / (render.product_image_key or '')
             if not render.product_image_key or not image_path.is_file():
                 raise RuntimeError('product image missing')
-            result = video_creator.create_video(prompt.text, image_path, prompt_id=prompt.id)
+            result = video_creator.create_video(
+                prompt.text, image_path, prompt_id=prompt.id,
+                log=lambda line: console_log('worker', f'Prompt #{prompt.id} {line}'),
+            )
             render.video_key = result.video_key
             render.video_url = result.video_url
             render.model = result.model
@@ -922,7 +925,8 @@ def render_prompt_video(self, render_id: int):
                 render.reel_url = reel.reel_url
                 console_log(
                     'worker',
-                    f'Prompt #{prompt.id} reel composed ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}',
+                    f'Prompt #{prompt.id} reel composed via {reel.engine} '
+                    f'({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}',
                 )
             except Exception as exc:
                 render.reel_error = str(exc)[:2000]
