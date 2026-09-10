@@ -149,6 +149,38 @@ def score_pending(db: Session, *, limit: int = 60, chat: Callable[[str], str] | 
     return len(rows)
 
 
+def reaudit_stored(db: Session) -> tuple[int, set[date]]:
+    """Re-read every unrated, unposted prompt against today's gate. Rows that
+    no longer read as a D2C prompt (e.g. samurai / stadium scenes stored
+    before the product rule) are rejected and pulled from their shortlist.
+    Returns (rejected_count, days whose shortlist lost a row)."""
+    rows = db.execute(
+        select(VideoPrompt).where(
+            VideoPrompt.status.in_(('new', 'shortlisted')),
+            VideoPrompt.rating.is_(None),
+            VideoPrompt.exemplar.is_(False),
+            VideoPrompt.posted_at.is_(None),
+        )
+    ).scalars().all()
+    rejected = 0
+    touched_days: set[date] = set()
+    for row in rows:
+        reading = read_prompt(row.text)
+        if reading.is_prompt:
+            continue
+        entries = db.execute(
+            select(PromptShortlist).where(PromptShortlist.prompt_id == row.id)
+        ).scalars().all()
+        for entry in entries:
+            touched_days.add(entry.day)
+            db.delete(entry)
+        row.status = 'rejected'
+        rejected += 1
+    if rejected:
+        db.commit()
+    return rejected, touched_days
+
+
 # ------------------------------------------------------------- shortlist
 
 def shortlist_for_day(db: Session, day: date) -> list[tuple[PromptShortlist, VideoPrompt]]:
@@ -300,10 +332,11 @@ def run_daily(
     if candidates is None:
         candidates, source_reports = gather_with_reports()
     counts = ingest_many(db, candidates)
+    reaudited, touched_days = reaudit_stored(db)
     scored = score_pending(db, chat=chat)
     promoted = rag.promote_winners(db)
     db.commit()
-    shortlist = build_shortlist(db, day, force=force)
+    shortlist = build_shortlist(db, day, force=force or day in touched_days)
     try:
         from app.tower_health import record_event
         bits = []
@@ -317,6 +350,7 @@ def run_daily(
             bits.append(bit)
         detail = (
             f"{len(candidates)} cand · {counts.get('created', 0)} new"
+            + (f' · {reaudited} re-audited out' if reaudited else '')
             + ('; ' + '; '.join(bits) if bits else '')
         )
         record_event(db, 'prompt_scan', detail=detail[:1000])
@@ -328,6 +362,7 @@ def run_daily(
         **counts,
         'scored': scored,
         'promoted': promoted,
+        'reaudited': reaudited,
         'shortlisted': len(shortlist),
         'sources': source_reports,
         'top': [serialize_prompt(prompt, rank=entry.rank) for entry, prompt in shortlist],

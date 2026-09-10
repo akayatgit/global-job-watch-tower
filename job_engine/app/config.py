@@ -112,10 +112,17 @@ PROMPT_REDDIT_SUBS = os.getenv(
     'PROMPT_REDDIT_SUBS',
     'aivideo,PromptEngineering,VeoAI,KlingAI,Sora,runwayml,AIVideoPrompts',
 ).strip()
+# Seconds between subreddit fetches — seven subs in a two-second burst earned
+# HTTP 429 from Reddit on 2026-09-10.
+PROMPT_REDDIT_PAUSE_S = float(os.getenv('PROMPT_REDDIT_PAUSE_S', '8'))
 # Comma-separated public web pages to mine (prompt blogs, galleries).
-# Default = public GitHub prompt handbooks so the first Scan now is not empty
-# when Reddit JSON is 403-blocked (2026-09-10).
+# Default = public D2C ad-prompt handbooks (product-focused first) so the
+# first Scan now is not empty when Reddit JSON is 403-blocked (2026-09-10).
 _DEFAULT_PROMPT_WEB_URLS = (
+    'https://raw.githubusercontent.com/LichAmnesia/awesome-ad-video-prompts/main/README.md,'
+    'https://prompt-architects.com/blog/21-veo3-prompt-structure,'
+    'https://www.veo3ai.io/blog/veo-3-product-ads-video-generator-2026,'
+    'https://ugcvids.ai/blog/how-to-write-veo-3-1-prompts-for-product-ads,'
     'https://raw.githubusercontent.com/cclank/lanshu-awesome-ai-video-kit/main/prompts/kling/README.md,'
     'https://raw.githubusercontent.com/cclank/lanshu-awesome-ai-video-kit/main/prompts/veo/README.md'
 )

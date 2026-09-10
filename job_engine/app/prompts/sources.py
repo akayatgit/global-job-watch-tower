@@ -18,6 +18,7 @@ import html
 import json
 import logging
 import re
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -25,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable
 
-from app.prompts.normalize import MIN_PROMPT_CHARS, read_prompt
+from app.prompts.normalize import MAX_CJK_RATIO, MIN_PROMPT_CHARS, cjk_ratio, clean_text, read_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,25 @@ def browser_fetch(url: str) -> str:
         return str(raw)
 
 
+CHROME_LINE_RE = re.compile(r'^\s*(?:[-*+•]|\d+[.)])\s')
+
+
+def _is_chrome_paragraph(para: str) -> bool:
+    cleaned = clean_text(para)
+    if not cleaned:
+        return True
+    if cjk_ratio(cleaned) > MAX_CJK_RATIO:
+        return True
+    lines = [ln for ln in cleaned.split('\n') if ln.strip()]
+    if not lines:
+        return True
+    # Bullet lists of short items (contents, tag lists) — no sentences
+    listy = sum(1 for ln in lines if CHROME_LINE_RE.match(ln) or len(ln) < 48)
+    if listy == len(lines) and not any(ln.rstrip().endswith(('.', '!', '?')) for ln in lines):
+        return True
+    return False
+
+
 def extract_prompt_blocks(text: str) -> list[str]:
     """Prompt-looking blocks inside free text: fenced code first, then
     paragraphs merged until they read as a prompt."""
@@ -115,6 +135,17 @@ def extract_prompt_blocks(text: str) -> list[str]:
     paragraphs = [p.strip() for p in PARA_SPLIT_RE.split(remainder) if p.strip()]
     buffer: list[str] = []
     for para in paragraphs:
+        # A paragraph that is a prompt by itself is taken alone — never glued
+        # to the README chrome that happened to precede it.
+        if len(para) >= MIN_PROMPT_CHARS and read_prompt(para).is_prompt:
+            blocks.append(para)
+            buffer = []
+            continue
+        # Table-of-contents lines, tag rows, and non-English index text are
+        # chrome: they never start or join a merged block.
+        if _is_chrome_paragraph(para):
+            buffer = []
+            continue
         buffer.append(para)
         joined = '\n'.join(buffer)
         if len(joined) >= MIN_PROMPT_CHARS and read_prompt(joined).is_prompt:
@@ -300,33 +331,68 @@ def _json_has_bodies(posts: list[dict]) -> bool:
     return any((p.get('selftext') or '').strip() for p in posts)
 
 
+def _status_code(exc: BaseException) -> int | None:
+    code = getattr(exc, 'code', None)
+    return int(code) if isinstance(code, int) else None
+
+
 def reddit_candidates(
     subreddits: Iterable[str],
     *,
     limit: int = 40,
     fetch: Fetcher = http_fetch,
     reports: list[SourceReport] | None = None,
+    pause_s: float | None = None,
+    pause: Callable[[float], None] = time.sleep,
 ) -> list[Candidate]:
-    """JSON first; Atom RSS when JSON 403s or returns link-only posts."""
+    """JSON first; Atom RSS when JSON 403s or returns link-only posts.
+
+    Reddit rate-limits bursts (seven subs in two seconds earned HTTP 429 on
+    2026-09-10), so subs are spaced `pause_s` apart, a 403 on JSON switches
+    the rest of the run to RSS only, and a 429 stops touching Reddit for
+    this run — the remaining subs are reported as skipped, not failed."""
+    from app import config
+
     out: list[Candidate] = []
     cap = min(max(int(limit), 1), 100)
+    if pause_s is None:
+        pause_s = float(getattr(config, 'PROMPT_REDDIT_PAUSE_S', 8.0))
+    json_blocked = False
+    rate_limited = False
+    first = True
     for sub in subreddits:
         sub = sub.strip().lstrip('r/').strip('/')
         if not sub:
             continue
         report = SourceReport(source=f'reddit r/{sub}')
+        if rate_limited:
+            report.error = 'skipped — Reddit rate-limited (HTTP 429) earlier this run'
+            if reports is not None:
+                reports.append(report)
+            continue
+        if not first and pause_s > 0:
+            pause(pause_s)
+        first = False
         json_url = f'https://www.reddit.com/r/{sub}/new.json?limit={cap}&raw_json=1'
         rss_url = f'https://www.reddit.com/r/{sub}/new.rss'
         posts: list[dict] = []
         errors: list[str] = []
-        try:
-            payload = json.loads(fetch(json_url))
-            posts = _posts_from_json(payload)
-        except Exception as exc:
-            errors.append(_err_text(exc))
-            logger.warning('reddit JSON failed r/%s: %s', sub, exc)
+        if not json_blocked:
+            try:
+                payload = json.loads(fetch(json_url))
+                posts = _posts_from_json(payload)
+            except Exception as exc:
+                errors.append(_err_text(exc))
+                logger.warning('reddit JSON failed r/%s: %s', sub, exc)
+                code = _status_code(exc)
+                if code == 403:
+                    json_blocked = True
+                elif code == 429:
+                    rate_limited = True
 
-        if not _json_has_bodies(posts):
+        if not rate_limited and not _json_has_bodies(posts):
+            if errors and pause_s > 0:
+                pause(min(pause_s, 3.0))
             try:
                 rss_posts = _posts_from_feed(fetch(rss_url))
                 if rss_posts:
@@ -335,6 +401,8 @@ def reddit_candidates(
             except Exception as exc:
                 errors.append(_err_text(exc))
                 logger.warning('reddit RSS failed r/%s: %s', sub, exc)
+                if _status_code(exc) == 429:
+                    rate_limited = True
 
         report.fetched = len(posts)
         kept = _candidates_from_posts(posts)
@@ -461,7 +529,10 @@ def manual_candidate(text: str, *, author: str | None = None, source_url: str | 
 # --------------------------------------------------------------- gather
 
 def gather_with_reports(
-    *, fetch: Fetcher = http_fetch, browser: Fetcher | None = None,
+    *,
+    fetch: Fetcher = http_fetch,
+    browser: Fetcher | None = None,
+    pause: Callable[[float], None] = time.sleep,
 ) -> tuple[list[Candidate], list[dict]]:
     """Every configured source, plus a per-source fetched/kept/error report.
     Never raises."""
@@ -472,7 +543,7 @@ def gather_with_reports(
     reports: list[SourceReport] = []
     subs = [s for s in (getattr(config, 'PROMPT_REDDIT_SUBS', '') or '').split(',') if s.strip()]
     if subs:
-        out.extend(reddit_candidates(subs, limit=limit, fetch=fetch, reports=reports))
+        out.extend(reddit_candidates(subs, limit=limit, fetch=fetch, reports=reports, pause=pause))
     urls = [u for u in (getattr(config, 'PROMPT_WEB_URLS', '') or '').split(',') if u.strip()]
     if urls:
         out.extend(web_candidates(urls, fetch=fetch, reports=reports))
@@ -487,7 +558,12 @@ def gather_with_reports(
     return out, [r.as_dict() for r in reports]
 
 
-def gather_candidates(*, fetch: Fetcher = http_fetch, browser: Fetcher | None = None) -> list[Candidate]:
+def gather_candidates(
+    *,
+    fetch: Fetcher = http_fetch,
+    browser: Fetcher | None = None,
+    pause: Callable[[float], None] = time.sleep,
+) -> list[Candidate]:
     """Every configured source, in one list. Never raises."""
-    candidates, _reports = gather_with_reports(fetch=fetch, browser=browser)
+    candidates, _reports = gather_with_reports(fetch=fetch, browser=browser, pause=pause)
     return candidates
