@@ -354,8 +354,9 @@ class PromptDeck:
             except Exception:
                 logger.exception('render watcher failed to start render=%s', render.get('id'))
         return ButtonReply(
-            f"🎬 Rendering prompt #{prompt_id} (render {render['id']}). Instagram card is ready; "
-            "the AI video usually takes 2–6 minutes — I'll send both here.",
+            f"🎬 Rendering prompt #{prompt_id} (render {render['id']}). Preview card is ready; "
+            "the AI clip usually takes 2–6 minutes, then I cut the post-ready reel "
+            "(clip in the card + storyboard + scrolling prompt) — both land here.",
             [[('◂ Top 10', 'pt:list')]],
             )
 
@@ -411,7 +412,8 @@ class PromptDeck:
                         self.send_photo_bytes(
                             chat_id,
                             self.fetch_asset(render['card_image_key']),
-                            f"📇 Instagram card for prompt #{render.get('prompt_id')} — post-ready.",
+                            f"📇 Preview card for prompt #{render.get('prompt_id')} — "
+                            'the post-ready reel (video in the card, storyboard + scrolling prompt) follows.',
                         )
                         card_sent = True
                     except Exception:
@@ -441,11 +443,24 @@ class PromptDeck:
             waited += poll_s
 
     def _deliver_video(self, chat_id: str, render: dict[str, Any]) -> None:
-        caption = (
-            f"🎬 Prompt #{render.get('prompt_id')} — video ready"
-            f"{' · ' + str(render['model']) if render.get('model') else ''}\n{render.get('video_url') or ''}"
-        ).strip()
-        key = render.get('video_key')
+        """The reel (clip inside the card template) is the post asset. When
+        the reel could not be composed, the raw clip goes out with the
+        reason, so a missing ffmpeg never hides a finished video."""
+        prompt_id = render.get('prompt_id')
+        model = f" · {render['model']}" if render.get('model') else ''
+        if render.get('reel_key'):
+            caption = (
+                f"🎬 Prompt #{prompt_id} — reel ready, post this{model}\n"
+                f"Raw clip: {render.get('video_url') or ''}"
+            ).strip()
+            key = render.get('reel_key')
+        else:
+            why = render.get('reel_error') or 'unknown reason'
+            caption = (
+                f"🎬 Prompt #{prompt_id} — raw clip ready{model}\n"
+                f"⚠️ Reel not composed: {why}\n{render.get('video_url') or ''}"
+            ).strip()
+            key = render.get('video_key')
         if key and self.fetch_asset and self.send_video_bytes:
             try:
                 self.send_video_bytes(chat_id, self.fetch_asset(key), caption)
