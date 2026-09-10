@@ -159,6 +159,7 @@ class ReelAsset:
     reel_url: str
     frames: int
     duration_s: float
+    engine: str = 'ffmpeg'
 
 
 def create_reel(
@@ -171,8 +172,8 @@ def create_reel(
 ) -> ReelAsset:
     """Raw clip → post-ready reel MP4 in the asset root (title · clip ·
     storyboard | scrolling prompt). Raises post_reel.ReelError with an
-    operator-readable reason (e.g. ffmpeg missing) — the caller keeps the
-    raw clip and surfaces the reason instead of failing the render."""
+    operator-readable reason (no video engine on this machine) — the caller
+    keeps the raw clip and surfaces the reason instead of failing the render."""
     from app.prompts import post_reel
 
     key = asset_key('reel', prompt_id=prompt_id, suffix='mp4')
@@ -187,5 +188,5 @@ def create_reel(
     meta.write_text('video/mp4', encoding='utf-8')
     return ReelAsset(
         reel_key=key, reel_path=target, reel_url=public_url(key),
-        frames=result.frames, duration_s=result.duration_s,
+        frames=result.frames, duration_s=result.duration_s, engine=result.engine,
     )

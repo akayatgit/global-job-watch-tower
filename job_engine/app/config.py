@@ -107,6 +107,10 @@ TOWER_MODE = os.getenv('TOWER_MODE', 'prompts').strip().lower()
 # UTC hour:minute the daily prompt pipeline runs (03:30 UTC = 09:00 IST)
 PROMPT_PIPELINE_UTC_HOUR = int(os.getenv('PROMPT_PIPELINE_UTC_HOUR', '3'))
 PROMPT_PIPELINE_UTC_MINUTE = int(os.getenv('PROMPT_PIPELINE_UTC_MINUTE', '30'))
+# Explicit ffmpeg binary for the reel composer. Empty = hunt the machine
+# (PATH, conda envs, imageio-ffmpeg, Playwright…) then fall back to PyAV /
+# OpenCV — see app/prompts/reel_engines.py.
+REEL_FFMPEG = os.getenv('REEL_FFMPEG', '').strip()
 # Comma-separated subreddits whose new posts are read as prompt sources
 PROMPT_REDDIT_SUBS = os.getenv(
     'PROMPT_REDDIT_SUBS',

@@ -922,7 +922,8 @@ def render_prompt_video(self, render_id: int):
                 render.reel_url = reel.reel_url
                 console_log(
                     'worker',
-                    f'Prompt #{prompt.id} reel composed ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}',
+                    f'Prompt #{prompt.id} reel composed via {reel.engine} '
+                    f'({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}',
                 )
             except Exception as exc:
                 render.reel_error = str(exc)[:2000]

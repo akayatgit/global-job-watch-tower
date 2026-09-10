@@ -14,20 +14,17 @@ Layout (1080×1920, same skeleton as the static card):
                       |  over the clip's duration>
     @jobmaster.agency
 
-Pure ffmpeg (system binary) + Pillow: ffmpeg decodes the clip already
-cover-fitted to the hero box, every frame is composited in Pillow, and the
-raw RGB stream goes back into ffmpeg as H.264 with the clip's own audio.
-The prompt text is the stored prompt verbatim — never rewritten.
+Engine-agnostic (reel_engines.py): the clip is decoded already cover-fitted
+to the hero box, every frame is composited in Pillow, and the RGB frames are
+encoded as MP4 with the clip's own audio — by an ffmpeg binary found
+anywhere on the machine, or PyAV, or OpenCV as the last resort. The prompt
+text is the stored prompt verbatim — never rewritten.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +41,15 @@ from app.prompts.post_card import (
     _font,
     _rounded,
     draw_title,
+)
+from app.prompts.reel_engines import (  # noqa: F401 — re-exported for callers
+    INSTALL_HINT,
+    Engine,
+    ReelError,
+    VideoInfo,
+    describe_engine,
+    require_engine,
+    resolve_engine,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,23 +77,6 @@ MAX_FPS = 30
 FOOTER_Y = H - 120
 
 
-class ReelError(RuntimeError):
-    """Composition failed in a way the operator should read (ffmpeg missing…)."""
-
-
-@dataclass
-class VideoInfo:
-    width: int
-    height: int
-    fps: float
-    duration_s: float
-    has_audio: bool
-
-    @property
-    def aspect(self) -> float:
-        return self.width / self.height if self.height else 9 / 16
-
-
 @dataclass
 class ReelResult:
     path: Path
@@ -95,77 +84,23 @@ class ReelResult:
     fps: float
     duration_s: float
     storyboard_frames: int
+    engine: str = 'ffmpeg'
 
 
-# ------------------------------------------------------------------ ffmpeg
+# ------------------------------------------------------------------ engine
 
 def ffmpeg_exe() -> str:
-    exe = shutil.which('ffmpeg')
-    if exe:
-        return exe
-    try:  # optional pip fallback — never required
-        import imageio_ffmpeg
-
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception as exc:
-        raise ReelError('ffmpeg is not installed on this machine — run: sudo apt install -y ffmpeg') from exc
+    """Path of the ffmpeg binary the composer would use — kept for callers
+    and deploy checks; raises ReelError with the full hunt summary when the
+    machine has none (the composer itself may still run on PyAV/OpenCV)."""
+    _engine, report = resolve_engine()
+    if report.ffmpeg:
+        return report.ffmpeg
+    raise ReelError(report.hint or f'ffmpeg not found — {INSTALL_HINT}')
 
 
-def ffprobe_exe() -> str:
-    exe = shutil.which('ffprobe')
-    if exe:
-        return exe
-    raise ReelError('ffprobe is not installed on this machine — run: sudo apt install -y ffmpeg')
-
-
-def _parse_rate(text: str | None) -> float:
-    if not text:
-        return 0.0
-    if '/' in text:
-        num, _, den = text.partition('/')
-        try:
-            return float(num) / float(den) if float(den) else 0.0
-        except ValueError:
-            return 0.0
-    try:
-        return float(text)
-    except ValueError:
-        return 0.0
-
-
-def probe(video: Path, *, ffprobe: str | None = None) -> VideoInfo:
-    cmd = [
-        ffprobe or ffprobe_exe(), '-v', 'error', '-print_format', 'json',
-        '-show_streams', '-show_format', str(video),
-    ]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if out.returncode != 0:
-        raise ReelError(f'ffprobe failed: {out.stderr.strip()[:300]}')
-    data = json.loads(out.stdout or '{}')
-    streams = data.get('streams') or []
-    video_stream = next((s for s in streams if s.get('codec_type') == 'video'), None)
-    if not video_stream:
-        raise ReelError('no video stream in clip')
-    has_audio = any(s.get('codec_type') == 'audio' for s in streams)
-    fps = _parse_rate(video_stream.get('avg_frame_rate')) or _parse_rate(video_stream.get('r_frame_rate')) or 24.0
-    duration = 0.0
-    for candidate in (video_stream.get('duration'), (data.get('format') or {}).get('duration')):
-        try:
-            duration = float(candidate or 0)
-        except (TypeError, ValueError):
-            duration = 0.0
-        if duration > 0:
-            break
-    if duration <= 0:
-        nb = int(video_stream.get('nb_frames') or 0)
-        duration = nb / fps if nb and fps else 0.0
-    return VideoInfo(
-        width=int(video_stream.get('width') or 0),
-        height=int(video_stream.get('height') or 0),
-        fps=fps,
-        duration_s=duration,
-        has_audio=has_audio,
-    )
+def probe(video: Path, *, engine: Engine | None = None) -> VideoInfo:
+    return (engine or require_engine()).probe(video)
 
 
 def sample_frames(
@@ -173,35 +108,11 @@ def sample_frames(
     info: VideoInfo,
     *,
     count: int = STORYBOARD_FRAMES,
-    ffmpeg: str | None = None,
+    engine: Engine | None = None,
 ) -> list[Image.Image]:
     """`count` stills spread evenly through the clip (mid-points of equal
     slices), in the clip's own aspect ratio."""
-    exe = ffmpeg or ffmpeg_exe()
-    frames: list[Image.Image] = []
-    duration = max(info.duration_s, 0.001)
-    for i in range(count):
-        t = (i + 0.5) / count * duration
-        cmd = [
-            exe, '-v', 'error', '-ss', f'{t:.3f}', '-i', str(video),
-            '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-',
-        ]
-        try:
-            out = subprocess.run(cmd, capture_output=True, timeout=120)
-        except subprocess.SubprocessError as exc:
-            logger.warning('storyboard frame %s failed: %s', i, exc)
-            continue
-        if out.returncode != 0 or len(out.stdout) < 64:
-            continue
-        try:
-            from io import BytesIO
-
-            img = Image.open(BytesIO(out.stdout))
-            img.load()
-            frames.append(img.convert('RGB'))
-        except Exception as exc:  # corrupt png from a truncated clip
-            logger.warning('storyboard frame %s unreadable: %s', i, exc)
-    return frames
+    return (engine or require_engine()).sample_frames(video, info, count=count)
 
 
 # ------------------------------------------------------------------ layout
@@ -306,18 +217,6 @@ def base_canvas(keyword: str, frames: list[Image.Image], *, aspect: float, handl
     return canvas
 
 
-def _read_exact(stream, size: int) -> bytes:
-    chunks: list[bytes] = []
-    remaining = size
-    while remaining > 0:
-        chunk = stream.read(remaining)
-        if not chunk:
-            break
-        chunks.append(chunk)
-        remaining -= len(chunk)
-    return b''.join(chunks)
-
-
 # ----------------------------------------------------------------- compose
 
 def compose_reel(
@@ -327,76 +226,45 @@ def compose_reel(
     prompt_text: str,
     keyword: str,
     handle: str = '@jobmaster.agency',
-    ffmpeg: str | None = None,
-    ffprobe: str | None = None,
+    engine: Engine | None = None,
     max_fps: float = MAX_FPS,
 ) -> ReelResult:
-    """Clip + prompt → post-ready 1080×1920 MP4 at `out`."""
-    exe = ffmpeg or ffmpeg_exe()
-    info = probe(video, ffprobe=ffprobe)
+    """Clip + prompt → post-ready 1080×1920 MP4 at `out`, on whichever
+    engine this machine has (ffmpeg binary · PyAV · OpenCV)."""
+    engine = engine or require_engine()
+    info = engine.probe(video)
     fps = min(info.fps or 24.0, max_fps)
     hero_x, hero_y, hero_x2, hero_y2 = HERO_BOX
     hero_w, hero_h = hero_x2 - hero_x, hero_y2 - hero_y
 
-    frames = sample_frames(video, info, ffmpeg=exe)
+    frames = engine.sample_frames(video, info, count=STORYBOARD_FRAMES)
     base = base_canvas(keyword, frames, aspect=info.aspect, handle=handle)
     column = render_prompt_column(prompt_text)
     hero_mask = Image.new('L', (hero_w, hero_h), 0)
     ImageDraw.Draw(hero_mask).rounded_rectangle((0, 0, hero_w, hero_h), radius=HERO_RADIUS, fill=255)
 
-    vf = f'scale={hero_w}:{hero_h}:force_original_aspect_ratio=increase,crop={hero_w}:{hero_h}'
-    if fps < (info.fps or fps):
-        vf += f',fps={fps:g}'
-    decode_cmd = [exe, '-v', 'error', '-i', str(video), '-vf', vf, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
-    encode_cmd = [
-        exe, '-y', '-v', 'error',
-        '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', f'{fps:g}', '-i', '-',
-    ]
-    if info.has_audio:
-        encode_cmd += ['-i', str(video), '-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '128k', '-shortest']
-    encode_cmd += [
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '20',
-        '-movflags', '+faststart', str(out),
-    ]
-
     out.parent.mkdir(parents=True, exist_ok=True)
-    frame_bytes = hero_w * hero_h * 3
-    written = 0
-    with tempfile.TemporaryFile() as enc_err:
-        decoder = subprocess.Popen(decode_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        encoder = subprocess.Popen(encode_cmd, stdin=subprocess.PIPE, stderr=enc_err)
-        try:
-            assert decoder.stdout is not None and encoder.stdin is not None
-            while True:
-                chunk = _read_exact(decoder.stdout, frame_bytes)
-                if len(chunk) < frame_bytes:
-                    break
-                hero = Image.frombytes('RGB', (hero_w, hero_h), chunk)
-                canvas = base.copy()
-                canvas.paste(hero, (hero_x, hero_y), hero_mask)
-                offset = scroll_offset(written / fps, info.duration_s, column.height)
-                window = column.crop((0, offset, COL_W, offset + CONTENT_H))
-                canvas.paste(window, (RIGHT_X, CONTENT_TOP))
-                encoder.stdin.write(canvas.tobytes())
-                written += 1
-        finally:
-            try:
-                encoder.stdin.close()  # type: ignore[union-attr]
-            except Exception:
-                pass
-            decoder.stdout.close()  # type: ignore[union-attr]
-            decoder.wait(timeout=60)
-            encoder.wait(timeout=600)
-        enc_err.seek(0)
-        err_text = enc_err.read().decode('utf-8', errors='replace').strip()
-    if written == 0:
+    sink = engine.open_sink(out, fps=fps, size=(W, H), audio_from=video if info.has_audio else None)
+    try:
+        for hero in engine.decode(video, size=(hero_w, hero_h), fps=fps):
+            canvas = base.copy()
+            canvas.paste(hero, (hero_x, hero_y), hero_mask)
+            offset = scroll_offset(sink.frames / fps, info.duration_s, column.height)
+            window = column.crop((0, offset, COL_W, offset + CONTENT_H))
+            canvas.paste(window, (RIGHT_X, CONTENT_TOP))
+            sink.write(canvas)
+    except BaseException:
+        sink.abort()
+        raise
+    if sink.frames == 0:
+        sink.abort()
         raise ReelError('clip decoded to zero frames')
-    if encoder.returncode != 0 or not out.is_file() or out.stat().st_size < 1024:
-        raise ReelError(f'ffmpeg encode failed: {err_text[:300] or "no output"}')
+    sink.close()
     return ReelResult(
         path=out,
-        frames=written,
+        frames=sink.frames,
         fps=fps,
-        duration_s=written / fps,
+        duration_s=sink.frames / fps,
         storyboard_frames=len(frames),
+        engine=engine.name,
     )
