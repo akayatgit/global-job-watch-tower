@@ -378,7 +378,8 @@ def reddit_candidates(
     rate_limited = False
     first = True
     for sub in subreddits:
-        sub = sub.strip().lstrip('r/').strip('/')
+        # not lstrip('r/'): that strips characters and turned runwayml into "unwayml"
+        sub = re.sub(r'^/?r/', '', sub.strip()).strip('/')
         if not sub:
             continue
         report = SourceReport(source=f'reddit r/{sub}')

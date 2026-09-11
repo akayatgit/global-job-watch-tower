@@ -129,6 +129,15 @@ class NormalizeTests(unittest.TestCase):
         self.assertGreater(with_numbers, stripped)
         self.assertIn('single run-on sentence — weak shot flow', reasons)
 
+    def test_title_drops_the_whole_article_after_create(self):
+        self.assertEqual(
+            normalize.make_title('Create an 8-second calm product page video for a desk vacuum. Show it.', 'tech'),
+            '8-second calm product page video for a desk vacuum',
+        )
+        self.assertEqual(normalize.make_title('Create a 6-second ad. More.', None), '6-second ad')
+        self.assertEqual(normalize.make_title('Generate the hero shot. Then.', None), 'Hero shot')
+        self.assertEqual(normalize.make_title('Create amber candle macro. x', None), 'Amber candle macro')
+
     def test_gate_requires_a_product_as_a_whole_word(self):
         reading = normalize.read_prompt(SAMURAI)
         self.assertFalse(reading.is_prompt)
@@ -264,6 +273,17 @@ class SourcesTests(unittest.TestCase):
         # 8s between subs (twice), 3s breather after the failed JSON call
         self.assertEqual(paused, [3.0, 8, 8])
         self.assertEqual(len(reports), 3)
+
+    def test_reddit_sub_names_keep_their_leading_letters(self):
+        calls: list[str] = []
+
+        def fetch(url: str) -> str:
+            calls.append(url)
+            return json.dumps({'data': {'children': []}})
+
+        sources.reddit_candidates(['runwayml', 'r/aivideo', '/r/Sora/'], fetch=fetch, pause_s=0, pause=lambda _s: None)
+        subs = [c.split('/r/')[1].split('/')[0] for c in calls if 'new.json' in c]
+        self.assertEqual(subs, ['runwayml', 'aivideo', 'Sora'])
 
     def test_reddit_429_stops_touching_reddit_for_the_run(self):
         calls: list[str] = []
@@ -566,11 +586,56 @@ class PipelineTests(unittest.TestCase):
             heuristic_score=90.0, final_score=60.0, scored_at=datetime.now(timezone.utc), status='new',
         ))
         self.db.commit()
-        shortlist = pipeline.build_shortlist(self.db, datetime.now(timezone.utc).date())
+        # Deck of 4 with 6 eligible rows: the origin cap decides who is in
+        shortlist = pipeline.build_shortlist(self.db, datetime.now(timezone.utc).date(), size=4)
         sources_used = [p.source for _e, p in shortlist]
         self.assertEqual(sources_used.count('reddit'), 3)
         self.assertIn('manual', sources_used)
         self.assertNotIn('web', sources_used)  # below PROMPT_MIN_SCORE
+
+    def test_shortlist_fills_a_thin_day_after_the_diversity_pass(self):
+        day = datetime.now(timezone.utc).date()
+        for i in range(1, 6):
+            text = f'{SNEAKER} Variation {i}: extra {"detail " * i}shot of the {i} mm lens.'
+            self.db.add(VideoPrompt(
+                fingerprint=normalize.fingerprint(text), text=text, source='web',
+                source_url='https://raw.githubusercontent.com/x/y/README.md',
+                collected_at=datetime.now(timezone.utc), heuristic_score=90.0,
+                final_score=80.0 - i, scored_at=datetime.now(timezone.utc), status='new',
+            ))
+        for i in range(1, 3):
+            text = f'{COFFEE} Variant {i}.'
+            self.db.add(VideoPrompt(
+                fingerprint=normalize.fingerprint(text), text=text, source='web',
+                source_url='https://www.veo3ai.io/blog/post',
+                collected_at=datetime.now(timezone.utc), heuristic_score=90.0,
+                final_score=60.0, scored_at=datetime.now(timezone.utc), status='new',
+            ))
+        self.db.commit()
+        shortlist = pipeline.build_shortlist(self.db, day, size=10)
+        # All seven eligible rows make the deck (5 github + 2 veo3ai) — the
+        # cap picks first, then leftovers fill; order is by score.
+        self.assertEqual(len(shortlist), 7)
+        scores = [p.final_score for _e, p in shortlist]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertEqual([e.rank for e, _p in shortlist], list(range(1, 8)))
+        # With only 6 slots the cap bites: 3 github + 2 veo3ai + best leftover github
+        rebuilt = pipeline.build_shortlist(self.db, day, size=6, force=True)
+        origins = [pipeline.prompt_origin(p) for _e, p in rebuilt]
+        self.assertEqual(origins.count('web:raw.githubusercontent.com'), 4)
+        self.assertEqual(origins.count('web:www.veo3ai.io'), 2)
+
+    def test_prompt_origin_is_subreddit_or_page_host(self):
+        self.assertEqual(
+            pipeline.prompt_origin(VideoPrompt(source='reddit', source_url='https://www.reddit.com/r/VeoAI/comments/x/y/')),
+            'reddit:veoai',
+        )
+        self.assertEqual(
+            pipeline.prompt_origin(VideoPrompt(source='web', source_url='https://prompt-architects.com/blog/p')),
+            'web:prompt-architects.com',
+        )
+        self.assertEqual(pipeline.prompt_origin(VideoPrompt(source='manual', source_url=None)), 'manual')
+        self.assertEqual(pipeline.prompt_origin(VideoPrompt(source='reddit', source_url=None)), 'reddit')
 
     def test_outliers_rank_first_and_learn_from_feedback(self):
         # Seed proven winners at ~70 so a 90 is an outlier and a 74 is not

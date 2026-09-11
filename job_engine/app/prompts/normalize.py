@@ -278,7 +278,7 @@ def detect_category(text: str) -> str | None:
 def make_title(text: str, category: str | None) -> str:
     """Short human title for Telegram rows: first clause, capped."""
     first = SENTENCE_RE.split((text or '').strip(), maxsplit=1)[0]
-    first = re.sub(r'(?i)^(create|generate|make|render|produce)\s+(a|an|the)?\s*', '', first).strip()
+    first = re.sub(r'(?i)^(create|generate|make|render|produce)\s+(?:(?:an|a|the)\s+)?', '', first).strip()
     first = first.strip(' ,-–—:')
     if len(first) > 72:
         first = first[:69].rsplit(' ', 1)[0] + '…'
