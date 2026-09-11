@@ -128,6 +128,12 @@ thinking ate a 4096-token cap, `parse_reading` stored the raw JSON
 blob. Fix: `thinking_budget=0`, `max_output_tokens=32768`, salvage
 truncated JSON, retry once. Never ship a half prompt.
 
+**Follow (2026-09-11, reverse model buttons):** after the header title,
+Telegram asks Gemini · GPT-6 Astra · Claude Fable 5. Gemini watches the
+clip; Astra/Fable read stills (no video input). `vision_engine` on
+`reverse_prompts` (migration `f2c4d6e8a910`). Keys: Replicate / OpenAI /
+Anthropic.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

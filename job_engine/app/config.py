@@ -160,6 +160,9 @@ PROMPT_VIDEO_TIMEOUT_S = int(os.getenv('PROMPT_VIDEO_TIMEOUT_S', '900'))
 # Instagram / Pinterest clip and writes the timestamped prompt. Replicate
 # google/gemini-* take `prompt`, `videos[]`, `system_instruction`.
 REPLICATE_VISION_MODEL = os.getenv('REPLICATE_VISION_MODEL', 'google/gemini-2.5-flash').strip()
+# Reverse-prompt stills path (Astra / Fable cannot take a video file).
+PROMPT_REVERSE_ASTRA_MODEL = os.getenv('PROMPT_REVERSE_ASTRA_MODEL', 'gpt-6-astra').strip()
+PROMPT_REVERSE_FABLE_MODEL = os.getenv('PROMPT_REVERSE_FABLE_MODEL', 'claude-fable-5').strip()
 # The exemplar prompt the model is shown as the quality bar (Ashok's "best
 # prompt on the internet"). Empty = the bundled default next to the module.
 PROMPT_REVERSE_EXEMPLAR_PATH = os.getenv('PROMPT_REVERSE_EXEMPLAR_PATH', '').strip()
@@ -192,6 +195,7 @@ REPLICATE_MODEL = os.getenv(
 # DIRECTOR — OpenAI Agents SDK brain above Hermes (COURIER)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
 OPENAI_BRAIN_MODEL = os.getenv('OPENAI_BRAIN_MODEL', 'gpt-4.1-mini').strip()
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '').strip()
 DIRECTOR_SESSION_DB = Path(
     os.getenv(
         'DIRECTOR_SESSION_DB',

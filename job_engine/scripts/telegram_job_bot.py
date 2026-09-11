@@ -1316,8 +1316,8 @@ class JobMasterTelegramBot:
             'Prompt Tower — two workflows:',
             '1) prompt to video: /prompts → tap a number → 📸 product photo → ✅ reel',
             '2) reverse prompt: /igtovid or /pintovid → Instagram / Pinterest URL '
-            '(or forward the video) → type the header title → Gemini writes the '
-            'timestamped prompt → same cinematic 9:16 reel',
+            '(or forward the video) → type the header title → pick Gemini, '
+            'GPT-6 Astra or Claude Fable 5 → timestamped prompt → same cinematic 9:16 reel',
             '',
             'Prompt Tower (daily video prompts):',
             "/prompts [YYYY-MM-DD] — today's top-10 with buttons: tap a number → "
@@ -1328,8 +1328,8 @@ class JobMasterTelegramBot:
             "Instagram numbers after posting; winners calibrate tomorrow's scoring",
             '/promptstats — prompts, winners baseline, sources, videos',
             '/igtovid [url] · /pintovid [url] — reverse prompt from a best-performing '
-            'reel / pin (or send the video file), then type the header title. '
-            'Same cinematic 9:16 reel as prompt-to-video. Footer is hardcoded.',
+            'reel / pin (or send the video file), then the header title, then '
+            'Gemini · GPT-6 Astra · Claude Fable 5. Same cinematic 9:16 reel. Footer is hardcoded.',
             '',
             'Jobs (asleep while TOWER_MODE=prompts):',
             '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '

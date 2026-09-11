@@ -164,6 +164,7 @@ class ReverseIn(BaseModel):
     video_base64: str | None = None
     chat_id: str | None = None
     title: str | None = None
+    vision_engine: str | None = None
 
 
 def _serialize_reverse(row: ReversePrompt) -> dict:
@@ -178,6 +179,7 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'video_url': row.video_url,
         'duration_s': row.duration_s,
         'header_title': row.header_title,
+        'vision_engine': row.vision_engine or 'gemini',
         'keyword': row.keyword,
         'prompt_text': row.prompt_text,
         'model': row.model,
@@ -215,11 +217,16 @@ def reverse(payload: ReverseIn, db: Session = Depends(get_db)):
         raise HTTPException(422, 'send source_url or video_base64')
 
     title = ' '.join((payload.title or '').split())[:120] or None
+    try:
+        vision_engine = reverse_prompt.resolve_vision_engine(payload.vision_engine)
+    except reverse_prompt.ReverseError as exc:
+        raise HTTPException(422, str(exc)) from exc
     row = ReversePrompt(
         chat_id=payload.chat_id,
         platform=reverse_prompt.detect_platform(url) if url else 'upload',
         source_url=reverse_prompt.canonical_url(url) if url else None,
         header_title=title,
+        vision_engine=vision_engine,
         status='queued',
     )
     db.add(row)

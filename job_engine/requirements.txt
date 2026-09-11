@@ -15,3 +15,4 @@ replicate
 Pillow
 openai
 openai-agents
+anthropic

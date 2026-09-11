@@ -366,6 +366,10 @@ need to be told twice.
   done — raise the token cap, turn thinking off, salvage the string,
   retry once. Never show the `{ "keyword": … }` blob as the prompt.
 
+- **2026-09-11 · Reverse model is a button, not a default.** After the
+  header title, Ashok picks Gemini, GPT-6 Astra, or Claude Fable 5.
+  Gemini watches the clip; the other two read stills. Same reel after.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

@@ -37,7 +37,9 @@ STATE_DAILY_SENT = 'prompt_daily_sent:{day}'
 # (or the video file itself) → tower row polled by watch_reverse.
 STATE_AWAIT_URL = 'prompt_await_url:{chat}'
 STATE_AWAIT_TITLE = 'prompt_await_title:{chat}'
+STATE_AWAIT_MODEL = 'prompt_await_reverse_model:{chat}'
 STATE_PENDING_URL = 'prompt_pending_reverse_url:{chat}'
+STATE_PENDING_TITLE = 'prompt_pending_reverse_title:{chat}'
 STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
@@ -45,8 +47,9 @@ REVERSE_MAX_WAIT_S = 25 * 60
 TELEGRAM_TEXT_LIMIT = 3900
 REVERSE_USAGE = (
     'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
-    "Then I'll ask for the header title. Gemini writes the timestamped prompt; "
-    'I cut the cinematic reel — 9:16 clip · storyboard · scrolling prompt.'
+    "Then I'll ask for the header title, then which model reverses it "
+    '(Gemini · GPT-6 Astra · Claude Fable 5). I cut the cinematic reel — '
+    '9:16 clip · storyboard · scrolling prompt.'
 )
 TITLE_ASK = (
     'What should the header say? (e.g. CINEMATIC AI AD)\n'
@@ -54,6 +57,16 @@ TITLE_ASK = (
     'Comment “AI” to get\n'
     'all the prompts'
 )
+MODEL_ASK = (
+    'Which model should reverse this clip?\n'
+    'Gemini watches the video. GPT-6 Astra and Claude Fable 5 read stills from it.'
+)
+MODEL_BUTTONS = [
+    [('Gemini', 'pt:revmodel:gemini')],
+    [('GPT-6 Astra', 'pt:revmodel:astra')],
+    [('Claude Fable 5', 'pt:revmodel:fable')],
+    [('✖ Cancel', 'pt:cancel')],
+]
 
 PROMPTS_USAGE = (
     'Usage: /prompts [YYYY-MM-DD] — today\'s top-10 video prompts with buttons.\n'
@@ -303,6 +316,8 @@ class PromptDeck:
             return self.rate_reply(int(parts[1]), int(parts[2]))
         if action == 'posted' and len(parts) >= 2 and parts[1].isdigit():
             return self.posted_reply(int(parts[1]))
+        if action == 'revmodel' and len(parts) >= 2:
+            return self.maybe_take_vision_model(chat_id, parts[1])
         return ButtonReply(PROMPTS_USAGE)
 
     def detail_reply(self, chat_id: str, prompt_id: int) -> ButtonReply:
@@ -468,18 +483,40 @@ class PromptDeck:
         title = ' '.join((text or '').split())
         if not title or find_url(title):
             return None
+        self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), title[:120])
+        return self._ask_vision_model(chat_id)
+
+    def maybe_take_vision_model(self, chat_id: str, raw: str) -> ButtonReply:
+        """Owner tapped Gemini / GPT-6 Astra / Claude Fable 5 after the title."""
+        from app.prompts.reverse_prompt import resolve_vision_engine, vision_key_missing, vision_label, ReverseError
+
+        if self.sessions.get_state(STATE_AWAIT_MODEL.format(chat=chat_id), '') != '1':
+            return ButtonReply('Send the link (or video) and the header title first.', [[('✖ Cancel', 'pt:cancel')]])
+        try:
+            engine = resolve_vision_engine(raw)
+        except ReverseError:
+            return ButtonReply(MODEL_ASK, MODEL_BUTTONS)
+        missing = vision_key_missing(engine)
+        if missing:
+            return ButtonReply(
+                f'{vision_label(engine)} is not ready: {missing}\nPick another model.',
+                MODEL_BUTTONS,
+            )
+        title = self.sessions.get_state(STATE_PENDING_TITLE.format(chat=chat_id), '') or None
         url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '') or None
         has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
-        self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         if has_video:
-            return self.video_reply(chat_id, title=title)
+            return self.video_reply(chat_id, title=title, vision_engine=engine)
         if not url:
             return ButtonReply('Send the Instagram / Pinterest link first.', [[('✖ Cancel', 'pt:cancel')]])
-        return self._start_reverse(chat_id, source_url=url, title=title)
+        return self._start_reverse(chat_id, source_url=url, title=title, vision_engine=engine)
 
-    def video_reply(self, chat_id: str, title: str | None = None) -> ButtonReply:
-        """Forwarded video: ask for the header first, then upload + start."""
+    def video_reply(self, chat_id: str, title: str | None = None, vision_engine: str | None = None) -> ButtonReply:
+        """Forwarded video: ask for the header first, then the model, then upload + start."""
         if not title:
             return self._ask_title(chat_id)
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
@@ -492,7 +529,7 @@ class PromptDeck:
             hint = ' (Telegram lets bots download files up to 20 MB — send the link instead)' if 'too big' in str(exc).lower() or '400' in str(exc) else ''
             return ButtonReply(f'Could not download the video from Telegram{hint}.')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
-        return self._start_reverse(chat_id, video=data, title=title)
+        return self._start_reverse(chat_id, video=data, title=title, vision_engine=vision_engine)
 
     def _ask_title(self, chat_id: str, *, source_url: str | None = None) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
@@ -501,10 +538,26 @@ class PromptDeck:
             self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
         return ButtonReply(f'🎞 Got it. {TITLE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
 
-    def _start_reverse(self, chat_id: str, *, source_url: str | None = None, video: bytes | None = None, title: str | None = None) -> ButtonReply:
+    def _ask_vision_model(self, chat_id: str) -> ButtonReply:
+        self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '1')
+        return ButtonReply(f'🎞 {MODEL_ASK}', MODEL_BUTTONS)
+
+    def _start_reverse(
+        self,
+        chat_id: str,
+        *,
+        source_url: str | None = None,
+        video: bytes | None = None,
+        title: str | None = None,
+        vision_engine: str | None = None,
+    ) -> ButtonReply:
+        from app.prompts.reverse_prompt import vision_label
+
         payload: dict[str, Any] = {'chat_id': str(chat_id)}
         if title:
             payload['title'] = title
+        if vision_engine:
+            payload['vision_engine'] = vision_engine
         if video is not None:
             payload['video_base64'] = base64.b64encode(video).decode('ascii')
         else:
@@ -532,9 +585,11 @@ class PromptDeck:
         where = {'instagram': 'the Instagram reel', 'pinterest': 'the Pinterest pin', 'direct': 'the video link'}.get(
             str(row.get('platform') or ''), 'your video',
         )
+        label = vision_label(vision_engine or row.get('vision_engine'))
         return ButtonReply(
-            f"🎞 Reverse prompt #{row['id']} started from {where}. Downloading → Gemini writes the "
-            'timestamped prompt → I cut the reel (clip · 6-frame storyboard · scrolling prompt). '
+            f"🎞 Reverse prompt #{row['id']} started from {where} · {label}. "
+            'Downloading → timestamped prompt → I cut the reel '
+            '(clip · 6-frame storyboard · scrolling prompt). '
             'Usually 2–5 minutes; the reel and the prompt text land here.',
         )
 
@@ -558,8 +613,11 @@ class PromptDeck:
             if isinstance(row, dict):
                 status = str(row.get('status') or '')
                 if status == 'describing' and status not in announced and self.send_text:
+                    from app.prompts.reverse_prompt import vision_label
+
                     announced.add(status)
-                    self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — Gemini is watching it now.")
+                    label = vision_label(row.get('vision_engine'))
+                    self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — {label} is watching it now.")
                 if status == 'done':
                     self._deliver_reverse(chat_id, row)
                     return 'done'
@@ -715,7 +773,9 @@ class PromptDeck:
         self.sessions.set_state(STATE_PHOTO.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
 
 

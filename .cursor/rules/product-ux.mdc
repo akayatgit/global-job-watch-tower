@@ -816,3 +816,9 @@ it, shows recipient count) → `/pushconfirm`
   thinking so the budget is the prompt, and retry once. Telegram already
   splits long prompts across messages — the stored text itself has to be
   the full generation prompt.
+- **Reverse model is a tap after the title (Ashok 2026-09-11).** After
+  the header, offer **Gemini · GPT-6 Astra · Claude Fable 5** as buttons
+  and reverse with that model. Gemini watches the video file; Astra and
+  Fable cannot — they get evenly spaced stills from the clip. Missing
+  API keys refuse that button and leave the other two. Same reel either
+  way. Owner-only.

@@ -284,6 +284,8 @@ class ReversePrompt(Base):
     duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Owner-typed header on the cinematic reel (asked after the URL)
     header_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Owner pick after the title: gemini | astra | fable
+    vision_engine: Mapped[str] = mapped_column(String(20), default='gemini')
     # What the vision model wrote — stored verbatim, the reel shows it as-is
     keyword: Mapped[str | None] = mapped_column(String(60), nullable=True)
     prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)

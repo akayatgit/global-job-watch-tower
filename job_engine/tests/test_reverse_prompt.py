@@ -11,6 +11,7 @@ from unittest import mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -250,6 +251,58 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertGreaterEqual(seen['input']['max_output_tokens'], 16384)
             self.assertEqual(seen['input']['thinking_budget'], 0)
 
+    def test_resolve_vision_engine_aliases(self):
+        self.assertEqual(reverse_prompt.resolve_vision_engine('Gemini'), 'gemini')
+        self.assertEqual(reverse_prompt.resolve_vision_engine('GPT-6 Astra'), 'astra')
+        self.assertEqual(reverse_prompt.resolve_vision_engine('claude-fable-5'), 'fable')
+        self.assertEqual(reverse_prompt.vision_label('astra'), 'GPT-6 Astra')
+        self.assertEqual(reverse_prompt.still_count(3.0), 6)
+        self.assertEqual(reverse_prompt.still_count(8.0), 12)
+        with self.assertRaises(reverse_prompt.ReverseError):
+            reverse_prompt.resolve_vision_engine('midjourney')
+
+    def test_describe_video_astra_uses_stills_not_the_clip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            seen: dict = {}
+            frames = [Image.new('RGB', (64, 64), (10, 20, 30))]
+
+            def complete(*, model, system, user_text, images):
+                seen['model'] = model
+                seen['images'] = images
+                seen['user'] = user_text
+                self.assertIn('stills', user_text.lower())
+                self.assertTrue(system)
+                return json.dumps({
+                    'keyword': 'DEITY',
+                    'prompt': '[0.0s–3.0s] a gold-anklet foot on cracked earth.\nStyle: mythic.',
+                })
+
+            reading = reverse_prompt.describe_video(
+                path, duration_s=3.0, engine='astra', complete=complete, frames=frames, exemplar='BAR',
+            )
+            self.assertEqual(reading.keyword, 'DEITY')
+            self.assertEqual(seen['model'], 'gpt-6-astra')
+            self.assertEqual(len(seen['images']), 1)
+            self.assertTrue(seen['images'][0])
+
+    def test_describe_video_fable_uses_injected_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            frames = [Image.new('RGB', (32, 32), 'white')]
+
+            def complete(*, model, system, user_text, images):
+                self.assertEqual(model, 'claude-fable-5')
+                return json.dumps({'keyword': 'RING', 'prompt': '[0.0s–2.0s] a gold ring. Style: macro.'})
+
+            reading = reverse_prompt.describe_video(
+                path, duration_s=2.0, engine='fable', complete=complete, frames=frames,
+            )
+            self.assertEqual(reading.keyword, 'RING')
+            self.assertIn('gold ring', reading.prompt)
+
     def test_describe_video_retries_truncated_json_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'clip.mp4'
@@ -313,10 +366,28 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertEqual(body['platform'], 'instagram')
         self.assertEqual(body['source_url'], 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertEqual(body['header_title'], 'CINEMATIC AI AD')
+        self.assertEqual(body['vision_engine'], 'gemini')
         queued.delay.assert_called_once_with(body['id'])
         listed = self.client.get('/api/prompts/reverse').json()
         self.assertEqual(listed['total'], 1)
         self.assertEqual(self.client.get(f"/api/prompts/reverse/{body['id']}").json()['id'], body['id'])
+
+    def test_post_stores_astra_vision_engine(self):
+        with mock.patch('app.tasks.reverse_prompt_video') as queued:
+            response = self.client.post(
+                '/api/prompts/reverse',
+                json={'source_url': IG_URL, 'vision_engine': 'GPT-6 Astra'},
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()['vision_engine'], 'astra')
+        queued.delay.assert_called_once()
+
+    def test_post_rejects_unknown_vision_engine(self):
+        response = self.client.post(
+            '/api/prompts/reverse',
+            json={'source_url': IG_URL, 'vision_engine': 'midjourney'},
+        )
+        self.assertEqual(response.status_code, 422)
 
     def test_post_rejects_unknown_url(self):
         response = self.client.post('/api/prompts/reverse', json={'source_url': 'https://youtube.com/x'})

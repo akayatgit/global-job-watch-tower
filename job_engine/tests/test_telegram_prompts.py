@@ -11,8 +11,14 @@ import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
+from unittest import mock
+
+from app import config
 from app.telegram_buttons import BTN_PREFIX, ButtonReply
-from app.telegram_prompts import PromptDeck, STATE_AWAIT_IMAGE, STATE_AWAIT_TITLE, STATE_AWAIT_URL, STATE_PHOTO, STATE_VIDEO
+from app.telegram_prompts import (
+    PromptDeck, STATE_AWAIT_IMAGE, STATE_AWAIT_MODEL, STATE_AWAIT_TITLE, STATE_AWAIT_URL,
+    STATE_PHOTO, STATE_VIDEO,
+)
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import PROMPT_PHOTO_TAP, PROMPT_VIDEO_TAP, JobMasterTelegramBot
 from tests.test_telegram_job_bot import FakeEngine, FakeTelegramAPI
@@ -119,6 +125,7 @@ class FakeTower:
                     )
                 ),
                 'source_url': (payload or {}).get('source_url'),
+                'vision_engine': (payload or {}).get('vision_engine') or 'gemini',
                 'error': None,
             }
             self.reverses.append(row)
@@ -148,9 +155,21 @@ class DeckTests(unittest.TestCase):
             on_render_started=lambda c, r: self.started.append((c, r)),
             on_reverse_started=lambda c, r: self.started.append((c, r)),
         )
+        self.key_patches = [
+            mock.patch.object(config, 'REPLICATE_API_TOKEN', 'r8_test'),
+            mock.patch.object(config, 'OPENAI_API_KEY', 'sk-test'),
+            mock.patch.object(config, 'ANTHROPIC_API_KEY', 'sk-ant-test'),
+        ]
+        for patch in self.key_patches:
+            patch.start()
 
     def tearDown(self):
+        for patch in self.key_patches:
+            patch.stop()
         self.tmp.cleanup()
+
+    def _pick_model(self, chat: str, engine: str = 'gemini'):
+        return self.deck.handle_callback(chat, f'pt:revmodel:{engine}')
 
     def test_list_reply_has_ten_number_buttons_and_flags_outliers(self):
         reply = self.deck.handle_command('1', 'prompts', '')
@@ -321,7 +340,7 @@ class DeckTests(unittest.TestCase):
         self.assertFalse(self.deck.deliver_daily({'1'}, lambda c, t, k: sent.append((c, t, k))))
         self.assertEqual(len(sent), 2)
 
-    def test_igtovid_url_then_title_starts_reverse(self):
+    def test_igtovid_url_then_title_then_model_starts_reverse(self):
         reply = self.deck.handle_command('1', 'igtovid', '')
         self.assertIn('Instagram reel or Pinterest pin', reply.text)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '1')
@@ -331,21 +350,49 @@ class DeckTests(unittest.TestCase):
         self.assertIn('CINEMATIC AI AD', asked.text)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '1')
         self.assertEqual(self.started, [])
-        started = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
+        model_ask = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
+        self.assertIn('Which model', model_ask.text)
+        self.assertEqual([row[0][0] for row in model_ask.keyboard[:3]], ['Gemini', 'GPT-6 Astra', 'Claude Fable 5'])
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '1')
+        self.assertEqual(self.started, [])
+        started = self._pick_model('1', 'gemini')
         self.assertIn('Reverse prompt #11 started', started.text)
+        self.assertIn('Gemini', started.text)
         self.assertEqual(self.started, [('1', 11)])
         payload = self.tower.posts[-1][1]
         self.assertEqual(payload['source_url'], 'https://www.instagram.com/reel/AbC123/')
         self.assertEqual(payload['title'], 'CINEMATIC AI AD')
+        self.assertEqual(payload['vision_engine'], 'gemini')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
+
+    def test_astra_button_sends_vision_engine(self):
+        self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
+        self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
+        started = self._pick_model('1', 'astra')
+        self.assertIn('GPT-6 Astra', started.text)
+        self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'astra')
+
+    def test_missing_openai_key_keeps_model_buttons(self):
+        self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
+        self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
+        with mock.patch.object(config, 'OPENAI_API_KEY', ''):
+            reply = self._pick_model('1', 'astra')
+        self.assertIn('OPENAI_API_KEY', reply.text)
+        self.assertEqual(self.started, [])
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '1')
 
     def test_pintovid_with_url_asks_for_title_first(self):
         reply = self.deck.handle_command('1', 'pintovid', 'https://www.pinterest.com/pin/123456/')
         self.assertIn('header', reply.text.lower())
         self.assertEqual(self.started, [])
-        started = self.deck.maybe_take_title('1', 'PACIFIC CHILL')
+        model_ask = self.deck.maybe_take_title('1', 'PACIFIC CHILL')
+        self.assertIn('Which model', model_ask.text)
+        started = self._pick_model('1', 'fable')
         self.assertIn('Reverse prompt #11 started', started.text)
+        self.assertIn('Claude Fable 5', started.text)
         self.assertEqual(self.tower.posts[-1][1]['title'], 'PACIFIC CHILL')
+        self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'fable')
 
     def test_stray_direct_mp4_without_command_is_ignored(self):
         self.assertIsNone(self.deck.maybe_take_url('1', 'https://cdn.example.com/clip.mp4'))
@@ -356,7 +403,8 @@ class DeckTests(unittest.TestCase):
         reply = self.deck.maybe_take_url('1', 'https://cdn.example.com/clip.mp4')
         self.assertIsNotNone(reply)
         self.assertIn('header', reply.text.lower())
-        started = self.deck.maybe_take_title('1', 'NIGHT REEL')
+        self.deck.maybe_take_title('1', 'NIGHT REEL')
+        started = self._pick_model('1', 'gemini')
         self.assertIn('the video link', started.text)
 
     def test_cancel_clears_await_url_and_title(self):
@@ -368,13 +416,20 @@ class DeckTests(unittest.TestCase):
         self.deck.handle_callback('1', 'pt:cancel')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '')
         self.assertIsNone(self.deck.maybe_take_title('1', 'CINEMATIC AI AD'))
+        self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
+        self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
+        self.deck.handle_callback('1', 'pt:cancel')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
+        self.assertIn('link', self.deck.handle_callback('1', 'pt:revmodel:gemini').text.lower())
 
     def test_forwarded_video_asks_for_title_then_uploads(self):
         self.sessions.set_state(STATE_VIDEO.format(chat='1'), 'vid-9')
         asked = self.deck.handle_callback('1', 'pt:video')
         self.assertIn('header', asked.text.lower())
         self.assertEqual(self.tower.posts, [])
-        started = self.deck.maybe_take_title('1', 'ROBE FILM')
+        model_ask = self.deck.maybe_take_title('1', 'ROBE FILM')
+        self.assertIn('Which model', model_ask.text)
+        started = self._pick_model('1', 'gemini')
         self.assertIn('Reverse prompt #11 started', started.text)
         payload = self.tower.posts[-1][1]
         self.assertIn('video_base64', payload)
@@ -401,7 +456,7 @@ class DeckTests(unittest.TestCase):
 
     def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
         states = iter([
-            {'id': 11, 'status': 'describing', 'duration_s': 8.2},
+            {'id': 11, 'status': 'describing', 'duration_s': 8.2, 'vision_engine': 'astra'},
             {
                 'id': 11, 'status': 'done', 'keyword': 'WATCH',
                 'prompt_text': '[0.0s–8.0s] a hero watch on wet slate.',
@@ -412,7 +467,7 @@ class DeckTests(unittest.TestCase):
         self.tower.get = lambda path, params=None: next(states)
         self.deck.api_get = self.tower.get
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertIn('Gemini is watching', self.texts[0][1])
+        self.assertIn('GPT-6 Astra is watching', self.texts[0][1])
         self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
 
@@ -434,8 +489,17 @@ class BotWiringTests(unittest.TestCase):
             tower_post=self.tower.post,
         )
         self.bot.deck.on_render_started = lambda c, r: None
+        self.key_patches = [
+            mock.patch.object(config, 'REPLICATE_API_TOKEN', 'r8_test'),
+            mock.patch.object(config, 'OPENAI_API_KEY', 'sk-test'),
+            mock.patch.object(config, 'ANTHROPIC_API_KEY', 'sk-ant-test'),
+        ]
+        for patch in self.key_patches:
+            patch.start()
 
     def tearDown(self):
+        for patch in self.key_patches:
+            patch.stop()
         self.tmp.cleanup()
 
     def test_owner_prompts_command_routes_to_deck(self):
@@ -476,9 +540,12 @@ class BotWiringTests(unittest.TestCase):
         self.bot._process_locked('100', 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertIn('header', self.api.keyboards_sent[-1][1].lower())
         self.bot._process_locked('100', 'CINEMATIC AI AD')
+        self.assertIn('Which model', self.api.keyboards_sent[-1][1])
+        self.bot._process_locked('100', f'{BTN_PREFIX}pt:revmodel:gemini')
         self.assertIn('Reverse prompt #11 started', self.api.keyboards_sent[-1][1])
         self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse')
         self.assertEqual(self.tower.posts[-1][1]['title'], 'CINEMATIC AI AD')
+        self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'gemini')
 
     def test_guest_cannot_start_reverse_from_command_or_url(self):
         self.bot._process_locked('555', '/igtovid')
@@ -491,6 +558,8 @@ class BotWiringTests(unittest.TestCase):
         self.bot._process_locked('100', PROMPT_VIDEO_TAP)
         self.assertIn('header', self.api.keyboards_sent[-1][1].lower())
         self.bot._process_locked('100', 'ROBE FILM')
+        self.assertIn('Which model', self.api.keyboards_sent[-1][1])
+        self.bot._process_locked('100', f'{BTN_PREFIX}pt:revmodel:gemini')
         self.assertIn('Reverse prompt #11 started', self.api.keyboards_sent[-1][1])
         self.assertIn('video_base64', self.tower.posts[-1][1])
         self.assertEqual(self.tower.posts[-1][1]['title'], 'ROBE FILM')

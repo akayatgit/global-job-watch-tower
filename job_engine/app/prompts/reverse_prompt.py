@@ -9,10 +9,9 @@ performing post for which we get the reverse prompt and post it."
 
 Pipeline (worker, `app.tasks.reverse_prompt_video`):
 
-    URL ─▶ fetch_video ─▶ stored clip ─▶ describe_video (Gemini on
-    Replicate, exemplar as the quality bar) ─▶ keyword + timestamped
-    prompt ─▶ post_reel.compose_reel (clip · 6-frame storyboard ·
-    scrolling prompt) ─▶ reel MP4
+    URL ─▶ fetch_video ─▶ stored clip ─▶ describe_video (Gemini watches
+    the clip; GPT-6 Astra / Claude Fable 5 read evenly spaced stills) ─▶
+    keyword + timestamped prompt ─▶ post_reel.compose_reel ─▶ reel MP4
 
 Downloading: plain HTTP with a browser UA first (Pinterest pages carry the
 mp4 in their JSON; direct .mp4 links pass through), then the logged-in
@@ -37,8 +36,11 @@ import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Callable
+
+from PIL import Image
 
 from app import config
 
@@ -59,6 +61,18 @@ DEFAULT_KEYWORD = 'PRODUCT'
 # off leaves room for a full cinematic prompt (typically 3–8k characters).
 MAX_OUTPUT_TOKENS = 32768
 THINKING_BUDGET = 0
+ENGINE_GEMINI = 'gemini'
+ENGINE_ASTRA = 'astra'
+ENGINE_FABLE = 'fable'
+VISION_ENGINE_KEYS = (ENGINE_GEMINI, ENGINE_ASTRA, ENGINE_FABLE)
+VISION_LABELS = {
+    ENGINE_GEMINI: 'Gemini',
+    ENGINE_ASTRA: 'GPT-6 Astra',
+    ENGINE_FABLE: 'Claude Fable 5',
+}
+# Astra / Fable have no video input — they read evenly spaced JPEGs.
+STILL_MAX_SIDE = 1280
+STILL_JPEG_QUALITY = 85
 # Data-URI ceiling: Telegram's bot download is 20 MB; Instagram reels sit
 # well under this. Larger clips ride a public .mp4 URL so Gemini can see
 # the suffix (Replicate's Files API URL has none — that is what killed #1).
@@ -321,6 +335,12 @@ USER_PROMPT_RETRY = (
     '{duration} clip. Close the prompt string and the object. Do not stop mid-sentence.'
 )
 
+FRAMES_USER_NOTE = (
+    'These {count} stills are evenly spaced through the {duration} clip '
+    '(this model cannot watch the video file). Infer motion, camera and lighting '
+    'from the sequence. Cover the full duration with timestamped segments.'
+)
+
 
 def default_exemplar_path() -> Path:
     return Path(__file__).with_name('reverse_exemplar.txt')
@@ -339,6 +359,68 @@ def load_exemplar(path: str | Path | None = None) -> str:
 
 def _duration_label(duration_s: float | None) -> str:
     return f'{duration_s:.1f}-second' if duration_s and duration_s > 0 else 'short'
+
+
+def resolve_vision_engine(raw: str | None) -> str:
+    """gemini | astra | fable from a button payload or API field."""
+    text = re.sub(r'[^a-z0-9]+', '', (raw or ENGINE_GEMINI).lower())
+    aliases = {
+        'gemini': ENGINE_GEMINI, 'google': ENGINE_GEMINI, 'flash': ENGINE_GEMINI,
+        'astra': ENGINE_ASTRA, 'gpt6astra': ENGINE_ASTRA, 'gpt6': ENGINE_ASTRA,
+        'openai': ENGINE_ASTRA, 'gpt': ENGINE_ASTRA,
+        'fable': ENGINE_FABLE, 'claudefable5': ENGINE_FABLE, 'claudefable': ENGINE_FABLE,
+        'claude': ENGINE_FABLE, 'anthropic': ENGINE_FABLE,
+    }
+    key = aliases.get(text, text)
+    if key not in VISION_LABELS:
+        raise ReverseError('unknown reverse model — pick Gemini, GPT-6 Astra or Claude Fable 5')
+    return key
+
+
+def vision_label(raw: str | None) -> str:
+    try:
+        return VISION_LABELS[resolve_vision_engine(raw)]
+    except ReverseError:
+        return VISION_LABELS[ENGINE_GEMINI]
+
+
+def vision_api_model(raw: str | None) -> str:
+    engine = resolve_vision_engine(raw)
+    if engine == ENGINE_ASTRA:
+        return getattr(config, 'PROMPT_REVERSE_ASTRA_MODEL', '') or 'gpt-6-astra'
+    if engine == ENGINE_FABLE:
+        return getattr(config, 'PROMPT_REVERSE_FABLE_MODEL', '') or 'claude-fable-5'
+    return config.REPLICATE_VISION_MODEL
+
+
+def vision_key_missing(raw: str | None) -> str | None:
+    """Phone-readable reason if that engine cannot run, else None."""
+    engine = resolve_vision_engine(raw)
+    if engine == ENGINE_GEMINI and not getattr(config, 'REPLICATE_API_TOKEN', ''):
+        return 'REPLICATE_API_TOKEN is missing in job_engine/.env — pick another model or add the key'
+    if engine == ENGINE_ASTRA and not getattr(config, 'OPENAI_API_KEY', ''):
+        return 'OPENAI_API_KEY is missing in job_engine/.env — pick another model or add the key'
+    if engine == ENGINE_FABLE and not getattr(config, 'ANTHROPIC_API_KEY', ''):
+        return 'ANTHROPIC_API_KEY is missing in job_engine/.env — pick another model or add the key'
+    return None
+
+
+def still_count(duration_s: float | None) -> int:
+    if not duration_s or duration_s <= 0:
+        return 8
+    return max(6, min(12, int(round(duration_s * 2))))
+
+
+def jpeg_b64(image: Image.Image, *, max_side: int = STILL_MAX_SIDE) -> str:
+    img = image.convert('RGB')
+    width, height = img.size
+    longest = max(width, height)
+    if longest > max_side:
+        scale = max_side / longest
+        img = img.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format='JPEG', quality=STILL_JPEG_QUALITY, optimize=True)
+    return base64.standard_b64encode(buf.getvalue()).decode('ascii')
 
 
 def build_instruction(*, duration_s: float | None, exemplar: str | None = None) -> str:
@@ -509,29 +591,64 @@ def describe_video(
     video_path: Path,
     *,
     duration_s: float | None,
+    engine: str | None = ENGINE_GEMINI,
     run: Callable[..., object] | None = None,
+    complete: Callable[..., str] | None = None,
+    frames: list[Image.Image] | None = None,
     log: Callable[[str], None] | None = None,
     exemplar: str | None = None,
     public_url: str | None = None,
     _attempt: int = 0,
 ) -> ReverseReading:
-    """Gemini (Replicate) watches the clip and returns keyword + timestamped
-    prompt. `run(model, input) -> output` is injectable for tests.
-
-    Thinking is disabled (`thinking_budget=0`) so the token budget is the
-    JSON, not a hidden chain-of-thought. If the first JSON still does not
-    close, one retry asks for the complete object.
+    """Watch the clip (Gemini) or stills (Astra / Fable) and return keyword +
+    timestamped prompt. `run` / `complete` / `frames` are injectable for tests.
     """
-    model = config.REPLICATE_VISION_MODEL
+    engine_key = resolve_vision_engine(engine)
+    if engine_key == ENGINE_GEMINI:
+        return _describe_gemini(
+            video_path,
+            duration_s=duration_s,
+            run=run,
+            log=log,
+            exemplar=exemplar,
+            public_url=public_url,
+            _attempt=_attempt,
+        )
+    return _describe_stills(
+        video_path,
+        duration_s=duration_s,
+        engine=engine_key,
+        complete=complete,
+        frames=frames,
+        log=log,
+        exemplar=exemplar,
+        _attempt=_attempt,
+    )
+
+
+def _describe_gemini(
+    video_path: Path,
+    *,
+    duration_s: float | None,
+    run: Callable[..., object] | None,
+    log: Callable[[str], None] | None,
+    exemplar: str | None,
+    public_url: str | None,
+    _attempt: int,
+) -> ReverseReading:
+    """Gemini (Replicate) watches the clip. Thinking is off so the token
+    budget is the JSON. If the first JSON still does not close, one retry.
+    """
+    model = vision_api_model(ENGINE_GEMINI)
     if run is None:
-        token = getattr(config, 'REPLICATE_API_TOKEN', '')
-        if not token:
-            raise ReverseError('REPLICATE_API_TOKEN missing in job_engine/.env')
+        missing = vision_key_missing(ENGINE_GEMINI)
+        if missing:
+            raise ReverseError(missing)
         import replicate
 
         from app.prompts.video_creator import replicate_render
 
-        client = replicate.Client(api_token=token)
+        client = replicate.Client(api_token=config.REPLICATE_API_TOKEN)
 
         def run(model, input):  # noqa: A001
             return replicate_render(client, model, input=input, budget_s=DESCRIBE_BUDGET_S, log=log)
@@ -551,7 +668,7 @@ def describe_video(
     if _attempt == 0 and not json_reading_complete(text):
         if log:
             log('vision JSON was truncated — asking once more for the complete object')
-        retry = describe_video(
+        retry = _describe_gemini(
             video_path,
             duration_s=duration_s,
             run=run,
@@ -563,3 +680,112 @@ def describe_video(
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
             return retry
     return reading
+
+
+def _describe_stills(
+    video_path: Path,
+    *,
+    duration_s: float | None,
+    engine: str,
+    complete: Callable[..., str] | None,
+    frames: list[Image.Image] | None,
+    log: Callable[[str], None] | None,
+    exemplar: str | None,
+    _attempt: int,
+) -> ReverseReading:
+    """GPT-6 Astra and Claude Fable 5: no video input — they read stills."""
+    model = vision_api_model(engine)
+    stills = list(frames) if frames is not None else _sample_stills(video_path, duration_s)
+    if not stills:
+        raise ReverseError('could not grab frames from the clip for Astra / Fable')
+    images = [jpeg_b64(frame) for frame in stills]
+    duration = _duration_label(duration_s)
+    prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
+    user_text = (
+        prompt_tmpl.format(duration=duration)
+        + '\n'
+        + FRAMES_USER_NOTE.format(count=len(images), duration=duration)
+    )
+    system = build_instruction(duration_s=duration_s, exemplar=exemplar)
+    if complete is None:
+        missing = vision_key_missing(engine)
+        if missing:
+            raise ReverseError(missing)
+        complete = _openai_complete if engine == ENGINE_ASTRA else _anthropic_complete
+    if log:
+        log(f'{vision_label(engine)} reading {len(images)} stills ({model})')
+    text = complete(model=model, system=system, user_text=user_text, images=images)
+    reading = parse_reading(text, model=model)
+    if _attempt == 0 and not json_reading_complete(text):
+        if log:
+            log('vision JSON was truncated — asking once more for the complete object')
+        retry = _describe_stills(
+            video_path,
+            duration_s=duration_s,
+            engine=engine,
+            complete=complete,
+            frames=stills,
+            log=log,
+            exemplar=exemplar,
+            _attempt=1,
+        )
+        if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
+            return retry
+    return reading
+
+
+def _sample_stills(video_path: Path, duration_s: float | None) -> list[Image.Image]:
+    from app.prompts import post_reel
+
+    info = post_reel.probe(video_path)
+    seconds = duration_s if duration_s and duration_s > 0 else info.duration_s
+    return post_reel.sample_frames(video_path, info, count=still_count(seconds))
+
+
+def _openai_complete(*, model: str, system: str, user_text: str, images: list[str]) -> str:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=DESCRIBE_BUDGET_S)
+    content: list[dict] = [{'type': 'text', 'text': user_text}]
+    for b64 in images:
+        content.append({'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{b64}'}})
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': content},
+        ],
+        max_completion_tokens=MAX_OUTPUT_TOKENS,
+        reasoning_effort='medium',
+    )
+    text = ((response.choices[0].message.content if response.choices else None) or '').strip()
+    if not text:
+        raise ReverseError(f'{model} returned an empty reverse prompt')
+    return text
+
+
+def _anthropic_complete(*, model: str, system: str, user_text: str, images: list[str]) -> str:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, timeout=DESCRIBE_BUDGET_S)
+    content: list[dict] = []
+    for b64 in images:
+        content.append({
+            'type': 'image',
+            'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': b64},
+        })
+    content.append({'type': 'text', 'text': user_text})
+    message = client.messages.create(
+        model=model,
+        max_tokens=MAX_OUTPUT_TOKENS,
+        system=system,
+        messages=[{'role': 'user', 'content': content}],
+    )
+    parts = []
+    for block in message.content or []:
+        if getattr(block, 'type', '') == 'text' and getattr(block, 'text', ''):
+            parts.append(block.text)
+    text = '\n'.join(parts).strip()
+    if not text:
+        raise ReverseError(f'{model} returned an empty reverse prompt')
+    return text
