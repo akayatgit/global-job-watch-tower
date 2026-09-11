@@ -1018,18 +1018,17 @@ def video_input_for_vision(path: Path, *, public_url: str | None = None) -> str:
     raises: "Unknown mime type… please set the `mime_type` argument"
     (reverse #1, 2026-09-10). So we never pass a handle.
 
-    Small clips become an explicit ``data:video/mp4;base64,…`` URI.
-    Larger ones use our public ``.mp4`` asset URL (same suffix Google
-    needs to guess).
+    Prefer our public ``.mp4`` asset URL whenever we have one — Replicate
+    fetches it, ``predictions.create`` is a tiny JSON POST, and a Gemini
+    row appears immediately (reverse #14, 2026-09-11 sat on "watching"
+    while a multi-MB data-URI upload never became a prediction).
+
+    Data-URI is the fallback when there is no public ``.mp4`` (tests,
+    missing partner URL, or a clip over the URI ceiling with no URL).
     """
     url = (public_url or '').strip()
-    try:
-        size = path.stat().st_size
-    except OSError:
-        size = 0
     if (
-        size > DATA_URI_MAX_BYTES
-        and url.lower().startswith(('http://', 'https://'))
+        url.lower().startswith(('http://', 'https://'))
         and DIRECT_RE.search(url.split('#', 1)[0])
     ):
         return url
@@ -1122,9 +1121,10 @@ def _describe_gemini(
             return replicate_render(client, model, input=input, budget_s=DESCRIBE_BUDGET_S, log=log)
 
     prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
+    video = video_input_for_vision(video_path, public_url=public_url)
     inputs = {
         'prompt': user_prompt or prompt_tmpl.format(duration=_duration_label(duration_s)),
-        'videos': [video_input_for_vision(video_path, public_url=public_url)],
+        'videos': [video],
         'system_instruction': system_instruction or build_instruction(duration_s=duration_s, exemplar=exemplar),
         'temperature': 0.7,
         'max_output_tokens': MAX_OUTPUT_TOKENS,
@@ -1132,7 +1132,26 @@ def _describe_gemini(
     }
     if images:
         inputs['images'] = list(images)[:ATTENTION_IMAGE_LIMIT]
-    output = run(model, input=inputs)
+    if log:
+        if isinstance(video, str) and video.startswith('data:'):
+            log(f'Gemini payload: data-URI {len(video) // 1024} KB (no public .mp4 URL)')
+        else:
+            log(f'Gemini payload: {video}')
+    try:
+        output = run(model, input=inputs)
+    except Exception as exc:
+        if (
+            isinstance(video, str)
+            and video.startswith('http')
+            and _public_video_fetch_failed(exc)
+        ):
+            if log:
+                log(f'public clip URL failed ({exc}) — sending the file as a data-URI')
+            fallback = dict(inputs)
+            fallback['videos'] = [video_input_for_vision(video_path, public_url=None)]
+            output = run(model, input=fallback)
+        else:
+            raise
     text = _output_text(output)
     reading = parse_reading(text, model=model)
     if _attempt == 0 and not json_reading_complete(text):
@@ -1202,6 +1221,17 @@ def _describe_file(
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
             return retry
     return reading
+
+
+def _public_video_fetch_failed(exc: BaseException) -> bool:
+    """Replicate/Gemini could not pull our public .mp4 — try a data-URI."""
+    text = str(exc).lower()
+    markers = (
+        'fetch', 'download', '404', '403', '401', 'timed out', 'timeout',
+        'unreachable', 'could not retrieve', 'failed to load', 'http 5',
+        'mime', 'unknown mime', 'content type',
+    )
+    return any(token in text for token in markers)
 
 
 def _retryable_video_error(exc: BaseException) -> bool:

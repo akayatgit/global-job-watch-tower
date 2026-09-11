@@ -858,3 +858,8 @@ it, shows recipient count) → `/pushconfirm`
   Chrome fetch has a 90s page timeout and a 100s hard cap — on timeout
   tell the owner to forward the video file. Never wait forever on a
   login wall.
+- **“Gemini is watching” must mean a Replicate row exists (Ashok
+  2026-09-11, #14).** Do not send a multi-MB data-URI as the first
+  Gemini payload — Replicate lists nothing until the upload finishes.
+  Send the public `.mp4` asset URL. Heartbeat every 90s while
+  describing. Fail the create HTTP call at 90s instead of hanging.

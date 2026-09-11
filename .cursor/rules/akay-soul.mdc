@@ -398,6 +398,13 @@ need to be told twice.
   Resume unfinished reverses on worker start, hard-cap the browser
   fetch, announce queued/downloading, Retry + auto-kick after 45s.
 
+- **2026-09-11 · “Gemini is watching” is not a Gemini call.** #14
+  downloaded (25s) then sat there. Telegram flips to describing *before*
+  `predictions.create` finishes. A data-URI of the reel is a multi-MB
+  POST — Replicate shows nothing until it lands. Prefer the public
+  `.mp4` URL so the prediction appears immediately. Heartbeat every 90s.
+  Hard-cap create at 90s.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

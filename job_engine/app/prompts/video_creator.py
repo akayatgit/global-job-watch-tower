@@ -118,6 +118,11 @@ TERMINAL_STATES = ('succeeded', 'failed', 'canceled')
 POLL_S = 5.0
 # Consecutive poll errors (home Wi-Fi blips) tolerated before giving up
 POLL_ERRORS_TOLERATED = 12
+# predictions.create can sit on a huge data-URI POST with no prediction id
+# yet (reverse #14, 2026-09-11). Cap the create HTTP call; poll budget is
+# separate. Do not use the executor as a context manager — shutdown(wait=True)
+# would wait out a hung upload.
+CREATE_TIMEOUT_S = 90
 
 
 def _create_prediction(client, model: str, inputs: dict):
@@ -132,6 +137,25 @@ def _create_prediction(client, model: str, inputs: dict):
     return client.models.predictions.create(model=ref, input=inputs)
 
 
+def _create_prediction_bounded(client, model: str, inputs: dict, *, timeout_s: float | None = None):
+    """Hard-cap the create HTTP call so a multi-MB upload cannot hang Gemini."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+    timeout_s = CREATE_TIMEOUT_S if timeout_s is None else timeout_s
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(_create_prediction, client, model, inputs)
+        try:
+            return future.result(timeout=timeout_s)
+        except FuturesTimeout as exc:
+            raise RuntimeError(
+                f'Replicate create still uploading after {int(timeout_s)}s — '
+                'no prediction id yet (send a public .mp4 URL, not a data-URI)'
+            ) from exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def replicate_render(client, model: str, *, input: dict, budget_s: float, poll_s: float = POLL_S, sleep=None, log=None):
     """Create → poll every `poll_s` until a terminal state or `budget_s`
     elapses (then cancel, so no orphan keeps billing). Returns the output
@@ -139,7 +163,7 @@ def replicate_render(client, model: str, *, input: dict, budget_s: float, poll_s
     import time as _time
 
     sleep = sleep or _time.sleep
-    prediction = _create_prediction(client, model, input)
+    prediction = _create_prediction_bounded(client, model, input)
     started = _time.monotonic()
     errors = 0
     last_status = None
