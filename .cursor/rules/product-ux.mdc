@@ -850,6 +850,13 @@ it, shows recipient count) → `/pushconfirm`
   visible while camera and crop stay. Deliver the twisted prompt and
   the twisted stills. Keep the original set. If no twist was stored,
   the button asks for the line.
+- **Twisted prompt ≤3000 characters including spaces (Ashok
+  2026-09-11).** Full essence, no filler: every timestamp, camera,
+  product, action, emotion, world, and the twist. Gemini is told the
+  cap; a deterministic fit then keeps every timestamp and the Style
+  lock. Telegram shows `N/3000 chars`. The 14 twisted stills share one
+  series look (palette, materials, lighting, era) — only pose/action
+  changes per frame. Never restyle each JPEG as a new film.
 - **Reverse must not go silent before Gemini (Ashok 2026-09-11, #14).**
   "Started… 2–5 minutes" with no further line is a live incident when
   Replicate never got the clip. Announce queue + download. Give Retry
