@@ -1316,7 +1316,8 @@ class JobMasterTelegramBot:
             'Prompt Tower — two workflows:',
             '1) prompt to video: /prompts → tap a number → 📸 product photo → ✅ reel',
             '2) reverse prompt: /igtovid or /pintovid → Instagram / Pinterest URL '
-            '(or forward the video) → Gemini writes the timestamped prompt → same reel',
+            '(or forward the video) → type the header title → Gemini writes the '
+            'timestamped prompt → same cinematic 9:16 reel',
             '',
             'Prompt Tower (daily video prompts):',
             "/prompts [YYYY-MM-DD] — today's top-10 with buttons: tap a number → "
@@ -1327,7 +1328,8 @@ class JobMasterTelegramBot:
             "Instagram numbers after posting; winners calibrate tomorrow's scoring",
             '/promptstats — prompts, winners baseline, sources, videos',
             '/igtovid [url] · /pintovid [url] — reverse prompt from a best-performing '
-            'reel / pin (or send the video file). Same reel template as prompt-to-video.',
+            'reel / pin (or send the video file), then type the header title. '
+            'Same cinematic 9:16 reel as prompt-to-video. Footer is hardcoded.',
             '',
             'Jobs (asleep while TOWER_MODE=prompts):',
             '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '
@@ -1926,7 +1928,7 @@ class JobMasterTelegramBot:
         # reel / pin link pasted on its own. Owner only — guests stay in
         # the job button flow even if they paste a social URL.
         if self._effective_is_owner(chat_id):
-            reverse = self.deck.maybe_take_url(chat_id, clean)
+            reverse = self.deck.maybe_take_title(chat_id, clean) or self.deck.maybe_take_url(chat_id, clean)
             if reverse is not None:
                 self._send_button_reply(chat_id, reverse, update_id=update_id)
                 if self.health_enabled:

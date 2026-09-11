@@ -36,6 +36,8 @@ STATE_DAILY_SENT = 'prompt_daily_sent:{day}'
 # Reverse prompt (2026-09-10): /igtovid · /pintovid → waiting for the URL
 # (or the video file itself) → tower row polled by watch_reverse.
 STATE_AWAIT_URL = 'prompt_await_url:{chat}'
+STATE_AWAIT_TITLE = 'prompt_await_title:{chat}'
+STATE_PENDING_URL = 'prompt_pending_reverse_url:{chat}'
 STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
@@ -43,8 +45,14 @@ REVERSE_MAX_WAIT_S = 25 * 60
 TELEGRAM_TEXT_LIMIT = 3900
 REVERSE_USAGE = (
     'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
-    "I'll download it, take 6 frames, have Gemini write the timestamped prompt behind it, "
-    'and cut the post-ready reel — clip · storyboard · scrolling prompt.'
+    "Then I'll ask for the header title. Gemini writes the timestamped prompt; "
+    'I cut the cinematic reel — 9:16 clip · storyboard · scrolling prompt.'
+)
+TITLE_ASK = (
+    'What should the header say? (e.g. CINEMATIC AI AD)\n'
+    'The footer is always:\n'
+    'Comment “AI” to get\n'
+    'all the prompts'
 )
 
 PROMPTS_USAGE = (
@@ -432,7 +440,7 @@ class PromptDeck:
 
         url = find_url(arg or '')
         if url:
-            return self._start_reverse(chat_id, source_url=url)
+            return self._ask_title(chat_id, source_url=url)
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
         return ButtonReply(f'🎞 Reverse prompt — {REVERSE_USAGE}', [[('✖ Cancel', 'pt:cancel')]])
 
@@ -449,10 +457,31 @@ class PromptDeck:
         platform = detect_platform(url)
         if platform is None or (not awaiting and platform == 'direct'):
             return None
-        return self._start_reverse(chat_id, source_url=url)
+        return self._ask_title(chat_id, source_url=url)
 
-    def video_reply(self, chat_id: str) -> ButtonReply:
-        """The owner forwarded a video file — the source clip itself."""
+    def maybe_take_title(self, chat_id: str, text: str) -> ButtonReply | None:
+        """Owner typed the cinematic header after the URL / forwarded clip."""
+        from app.prompts.reverse_prompt import find_url
+
+        if self.sessions.get_state(STATE_AWAIT_TITLE.format(chat=chat_id), '') != '1':
+            return None
+        title = ' '.join((text or '').split())
+        if not title or find_url(title):
+            return None
+        url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '') or None
+        has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
+        self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
+        if has_video:
+            return self.video_reply(chat_id, title=title)
+        if not url:
+            return ButtonReply('Send the Instagram / Pinterest link first.', [[('✖ Cancel', 'pt:cancel')]])
+        return self._start_reverse(chat_id, source_url=url, title=title)
+
+    def video_reply(self, chat_id: str, title: str | None = None) -> ButtonReply:
+        """Forwarded video: ask for the header first, then upload + start."""
+        if not title:
+            return self._ask_title(chat_id)
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
         if not file_id or self.download_photo is None:
             return ButtonReply('I could not read that video — send it as a video (not a file), or send the link.')
@@ -463,10 +492,19 @@ class PromptDeck:
             hint = ' (Telegram lets bots download files up to 20 MB — send the link instead)' if 'too big' in str(exc).lower() or '400' in str(exc) else ''
             return ButtonReply(f'Could not download the video from Telegram{hint}.')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
-        return self._start_reverse(chat_id, video=data)
+        return self._start_reverse(chat_id, video=data, title=title)
 
-    def _start_reverse(self, chat_id: str, *, source_url: str | None = None, video: bytes | None = None) -> ButtonReply:
+    def _ask_title(self, chat_id: str, *, source_url: str | None = None) -> ButtonReply:
+        self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '1')
+        if source_url:
+            self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
+        return ButtonReply(f'🎞 Got it. {TITLE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
+
+    def _start_reverse(self, chat_id: str, *, source_url: str | None = None, video: bytes | None = None, title: str | None = None) -> ButtonReply:
         payload: dict[str, Any] = {'chat_id': str(chat_id)}
+        if title:
+            payload['title'] = title
         if video is not None:
             payload['video_base64'] = base64.b64encode(video).decode('ascii')
         else:
@@ -676,6 +714,8 @@ class PromptDeck:
         self.sessions.set_state(STATE_AWAIT_IMAGE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PHOTO.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
 
 

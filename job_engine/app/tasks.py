@@ -920,6 +920,7 @@ def render_prompt_video(self, render_id: int):
                     prompt_id=prompt.id,
                     prompt_text=prompt.text,
                     keyword=post_card.keyword_for(prompt.category, prompt.title),
+                    title=(prompt.title or '').strip() or None,
                 )
                 render.reel_key = reel.reel_key
                 render.reel_url = reel.reel_url
@@ -1015,7 +1016,9 @@ def reverse_prompt_video(self, reverse_id: int):
             try:
                 reel = video_creator.create_reel(
                     video_path, prompt_id=row.id, prompt_text=row.prompt_text or '',
-                    keyword=row.keyword or 'PRODUCT', kind='rreel',
+                    keyword=row.keyword or 'PRODUCT',
+                    title=row.header_title or row.keyword or 'AI VIDEO',
+                    kind='rreel',
                 )
                 row.reel_key = reel.reel_key
                 row.reel_url = reel.reel_url

@@ -784,3 +784,14 @@ it, shows recipient count) → `/pushconfirm`
   is shown verbatim in chat so it can be copied into a caption. A
   login-walled page is not a dead end — "forward the video here instead."
   Never invent a second reel layout for this path.
+- **Cinematic 9:16 reel, not the white card (Ashok 2026-09-11).** The
+  post template is the dark Snickers-style reference: owner-typed header
+  (asked after the URL / forwarded clip), true 9:16 hero (the old 900×820
+  hole made every vertical clip look square), 6-frame storyboard in the
+  clip's aspect, scrolling prompt that **starts immediately and moves
+  faster** (no 12 % lead-in hold), hardcoded two-line footer
+  `Comment “AI” to get` / `all the prompts` with the same glow + soft
+  black shadow as the header. Background is one storyboard frame,
+  heavily blurred and darkened — never a white plate, never
+  `@jobmaster.agency` as the closer. Same composer for prompt-to-video
+  and reverse prompt.

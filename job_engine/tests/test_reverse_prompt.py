@@ -240,13 +240,14 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         with mock.patch('app.tasks.reverse_prompt_video') as queued:
             response = self.client.post(
                 '/api/prompts/reverse',
-                json={'source_url': IG_URL, 'chat_id': '100'},
+                json={'source_url': IG_URL, 'chat_id': '100', 'title': 'CINEMATIC AI AD'},
             )
         self.assertEqual(response.status_code, 201, response.text)
         body = response.json()
         self.assertEqual(body['status'], 'queued')
         self.assertEqual(body['platform'], 'instagram')
         self.assertEqual(body['source_url'], 'https://www.instagram.com/reel/AbC123xyz/')
+        self.assertEqual(body['header_title'], 'CINEMATIC AI AD')
         queued.delay.assert_called_once_with(body['id'])
         listed = self.client.get('/api/prompts/reverse').json()
         self.assertEqual(listed['total'], 1)

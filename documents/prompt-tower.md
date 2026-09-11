@@ -4,11 +4,11 @@
 |---|---|
 | **Ruling** | Ashok, 2026-09-09: *"Jobs are now prompts. Do what I say. We don't need jobs."* |
 | **Product** | Daily top-10 **AI video prompts for D2C product videos** (Veo / Kling / Sora), scored by Hermes, posted on Instagram for authority, sold later as prompt + video packs |
-| **Authority channel** | Instagram, reference format: `Comment "PERFUME" for prompts` → hero video → **Prompt** text → `@handle` |
+| **Authority channel** | Instagram, cinematic 9:16 reel: owner-typed header → 9:16 clip · storyboard · scrolling prompt → hardcoded `Comment “AI” to get / all the prompts` |
 | **Owner surface** | **VIGIL admin** at `http://127.0.0.1:8001` is the collection cockpit (Tower · Prompts · Scores · Sources · Activity · Live · Health). Telegram is delivery + approve-to-video, not the monitor. |
 
 | **Learning loop** | RAG of proven winners (rated ≥4 or strong engagement) → few-shot anchors + baseline for tomorrow's scoring → outliers flagged 🔥 |
-| **Two workflows (Ashok 2026-09-10)** | **prompt to video** — daily top-10 → Telegram ✅ + product photo → Kling → reel. **reverse prompt** — `/igtovid` · `/pintovid` → Instagram / Pinterest URL (or forwarded video) → Gemini on Replicate writes a timestamped prompt → **the same reel template**. |
+| **Two workflows (Ashok 2026-09-10)** | **prompt to video** — daily top-10 → Telegram ✅ + product photo → Kling → reel. **reverse prompt** — `/igtovid` · `/pintovid` → Instagram / Pinterest URL (or forwarded video) → **header title** → Gemini writes a timestamped prompt → **the same cinematic reel**. |
 | **Render** | Replicate image→video (`REPLICATE_VIDEO_MODEL`, default `kwaivgi/kling-v2.1`) → MP4 + Instagram card stored in the AvatarPitch asset root, served at `/api/partner/v1/assets/{key}` |
 | **Jobs stack** | **Asleep, not deleted.** `TOWER_MODE=prompts` (default) pauses the job beat; `TOWER_MODE=jobs` wakes it. Every job table, search, command and test stays intact (source-safety law). |
 | **Code** | `job_engine/app/prompts/` · `app/api/prompts.py` · `app/telegram_prompts.py` · tasks in `app/tasks.py` · migration `b7c3e9a12d45` |
@@ -59,7 +59,7 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | `/addprompt <text>` | Manual ingest (rejects captions), scored right away. |
 | `/promptscan` | Runs the daily pipeline now (Celery). |
 | `/promptstats` | Prompts, scored/pending, shortlisted today, posted, videos, winners, baseline μ±σ, sources, last catch. |
-| `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). Ask for an Instagram reel / Pinterest pin (or accept the URL on the command). Forwarding the video file itself is the fallback when the page is login-walled. |
+| `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). URL (or forwarded video) then the **header title**. Footer is hardcoded. Forwarding the video file is the fallback when the page is login-walled. |
 
 Guests never see any of it: `pt:` taps and prompt commands are gated on the real owner check; a guest's photo is ignored exactly as before.
 
@@ -68,15 +68,19 @@ Guests never see any of it: `pt:` taps and prompt commands are gated on the real
 Ashok: "wherever the image is you need to place the video … this entire template should come out as a video … the prompt scrolls … storyboard: six frames in the same aspect ratio next to each other in the other half." `app/prompts/post_reel.py` composes a 1080×1920 MP4 on whatever video engine the machine already has (`app/prompts/reel_engines.py`, no new Python package — the ThinkPad deploy does not `pip install`):
 
 ```
-Comment "SKINCARE" for prompts        ← bold, shrinks 64→30 pt until it fits the width
-[ AI clip plays here, rounded ]       ← the card's hero box (900×820), cover-fit, no letterbox
-Storyboard          | Prompt
-[6 stills, grid]    | prompt text scrolling over the clip's duration
-@jobmaster.agency
+TITLE                                 ← owner-typed header (reverse) or prompt title
+[ 9:16 clip, rounded ]   STORYBOARD
+                         [6 stills, clip aspect]
+                         PROMPT
+                         scrolling verbatim — starts immediately
+Comment “AI” to get                   ← hardcoded footer, glow + shadow
+all the prompts
 ```
 
-- **Storyboard** (left half): six stills at the mid-points of six equal slices, in the clip's own aspect ratio; the grid (3×2 for 9:16, 2×3 for 16:9) is the largest that fits the half-column (`storyboard_layout`).
-- **Prompt** (right half): the stored prompt **verbatim, never truncated**, rendered as one tall strip; the visible window holds for the first 12 % of the clip, slides linearly so the last line arrives at the bottom by 88 %, then holds. Short prompts sit still.
+Background is one storyboard frame, Gaussian-blurred (radius 64) and darkened — not the old white card. Hero box is **558×992 (true 9:16)**; the previous 900×820 hole made every vertical clip look square.
+
+- **Storyboard** (right rail): six stills at the mid-points of six equal slices, in the clip's own aspect ratio; the grid (3×2 for 9:16, 2×3 for 16:9) is the largest that fits the rail (`storyboard_layout`).
+- **Prompt** (right rail, under the storyboard): the stored prompt **verbatim, never truncated**, rendered as one tall transparent strip. Scroll **starts on frame 1** (no lead-in hold) and finishes with a tiny rest at the end so the last line can land. Short prompts sit still.
 - Frame rate = the clip's (capped at 30), duration = the clip's, **audio copied** when the clip has a track (Veo). The engine decodes already cover-fitted to the hero box; Pillow composites; the engine encodes H.264 yuv420p `+faststart` for iPhone playback.
 - Stored as `prompts/<day>/reel-<id>-<rand>.mp4` next to the raw clip; `prompt_renders.reel_key / reel_url`. A composition failure sets `reel_error` and keeps the clip — the render is still `done`.
 - **Engine hunt (2026-09-10, Ashok away from the ThinkPad: "something for video creation must be there, check properly").** The service PATH has no `ffmpeg` and nobody can install one remotely, so `reel_engines.discover()` looks instead of demanding, in order: (1) an **ffmpeg binary** anywhere plausible — `REEL_FFMPEG`, PATH, the interpreter's own `bin`, `CONDA_PREFIX`, every conda root (`anaconda3 / miniconda3 / miniforge3 / mambaforge`: `bin`, `envs/*/bin`, `pkgs/ffmpeg-*/bin`), imageio-ffmpeg's bundled static binary in any env / `~/.local` / pipx venv / `~/.hermes` venv, `~/.imageio`, Playwright's download, `~/bin`, `~/ffmpeg*`, `~/Downloads/ffmpeg*`, `/usr/local/bin`, `/snap/bin`, `/opt/conda/bin` — each candidate is **verified** (`-decoders` must list `h264`, `-encoders` must list `libx264` / `libopenh264` / `mpeg4`; Playwright's stripped build is rejected with the reason). No `ffprobe` next to it? The clip is probed from `ffmpeg -i` output. (2) **PyAV** (`av`) — ffmpeg's libraries linked into Python, libx264 in-process, audio packets copied. (3) **OpenCV** (`cv2`) — decodes anything, writes MPEG-4 **without audio**, the last resort so a finished clip is never left without its reel. The result is cached (a failed hunt retries every 10 min, so a later install is picked up without a restart).
@@ -98,7 +102,7 @@ URL or forwarded clip
 
 | Step | Law |
 |---|---|
-| Intake | `/igtovid` · `/pintovid` · `/pintovideo` · `/reverseprompt`. URL on the command starts now; otherwise the next Instagram / Pinterest link (or a forwarded video) starts it. A stray direct `.mp4` in chat does **not** start a run unless he already typed the command. Cancel clears the wait. |
+| Intake | `/igtovid` · `/pintovid` · `/pintovideo` · `/reverseprompt`. URL (or forwarded video) then **header title** (e.g. CINEMATIC AI AD). Footer is hardcoded. A stray direct `.mp4` in chat does **not** start a run unless he already typed the command. Cancel clears the wait. |
 | Download | `app/prompts/reverse_prompt.py::fetch_video`. Plain HTTP with a Safari UA first (Pinterest pages often carry the mp4 in JSON). Instagram login walls fall through to the logged-in stealth Chrome profile (`sources.browser_fetch`). HLS playlists are stitched by ffmpeg. Cap `PROMPT_REVERSE_MAX_VIDEO_MB` (80). Telegram forwarded files are ≤20 MB — larger clips must arrive as a link. |
 | Describe | Gemini via Replicate (`REPLICATE_VISION_MODEL`), **the same create-then-poll as Kling** (`video_creator.replicate_render`, 10 min budget) so we never hit the 60 s `Prefer: wait` timeout again. The clip is sent as a `data:video/mp4;base64,…` URI (or a public `.mp4` URL if it is over 20 MB) — a raw file handle becomes a Replicate Files URL with **no extension**, and Gemini then dies with `Unknown mime type` (reverse #1, 2026-09-10). System instruction lists product / set / lighting / camera / motion / textures / action / reveal / emotion / style, and shows an exemplar as the quality bar (`PROMPT_REVERSE_EXEMPLAR_PATH` or the bundled Louis Vuitton Pacific Chill prompt at `app/prompts/reverse_exemplar.txt` — Ashok's 2026-09-10 quality bar). Returns strict JSON `{keyword, prompt}`; fences / prose / a bare prompt are tolerated. **This is the one place an AI authors a prompt** — stored and shown verbatim, never rewritten. |
 | Reel | Same composer, same 6 storyboard frames from **the source clip**, prompt scrolls verbatim. Keys `prompts/<day>/rreel-<id>-….mp4`. A reel failure keeps the clip + prompt (`reel_error`); the row is still `done`. |

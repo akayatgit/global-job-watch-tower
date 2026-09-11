@@ -826,32 +826,51 @@ class PostReelTests(unittest.TestCase):
         cols, rows, cw, ch = post_reel.storyboard_layout(9 / 16)
         self.assertEqual(cols * rows >= 6, True)
         self.assertAlmostEqual(cw / ch, 9 / 16, delta=0.02)
-        self.assertLessEqual(cols * cw + (cols - 1) * post_reel.STORYBOARD_GAP, post_reel.COL_W)
-        self.assertLessEqual(rows * ch + (rows - 1) * post_reel.STORYBOARD_GAP, post_reel.CONTENT_H)
+        self.assertLessEqual(cols * cw + (cols - 1) * post_reel.STORYBOARD_GAP, post_reel.RIGHT_W)
+        self.assertLessEqual(rows * ch + (rows - 1) * post_reel.STORYBOARD_GAP, post_reel.STORYBOARD_H)
         wide_cols, wide_rows, ww, wh = post_reel.storyboard_layout(16 / 9)
         self.assertAlmostEqual(ww / wh, 16 / 9, delta=0.03)
-        self.assertLessEqual(wide_rows * wh + (wide_rows - 1) * post_reel.STORYBOARD_GAP, post_reel.CONTENT_H)
+        self.assertLessEqual(wide_rows * wh + (wide_rows - 1) * post_reel.STORYBOARD_GAP, post_reel.STORYBOARD_H)
 
-    def test_prompt_scrolls_from_top_to_the_last_line_and_holds_both_ends(self):
+    def test_hero_box_is_true_nine_by_sixteen_not_square(self):
+        x1, y1, x2, y2 = post_reel.HERO_BOX
+        self.assertAlmostEqual((x2 - x1) / (y2 - y1), 9 / 16, delta=0.01)
+        self.assertEqual((x2 - x1, y2 - y1), (post_reel.HERO_W, post_reel.HERO_H))
+
+    def test_prompt_starts_scrolling_immediately_and_finishes_before_the_end(self):
         text_h, box_h, dur = 2000, 660, 10.0
         self.assertEqual(post_reel.scroll_offset(0.0, dur, text_h, box_h), 0)
-        self.assertEqual(post_reel.scroll_offset(1.0, dur, text_h, box_h), 0)  # hold
+        early = post_reel.scroll_offset(0.5, dur, text_h, box_h)
+        self.assertGreater(early, 0)  # no lead-in hold
         mid = post_reel.scroll_offset(5.0, dur, text_h, box_h)
-        self.assertGreater(mid, 0)
+        self.assertGreater(mid, early)
         self.assertLess(mid, text_h - box_h)
-        self.assertEqual(post_reel.scroll_offset(9.5, dur, text_h, box_h), text_h - box_h)
+        self.assertEqual(post_reel.scroll_offset(9.7, dur, text_h, box_h), text_h - box_h)
         self.assertEqual(post_reel.scroll_offset(10.0, dur, text_h, box_h), text_h - box_h)
-        # Short prompts sit still
         self.assertEqual(post_reel.scroll_offset(5.0, dur, 300, box_h), 0)
 
     def test_prompt_column_is_verbatim_and_never_truncated(self):
         long_text = ' '.join([PERFUME] * 4)
         strip = post_reel.render_prompt_column(long_text)
-        self.assertEqual(strip.width, post_reel.COL_W)
-        self.assertGreater(strip.height, post_reel.CONTENT_H)
+        self.assertEqual(strip.width, post_reel.RIGHT_W)
+        self.assertGreater(strip.height, post_reel.PROMPT_H)
         from PIL import ImageDraw
-        lines = post_reel.wrap_by_width(ImageDraw.Draw(Image.new('RGB', (1, 1))), long_text, post_reel._font(28), post_reel.COL_W - 6)
+        lines = post_reel.wrap_by_width(ImageDraw.Draw(Image.new('RGB', (1, 1))), long_text, post_reel._font(22), post_reel.RIGHT_W - 6)
         self.assertEqual(' '.join(lines), ' '.join(long_text.split()))
+
+    def test_footer_is_hardcoded_comment_ai_and_backdrop_is_dark(self):
+        frame = Image.new('RGB', (90, 160), (180, 40, 20))
+        canvas = post_reel.base_canvas('CINEMATIC AI AD', [frame] * 6, aspect=9 / 16)
+        self.assertEqual(canvas.size, (1080, 1920))
+        # White card is gone — corners are a darkened blur, not (246,246,244).
+        corner = canvas.getpixel((8, 8))
+        self.assertLess(sum(corner) / 3, 80)
+        self.assertEqual(post_reel.FOOTER_LINES, ('Comment “AI” to get', 'all the prompts'))
+        other = post_reel.base_canvas('OTHER TITLE', [frame] * 6, aspect=9 / 16)
+        # Header region must actually paint the owner title (not a blank bar).
+        header_a = canvas.crop((40, 40, 700, 150)).tobytes()
+        header_b = other.crop((40, 40, 700, 150)).tobytes()
+        self.assertNotEqual(header_a, header_b)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg not installed')
     def test_compose_reel_from_a_real_clip_keeps_duration_audio_and_size(self):

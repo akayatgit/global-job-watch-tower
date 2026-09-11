@@ -101,6 +101,14 @@ Gemini via Replicate with the create-then-poll already used for Kling.
 Exemplar: Louis Vuitton Pacific Chill prompt Ashok pasted 2026-09-10
 (`app/prompts/reverse_exemplar.txt`).
 
+**Follow (2026-09-11, cinematic 9:16 reel):** the white card made every
+9:16 clip look square (hero hole was 900×820). Replaced with the dark
+reference: blurred storyboard-frame backdrop, true 9:16 hero (558×992),
+glow header + hardcoded `Comment “AI” to get / all the prompts` footer.
+Prompt scroll starts on frame 1 (no 12 % hold). Reverse intake is now
+URL → header title → run (`header_title` on `reverse_prompts`,
+migration `e1b2c3d4f506`).
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then
