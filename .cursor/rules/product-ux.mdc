@@ -834,3 +834,10 @@ it, shows recipient count) → `/pushconfirm`
   already in the prompt. Never an equal-interval grid. `sendDocument`
   so the files stay attachable. If Telegram flood-waits, retry — never
   silently stop at 3 of 6. Say so if any frame still fails.
+- **Cut frames feed the reverse prompt (Ashok 2026-09-11).** The JPEGs
+  are not only Telegram attachments. After we grab them, send the video
+  plus up to 10 of those frames back to the same vision model and
+  rewrite the prompt so each timestamp matches the JPEG. First pass
+  stays video-only. If the rewrite fails or is much shorter, keep the
+  draft. Do not re-extract frames after the rewrite. Catalogue ingest
+  uses the attended prompt.

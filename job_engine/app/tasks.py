@@ -1003,6 +1003,7 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.model = reading.model
                 db.commit()
                 log(f'prompt written by {reading.model} ({len(reading.prompt)} chars, keyword {reading.keyword})')
+                frames: list = []
                 try:
                     times = reverse_prompt.plan_reference_times(
                         reading.cuts or reverse_prompt.cuts_from_prompt(reading.prompt),
@@ -1018,9 +1019,32 @@ def reverse_prompt_video(self, reverse_id: int):
                     row.ref_error = str(exc)[:2000]
                     log(f'cut-reference frames skipped: {exc}')
                 db.commit()
-                try:  # into the catalogue when the prompt gate accepts it
+                if frames:
+                    try:
+                        refined = reverse_prompt.refine_prompt_with_frames(
+                            video_path,
+                            prompt=row.prompt_text or '',
+                            frames=frames,
+                            duration_s=info.duration_s,
+                            engine=row.vision_engine or reverse_prompt.ENGINE_GEMINI,
+                            keyword=row.keyword,
+                            public_url=row.video_url,
+                            log=log,
+                        )
+                        if refined is not None:
+                            row.prompt_text = refined.prompt
+                            row.keyword = refined.keyword or row.keyword
+                            db.commit()
+                            log(
+                                f'prompt refined against {len(frames)} cut frames '
+                                f'({len(refined.prompt)} chars, keyword {row.keyword})'
+                            )
+                    except Exception as exc:
+                        log(f'cut-frame attention skipped: {exc}')
+                try:  # catalogue after refine so the attended prompt is what we keep
                     catalogue, outcome = ingest(db, Candidate(
-                        text=reading.prompt, source='reverse', source_url=row.source_url,
+                        text=row.prompt_text or reading.prompt,
+                        source='reverse', source_url=row.source_url,
                         author=row.platform,
                     ))
                     if catalogue is not None:
