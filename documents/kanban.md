@@ -201,6 +201,11 @@ and SIGTERMs any in-flight daily_prompt_pipeline / score_pending.
 **Follow (2026-09-11, hook + twist copy):** title ask is `Whats the
 hook?` Twist ask is `Shall we twist the video?` Skip stays.
 
+**Follow (2026-09-11, reverse Telegram copy):** Ashok cut the essays.
+Model ask is **Select a Prompt Model…**. Queue is **processing..**.
+Start + first "watching" beat are both **Workflow Started…**. Keep
+Retry / Cancel. Heartbeats and fail/done stay detailed.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then
