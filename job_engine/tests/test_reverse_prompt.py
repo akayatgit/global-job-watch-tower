@@ -168,6 +168,18 @@ class UrlAndParseTests(unittest.TestCase):
         self.assertLessEqual(len(trimmed), 14)
         self.assertAlmostEqual(trimmed[0], 0.0)
 
+    def test_plan_reference_times_fills_point_stamps_to_fourteen(self):
+        """Reverse #12: the model gave six point times — we still owe 14 frames."""
+        times = reverse_prompt.plan_reference_times(
+            [(0.0, 0.0), (2.0, 2.0), (3.5, 3.5), (5.0, 5.0), (6.5, 6.5), (8.0, 8.0)],
+            duration_s=8.0,
+            count=14,
+        )
+        self.assertEqual(len(times), 14)
+        self.assertAlmostEqual(times[0], 0.0)
+        self.assertTrue(any(abs(t - 2.0) < 0.02 for t in times))
+        self.assertTrue(any(abs(t - 3.5) < 0.02 for t in times))
+
     def test_build_instruction_carries_every_dimension_and_the_exemplar(self):
         text = reverse_prompt.build_instruction(duration_s=8.0, exemplar='EXEMPLAR BODY')
         self.assertIn('8.0-second', text)

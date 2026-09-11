@@ -585,40 +585,42 @@ def normalize_cuts(cuts: list[tuple[float, float]], duration_s: float | None) ->
     return cleaned
 
 
+def _shot_ranges(cuts: list[tuple[float, float]], duration_s: float | None) -> list[tuple[float, float]]:
+    """Point timestamps become shot ranges between consecutive cuts."""
+    ranges = normalize_cuts(cuts, duration_s)
+    if not ranges:
+        end = duration_s if duration_s and duration_s > 0 else 0.0
+        return [(0.0, end)]
+    if all(abs(end - start) < 0.05 for start, end in ranges):
+        stamps = sorted({round(start, 3) for start, _end in ranges})
+        end = duration_s if duration_s and duration_s > 0 else stamps[-1]
+        if stamps[-1] < end - 0.05:
+            stamps.append(round(end, 3))
+        if len(stamps) == 1:
+            return [(stamps[0], end)]
+        return [(stamps[i], stamps[i + 1]) for i in range(len(stamps) - 1)]
+    return ranges
+
+
 def plan_reference_times(
     cuts: list[tuple[float, float]],
     *,
     duration_s: float | None,
     count: int = REFERENCE_FRAME_COUNT,
 ) -> list[float]:
-    """~14 timestamps from hard cuts — start + end of each shot.
+    """14 timestamps from hard cuts — start + end of each shot.
 
-    Not an equal grid. Extra slots go to interiors of the longest cuts.
-    Surplus short cuts are dropped; the first start and last end stay.
+    Not an equal grid. Extra slots go into the longest shots (or the
+    largest gaps when the model only gave point timestamps). Surplus
+    short cuts are dropped; the first start and last end stay.
     """
     count = max(2, int(count or REFERENCE_FRAME_COUNT))
-    ranges = normalize_cuts(cuts, duration_s)
-    if not ranges:
-        end = duration_s if duration_s and duration_s > 0 else 0.0
-        ranges = [(0.0, end)]
+    ranges = _shot_ranges(cuts, duration_s)
 
     def _end_in_shot(start: float, end: float) -> float:
         if end - start > CUT_END_INSET_S * 2:
             return end - CUT_END_INSET_S
         return end if end > start else start
-
-    points: list[float] = []
-    if all(abs(end - start) < 0.02 for start, end in ranges):
-        points = [start for start, _end in ranges]
-    else:
-        for start, end in ranges:
-            points.append(start)
-            points.append(_end_in_shot(start, end))
-        points[0] = ranges[0][0]
-        points[-1] = _end_in_shot(*ranges[-1])
-
-    # Always keep the first frame of the first cut and the last of the last.
-    must = {round(ranges[0][0], 3), round(_end_in_shot(*ranges[-1]), 3)}
 
     def _dedupe(values: list[float]) -> list[float]:
         kept: list[float] = []
@@ -631,12 +633,20 @@ def plan_reference_times(
             kept.append(round(t, 3))
         return kept
 
+    points: list[float] = []
+    for start, end in ranges:
+        points.append(start)
+        points.append(_end_in_shot(start, end))
+    points[0] = ranges[0][0]
+    points[-1] = _end_in_shot(*ranges[-1])
+    must = {round(ranges[0][0], 3), round(_end_in_shot(*ranges[-1]), 3)}
     points = _dedupe(points)
+
     if len(points) > count:
         ranked = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
         keep: list[float] = [ranges[0][0], _end_in_shot(*ranges[-1])]
         for start, end in ranked:
-            if len(_dedupe(keep)) >= count:
+            if len(_dedupe(sorted(keep))) >= count:
                 break
             keep.append(start)
             keep.append(_end_in_shot(start, end))
@@ -646,12 +656,11 @@ def plan_reference_times(
                 points[-2] = required
                 points = _dedupe(sorted(points))[:count]
     elif len(points) < count:
-        longest = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
         extras: list[float] = []
         for frac in (0.35, 0.7, 0.2, 0.85, 0.5):
-            for start, end in longest:
+            for start, end in sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True):
                 span = end - start
-                if span < 0.3:
+                if span < 0.15:
                     continue
                 extras.append(start + span * frac)
             merged = _dedupe(sorted(points + extras))
@@ -659,8 +668,21 @@ def plan_reference_times(
                 points = merged[:count]
                 break
         else:
-            points = _dedupe(sorted(points + extras))[:count]
-    return points
+            points = _dedupe(sorted(points + extras))
+        # Largest remaining gap (still inside a cut / between named times)
+        while len(points) < count:
+            seq = list(points)
+            if duration_s and duration_s > points[-1] + 0.08:
+                seq.append(duration_s)
+            best_i, best_gap = -1, 0.0
+            for i in range(len(seq) - 1):
+                gap = seq[i + 1] - seq[i]
+                if gap > best_gap:
+                    best_gap, best_i = gap, i
+            if best_i < 0 or best_gap < 0.12:
+                break
+            points = _dedupe(sorted(points + [(seq[best_i] + seq[best_i + 1]) / 2]))
+    return points[:count]
 
 
 def parse_reading(text: str, *, model: str = '') -> ReverseReading:
@@ -741,10 +763,19 @@ def store_reference_frames(
     key_for = key_for or video_creator.asset_key
     frames: list[ReferenceFrame] = []
     for index, t in enumerate(times, start=1):
-        try:
-            data = grab(video_path, t)
-        except Exception as exc:
-            logger.warning('reference frame %s at %.3fs failed: %s', index, t, exc)
+        data = b''
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                data = grab(video_path, t)
+                if data:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning('reference frame %s at %.3fs try %s failed: %s', index, t, attempt + 1, exc)
+        if not data:
+            if last_exc:
+                logger.warning('reference frame %s at %.3fs skipped: %s', index, t, last_exc)
             continue
         if not data:
             continue

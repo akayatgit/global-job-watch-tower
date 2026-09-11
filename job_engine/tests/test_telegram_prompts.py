@@ -468,6 +468,50 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_docs[0][2], 'cut-01-0.00s.jpg')
         self.assertIn('0.00s', self.sent_docs[0][3])
 
+    def test_watch_reverse_retries_flood_until_every_frame_arrives(self):
+        hits: dict[str, int] = {}
+
+        def send(c, d, filename='f.jpg', caption=''):
+            hits[filename] = hits.get(filename, 0) + 1
+            if filename == 'cut-04-3.00s.jpg' and hits[filename] == 1:
+                raise RuntimeError('Too Many Requests: retry after 1')
+            self.sent_docs.append((c, d, filename, caption))
+
+        self.deck.send_document_bytes = send
+        self.tower.reverse_status = {
+            'id': 12, 'status': 'done', 'keyword': 'JUICE',
+            'prompt_text': '[0.0s–8.0s] a drink.',
+            'reel_key': 'prompts/d/rreel.mp4',
+            'ref_frames': [
+                {'t': float(i), 'key': f'prompts/d/rref-{i:02d}.jpg', 'filename': f'cut-{i + 1:02d}-{i:.2f}s.jpg'}
+                for i in range(6)
+            ],
+        }
+        self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(len(self.sent_docs), 6)
+        self.assertEqual(hits['cut-04-3.00s.jpg'], 2)
+        self.assertFalse(any('did not arrive' in t for _c, t in self.texts))
+
+    def test_watch_reverse_says_when_frames_still_missing(self):
+        def send(c, d, filename='f.jpg', caption=''):
+            if filename.startswith('cut-04') or filename.startswith('cut-05') or filename.startswith('cut-06'):
+                raise RuntimeError('Too Many Requests: retry after 1')
+            self.sent_docs.append((c, d, filename, caption))
+
+        self.deck.send_document_bytes = send
+        self.tower.reverse_status = {
+            'id': 12, 'status': 'done', 'keyword': 'JUICE',
+            'prompt_text': '[0.0s–8.0s] a drink.',
+            'reel_key': 'prompts/d/rreel.mp4',
+            'ref_frames': [
+                {'t': float(i), 'key': f'prompts/d/rref-{i:02d}.jpg', 'filename': f'cut-{i + 1:02d}-{i:.2f}s.jpg'}
+                for i in range(6)
+            ],
+        }
+        self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(len(self.sent_docs), 3)
+        self.assertTrue(any('3 of 6 cut frames did not arrive' in t for _c, t in self.texts))
+
     def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
         states = iter([
             {'id': 11, 'status': 'describing', 'duration_s': 8.2, 'vision_engine': 'astra'},
