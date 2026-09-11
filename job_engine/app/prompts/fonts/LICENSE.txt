@@ -1,5 +1,8 @@
 Inter (c) 2016-2020 The Inter Project Authors
 https://github.com/rsms/inter
 
+Playfair Display (c) 2017-2019 Claus Eggers Sørensen
+https://github.com/clauseggers/Playfair-Display
+
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 https://scripts.sil.org/OFL

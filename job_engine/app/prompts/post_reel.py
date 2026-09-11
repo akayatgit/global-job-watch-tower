@@ -2,7 +2,7 @@
 
 Layout is locked to the dark Snickers reference, mapped onto 1080×1920:
 
-    TITLE                          ← owner-typed header, centered, Inter
+    TITLE                          ← owner-typed header, centered gold serif
     [ 9:16 clip, rounded ]  STORYBOARD   ← white-bordered panel, 3×2
                             [6 frames]
                             PROMPT       ← white-bordered panel
@@ -50,6 +50,7 @@ _FONT_FILES = {
     'bold': FONTS_DIR / 'Inter-Bold.ttf',
     'medium': FONTS_DIR / 'Inter-Medium.ttf',
     'regular': FONTS_DIR / 'Inter-Regular.ttf',
+    'serif': FONTS_DIR / 'PlayfairDisplay-Bold.ttf',
 }
 _FONT_FALLBACKS = {
     'bold': (
@@ -67,28 +68,32 @@ _FONT_FALLBACKS = {
         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
     ),
+    'serif': (
+        '/usr/share/fonts/truetype/noto/NotoSerifDisplay-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
+    ),
 }
 
 # Snickers reference → 1080×1920. Tight side margins, large 9:16 hero,
-# right rail ~1/3, footer parked under the hero (not the canvas floor).
+# right rail ~1/3, the whole stack (title → hero → footer) is vertically
+# centered on the canvas. Gold Playfair title, white Inter footer.
 MARGIN = 36
 GUTTER = 20
 
-TITLE_TOP = 68
 TITLE_MAX_PT = 74
 TITLE_MIN_PT = 42
-TITLE_TRACK = 3
+TITLE_TRACK = 2
 TITLE_AREA_H = 120
+TITLE_BOTTOM_MARGIN = 52  # Ashok 2026-09-11: space under the title
+# Gold sampled from the aesthetic-fonts reference (mean 236,205,73).
+TITLE_INK = (236, 201, 64)
 
 HERO_W = 660
 HERO_H = 1173  # 660 × 16/9
 HERO_X = MARGIN
-HERO_Y = TITLE_TOP + TITLE_AREA_H
 HERO_RADIUS = 28
-HERO_BOX = (HERO_X, HERO_Y, HERO_X + HERO_W, HERO_Y + HERO_H)
 
-RIGHT_X = HERO_X + HERO_W + GUTTER
-RIGHT_W = W - MARGIN - RIGHT_X
 LABEL_PT = 18
 LABEL_TRACK = 2
 LABEL_H = 36
@@ -98,11 +103,33 @@ STORYBOARD_ROWS = 2
 STORYBOARD_GAP = 8
 STORYBOARD_RADIUS = 8
 STORYBOARD_H = 448
+
+BODY_PT = 20
+LINE_H = 28
+SCROLL_HOLD_START = 0.0
+SCROLL_HOLD_END = 0.04
+SCROLL_HOLD = SCROLL_HOLD_START
+MAX_FPS = 30
+
+FOOTER_LINES = ('Comment “AI” to get', 'all the prompts')
+FOOTER_PT = 58
+FOOTER_TRACK = 1
+FOOTER_GAP = 4
+FOOTER_AFTER_HERO = 44
+FOOTER_BLOCK_H = 140  # two 58pt lines + gap — used to center the stack
+
+STACK_H = TITLE_AREA_H + TITLE_BOTTOM_MARGIN + HERO_H + FOOTER_AFTER_HERO + FOOTER_BLOCK_H
+TITLE_TOP = max(24, (H - STACK_H) // 2)
+HERO_Y = TITLE_TOP + TITLE_AREA_H + TITLE_BOTTOM_MARGIN
+HERO_BOX = (HERO_X, HERO_Y, HERO_X + HERO_W, HERO_Y + HERO_H)
+RIGHT_X = HERO_X + HERO_W + GUTTER
+RIGHT_W = W - MARGIN - RIGHT_X
 STORYBOARD_TOP = HERO_Y + LABEL_H
 PROMPT_LABEL_TOP = STORYBOARD_TOP + STORYBOARD_H + 18
 PROMPT_TOP = PROMPT_LABEL_TOP + LABEL_H
 PROMPT_BOTTOM = HERO_Y + HERO_H
 PROMPT_H = PROMPT_BOTTOM - PROMPT_TOP
+FOOTER_Y = HERO_Y + HERO_H + FOOTER_AFTER_HERO
 # Inner text width inside the white-bordered prompt panel.
 PANEL_STROKE = 2
 PANEL_RADIUS = 18
@@ -112,22 +139,6 @@ PROMPT_INNER_W = max(1, RIGHT_W - 2 * (PANEL_STROKE + PANEL_PAD))
 COL_W = RIGHT_W
 CONTENT_H = PROMPT_H
 CONTENT_TOP = PROMPT_TOP
-
-BODY_PT = 20
-LINE_H = 28
-# Start immediately; tiny hold only at the end so the last line can land.
-SCROLL_HOLD_START = 0.0
-SCROLL_HOLD_END = 0.04
-SCROLL_HOLD = SCROLL_HOLD_START  # alias — tests that pass hold= still work
-MAX_FPS = 30
-
-# Hardcoded footer — sits just under the hero, same glow as the header.
-FOOTER_LINES = ('Comment “AI” to get', 'all the prompts')
-FOOTER_PT = 58
-FOOTER_TRACK = 1
-FOOTER_GAP = 4
-FOOTER_AFTER_HERO = 44
-FOOTER_Y = HERO_Y + HERO_H + FOOTER_AFTER_HERO
 
 # Theme background: one storyboard frame, blurred like the reference.
 BG_BLUR_RADIUS = 64
@@ -149,13 +160,22 @@ class ReelResult:
 
 
 def _font(size: int, *, bold: bool = False, weight: str | None = None) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Inter first (bundled, matches the reference), then system fallbacks."""
+    """Inter for body/footer; Playfair Display (Vogue serif) for the title."""
     kind = weight or ('bold' if bold else 'regular')
     paths = (_FONT_FILES.get(kind),) + _FONT_FALLBACKS.get(kind, ())
     for path in paths:
         if path and Path(path).exists():
             try:
-                return ImageFont.truetype(str(path), size)
+                font = ImageFont.truetype(str(path), size)
+                if kind == 'serif':
+                    try:
+                        font.set_variation_by_axes([700])
+                    except (AttributeError, OSError, ValueError):
+                        try:
+                            font.set_variation_by_name('Bold')
+                        except (AttributeError, OSError, ValueError, TypeError):
+                            pass
+                return font
             except OSError:
                 continue
     try:
@@ -235,8 +255,10 @@ def draw_glow_text(
     fill: tuple[int, int, int] = INK,
     align: str = 'left',
     tracking: int = 0,
+    glow_fill: tuple[int, int, int] | None = None,
 ) -> None:
-    """Crisp white type with a soft white glow and a blurred black shadow."""
+    """Crisp type with a soft glow (gold on the title, white on the footer)
+    and a blurred black shadow."""
     if not text:
         return
     glyph = render_spaced_line(text, font, fill=fill, tracking=tracking)
@@ -245,12 +267,13 @@ def draw_glow_text(
     if align == 'center':
         x -= tw / 2
     pad = 36
+    glow_rgb = glow_fill or fill
     layer = Image.new('RGBA', (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
     shadow_src = Image.new('RGBA', layer.size, (0, 0, 0, 0))
     shadow_src.paste((0, 0, 0, 200), (pad, pad + 6, pad + tw, pad + 6 + th), glyph.split()[-1])
     shadow = shadow_src.filter(ImageFilter.GaussianBlur(radius=14))
     glow_src = Image.new('RGBA', layer.size, (0, 0, 0, 0))
-    glow_src.paste((255, 255, 255, 110), (pad, pad, pad + tw, pad + th), glyph.split()[-1])
+    glow_src.paste((*glow_rgb, 120), (pad, pad, pad + tw, pad + th), glyph.split()[-1])
     glow = glow_src.filter(ImageFilter.GaussianBlur(radius=8))
     type_layer = Image.new('RGBA', layer.size, (0, 0, 0, 0))
     type_layer.paste(glyph, (pad, pad), glyph)
@@ -415,7 +438,7 @@ def fit_header(text: str, max_width: int) -> tuple[object, list[str]]:
     size = TITLE_MAX_PT
     scratch = _scratch()
     while size >= TITLE_MIN_PT:
-        font = _font(size, bold=True)
+        font = _font(size, weight='serif')
         if spaced_width(raw, font, TITLE_TRACK) <= max_width:
             return font, [raw]
         words = raw.split()
@@ -427,7 +450,7 @@ def fit_header(text: str, max_width: int) -> tuple[object, list[str]]:
                     if spaced_width(a, font, TITLE_TRACK) <= max_width and spaced_width(b, font, TITLE_TRACK) <= max_width:
                         return font, [a, b]
         size -= 2
-    font = _font(TITLE_MIN_PT, bold=True)
+    font = _font(TITLE_MIN_PT, weight='serif')
     return font, wrap_by_width(scratch, raw, font, max_width)[:2]
 
 
@@ -440,7 +463,10 @@ def draw_header(canvas: Image.Image, title: str) -> None:
     y = TITLE_TOP + max(0, (TITLE_AREA_H - block) // 2)
     cx = W / 2
     for line, lh in zip(lines, heights):
-        draw_glow_text(canvas, (cx, y), line, font, align='center', tracking=TITLE_TRACK)
+        draw_glow_text(
+            canvas, (cx, y), line, font, fill=TITLE_INK, align='center',
+            tracking=TITLE_TRACK, glow_fill=TITLE_INK,
+        )
         y += int(lh * 1.08)
 
 

@@ -882,6 +882,14 @@ class PostReelTests(unittest.TestCase):
         # Footer sits under the hero — not glued to the canvas floor.
         self.assertLess(post_reel.FOOTER_Y, post_reel.H - 300)
         self.assertGreater(post_reel.FOOTER_Y, post_reel.HERO_Y + post_reel.HERO_H)
+        # Whole stack is vertically centered on the 9:16 canvas.
+        bottom_pad = post_reel.H - (post_reel.FOOTER_Y + post_reel.FOOTER_BLOCK_H)
+        self.assertLess(abs(post_reel.TITLE_TOP - bottom_pad), 40)
+        self.assertEqual(
+            post_reel.HERO_Y,
+            post_reel.TITLE_TOP + post_reel.TITLE_AREA_H + post_reel.TITLE_BOTTOM_MARGIN,
+        )
+        self.assertGreaterEqual(post_reel.TITLE_BOTTOM_MARGIN, 40)
         # White borders on the storyboard + prompt panels.
         storyboard_edge = canvas.getpixel((post_reel.RIGHT_X + 1, post_reel.STORYBOARD_TOP + 20))
         self.assertGreater(sum(storyboard_edge) / 3, 180)
@@ -901,6 +909,9 @@ class PostReelTests(unittest.TestCase):
         # A two-letter title must sit in the middle, not the left gutter.
         self.assertGreater(left_bright + right_bright, 40)
         self.assertLess(abs(left_bright - right_bright) / max(left_bright + right_bright, 1), 0.45)
+        gold = sum(1 for r, g, b in triples if r > 200 and 140 < g < 230 and b < 130)
+        self.assertGreater(gold, 20)
+        self.assertEqual(post_reel.TITLE_INK, (236, 201, 64))
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg not installed')
     def test_compose_reel_from_a_real_clip_keeps_duration_audio_and_size(self):

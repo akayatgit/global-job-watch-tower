@@ -116,6 +116,11 @@ reference: Inter, centered title/footer, 660×1173 9:16 hero, 3×2
 storyboard + prompt in white-bordered panels, footer just under the
 hero (`app/prompts/fonts/Inter-*.ttf`).
 
+**Follow (2026-09-11, gold serif + vertical center):** live Ganapati
+reel was accepted except: stack sat high, no title-bottom margin, title
+needed a Vogue serif in gold. Playfair Display `(236, 201, 64)`,
+`TITLE_BOTTOM_MARGIN`, stack centered on 1080×1920.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

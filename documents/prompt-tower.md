@@ -77,7 +77,7 @@ Comment “AI” to get                   ← hardcoded footer, glow + shadow
 all the prompts
 ```
 
-Background is one storyboard frame, Gaussian-blurred (radius 64) and darkened — not the old white card. Hero box is **660×1173 (true 9:16, sized like the Snickers reference)**; title and footer are Inter, centered, with the reference tracking. Storyboard and prompt sit in white-bordered rounded panels. Footer sits just under the hero — not glued to the canvas floor.
+Background is one storyboard frame, Gaussian-blurred (radius 64) and darkened — not the old white card. Hero box is **660×1173 (true 9:16, sized like the Snickers reference)**. The full stack (title → hero → footer) is **vertically centered** on the 1080×1920 canvas, with a margin under the title. Title is **Playfair Display** in gold `(236, 201, 64)` — Vogue serif, sampled from Ashok's aesthetic-fonts reference. Footer stays white Inter. Storyboard and prompt sit in white-bordered rounded panels.
 
 - **Storyboard** (right rail, white-bordered 3×2): six stills cover-fitted into a compact grid that fills the panel — the reference's storyboard, not tiny letterboxed portraits.
 - **Prompt** (right rail, under the storyboard): the stored prompt **verbatim, never truncated**, rendered as one tall transparent strip. Scroll **starts on frame 1** (no lead-in hold) and finishes with a tiny rest at the end so the last line can land. Short prompts sit still.
