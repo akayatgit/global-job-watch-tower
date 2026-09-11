@@ -230,6 +230,12 @@ class PromptDeck:
             result = self.api_post('/api/prompts/scan', {'force': False})
         except Exception:
             return 'Tower is unreachable right now — try /promptscan again in a minute.'
+        if isinstance(result, dict) and result.get('held'):
+            mins = max(1, int((result.get('resume_in_s') or 0) + 59) // 60)
+            return (
+                f'⏸ Scan paused — reverse prompt has the lane for about {mins} min. '
+                'It will resume after that.'
+            )
         if isinstance(result, dict) and result.get('queued'):
             return (
                 '🔄 Scan queued — collecting from every source and scoring with Hermes. '
@@ -491,7 +497,9 @@ class PromptDeck:
         """/igtovid · /pintovid [url] — start now when the URL is in the
         command, otherwise wait for the next message to carry it."""
         from app.prompts.reverse_prompt import find_url
+        from app.prompts.scan_hold import break_prompt_scan
 
+        break_prompt_scan()
         url = find_url(arg or '')
         if url:
             return self._ask_title(chat_id, source_url=url)

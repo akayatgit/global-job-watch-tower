@@ -789,6 +789,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.patches = [
             mock.patch.object(config, 'PARTNER_ASSETS_DIR', self.tmp.name),
             mock.patch.object(config, 'PARTNER_PUBLIC_BASE_URL', 'https://tower.example'),
+            mock.patch('app.prompts.scan_hold.break_prompt_scan', return_value={'held_s': 900, 'revoked': 0}),
         ]
         for patch in self.patches:
             patch.start()

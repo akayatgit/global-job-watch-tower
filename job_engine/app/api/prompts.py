@@ -254,6 +254,9 @@ def reverse(payload: ReverseIn, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
     db.refresh(row)
+    from app.prompts.scan_hold import break_prompt_scan
+
+    break_prompt_scan()
     if video is not None:
         row.video_key = video_creator.asset_key('source', prompt_id=row.id, suffix='mp4')
         video_creator.store_bytes(row.video_key, video, content_type='video/mp4')
@@ -299,6 +302,9 @@ def reverse_retry(reverse_id: int, db: Session = Depends(get_db)):
     row.status = 'queued'
     row.error = None
     db.commit()
+    from app.prompts.scan_hold import break_prompt_scan
+
+    break_prompt_scan()
     try:
         reverse_prompt_video.delay(row.id)
     except Exception as exc:
@@ -363,6 +369,16 @@ def scan(payload: ScanIn | None = None, db: Session = Depends(get_db)):
     """Run the daily pipeline now. inline=True runs in this process (dev /
     tests); default hands it to the Celery worker."""
     payload = payload or ScanIn()
+    from app.prompts.scan_hold import is_held, remaining_s
+
+    if is_held():
+        left = remaining_s()
+        return {
+            'queued': False,
+            'held': True,
+            'resume_in_s': left,
+            'detail': f'reverse prompt has the lane for {left}s',
+        }
     if payload.inline:
         summary = pipeline.run_daily(db, force=payload.force)
         return {'queued': False, **summary}

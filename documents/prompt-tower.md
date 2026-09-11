@@ -57,7 +57,7 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | `📣 Posted` | Marks posted; reply asks for `/promptperf <id> likes=.. comments=.. saves=.. shares=.. views=..`. |
 | `/promptperf` | Stores Instagram numbers → performance score → RAG winner when strong. |
 | `/addprompt <text>` | Manual ingest (rejects captions), scored right away. |
-| `/promptscan` | Runs the daily pipeline now (Celery). |
+| `/promptscan` | Runs the daily pipeline now (Celery). **Paused 15 min** whenever `/igtovid` starts — reverse owns the worker lane. |
 | `/promptstats` | Prompts, scored/pending, shortlisted today, posted, videos, winners, baseline μ±σ, sources, last catch. |
 | `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). Instant one-liner: `Now Send me the Instagram or Pinterest link.` Then URL (or forwarded video) → header title. Footer is hardcoded. |
 

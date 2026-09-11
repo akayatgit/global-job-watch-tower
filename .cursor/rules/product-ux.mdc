@@ -882,3 +882,7 @@ it, shows recipient count) → `/pushconfirm`
   `/igtovid` / `/pintovid` say only: `Now Send me the Instagram or
   Pinterest link.` No essay about title / twist / models / reel.
   Answer on the poll thread — do not queue behind `/promptscan`.
+- **Reverse owns the lane (Ashok 2026-09-11).** `/igtovid` / `/pintovid`
+  breaks `/promptscan` for 15 minutes: revoke the collect+score task,
+  refuse new scans, skip idle/beat kicks. Hermes and Chrome stay free
+  for the clip. A second reverse refreshes the 15 minutes.

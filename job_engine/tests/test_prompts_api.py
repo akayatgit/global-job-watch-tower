@@ -100,6 +100,18 @@ class PromptsApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {'queued': True})
         task.delay.assert_called_once_with(force=False)
 
+    def test_scan_refuses_while_reverse_holds_the_lane(self):
+        with mock.patch('app.prompts.scan_hold.is_held', return_value=True), \
+                mock.patch('app.prompts.scan_hold.remaining_s', return_value=700), \
+                mock.patch('app.tasks.daily_prompt_pipeline') as task:
+            response = self.client.post('/api/prompts/scan', json={})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body['queued'])
+        self.assertTrue(body['held'])
+        self.assertEqual(body['resume_in_s'], 700)
+        task.delay.assert_not_called()
+
     def test_ingest_scores_and_rejects_captions(self):
         response = self.client.post('/api/prompts/ingest', json={'text': PERFUME, 'author': 'ashok'})
         self.assertEqual(response.status_code, 201, response.text)

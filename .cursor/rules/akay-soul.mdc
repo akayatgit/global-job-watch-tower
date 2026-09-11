@@ -424,6 +424,11 @@ need to be told twice.
   essay. Reply at once: `Now Send me the Instagram or Pinterest link.`
   Reverse intake is not queued behind prompt-scan / Ollama.
 
+- **2026-09-11 · Reverse breaks promptscan.** Ashok: /igtovid is more
+  important. Starting the reverse workflow kills in-flight collect/score
+  and holds /promptscan for 15 minutes. A second /igtovid refreshes
+  the hold.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is
