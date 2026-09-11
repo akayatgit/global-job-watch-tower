@@ -165,6 +165,11 @@ class ReverseIn(BaseModel):
     chat_id: str | None = None
     title: str | None = None
     vision_engine: str | None = None
+    twist: str | None = None
+
+
+class ReverseTwistIn(BaseModel):
+    twist: str | None = None
 
 
 def _serialize_reverse(row: ReversePrompt) -> dict:
@@ -186,6 +191,12 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'prompt_text': row.prompt_text,
         'ref_frames': load_reference_frames(row.ref_frames),
         'ref_error': row.ref_error,
+        'twist_text': row.twist_text,
+        'twist_keyword': row.twist_keyword,
+        'twist_prompt': row.twist_prompt,
+        'twist_frames': load_reference_frames(row.twist_frames),
+        'twist_error': row.twist_error,
+        'twist_status': row.twist_status,
         'model': row.model,
         'prompt_id': row.prompt_id,
         'reel_key': row.reel_key,
@@ -221,6 +232,9 @@ def reverse(payload: ReverseIn, db: Session = Depends(get_db)):
         raise HTTPException(422, 'send source_url or video_base64')
 
     title = ' '.join((payload.title or '').split())[:120] or None
+    from app.prompts.reverse_twist import clean_twist
+
+    twist = clean_twist(payload.twist) or None
     try:
         vision_engine = reverse_prompt.resolve_vision_engine(payload.vision_engine)
     except reverse_prompt.ReverseError as exc:
@@ -231,6 +245,7 @@ def reverse(payload: ReverseIn, db: Session = Depends(get_db)):
         source_url=reverse_prompt.canonical_url(url) if url else None,
         header_title=title,
         vision_engine=vision_engine,
+        twist_text=twist,
         status='queued',
     )
     db.add(row)
@@ -263,6 +278,36 @@ def reverse_status(reverse_id: int, db: Session = Depends(get_db)):
     row = db.get(ReversePrompt, int(reverse_id))
     if row is None:
         raise HTTPException(404, 'reverse prompt not found')
+    return _serialize_reverse(row)
+
+
+@router.post('/reverse/{reverse_id}/twist', status_code=202)
+def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Session = Depends(get_db)):
+    """Queue the magic-pencil pass on a finished reverse: Gemini rewrites
+    every beat, nano-banana restyles each cut-reference still."""
+    from app.prompts.reverse_twist import clean_twist
+    from app.tasks import twist_reverse_prompt
+
+    row = db.get(ReversePrompt, int(reverse_id))
+    if row is None:
+        raise HTTPException(404, 'reverse prompt not found')
+    if row.status != 'done' or not (row.prompt_text or '').strip():
+        raise HTTPException(409, 'reverse the clip first — the original prompt is not ready')
+    idea = clean_twist(payload.twist if payload else None) or (row.twist_text or '').strip()
+    if not idea:
+        raise HTTPException(422, 'send a twist line — one imaginative sentence')
+    if row.twist_status in ('queued', 'running'):
+        return _serialize_reverse(row)
+    row.twist_text = idea
+    row.twist_status = 'queued'
+    row.twist_error = None
+    db.commit()
+    try:
+        twist_reverse_prompt.delay(row.id)
+    except Exception as exc:
+        row.twist_status = 'failed'
+        row.twist_error = f'worker queue unavailable: {exc}'
+        db.commit()
     return _serialize_reverse(row)
 
 

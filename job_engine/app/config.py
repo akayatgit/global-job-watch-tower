@@ -169,6 +169,8 @@ PROMPT_REVERSE_FABLE_MODEL = os.getenv('PROMPT_REVERSE_FABLE_MODEL', 'claude-fab
 PROMPT_REVERSE_EXEMPLAR_PATH = os.getenv('PROMPT_REVERSE_EXEMPLAR_PATH', '').strip()
 # Largest source clip we download / accept (Telegram uploads are ≤20 MB)
 PROMPT_REVERSE_MAX_VIDEO_MB = int(os.getenv('PROMPT_REVERSE_MAX_VIDEO_MB', '80'))
+# Magic-pencil stills: text+image→image. Empty = REPLICATE_MODEL (nano-banana-2).
+PROMPT_TWIST_IMAGE_MODEL = os.getenv('PROMPT_TWIST_IMAGE_MODEL', '').strip()
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')

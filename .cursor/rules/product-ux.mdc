@@ -841,3 +841,12 @@ it, shows recipient count) → `/pushconfirm`
   stays video-only. If the rewrite fails or is much shorter, keep the
   draft. Do not re-extract frames after the rewrite. Catalogue ingest
   uses the attended prompt.
+- **Magic pencil twist (Ashok 2026-09-11).** After the header title,
+  ask for one imaginative twist line (Skip allowed). After the original
+  prompt and 14 stills, show a **💥✏️ Twist** button. Recreating without
+  our touch is incomplete. Gemini must rewrite every timestamped beat
+  (timing, emotion, context, imagination) — not a one-line tag. The 14
+  cut frames go through text+image→image (nano-banana) so the twist is
+  visible while camera and crop stay. Deliver the twisted prompt and
+  the twisted stills. Keep the original set. If no twist was stored,
+  the button asks for the line.

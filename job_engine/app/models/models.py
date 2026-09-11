@@ -292,6 +292,14 @@ class ReversePrompt(Base):
     # Cut-based recreate frames (JSON [{t, key, filename}]) — not the reel storyboard
     ref_frames: Mapped[str | None] = mapped_column(Text, nullable=True)
     ref_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Magic pencil (2026-09-11): one imaginative line → twisted prompt + stills
+    twist_text: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    twist_keyword: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    twist_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    twist_frames: Mapped[str | None] = mapped_column(Text, nullable=True)
+    twist_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # queued | running | done | failed
+    twist_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # The catalogue row this prompt also became (when the gate accepted it)
     prompt_id: Mapped[int | None] = mapped_column(ForeignKey('video_prompts.id'), nullable=True)

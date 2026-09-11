@@ -519,6 +519,8 @@ class JobMasterTelegramBot:
             send_text=self.api.send,
             on_render_started=self._start_render_watch,
             on_reverse_started=self._start_reverse_watch,
+            on_twist_started=self._start_twist_watch,
+            send_keyboard=self.api.send_keyboard,
         )
         self._last_request: dict[str, float] = {}
         self._chat_locks: dict[str, threading.Lock] = {}
@@ -576,6 +578,21 @@ class JobMasterTelegramBot:
             self.deck.watch_reverse(chat_id, reverse_id)
         except Exception:
             LOG.exception('reverse watch crashed reverse=%s', reverse_id)
+
+    def _start_twist_watch(self, chat_id: str, reverse_id: int) -> None:
+        thread = threading.Thread(
+            target=self._watch_twist_safely,
+            args=(chat_id, reverse_id),
+            daemon=True,
+            name=f'prompt-twist-{reverse_id}',
+        )
+        thread.start()
+
+    def _watch_twist_safely(self, chat_id: str, reverse_id: int) -> None:
+        try:
+            self.deck.watch_twist(chat_id, reverse_id)
+        except Exception:
+            LOG.exception('twist watch crashed reverse=%s', reverse_id)
 
     @staticmethod
     def _identity(raw: str) -> tuple[str, str] | None:
@@ -1939,7 +1956,11 @@ class JobMasterTelegramBot:
         # reel / pin link pasted on its own. Owner only — guests stay in
         # the job button flow even if they paste a social URL.
         if self._effective_is_owner(chat_id):
-            reverse = self.deck.maybe_take_title(chat_id, clean) or self.deck.maybe_take_url(chat_id, clean)
+            reverse = (
+                self.deck.maybe_take_twist(chat_id, clean)
+                or self.deck.maybe_take_title(chat_id, clean)
+                or self.deck.maybe_take_url(chat_id, clean)
+            )
             if reverse is not None:
                 self._send_button_reply(chat_id, reverse, update_id=update_id)
                 if self.health_enabled:

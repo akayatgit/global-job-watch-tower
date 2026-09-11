@@ -384,6 +384,13 @@ need to be told twice.
   plus ≤10 of those frames so each timestamp locks to the still. Keep
   the draft if the rewrite fails or shrinks. Do not re-grab frames after.
 
+- **2026-09-11 · Magic pencil.** Ashok: what's great in recreating if
+  we don't add our touch? After the title, one twist line. After the
+  original, a Twist button. Gemini writes the twist into every detail
+  (timing, beat, emotion, context, imagination). The 14 reference
+  images go through text+image→image. Original stays; the twisted
+  prompt and twisted stills are the recreation set.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

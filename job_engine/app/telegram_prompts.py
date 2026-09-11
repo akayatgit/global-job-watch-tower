@@ -40,9 +40,12 @@ STATE_DAILY_SENT = 'prompt_daily_sent:{day}'
 # (or the video file itself) → tower row polled by watch_reverse.
 STATE_AWAIT_URL = 'prompt_await_url:{chat}'
 STATE_AWAIT_TITLE = 'prompt_await_title:{chat}'
+STATE_AWAIT_TWIST = 'prompt_await_twist:{chat}'
+STATE_AWAIT_TWIST_APPLY = 'prompt_await_twist_apply:{chat}'
 STATE_AWAIT_MODEL = 'prompt_await_reverse_model:{chat}'
 STATE_PENDING_URL = 'prompt_pending_reverse_url:{chat}'
 STATE_PENDING_TITLE = 'prompt_pending_reverse_title:{chat}'
+STATE_PENDING_TWIST = 'prompt_pending_reverse_twist:{chat}'
 STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
@@ -50,7 +53,7 @@ REVERSE_MAX_WAIT_S = 25 * 60
 TELEGRAM_TEXT_LIMIT = 3900
 REVERSE_USAGE = (
     'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
-    "Then I'll ask for the header title, then which model reverses it "
+    "Then I'll ask for the header title, the magic-pencil twist, then which model reverses it "
     '(Gemini · GPT-6 Astra · Claude Fable 5). I cut the cinematic reel — '
     '9:16 clip · storyboard · scrolling prompt.'
 )
@@ -59,6 +62,13 @@ TITLE_ASK = (
     'The footer is always:\n'
     'Comment “AI” to get\n'
     'all the prompts'
+)
+TWIST_ASK = (
+    '💥✏️ Magic pencil — what is the twist?\n'
+    'One line. This is our touch on the recreation: it has to hit every beat '
+    '— timing, emotion, context, imagination.\n'
+    'e.g. the drink becomes liquid gold in a midnight temple\n'
+    'Tap Skip to reverse the original first — Twist is still there after the prompt.'
 )
 MODEL_ASK = (
     'Which model should reverse this clip?\n'
@@ -132,10 +142,14 @@ class PromptDeck:
         send_text: Callable[[str, str], None] | None = None,
         on_render_started: Callable[[str, int], None] | None = None,
         on_reverse_started: Callable[[str, int], None] | None = None,
+        on_twist_started: Callable[[str, int], None] | None = None,
+        send_keyboard: Callable[[str, str, list], None] | None = None,
     ):
         self.sessions = sessions
         self.on_render_started = on_render_started
         self.on_reverse_started = on_reverse_started
+        self.on_twist_started = on_twist_started
+        self.send_keyboard = send_keyboard
         self.api_get = api_get
         self.api_post = api_post
         self.download_photo = download_photo
@@ -323,6 +337,10 @@ class PromptDeck:
             return self.posted_reply(int(parts[1]))
         if action == 'revmodel' and len(parts) >= 2:
             return self.maybe_take_vision_model(chat_id, parts[1])
+        if action == 'twistskip':
+            return self._skip_intake_twist(chat_id)
+        if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
+            return self.twist_reply(chat_id, int(parts[1]))
         return ButtonReply(PROMPTS_USAGE)
 
     def detail_reply(self, chat_id: str, prompt_id: int) -> ButtonReply:
@@ -490,7 +508,88 @@ class PromptDeck:
             return None
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), title[:120])
+        return self._ask_twist(chat_id)
+
+    def maybe_take_twist(self, chat_id: str, text: str) -> ButtonReply | None:
+        """Owner typed the magic-pencil line — after the title, or after
+        tapping Twist on a finished reverse."""
+        from app.prompts.reverse_prompt import find_url
+        from app.prompts.reverse_twist import clean_twist
+
+        idea = clean_twist(text)
+        if not idea or find_url(idea):
+            return None
+        apply_id = self.sessions.get_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), '')
+        if apply_id.isdigit():
+            self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), '')
+            return self._start_twist(chat_id, int(apply_id), idea)
+        if self.sessions.get_state(STATE_AWAIT_TWIST.format(chat=chat_id), '') != '1':
+            return None
+        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), idea)
         return self._ask_vision_model(chat_id)
+
+    def _skip_intake_twist(self, chat_id: str) -> ButtonReply:
+        if self.sessions.get_state(STATE_AWAIT_TWIST.format(chat=chat_id), '') != '1':
+            return ButtonReply('Send the link and the header title first.', [[('✖ Cancel', 'pt:cancel')]])
+        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
+        return self._ask_vision_model(chat_id)
+
+    def twist_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
+        """✏️ Twist on a finished reverse — use the stored line or ask."""
+        try:
+            row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
+        except Exception as exc:
+            if '404' in str(exc):
+                return ButtonReply(f'No reverse #{reverse_id}.')
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        if str(row.get('status') or '') != 'done' or not (row.get('prompt_text') or '').strip():
+            return ButtonReply('The original prompt is not ready yet — wait for the reverse to finish.')
+        status = str(row.get('twist_status') or '')
+        if status in ('queued', 'running'):
+            if self.on_twist_started is not None:
+                try:
+                    self.on_twist_started(str(chat_id), reverse_id)
+                except Exception:
+                    logger.exception('twist watcher failed to start id=%s', reverse_id)
+            return ButtonReply(f'💥✏️ Twist for #{reverse_id} is already running — the twisted prompt and stills land here.')
+        idea = (row.get('twist_text') or '').strip()
+        if not idea:
+            self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), str(reverse_id))
+            return ButtonReply(
+                f'💥✏️ Magic pencil for #{reverse_id} — send the twist in one line.\n'
+                'It will rewrite every beat and restyle all 14 cut frames.',
+                [[('✖ Cancel', 'pt:cancel')]],
+            )
+        return self._start_twist(chat_id, reverse_id, idea)
+
+    def _start_twist(self, chat_id: str, reverse_id: int, twist: str) -> ButtonReply:
+        try:
+            row = self.api_post(f'/api/prompts/reverse/{reverse_id}/twist', {'twist': twist})
+        except Exception as exc:
+            text = str(exc)
+            if '409' in text:
+                return ButtonReply('The original prompt is not ready yet — wait for the reverse to finish.')
+            if '422' in text:
+                return ButtonReply('Send a twist line — one imaginative sentence.')
+            logger.exception('twist request failed')
+            return ButtonReply('Tower could not start the twist — check /health and try again.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower could not start the twist — check /health and try again.')
+        if row.get('twist_status') == 'failed' and row.get('twist_error'):
+            return ButtonReply(f"Twist failed to queue: {row.get('twist_error')}")
+        if self.on_twist_started is not None:
+            try:
+                self.on_twist_started(str(chat_id), reverse_id)
+            except Exception:
+                logger.exception('twist watcher failed to start id=%s', reverse_id)
+        return ButtonReply(
+            f'💥✏️ Twist #{reverse_id} started — Gemini rewrites every beat, '
+            'then each cut frame goes through text+image→image. Usually 3–8 minutes.'
+        )
 
     def maybe_take_vision_model(self, chat_id: str, raw: str) -> ButtonReply:
         """Owner tapped Gemini / GPT-6 Astra / Claude Fable 5 after the title."""
@@ -509,19 +608,27 @@ class PromptDeck:
                 MODEL_BUTTONS,
             )
         title = self.sessions.get_state(STATE_PENDING_TITLE.format(chat=chat_id), '') or None
+        twist = self.sessions.get_state(STATE_PENDING_TWIST.format(chat=chat_id), '') or None
         url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '') or None
         has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         if has_video:
-            return self.video_reply(chat_id, title=title, vision_engine=engine)
+            return self.video_reply(chat_id, title=title, vision_engine=engine, twist=twist)
         if not url:
             return ButtonReply('Send the Instagram / Pinterest link first.', [[('✖ Cancel', 'pt:cancel')]])
-        return self._start_reverse(chat_id, source_url=url, title=title, vision_engine=engine)
+        return self._start_reverse(chat_id, source_url=url, title=title, vision_engine=engine, twist=twist)
 
-    def video_reply(self, chat_id: str, title: str | None = None, vision_engine: str | None = None) -> ButtonReply:
-        """Forwarded video: ask for the header first, then the model, then upload + start."""
+    def video_reply(
+        self,
+        chat_id: str,
+        title: str | None = None,
+        vision_engine: str | None = None,
+        twist: str | None = None,
+    ) -> ButtonReply:
+        """Forwarded video: ask for the header first, then the twist, then the model."""
         if not title:
             return self._ask_title(chat_id)
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
@@ -534,7 +641,7 @@ class PromptDeck:
             hint = ' (Telegram lets bots download files up to 20 MB — send the link instead)' if 'too big' in str(exc).lower() or '400' in str(exc) else ''
             return ButtonReply(f'Could not download the video from Telegram{hint}.')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
-        return self._start_reverse(chat_id, video=data, title=title, vision_engine=vision_engine)
+        return self._start_reverse(chat_id, video=data, title=title, vision_engine=vision_engine, twist=twist)
 
     def _ask_title(self, chat_id: str, *, source_url: str | None = None) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
@@ -542,6 +649,13 @@ class PromptDeck:
         if source_url:
             self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
         return ButtonReply(f'🎞 Got it. {TITLE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
+
+    def _ask_twist(self, chat_id: str) -> ButtonReply:
+        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '1')
+        return ButtonReply(
+            f'🎞 {TWIST_ASK}',
+            [[('Skip — original only', 'pt:twistskip')], [('✖ Cancel', 'pt:cancel')]],
+        )
 
     def _ask_vision_model(self, chat_id: str) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '1')
@@ -555,6 +669,7 @@ class PromptDeck:
         video: bytes | None = None,
         title: str | None = None,
         vision_engine: str | None = None,
+        twist: str | None = None,
     ) -> ButtonReply:
         from app.prompts.reverse_prompt import vision_label
 
@@ -563,6 +678,8 @@ class PromptDeck:
             payload['title'] = title
         if vision_engine:
             payload['vision_engine'] = vision_engine
+        if twist:
+            payload['twist'] = twist
         if video is not None:
             payload['video_base64'] = base64.b64encode(video).decode('ascii')
         else:
@@ -738,6 +855,111 @@ class PromptDeck:
                 f'⚠️ {len(failed)} of {len(frames)} cut frames did not arrive ({", ".join(failed)}). '
                 'Say so and I will resend them.',
             )
+        self._offer_twist(chat_id, rid)
+
+    def _offer_twist(self, chat_id: str, reverse_id: Any) -> None:
+        if reverse_id is None:
+            return
+        text = (
+            f'💥✏️ Twist #{reverse_id} — apply the magic pencil to every beat '
+            'and every cut frame. Original prompt stays above.'
+        )
+        keyboard = [[('💥✏️ Twist', f'pt:twist:{int(reverse_id)}')]]
+        if self.send_keyboard:
+            self.send_keyboard(chat_id, text, keyboard)
+        elif self.send_text:
+            self.send_text(chat_id, text + '\nTap 💥✏️ Twist when you are ready.')
+
+    def watch_twist(
+        self,
+        chat_id: str,
+        reverse_id: int,
+        *,
+        poll_s: float = REVERSE_POLL_S,
+        max_wait_s: float = REVERSE_MAX_WAIT_S,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> str:
+        """Block until the magic-pencil pass finishes, then deliver."""
+        waited = 0.0
+        announced: set[str] = set()
+        while True:
+            try:
+                row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
+            except Exception:
+                row = None
+            if isinstance(row, dict):
+                status = str(row.get('twist_status') or '')
+                if status == 'running' and status not in announced and self.send_text:
+                    announced.add(status)
+                    self.send_text(chat_id, f'💥✏️ Twist #{reverse_id}: rewriting every beat, then restyling the cut frames.')
+                if status == 'done':
+                    self._deliver_twist(chat_id, row, sleep=sleep)
+                    return 'done'
+                if status == 'failed':
+                    if self.send_text:
+                        self.send_text(chat_id, f"❌ Twist #{reverse_id} failed: {row.get('twist_error') or 'unknown error'}")
+                    return 'failed'
+            if waited >= max_wait_s:
+                if self.send_text:
+                    self.send_text(chat_id, f'⏳ Twist #{reverse_id} is still running after {int(max_wait_s // 60)} min — I will stop watching.')
+                return 'timeout'
+            sleep(poll_s)
+            waited += poll_s
+
+    def _deliver_twist(
+        self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        rid = row.get('id')
+        if self.send_text:
+            idea = (row.get('twist_text') or '').strip()
+            head = f"💥✏️ Twisted prompt #{rid}"
+            if row.get('twist_keyword'):
+                head += f" · keyword {row['twist_keyword']}"
+            if idea:
+                head += f"\nTwist: {idea}"
+            head += '\n'
+            for chunk in _chunks(str(row.get('twist_prompt') or '(no twisted prompt)'), TELEGRAM_TEXT_LIMIT - len(head)):
+                self.send_text(chat_id, head + chunk)
+                head = ''
+        from app.prompts.reverse_prompt import load_reference_frames
+
+        frames = load_reference_frames(row.get('twist_frames'))
+        if not frames:
+            if self.send_text and row.get('twist_error'):
+                self.send_text(chat_id, f"⚠️ Twisted frames for #{rid}: {row.get('twist_error')}")
+            return
+        if self.send_text:
+            self.send_text(
+                chat_id,
+                f'🖼 {len(frames)} twisted cut frames for #{rid} — download these '
+                'with the twisted prompt. Originals stay above.',
+            )
+        if not self.fetch_asset or not self.send_document_bytes:
+            return
+        failed: list[str] = []
+        for index, frame in enumerate(frames, start=1):
+            key = str(frame.get('key') or '')
+            if not key:
+                failed.append(str(index))
+                continue
+            t = frame.get('t')
+            name = str(frame.get('filename') or f'twist-{index:02d}-{t}s.jpg')
+            caption = f'twist {index}/{len(frames)} · {t:.2f}s' if isinstance(t, (int, float)) else f'twist {index}/{len(frames)}'
+            try:
+                data = self.fetch_asset(key)
+                self._send_reference_document(chat_id, data, name, caption, sleep=sleep)
+            except Exception as exc:
+                logger.warning('twisted frame upload failed id=%s key=%s: %s', rid, key, exc)
+                failed.append(f'{index}/{len(frames)}')
+            if index < len(frames):
+                sleep(REF_SEND_GAP_S)
+        if failed and self.send_text:
+            self.send_text(
+                chat_id,
+                f'⚠️ {len(failed)} of {len(frames)} twisted frames did not arrive ({", ".join(failed)}).',
+            )
+        if self.send_text and row.get('twist_error') and frames:
+            self.send_text(chat_id, f"⚠️ {row.get('twist_error')}")
 
     # ----------------------------------------------------- render watcher
 
@@ -850,9 +1072,12 @@ class PromptDeck:
         self.sessions.set_state(STATE_PHOTO.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), '')
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
 
 
