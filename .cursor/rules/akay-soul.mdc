@@ -408,6 +408,12 @@ need to be told twice.
   Resume unfinished reverses on worker start, hard-cap the browser
   fetch, announce queued/downloading, Retry + auto-kick after 45s.
 
+- **2026-09-11 · Reverse #16 — Pinterest never entered Gemini.** The
+  clip downloaded; Google returned E001. Cause: we uploaded a giant
+  data-URI of a Pinterest HLS/HEVC file and Telegram called it
+  "video model failed". Fix: remux to H.264, send the public `.mp4`
+  URL, one remux+data-URI retry on E001, say Gemini not Kling.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

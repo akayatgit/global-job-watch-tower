@@ -210,25 +210,114 @@ def http_get(url: str, *, referer: str | None = None, max_bytes: int | None = No
 
 
 def hls_to_mp4(playlist_url: str, *, referer: str | None, ffmpeg: str, max_bytes: int) -> bytes:
-    """Pinterest often exposes only an HLS playlist — ffmpeg stitches it."""
+    """Pinterest often exposes only an HLS playlist — ffmpeg stitches it.
+
+    Copy first (fast). If the playlist is HEVC/broken, transcode to
+    H.264 so Gemini can actually watch it (reverse #16, E001).
+    """
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / 'clip.mp4'
         headers = f'User-Agent: {USER_AGENT}\r\n' + (f'Referer: {referer}\r\n' if referer else '')
-        cmd = [
-            ffmpeg, '-y', '-v', 'error', '-headers', headers, '-i', playlist_url,
-            '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart', str(out),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT_S)
-        if result.returncode != 0 or not out.is_file():
-            raise ReverseError(f'HLS download failed: {(result.stderr or "").strip()[:200]}')
-        if out.stat().st_size > max_bytes:
-            raise ReverseError(f'video is larger than {max_bytes // (1024 * 1024)} MB — send a shorter clip')
-        return out.read_bytes()
+        common = [ffmpeg, '-y', '-v', 'error', '-headers', headers, '-i', playlist_url]
+        attempts = (
+            ['-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart', str(out)],
+            [
+                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac', '-movflags', '+faststart', str(out),
+            ],
+        )
+        last_err = ''
+        for extra in attempts:
+            result = subprocess.run(
+                common + extra, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT_S,
+            )
+            if result.returncode == 0 and out.is_file() and out.stat().st_size >= MIN_VIDEO_BYTES:
+                if out.stat().st_size > max_bytes:
+                    raise ReverseError(
+                        f'video is larger than {max_bytes // (1024 * 1024)} MB — send a shorter clip'
+                    )
+                return out.read_bytes()
+            last_err = (result.stderr or '').strip()[:200]
+            out.unlink(missing_ok=True)
+        raise ReverseError(f'HLS download failed: {last_err}')
 
 
 def looks_like_video(data: bytes) -> bool:
     head = data[:64]
     return b'ftyp' in head or head.startswith(b'\x1aE\xdf\xa3') or head.startswith(b'RIFF')
+
+
+_UNSAFE_VIDEO_RE = re.compile(r'video:\s*(hevc|h265|h\.265|vp9|vp8|av1|mpeg4|theora|wmv)', re.I)
+_H264_VIDEO_RE = re.compile(r'video:\s*(h264|avc1|avc)', re.I)
+
+
+def _ffmpeg_exe() -> str | None:
+    try:
+        from app.prompts import post_reel
+
+        return post_reel.ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _run_ffmpeg(cmd: list[str], *, timeout: float = 600, run=None):
+    if run is not None:
+        return run(cmd)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def probe_video_banner(path: Path, *, ffmpeg: str, run=None) -> str:
+    result = _run_ffmpeg([ffmpeg, '-hide_banner', '-i', str(path)], timeout=60, run=run)
+    return f'{result.stderr or ""}\n{result.stdout or ""}'
+
+
+def is_gemini_safe_banner(banner: str) -> bool:
+    """Gemini-on-Replicate chokes on HEVC / VP9 Pinterest pins (E001)."""
+    text = banner or ''
+    if _UNSAFE_VIDEO_RE.search(text):
+        return False
+    return bool(_H264_VIDEO_RE.search(text))
+
+
+def prepare_vision_clip(
+    path: Path,
+    *,
+    ffmpeg: str | None = None,
+    force: bool = False,
+    log: Callable[[str], None] | None = None,
+    run=None,
+) -> bool:
+    """Rewrite `path` in place as H.264 + yuv420p + AAC when Gemini
+    would refuse the original (Pinterest HLS/HEVC → E001).
+
+    Returns True when the file changed. Missing ffmpeg is a no-op.
+    """
+    exe = ffmpeg or _ffmpeg_exe()
+    if not exe or not path.is_file():
+        return False
+    if not force:
+        banner = probe_video_banner(path, ffmpeg=exe, run=run)
+        if is_gemini_safe_banner(banner):
+            return False
+        if log:
+            codec = (_UNSAFE_VIDEO_RE.search(banner) or _H264_VIDEO_RE.search(banner))
+            log(f'remuxing clip for Gemini (was {codec.group(1) if codec else "unknown codec"})')
+    tmp = path.with_name(path.name + '.gemini.mp4')
+    cmd = [
+        exe, '-y', '-v', 'error', '-i', str(path),
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-ac', '2', '-b:a', '128k',
+        '-movflags', '+faststart', str(tmp),
+    ]
+    result = _run_ffmpeg(cmd, timeout=DOWNLOAD_TIMEOUT_S, run=run)
+    if result.returncode != 0 or not tmp.is_file() or tmp.stat().st_size < MIN_VIDEO_BYTES:
+        tmp.unlink(missing_ok=True)
+        if log:
+            log(f'Gemini remux failed: {(getattr(result, "stderr", None) or "")[:180]}')
+        return False
+    tmp.replace(path)
+    return True
 
 
 def fetch_video(
@@ -1018,18 +1107,17 @@ def video_input_for_vision(path: Path, *, public_url: str | None = None) -> str:
     raises: "Unknown mime type… please set the `mime_type` argument"
     (reverse #1, 2026-09-10). So we never pass a handle.
 
-    Small clips become an explicit ``data:video/mp4;base64,…`` URI.
-    Larger ones use our public ``.mp4`` asset URL (same suffix Google
-    needs to guess).
+    Prefer our public ``.mp4`` asset URL whenever we have one — Replicate
+    fetches it, ``predictions.create`` is a tiny JSON POST, and a Gemini
+    row appears immediately. A multi-MB data-URI (reverse #14 / #16) either
+    hangs the upload or dies inside Google as E001.
+
+    Data-URI is the fallback when there is no public ``.mp4`` (tests,
+    missing partner URL) or when Replicate cannot fetch our URL.
     """
     url = (public_url or '').strip()
-    try:
-        size = path.stat().st_size
-    except OSError:
-        size = 0
     if (
-        size > DATA_URI_MAX_BYTES
-        and url.lower().startswith(('http://', 'https://'))
+        url.lower().startswith(('http://', 'https://'))
         and DIRECT_RE.search(url.split('#', 1)[0])
     ):
         return url
@@ -1122,9 +1210,10 @@ def _describe_gemini(
             return replicate_render(client, model, input=input, budget_s=DESCRIBE_BUDGET_S, log=log)
 
     prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
+    video = video_input_for_vision(video_path, public_url=public_url)
     inputs = {
         'prompt': user_prompt or prompt_tmpl.format(duration=_duration_label(duration_s)),
-        'videos': [video_input_for_vision(video_path, public_url=public_url)],
+        'videos': [video],
         'system_instruction': system_instruction or build_instruction(duration_s=duration_s, exemplar=exemplar),
         'temperature': 0.7,
         'max_output_tokens': MAX_OUTPUT_TOKENS,
@@ -1132,7 +1221,23 @@ def _describe_gemini(
     }
     if images:
         inputs['images'] = list(images)[:ATTENTION_IMAGE_LIMIT]
-    output = run(model, input=inputs)
+    if log:
+        if isinstance(video, str) and video.startswith('data:'):
+            log(f'Gemini payload: data-URI {len(video) // 1024} KB (no public .mp4 URL)')
+        else:
+            log(f'Gemini payload: {video}')
+    try:
+        output = run(model, input=inputs)
+    except Exception as exc:
+        output = _retry_gemini_video(
+            exc,
+            video=video,
+            video_path=video_path,
+            inputs=inputs,
+            run=run,
+            model=model,
+            log=log,
+        )
     text = _output_text(output)
     reading = parse_reading(text, model=model)
     if _attempt == 0 and not json_reading_complete(text):
@@ -1202,6 +1307,74 @@ def _describe_file(
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
             return retry
     return reading
+
+
+def _gemini_cannot_read(exc: BaseException) -> bool:
+    """Google E001 / decode failures — the clip reached Gemini but it refused."""
+    text = str(exc).lower()
+    return any(token in text for token in (
+        'e001', 'could not process', 'failed to process', 'unable to process',
+        'invalid video', 'unsupported video', 'could not retrieve',
+        'failed to load', 'unknown mime', 'not a valid video',
+    ))
+
+
+def _public_video_fetch_failed(exc: BaseException) -> bool:
+    """Replicate/Gemini could not pull our public .mp4 — try a data-URI."""
+    text = str(exc).lower()
+    markers = (
+        'fetch', 'download', '404', '403', '401', 'timed out', 'timeout',
+        'unreachable', 'could not retrieve', 'failed to load', 'http 5',
+        'mime', 'unknown mime', 'content type',
+    )
+    return any(token in text for token in markers)
+
+
+def _human_gemini_error(exc: BaseException) -> str:
+    text = str(exc)
+    low = text.lower()
+    if 'e001' in low:
+        return (
+            'Gemini could not read this clip (E001). '
+            'Pinterest/HLS files often need an H.264 remux — tap Retry, '
+            'or forward the video file and pick Gemini again. Astra/Fable also work.'
+        )
+    if 'create still uploading' in low:
+        return (
+            'Gemini never got the clip — the upload hung. '
+            'Tap Retry (public .mp4 URL) or forward the file.'
+        )
+    return f'Gemini failed: {text[:400]}'
+
+
+def _retry_gemini_video(
+    exc: BaseException,
+    *,
+    video: str,
+    video_path: Path,
+    inputs: dict,
+    run,
+    model: str,
+    log: Callable[[str], None] | None,
+):
+    """One retry: remux if E001, then send a data-URI if the public URL failed."""
+    url_first = isinstance(video, str) and video.startswith('http')
+    should = _gemini_cannot_read(exc) or (url_first and _public_video_fetch_failed(exc))
+    if not should:
+        raise ReverseError(_human_gemini_error(exc)) from exc
+    if log:
+        log(f'Gemini refused the first payload ({exc}) — remux + data-URI retry')
+    try:
+        prepare_vision_clip(video_path, force=_gemini_cannot_read(exc), log=log)
+    except Exception as remux_exc:
+        if log:
+            log(f'Gemini remux skipped: {remux_exc}')
+    fallback = dict(inputs)
+    fallback['videos'] = [video_input_for_vision(video_path, public_url=None)]
+    try:
+        return run(model, input=fallback)
+    except Exception as exc2:
+        raise ReverseError(_human_gemini_error(exc2)) from exc2
 
 
 def _retryable_video_error(exc: BaseException) -> bool:

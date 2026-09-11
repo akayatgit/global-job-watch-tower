@@ -592,6 +592,31 @@ class DeckTests(unittest.TestCase):
         self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
 
+    def test_watch_reverse_heartbeats_while_gemini_is_watching(self):
+        self.deck.api_get = lambda path, params=None: {
+            'id': 16, 'status': 'describing', 'duration_s': 25.0, 'vision_engine': 'gemini',
+        }
+        self.assertEqual(
+            self.deck.watch_reverse('1', 16, poll_s=45, max_wait_s=100, sleep=lambda s: None),
+            'timeout',
+        )
+        watching = [t for _c, t in self.texts if 'watching' in t.lower()]
+        self.assertGreaterEqual(len(watching), 2)
+        self.assertIn('H.264', watching[0])
+        self.assertTrue(any('still watching' in t.lower() for t in watching))
+
+    def test_watch_reverse_rewrites_e001_as_gemini_not_video_model(self):
+        self.deck.api_get = lambda path, params=None: {
+            'id': 16, 'status': 'failed',
+            'error': (
+                'video model failed: Prediction failed: Async prediction failed: '
+                'ModelError: An error occurred while processing your request (E001) (1cah9wlWR99)'
+            ),
+        }
+        self.assertEqual(self.deck.watch_reverse('1', 16, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'failed')
+        self.assertIn('Gemini could not read this clip (E001)', self.texts[0][1])
+        self.assertNotIn('video model failed', self.texts[0][1])
+
     def test_watch_reverse_announces_queued_and_kicks_again(self):
         posts: list[str] = []
 

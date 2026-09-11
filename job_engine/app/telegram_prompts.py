@@ -50,6 +50,7 @@ STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
 REVERSE_MAX_WAIT_S = 25 * 60
+DESCRIBE_HEARTBEAT_S = 90
 TELEGRAM_TEXT_LIMIT = 3900
 REVERSE_USAGE = (
     'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
@@ -771,6 +772,7 @@ class PromptDeck:
         """Block until the reverse prompt finishes, deliver reel + prompt."""
         waited = 0.0
         announced: set[str] = set()
+        last_describe_beat = 0.0
         while True:
             try:
                 row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
@@ -796,18 +798,31 @@ class PromptDeck:
                             self.send_text(chat_id, f'🔄 Reverse #{reverse_id}: worker had not picked it up — I kicked it again.')
                     except Exception:
                         logger.exception('auto-retry reverse failed id=%s', reverse_id)
-                if status == 'describing' and status not in announced and self.send_text:
+                if status == 'describing' and self.send_text:
                     from app.prompts.reverse_prompt import vision_label
 
-                    announced.add(status)
                     label = vision_label(row.get('vision_engine'))
-                    self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — {label} is watching it now.")
+                    if status not in announced:
+                        announced.add(status)
+                        last_describe_beat = waited
+                        self.send_text(
+                            chat_id,
+                            f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — "
+                            f'{label} is watching it now (public .mp4 URL, H.264 remux if needed).',
+                        )
+                    elif waited - last_describe_beat >= DESCRIBE_HEARTBEAT_S:
+                        last_describe_beat = waited
+                        self.send_text(
+                            chat_id,
+                            f'⏳ Reverse #{reverse_id}: {label} still watching '
+                            f'({int(waited)}s) — a Replicate row should exist. Tap Retry if not.',
+                        )
                 if status == 'done':
                     self._deliver_reverse(chat_id, row, sleep=sleep)
                     return 'done'
                 if status == 'failed':
                     if self.send_text:
-                        self.send_text(chat_id, f"❌ Reverse prompt #{reverse_id} failed: {row.get('error') or 'unknown error'}")
+                        self.send_text(chat_id, f"❌ Reverse prompt #{reverse_id} failed: {_reverse_fail_text(row)}")
                     return 'failed'
             if waited >= max_wait_s:
                 if self.send_text:
@@ -1192,6 +1207,23 @@ def retry_after_s(exc: BaseException) -> float | None:
 
 def _as_reply(value: str | ButtonReply) -> ButtonReply:
     return value if isinstance(value, ButtonReply) else ButtonReply(value)
+
+
+def _reverse_fail_text(row: dict[str, Any]) -> str:
+    """Never show Kling's 'video model failed' costume for a Gemini refuse."""
+    raw = str(row.get('error') or 'unknown error')
+    if 'e001' in raw.lower() and 'gemini could not read' not in raw.lower():
+        return (
+            'Gemini could not read this clip (E001). '
+            'Pinterest/HLS often needs an H.264 remux — tap Retry, '
+            'or forward the video file. Astra/Fable also work.'
+        )
+    if raw.lower().startswith('video model failed') and 'e001' in raw.lower():
+        return (
+            'Gemini could not read this clip (E001). '
+            'Tap Retry, or forward the video file and pick Gemini again.'
+        )
+    return raw
 
 
 def _seconds(value: Any) -> str:

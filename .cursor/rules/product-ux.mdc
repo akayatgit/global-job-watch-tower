@@ -867,3 +867,8 @@ it, shows recipient count) → `/pushconfirm`
   Chrome fetch has a 90s page timeout and a 100s hard cap — on timeout
   tell the owner to forward the video file. Never wait forever on a
   login wall.
+- **Pinterest must actually reach Gemini (Ashok 2026-09-11, #16).**
+  "video model failed: … E001" means Gemini refused the clip, not
+  Kling. Remux HEVC/HLS to H.264. Send the public `.mp4` URL (Replicate
+  fetches — no giant upload). On E001, remux + data-URI once. Telegram
+  says Gemini, with Retry / forward-the-file. Heartbeat while watching.
