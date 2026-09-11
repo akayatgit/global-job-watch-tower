@@ -63,17 +63,15 @@ TWIST_USER = (
     'Rewrite every timestamped segment. Return only complete JSON.'
 )
 
+# Ashok (2026-09-11): keep the edit one line — "Change from x to y, and z".
+# Long identity essays made Nano Banana invent a softer, less detailed frame.
 FRAME_EDIT_PROMPT = (
-    'IDENTITY LOCK. This photograph is the source of truth. Surgical edit only.\n'
-    'Do not change pose, body or hand position, camera, crop, framing, lens or angle. '
-    'Do not change lighting direction, softness, colour temperature, shadows or highlights. '
-    'Do not change subject identity — face, body, product shape, materials already in frame. '
-    'Do not restage, re-light, re-compose, or invent a new shot. The frame stays as it is.\n'
-    'ONLY apply this twist as a light overlay on the existing frame. Everything else '
-    'must match the source pixel-for-pixel in pose, lighting, detail and identity:\n'
-    '{twist}\n'
-    'This is the {time} cut-reference still. Beat flavour only — do not restage:\n{beat}'
+    'Change from the source frame to {twist}, and keep pose, lighting, details and identity'
 )
+
+
+def frame_edit_prompt(twist: str) -> str:
+    return FRAME_EDIT_PROMPT.format(twist=clean_twist(twist))
 
 
 def clean_twist(raw: str | None) -> str:
@@ -196,30 +194,28 @@ def twist_reference_frames(
     key_for: Callable[..., str] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> tuple[list[ReferenceFrame], list[str]]:
-    """Each original cut JPEG → Gemini Pro Image edit. Identity stays;
-    only the twist is applied on the same frame."""
+    """Each original cut JPEG → Nano Banana 2 Lite edit. One-line
+    change prompt only — the source image carries the detail."""
     from app.prompts import reverse_prompt, video_creator
     from app.replicate_img import edit_image
 
     idea = clean_twist(twist)
     if not idea or not frames:
         return [], ['no twist or no frames']
+    # Callers still pass the rewritten prompt; the one-line edit does not
+    # inject the beat (Ashok: "Change from x to y, and z").
+    _ = twisted_prompt
     edit = edit or (lambda prompt, image, **_k: edit_image(prompt, image))
     store = store or video_creator.store_bytes
     key_for = key_for or video_creator.asset_key
     out: list[ReferenceFrame] = []
     failed: list[str] = []
+    prompt = frame_edit_prompt(idea)
     for index, frame in enumerate(frames, start=1):
         blob = reverse_prompt.read_reference_jpeg(frame.key, read_asset=read_asset)
         if not blob:
             failed.append(frame.filename or f'{index}')
             continue
-        beat = segment_for_time(twisted_prompt, frame.t) or twisted_prompt[:400]
-        prompt = FRAME_EDIT_PROMPT.format(
-            twist=idea,
-            time=f'{frame.t:.2f}s',
-            beat=beat[:800],
-        )
         try:
             data = edit(prompt, blob)
             if not data or len(data) < 64:

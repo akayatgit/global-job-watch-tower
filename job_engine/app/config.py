@@ -169,10 +169,12 @@ PROMPT_REVERSE_FABLE_MODEL = os.getenv('PROMPT_REVERSE_FABLE_MODEL', 'claude-fab
 PROMPT_REVERSE_EXEMPLAR_PATH = os.getenv('PROMPT_REVERSE_EXEMPLAR_PATH', '').strip()
 # Largest source clip we download / accept (Telegram uploads are ≤20 MB)
 PROMPT_REVERSE_MAX_VIDEO_MB = int(os.getenv('PROMPT_REVERSE_MAX_VIDEO_MB', '80'))
-# Magic-pencil stills: Gemini 3 Pro Image (Nano Banana Pro) — identity-lock
-# edits, not the older Flash nano-banana-2 default used for carousels.
-PROMPT_TWIST_IMAGE_MODEL = os.getenv(
-    'PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-pro',
+# Magic-pencil stills: Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image).
+# One-line "Change from x to y, and z" — not Pro + a long identity essay.
+# Empty env still falls back here (ThinkPad may have PROMPT_TWIST_IMAGE_MODEL=).
+PROMPT_TWIST_IMAGE_MODEL = (
+    os.getenv('PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-2-lite') or
+    'google/nano-banana-2-lite'
 ).strip()
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}

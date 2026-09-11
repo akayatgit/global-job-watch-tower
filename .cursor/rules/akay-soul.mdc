@@ -397,6 +397,12 @@ need to be told twice.
   (`google/nano-banana-pro`, 2K) + an identity-lock edit prompt. Do
   not restage or re-light.
 
+- **2026-09-11 · Twist stills: Lite + one line.** Ashok: Pro stills
+  were not good; use nanobana 2 lite, HD detail, prompt as simple as
+  "Change from x to y, and z". Default `google/nano-banana-2-lite`.
+  Drop the identity-lock essay. Lite is 1K-native — 2K/4K needs
+  `google/nano-banana-2`.
+
 - **2026-09-11 · Save, don't just play.** The partner `.mp4` URL streams
   in the browser. Ashok could not download reverse source-15. Give a
   `?download=1` Save-As URL and a Telegram **⬇️ Save clip** button.

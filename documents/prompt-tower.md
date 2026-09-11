@@ -100,7 +100,7 @@ URL or forwarded clip
   → second pass: same video + ≤10 of those JPEGs → rewrite the prompt so each timestamp matches the JPEG
   → post_reel.compose_reel (same template as prompt-to-video)
   → Telegram: reel → attended prompt → downloadable cut-reference frames → **💥✏️ Twist**
-  → magic pencil: Gemini rewrites every beat · Gemini 3 Pro Image (nano-banana-pro) identity-lock edit on each still
+  → magic pencil: Gemini rewrites every beat · Nano Banana 2 Lite one-line edit on each still
   → Telegram: twisted prompt + twisted cut frames
 ```
 
@@ -112,7 +112,7 @@ URL or forwarded clip
 | Recreate frames | After the first-pass prompt, grab **~14 JPEGs from the downloaded clip at cut timestamps** (start + end of each shot; interiors of the longest cuts if fewer than 14; never an equal-interval grid). Not the 6-frame reel storyboard. **Those JPEGs go back to the same vision model** with the video (Gemini `images[]`, max 10 — first + last cut plus a spread; Astra/Fable get the same stills after the mp4). The rewrite must match product pose, crop, lighting, camera, set, glass/liquid/hand at each labeled time. Failure or a much shorter rewrite keeps the draft. Frames are **not** re-extracted after refine, so Telegram files stay aligned with the stored prompt. Telegram sends them as **downloadable documents** (`sendDocument`, filenames `cut-01-0.00s.jpg`) so Ashok can attach them with the prompt and recreate the clip. Stored as `ref_frames` JSON (migration `a3c9e1b72d04`). A grab failure keeps the prompt (`ref_error`); the row is still `done`. |
 | Reel | Same composer, same 6 storyboard frames from **the source clip**, prompt scrolls verbatim. Keys `prompts/<day>/rreel-<id>-….mp4`. A reel failure keeps the clip + prompt (`reel_error`); the row is still `done`. |
 | Catalogue | Best-effort ingest through the existing `read_prompt` gate (`source='reverse'`) **after** the cut-frame refine, so the catalogue gets the attended prompt. Rejection is fine — the reverse row still holds the text. |
-| Magic pencil | After the original prompt + 14 stills land, Telegram shows **💥✏️ Twist**. That is our touch on the recreation — not a caption. Gemini (text-only second call) rewrites **every** timestamped beat: timing, emotion, context, imagination. Then each cut JPEG goes through **text+image→image** on **Gemini 3 Pro Image** (`PROMPT_TWIST_IMAGE_MODEL`, default `google/nano-banana-pro`, 2K): pose, lighting, details and identity stay locked — only the twist is applied; the frame is not restaged. (Older Flash nano-banana-2 was hitty quality.) Original prompt and original frames stay. Delivery: twisted prompt + `twist-01-0.00s.jpg` documents. Stored as `twist_text` / `twist_prompt` / `twist_frames` (migration `b4e7c1a90d28`). Skip at intake still leaves the button; tapping it asks for the line if none was stored. |
+| Magic pencil | After the original prompt + 14 stills land, Telegram shows **💥✏️ Twist**. That is our touch on the recreation — not a caption. Gemini (text-only second call) rewrites **every** timestamped beat: timing, emotion, context, imagination. Then each cut JPEG goes through **text+image→image** on **Nano Banana 2 Lite** (`PROMPT_TWIST_IMAGE_MODEL`, default `google/nano-banana-2-lite`, 1K — Lite has no 2K). The edit prompt is one line: `Change from the source frame to {twist}, and keep pose, lighting, details and identity`. Pro + a long identity essay made stills mushy. Original prompt and original frames stay. Delivery: twisted prompt + `twist-01-0.00s.jpg` documents. Stored as `twist_text` / `twist_prompt` / `twist_frames` (migration `b4e7c1a90d28`). Skip at intake still leaves the button; tapping it asks for the line if none was stored. |
 
 Owner-only. Guests never see these commands.
 
@@ -166,12 +166,13 @@ Guest/alert/broadcast SQLite state is untouched; the deck's pending states live 
 | `REPLICATE_VISION_MODEL` | `google/gemini-2.5-flash` | Reverse prompt: the vision model that watches the downloaded clip. Inputs: `prompt`, `videos[]`, `system_instruction`, plus `images[]` (≤10 cut-reference JPEGs) on the second pass. |
 | `PROMPT_REVERSE_EXEMPLAR_PATH` | empty | Quality-bar prompt shown to Gemini. Empty = bundled `app/prompts/reverse_exemplar.txt` (Louis Vuitton Pacific Chill — Ashok 2026-09-10). |
 | `PROMPT_REVERSE_MAX_VIDEO_MB` | `80` | Largest source clip we download or accept as base64. Telegram uploads are still capped at 20 MB by the Bot API. |
+| `PROMPT_TWIST_IMAGE_MODEL` | `google/nano-banana-2-lite` | Magic-pencil stills. One-line change prompt. Lite = 1K. Empty env falls back here. For 2K/4K set `google/nano-banana-2`. |
 
 ## 7. Deploy checklist (ThinkPad)
 
 1. `alembic upgrade head` (runs in `scripts/deploy_local.sh`).
 2. `ollama pull nomic-embed-text` (embeddings; hashed fallback works without it, worse dedupe recall).
-3. `job_engine/.env`: `REPLICATE_API_TOKEN` set; optionally `REPLICATE_VIDEO_MODEL`, `PROMPT_WEB_URLS`, `PROMPT_INSTAGRAM_TAGS`.
+3. `job_engine/.env`: `REPLICATE_API_TOKEN` set; optionally `REPLICATE_VIDEO_MODEL`, `PROMPT_WEB_URLS`, `PROMPT_INSTAGRAM_TAGS`. If `PROMPT_TWIST_IMAGE_MODEL` is still `google/nano-banana-pro` from #94, set it to `google/nano-banana-2-lite` or leave it blank.
 4. Restart worker + beat + Telegram bot (the beat now carries `daily-prompt-pipeline` and `score-pending-prompts`; the bot carries the daily deck loop).
 5. Open VIGIL at `http://127.0.0.1:8001` — Tower should say Prompt Tower, not Jobs. Tap **Scan now**. Watch Live + Activity. Prompts list fills as rows land.
 6. Phone (secondary): `/promptscan` / `/prompts` → tap 1 → 📸 → ✅.

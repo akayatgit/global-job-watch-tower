@@ -82,13 +82,12 @@ class TwistUnitTests(unittest.TestCase):
         self.assertEqual(failed, [])
         self.assertEqual([f.filename for f in out], ['twist-01-0.00s.jpg', 'twist-02-1.76s.jpg'])
         self.assertEqual(len(stored), 2)
-        self.assertTrue(all('liquid gold temple' in p for p in seen))
-        self.assertTrue(all('IDENTITY LOCK' in p for p in seen))
-        self.assertTrue(all('Do not change pose' in p for p in seen))
-        self.assertTrue(all('Do not change lighting' in p for p in seen))
-        self.assertTrue(all('Do not restage' in p for p in seen))
-        self.assertIn('0.00s', seen[0])
-        self.assertIn('gold pours', seen[0])
+        expected = reverse_twist.frame_edit_prompt('liquid gold temple')
+        self.assertTrue(expected.startswith('Change from the source frame to '))
+        self.assertIn(', and keep pose, lighting, details and identity', expected)
+        self.assertEqual(seen, [expected, expected])
+        self.assertNotIn('IDENTITY LOCK', expected)
+        self.assertNotIn('gold pours', expected)
 
 
 class EditImageTests(unittest.TestCase):
@@ -102,21 +101,33 @@ class EditImageTests(unittest.TestCase):
             seen['input'] = input
             return b'\xff\xd8' + b'JPEGDATA' + b'\xff\xd9'
 
-        with mock.patch.object(config, 'PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-pro'):
-            out = edit_image('make it gold', b'\xff\xd8ORIG\xff\xd9', run=run)
+        with mock.patch.object(config, 'PROMPT_TWIST_IMAGE_MODEL', ''):
+            out = edit_image('Change from x to y, and z', b'\xff\xd8ORIG\xff\xd9', run=run)
         self.assertTrue(out.startswith(b'\xff\xd8'))
-        self.assertEqual(seen['model'], 'google/nano-banana-pro')
-        self.assertEqual(seen['input']['prompt'], 'make it gold')
+        self.assertEqual(seen['model'], 'google/nano-banana-2-lite')
+        self.assertEqual(seen['input']['prompt'], 'Change from x to y, and z')
         self.assertEqual(len(seen['input']['image_input']), 1)
         self.assertTrue(seen['input']['image_input'][0].startswith('data:image/jpeg;base64,'))
         self.assertEqual(seen['input']['aspect_ratio'], 'match_input_image')
-        self.assertEqual(seen['input']['resolution'], '2K')
-        flash = edit_image(
-            'make it gold', b'\xff\xd8ORIG\xff\xd9', run=run, model='google/nano-banana-2',
-        )
-        self.assertTrue(flash.startswith(b'\xff\xd8'))
-        self.assertEqual(seen['model'], 'google/nano-banana-2')
         self.assertEqual(seen['input']['resolution'], '1K')
+        self.assertNotIn('google_search', seen['input'])
+        hd = edit_image(
+            'Change from x to y, and z',
+            b'\xff\xd8ORIG\xff\xd9',
+            run=run,
+            model='google/nano-banana-2',
+        )
+        self.assertTrue(hd.startswith(b'\xff\xd8'))
+        self.assertEqual(seen['model'], 'google/nano-banana-2')
+        self.assertEqual(seen['input']['resolution'], '2K')
+        pro = edit_image(
+            'Change from x to y, and z',
+            b'\xff\xd8ORIG\xff\xd9',
+            run=run,
+            model='google/nano-banana-pro',
+        )
+        self.assertTrue(pro.startswith(b'\xff\xd8'))
+        self.assertEqual(seen['input']['resolution'], '2K')
 
 
 if __name__ == '__main__':
