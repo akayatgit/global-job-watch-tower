@@ -388,8 +388,12 @@ def reddit_candidates(
             if reports is not None:
                 reports.append(report)
             continue
+        from app.prompts.scan_hold import raise_if_held
+
+        raise_if_held()
         if not first and pause_s > 0:
             pause(pause_s)
+            raise_if_held()
         first = False
         json_url = f'https://www.reddit.com/r/{sub}/new.json?limit={cap}&raw_json=1'
         rss_url = f'https://www.reddit.com/r/{sub}/new.rss'
@@ -555,18 +559,23 @@ def gather_with_reports(
     """Every configured source, plus a per-source fetched/kept/error report.
     Never raises."""
     from app import config
+    from app.prompts.scan_hold import raise_if_held
 
+    raise_if_held()
     limit = int(getattr(config, 'PROMPT_SOURCE_LIMIT', 40))
     out: list[Candidate] = []
     reports: list[SourceReport] = []
     subs = [s for s in (getattr(config, 'PROMPT_REDDIT_SUBS', '') or '').split(',') if s.strip()]
     if subs:
+        raise_if_held()
         out.extend(reddit_candidates(subs, limit=limit, fetch=fetch, reports=reports, pause=pause))
     urls = [u for u in (getattr(config, 'PROMPT_WEB_URLS', '') or '').split(',') if u.strip()]
     if urls:
+        raise_if_held()
         out.extend(web_candidates(urls, fetch=fetch, reports=reports))
     tags = [t for t in (getattr(config, 'PROMPT_INSTAGRAM_TAGS', '') or '').split(',') if t.strip()]
     if tags:
+        raise_if_held()
         out.extend(instagram_candidates(tags, fetch=browser or browser_fetch, reports=reports))
     if not subs and not urls and not tags:
         reports.append(SourceReport(

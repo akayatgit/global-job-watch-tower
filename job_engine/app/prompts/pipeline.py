@@ -354,9 +354,12 @@ def run_daily(
 ) -> dict[str, Any]:
     """The whole day in one call. `candidates` overrides live sources
     (tests / manual re-runs); `chat` overrides the model."""
+    from app.prompts.scan_hold import raise_if_held
+
     day = day or utcnow().date()
     source_reports: list[dict[str, Any]] = []
     if candidates is None:
+        raise_if_held()
         candidates, source_reports = gather_with_reports()
     counts = ingest_many(db, candidates)
     reaudited, touched_days = reaudit_stored(db)

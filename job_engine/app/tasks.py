@@ -203,6 +203,14 @@ def _maybe_dispatch_idle_prompt_scan() -> dict:
     if not reason:
         return {'dispatched': 0, 'mode': 'prompts', 'kicked': False, 'reason': 'fresh'}
 
+    from app.prompts.scan_hold import is_held, remaining_s
+
+    if is_held():
+        return {
+            'dispatched': 0, 'mode': 'prompts', 'kicked': False,
+            'reason': 'reverse-hold', 'resume_in_s': remaining_s(),
+        }
+
     try:
         import redis
         client = redis.Redis.from_url(app_config.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
@@ -845,10 +853,20 @@ def daily_prompt_pipeline(self, force: bool = False):
     top-10. The Telegram bot picks the shortlist up and sends it to Ashok."""
     from app.prompts import pipeline as prompt_pipeline
 
+    from app.prompts.scan_hold import ReverseHold, is_held, remaining_s
+
+    if is_held():
+        left = remaining_s()
+        console_log('beat', f'Prompt Tower scan skipped — reverse has the lane ({left}s left)')
+        return {'skipped': 'reverse-hold', 'resume_in_s': left}
     console_log('beat', 'Prompt Tower — daily collection + scoring started')
     try:
         with SessionLocal() as db:
             summary = prompt_pipeline.run_daily(db, force=force)
+    except ReverseHold:
+        left = remaining_s()
+        console_log('beat', f'Prompt Tower scan broken mid-run — reverse has the lane ({left}s left)')
+        return {'skipped': 'reverse-hold-mid-run', 'resume_in_s': left}
     except Exception as exc:
         console_log('beat', f'Prompt Tower daily run failed: {exc}', level='error')
         raise self.retry(exc=exc)
@@ -877,6 +895,10 @@ def score_pending_prompts():
     from app import thermal
     from app.prompts import pipeline as prompt_pipeline
 
+    from app.prompts.scan_hold import is_held, remaining_s
+
+    if is_held():
+        return {'scored': 0, 'skipped': 'reverse-hold', 'resume_in_s': remaining_s()}
     if not thermal.ollama_path_open():
         return {'scored': 0, 'skipped': 'ollama closed (heat/gpu)'}
     with SessionLocal() as db:

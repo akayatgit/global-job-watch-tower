@@ -186,6 +186,7 @@ class DeckTests(unittest.TestCase):
             mock.patch.object(config, 'REPLICATE_API_TOKEN', 'r8_test'),
             mock.patch.object(config, 'OPENAI_API_KEY', 'sk-test'),
             mock.patch.object(config, 'ANTHROPIC_API_KEY', 'sk-ant-test'),
+            mock.patch('app.prompts.scan_hold.break_prompt_scan', return_value={'held_s': 900, 'revoked': 0}),
         ]
         for patch in self.key_patches:
             patch.start()
@@ -380,6 +381,11 @@ class DeckTests(unittest.TestCase):
         self.assertFalse(self.deck.daily_push_due())
         self.assertFalse(self.deck.deliver_daily({'1'}, lambda c, t, k: sent.append((c, t, k))))
         self.assertEqual(len(sent), 2)
+
+    def test_igtovid_breaks_promptscan(self):
+        with mock.patch('app.prompts.scan_hold.break_prompt_scan', return_value={'held_s': 900, 'revoked': 1}) as broke:
+            self.deck.handle_command('1', 'igtovid', '')
+        broke.assert_called_once()
 
     def test_igtovid_url_then_title_then_model_starts_reverse(self):
         reply = self.deck.handle_command('1', 'igtovid', '')
@@ -712,6 +718,7 @@ class BotWiringTests(unittest.TestCase):
             mock.patch.object(config, 'REPLICATE_API_TOKEN', 'r8_test'),
             mock.patch.object(config, 'OPENAI_API_KEY', 'sk-test'),
             mock.patch.object(config, 'ANTHROPIC_API_KEY', 'sk-ant-test'),
+            mock.patch('app.prompts.scan_hold.break_prompt_scan', return_value={'held_s': 900, 'revoked': 0}),
         ]
         for patch in self.key_patches:
             patch.start()

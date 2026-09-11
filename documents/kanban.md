@@ -194,6 +194,10 @@ error as Gemini.
 Instant one-liner: `Now Send me the Instagram or Pinterest link.`
 Reverse intake runs on the poll thread, not the prompt-scan queue.
 
+**Follow (2026-09-11, reverse breaks promptscan):** /igtovid is more
+important. Starting the workflow holds collect+score for 15 minutes
+and SIGTERMs any in-flight daily_prompt_pipeline / score_pending.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then
