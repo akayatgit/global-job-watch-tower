@@ -368,7 +368,9 @@ need to be told twice.
 
 - **2026-09-11 · Reverse model is a button, not a default.** After the
   header title, Ashok picks Gemini, GPT-6 Astra, or Claude Fable 5.
-  Gemini watches the clip; the other two read stills. Same reel after.
+  Sending the video file is mandatory — he rejected the stills
+  workaround ("I gave the video to Astra from Codex"). Gemini watches
+  the mp4; Astra/Fable get the file in their sandbox. Same reel after.
 
 ## Honesty note on the codeword
 

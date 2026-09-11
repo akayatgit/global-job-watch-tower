@@ -11,7 +11,6 @@ from unittest import mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -256,52 +255,196 @@ class FetchAndDescribeTests(unittest.TestCase):
         self.assertEqual(reverse_prompt.resolve_vision_engine('GPT-6 Astra'), 'astra')
         self.assertEqual(reverse_prompt.resolve_vision_engine('claude-fable-5'), 'fable')
         self.assertEqual(reverse_prompt.vision_label('astra'), 'GPT-6 Astra')
-        self.assertEqual(reverse_prompt.still_count(3.0), 6)
-        self.assertEqual(reverse_prompt.still_count(8.0), 12)
         with self.assertRaises(reverse_prompt.ReverseError):
             reverse_prompt.resolve_vision_engine('midjourney')
 
-    def test_describe_video_astra_uses_stills_not_the_clip(self):
+    def test_astra_attempts_send_the_mp4_not_jpegs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            attempts = reverse_prompt.astra_content_attempts(
+                path, public_url=None, user_text='watch this',
+            )
+            self.assertEqual(attempts[0][0], 'input_video')
+            self.assertEqual(attempts[1][0], 'input_file')
+            blob = json.dumps(attempts)
+            self.assertIn('video/mp4', blob)
+            self.assertIn('input_video', blob)
+            self.assertNotIn('image_url', blob)
+            self.assertNotIn('image/jpeg', blob)
+            self.assertNotIn('stills', blob.lower())
+
+    def test_fable_attempts_send_the_mp4_not_jpegs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            attempts = reverse_prompt.fable_content_attempts(
+                path, public_url=None, user_text='watch this',
+            )
+            self.assertEqual(attempts[0][0], 'video_base64')
+            blob = json.dumps(attempts)
+            self.assertIn('video/mp4', blob)
+            self.assertNotIn('image/jpeg', blob)
+            url_attempts = reverse_prompt.fable_content_attempts(
+                path, public_url='https://cdn.example.com/clip.mp4', user_text='watch this',
+            )
+            self.assertEqual(url_attempts[0][0], 'video_url')
+            self.assertEqual(url_attempts[0][1][0]['source']['url'], 'https://cdn.example.com/clip.mp4')
+
+    def test_describe_video_astra_sends_the_clip_not_stills(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'clip.mp4'
             path.write_bytes(FAKE_MP4)
             seen: dict = {}
-            frames = [Image.new('RGB', (64, 64), (10, 20, 30))]
 
-            def complete(*, model, system, user_text, images):
+            def complete(*, model, system, user_text, video_path, public_url=None):
                 seen['model'] = model
-                seen['images'] = images
+                seen['path'] = Path(video_path)
                 seen['user'] = user_text
-                self.assertIn('stills', user_text.lower())
+                seen['public'] = public_url
+                self.assertNotIn('stills', user_text.lower())
+                self.assertIn('video file', user_text.lower())
                 self.assertTrue(system)
                 return json.dumps({
                     'keyword': 'DEITY',
                     'prompt': '[0.0s–3.0s] a gold-anklet foot on cracked earth.\nStyle: mythic.',
                 })
 
-            reading = reverse_prompt.describe_video(
-                path, duration_s=3.0, engine='astra', complete=complete, frames=frames, exemplar='BAR',
-            )
+            with mock.patch('app.prompts.post_reel.sample_frames') as sample:
+                reading = reverse_prompt.describe_video(
+                    path, duration_s=3.0, engine='astra', complete=complete, exemplar='BAR',
+                    public_url='https://cdn.example.com/clip.mp4',
+                )
+            sample.assert_not_called()
             self.assertEqual(reading.keyword, 'DEITY')
             self.assertEqual(seen['model'], 'gpt-6-astra')
-            self.assertEqual(len(seen['images']), 1)
-            self.assertTrue(seen['images'][0])
+            self.assertEqual(seen['path'], path)
+            self.assertEqual(seen['public'], 'https://cdn.example.com/clip.mp4')
 
     def test_describe_video_fable_uses_injected_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'clip.mp4'
             path.write_bytes(FAKE_MP4)
-            frames = [Image.new('RGB', (32, 32), 'white')]
 
-            def complete(*, model, system, user_text, images):
+            def complete(*, model, system, user_text, video_path, public_url=None):
                 self.assertEqual(model, 'claude-fable-5')
+                self.assertEqual(Path(video_path), path)
+                self.assertNotIn('stills', user_text.lower())
                 return json.dumps({'keyword': 'RING', 'prompt': '[0.0s–2.0s] a gold ring. Style: macro.'})
 
             reading = reverse_prompt.describe_video(
-                path, duration_s=2.0, engine='fable', complete=complete, frames=frames,
+                path, duration_s=2.0, engine='fable', complete=complete,
             )
             self.assertEqual(reading.keyword, 'RING')
             self.assertIn('gold ring', reading.prompt)
+
+    def test_openai_complete_falls_through_to_code_interpreter(self):
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            calls: list[dict] = []
+
+            class Boom(Exception):
+                status_code = 400
+
+            class FakeResponses:
+                def create(self, **kwargs):
+                    calls.append(kwargs)
+                    tools = kwargs.get('tools') or []
+                    if not any(t.get('type') == 'code_interpreter' for t in tools):
+                        raise Boom('unsupported video input')
+                    return SimpleNamespace(output_text=json.dumps({
+                        'keyword': 'WATCH',
+                        'prompt': '[0.0s–1.0s] a steel watch. Style: macro.',
+                    }))
+
+            class FakeFiles:
+                def __init__(self):
+                    self.deleted = []
+
+                def create(self, **kwargs):
+                    self.last_create = kwargs
+                    return SimpleNamespace(id='file-9')
+
+                def delete(self, file_id):
+                    self.deleted.append(file_id)
+
+            files = FakeFiles()
+            client = SimpleNamespace(responses=FakeResponses(), files=files)
+            text = reverse_prompt._openai_complete(
+                model='gpt-6-astra',
+                system='sys',
+                user_text='watch the clip',
+                video_path=path,
+                client=client,
+            )
+            self.assertIn('steel watch', text)
+            self.assertGreaterEqual(len(calls), 3)
+            self.assertTrue(any(
+                (c.get('tools') or [{}])[0].get('type') == 'code_interpreter' for c in calls
+            ))
+            blob = json.dumps(calls)
+            self.assertNotIn('image_url', blob)
+            self.assertNotIn('image/jpeg', blob)
+            self.assertEqual(files.deleted, ['file-9'])
+
+    def test_anthropic_complete_falls_through_to_container_upload(self):
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            calls: list[dict] = []
+
+            class Boom(Exception):
+                status_code = 400
+
+            class FakeMessages:
+                def create(self, **kwargs):
+                    calls.append(kwargs)
+                    content = kwargs['messages'][0]['content']
+                    if not any(
+                        (block.get('type') if isinstance(block, dict) else getattr(block, 'type', ''))
+                        == 'container_upload'
+                        for block in content
+                    ):
+                        raise Boom('video content type is not supported')
+                    return SimpleNamespace(content=[
+                        SimpleNamespace(type='text', text=json.dumps({
+                            'keyword': 'RING',
+                            'prompt': '[0.0s–2.0s] a gold ring. Style: macro.',
+                        })),
+                    ])
+
+            class FakeFiles:
+                def __init__(self):
+                    self.deleted = []
+
+                def upload(self, **kwargs):
+                    return SimpleNamespace(id='file_fable')
+
+                def delete(self, file_id):
+                    self.deleted.append(file_id)
+
+            files = FakeFiles()
+            client = SimpleNamespace(messages=FakeMessages(), files=files)
+            text = reverse_prompt._anthropic_complete(
+                model='claude-fable-5',
+                system='sys',
+                user_text='watch the clip',
+                video_path=path,
+                client=client,
+            )
+            self.assertIn('gold ring', text)
+            self.assertTrue(any(
+                t.get('type') == 'code_execution_20250825'
+                for c in calls for t in (c.get('tools') or [])
+            ))
+            blob = json.dumps(calls)
+            self.assertNotIn('image/jpeg', blob)
+            self.assertEqual(files.deleted, ['file_fable'])
 
     def test_describe_video_retries_truncated_json_once(self):
         with tempfile.TemporaryDirectory() as tmp:

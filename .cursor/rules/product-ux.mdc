@@ -818,7 +818,10 @@ it, shows recipient count) → `/pushconfirm`
   the full generation prompt.
 - **Reverse model is a tap after the title (Ashok 2026-09-11).** After
   the header, offer **Gemini · GPT-6 Astra · Claude Fable 5** as buttons
-  and reverse with that model. Gemini watches the video file; Astra and
-  Fable cannot — they get evenly spaced stills from the clip. Missing
-  API keys refuse that button and leave the other two. Same reel either
-  way. Owner-only.
+  and reverse with that model. **Sending the video file is mandatory**
+  (Ashok 2026-09-11, Codex): do not pre-sample stills and call that the
+  reverse. Gemini watches the mp4 natively. Astra and Fable get the same
+  file — native video if the API accepts it, otherwise the mp4 in their
+  code sandbox (Files + code interpreter / container_upload), which is
+  how Codex lets Astra inspect a clip. Missing API keys refuse that
+  button and leave the other two. Same reel either way. Owner-only.

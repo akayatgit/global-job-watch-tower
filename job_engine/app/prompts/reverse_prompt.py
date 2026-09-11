@@ -9,9 +9,9 @@ performing post for which we get the reverse prompt and post it."
 
 Pipeline (worker, `app.tasks.reverse_prompt_video`):
 
-    URL ─▶ fetch_video ─▶ stored clip ─▶ describe_video (Gemini watches
-    the clip; GPT-6 Astra / Claude Fable 5 read evenly spaced stills) ─▶
-    keyword + timestamped prompt ─▶ post_reel.compose_reel ─▶ reel MP4
+    URL ─▶ fetch_video ─▶ stored clip ─▶ describe_video (Gemini / GPT-6
+    Astra / Claude Fable 5 each get the video file) ─▶ keyword +
+    timestamped prompt ─▶ post_reel.compose_reel ─▶ reel MP4
 
 Downloading: plain HTTP with a browser UA first (Pinterest pages carry the
 mp4 in their JSON; direct .mp4 links pass through), then the logged-in
@@ -36,11 +36,8 @@ import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 from typing import Callable
-
-from PIL import Image
 
 from app import config
 
@@ -70,9 +67,6 @@ VISION_LABELS = {
     ENGINE_ASTRA: 'GPT-6 Astra',
     ENGINE_FABLE: 'Claude Fable 5',
 }
-# Astra / Fable have no video input — they read evenly spaced JPEGs.
-STILL_MAX_SIDE = 1280
-STILL_JPEG_QUALITY = 85
 # Data-URI ceiling: Telegram's bot download is 20 MB; Instagram reels sit
 # well under this. Larger clips ride a public .mp4 URL so Gemini can see
 # the suffix (Replicate's Files API URL has none — that is what killed #1).
@@ -335,12 +329,6 @@ USER_PROMPT_RETRY = (
     '{duration} clip. Close the prompt string and the object. Do not stop mid-sentence.'
 )
 
-FRAMES_USER_NOTE = (
-    'These {count} stills are evenly spaced through the {duration} clip '
-    '(this model cannot watch the video file). Infer motion, camera and lighting '
-    'from the sequence. Cover the full duration with timestamped segments.'
-)
-
 
 def default_exemplar_path() -> Path:
     return Path(__file__).with_name('reverse_exemplar.txt')
@@ -403,24 +391,6 @@ def vision_key_missing(raw: str | None) -> str | None:
     if engine == ENGINE_FABLE and not getattr(config, 'ANTHROPIC_API_KEY', ''):
         return 'ANTHROPIC_API_KEY is missing in job_engine/.env — pick another model or add the key'
     return None
-
-
-def still_count(duration_s: float | None) -> int:
-    if not duration_s or duration_s <= 0:
-        return 8
-    return max(6, min(12, int(round(duration_s * 2))))
-
-
-def jpeg_b64(image: Image.Image, *, max_side: int = STILL_MAX_SIDE) -> str:
-    img = image.convert('RGB')
-    width, height = img.size
-    longest = max(width, height)
-    if longest > max_side:
-        scale = max_side / longest
-        img = img.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.LANCZOS)
-    buf = BytesIO()
-    img.save(buf, format='JPEG', quality=STILL_JPEG_QUALITY, optimize=True)
-    return base64.standard_b64encode(buf.getvalue()).decode('ascii')
 
 
 def build_instruction(*, duration_s: float | None, exemplar: str | None = None) -> str:
@@ -587,6 +557,14 @@ def video_input_for_vision(path: Path, *, public_url: str | None = None) -> str:
     return f'data:{mime};base64,{base64.standard_b64encode(data).decode("ascii")}'
 
 
+VIDEO_FILE_NOTE = (
+    'The source clip is attached as a video file. Watch the whole file. '
+    'Do not invent shots you cannot see. If you cannot view it natively, '
+    'use your python/code tool on the attached mp4 (ffprobe, opencv, ffmpeg) '
+    'and then return the JSON.'
+)
+
+
 def describe_video(
     video_path: Path,
     *,
@@ -594,14 +572,17 @@ def describe_video(
     engine: str | None = ENGINE_GEMINI,
     run: Callable[..., object] | None = None,
     complete: Callable[..., str] | None = None,
-    frames: list[Image.Image] | None = None,
     log: Callable[[str], None] | None = None,
     exemplar: str | None = None,
     public_url: str | None = None,
     _attempt: int = 0,
 ) -> ReverseReading:
-    """Watch the clip (Gemini) or stills (Astra / Fable) and return keyword +
-    timestamped prompt. `run` / `complete` / `frames` are injectable for tests.
+    """Watch the clip and return keyword + timestamped prompt.
+
+    Every engine gets the video file — Gemini natively, Astra/Fable as the
+    mp4 (native video block if the API accepts it, otherwise the file in
+    their code sandbox, the way Codex hands Astra a clip). `run` /
+    `complete` are injectable for tests. Never extract stills ourselves.
     """
     engine_key = resolve_vision_engine(engine)
     if engine_key == ENGINE_GEMINI:
@@ -614,14 +595,14 @@ def describe_video(
             public_url=public_url,
             _attempt=_attempt,
         )
-    return _describe_stills(
+    return _describe_file(
         video_path,
         duration_s=duration_s,
         engine=engine_key,
         complete=complete,
-        frames=frames,
         log=log,
         exemplar=exemplar,
+        public_url=public_url,
         _attempt=_attempt,
     )
 
@@ -682,30 +663,21 @@ def _describe_gemini(
     return reading
 
 
-def _describe_stills(
+def _describe_file(
     video_path: Path,
     *,
     duration_s: float | None,
     engine: str,
     complete: Callable[..., str] | None,
-    frames: list[Image.Image] | None,
     log: Callable[[str], None] | None,
     exemplar: str | None,
+    public_url: str | None,
     _attempt: int,
 ) -> ReverseReading:
-    """GPT-6 Astra and Claude Fable 5: no video input — they read stills."""
+    """GPT-6 Astra and Claude Fable 5 get the mp4 file, not JPEGs we sampled."""
     model = vision_api_model(engine)
-    stills = list(frames) if frames is not None else _sample_stills(video_path, duration_s)
-    if not stills:
-        raise ReverseError('could not grab frames from the clip for Astra / Fable')
-    images = [jpeg_b64(frame) for frame in stills]
-    duration = _duration_label(duration_s)
     prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
-    user_text = (
-        prompt_tmpl.format(duration=duration)
-        + '\n'
-        + FRAMES_USER_NOTE.format(count=len(images), duration=duration)
-    )
+    user_text = prompt_tmpl.format(duration=_duration_label(duration_s)) + '\n' + VIDEO_FILE_NOTE
     system = build_instruction(duration_s=duration_s, exemplar=exemplar)
     if complete is None:
         missing = vision_key_missing(engine)
@@ -713,20 +685,26 @@ def _describe_stills(
             raise ReverseError(missing)
         complete = _openai_complete if engine == ENGINE_ASTRA else _anthropic_complete
     if log:
-        log(f'{vision_label(engine)} reading {len(images)} stills ({model})')
-    text = complete(model=model, system=system, user_text=user_text, images=images)
+        log(f'{vision_label(engine)} reading the video file ({model})')
+    text = complete(
+        model=model,
+        system=system,
+        user_text=user_text,
+        video_path=video_path,
+        public_url=public_url,
+    )
     reading = parse_reading(text, model=model)
     if _attempt == 0 and not json_reading_complete(text):
         if log:
             log('vision JSON was truncated — asking once more for the complete object')
-        retry = _describe_stills(
+        retry = _describe_file(
             video_path,
             duration_s=duration_s,
             engine=engine,
             complete=complete,
-            frames=stills,
             log=log,
             exemplar=exemplar,
+            public_url=public_url,
             _attempt=1,
         )
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
@@ -734,58 +712,292 @@ def _describe_stills(
     return reading
 
 
-def _sample_stills(video_path: Path, duration_s: float | None) -> list[Image.Image]:
-    from app.prompts import post_reel
+def _retryable_video_error(exc: BaseException) -> bool:
+    """True when this API shape refused the mp4 — try the next shape."""
+    status = getattr(exc, 'status_code', None)
+    if status is None:
+        response = getattr(exc, 'response', None)
+        status = getattr(response, 'status_code', None)
+    if status in (401, 403, 429):
+        return False
+    text = str(exc).lower()
+    markers = (
+        'invalid', 'unsupported', 'unknown', 'not supported', 'unrecognized',
+        'invalid_request', 'could not parse', 'unexpected', 'mime',
+        'content type', 'input_video', 'video_url', 'file_data', 'file_url',
+        'does not support', 'not a valid', 'unprocessable',
+    )
+    if any(token in text for token in markers):
+        return True
+    return status in (400, 404, 415, 422)
 
-    info = post_reel.probe(video_path)
-    seconds = duration_s if duration_s and duration_s > 0 else info.duration_s
-    return post_reel.sample_frames(video_path, info, count=still_count(seconds))
+
+def _public_mp4_url(public_url: str | None) -> str | None:
+    url = (public_url or '').strip()
+    if url.lower().startswith(('http://', 'https://')) and DIRECT_RE.search(url.split('#', 1)[0]):
+        return url
+    return None
 
 
-def _openai_complete(*, model: str, system: str, user_text: str, images: list[str]) -> str:
+def astra_content_attempts(path: Path, *, public_url: str | None, user_text: str) -> list[tuple[str, list[dict]]]:
+    """Named user-content shapes that send the mp4. Never JPEGs we extracted."""
+    filename = path.name if path.suffix else 'clip.mp4'
+    attempts: list[tuple[str, list[dict]]] = []
+    public = _public_mp4_url(public_url)
+    if public:
+        attempts.append(('input_video_url', [
+            {'type': 'input_video', 'video_url': public},
+            {'type': 'input_text', 'text': user_text},
+        ]))
+        attempts.append(('input_file_url', [
+            {'type': 'input_file', 'filename': filename, 'file_url': public},
+            {'type': 'input_text', 'text': user_text},
+        ]))
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    if size <= DATA_URI_MAX_BYTES:
+        uri = video_input_for_vision(path, public_url=None)
+        attempts.append(('input_video', [
+            {'type': 'input_video', 'video_url': uri},
+            {'type': 'input_text', 'text': user_text},
+        ]))
+        attempts.append(('input_file', [
+            {'type': 'input_file', 'filename': filename, 'file_data': uri},
+            {'type': 'input_text', 'text': user_text},
+        ]))
+    return attempts
+
+
+def fable_content_attempts(path: Path, *, public_url: str | None, user_text: str) -> list[tuple[str, list[dict]]]:
+    """Named Claude content shapes that send the mp4. Never JPEGs we extracted."""
+    mime = mime_for_video(path)
+    attempts: list[tuple[str, list[dict]]] = []
+    public = _public_mp4_url(public_url)
+    if public:
+        attempts.append(('video_url', [
+            {'type': 'video', 'source': {'type': 'url', 'url': public}},
+            {'type': 'text', 'text': user_text},
+        ]))
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    if size <= DATA_URI_MAX_BYTES:
+        uri = video_input_for_vision(path, public_url=None)
+        raw = uri.split(',', 1)[-1]
+        attempts.append(('video_base64', [
+            {
+                'type': 'video',
+                'source': {'type': 'base64', 'media_type': mime, 'data': raw},
+            },
+            {'type': 'text', 'text': user_text},
+        ]))
+    return attempts
+
+
+def _response_output_text(response) -> str:
+    text = (getattr(response, 'output_text', None) or '').strip()
+    if text:
+        return text
+    parts: list[str] = []
+    for item in getattr(response, 'output', None) or []:
+        for block in getattr(item, 'content', None) or []:
+            if getattr(block, 'text', None):
+                parts.append(block.text)
+            elif isinstance(block, dict) and block.get('text'):
+                parts.append(str(block['text']))
+    return '\n'.join(parts).strip()
+
+
+def _openai_upload_video(client, path: Path) -> str:
+    mime = mime_for_video(path)
+    filename = path.name or 'clip.mp4'
+    with path.open('rb') as handle:
+        kwargs = {'file': (filename, handle, mime), 'purpose': 'user_data'}
+        try:
+            uploaded = client.files.create(
+                **kwargs,
+                expires_after={'anchor': 'created_at', 'seconds': 3600},
+            )
+        except TypeError:
+            handle.seek(0)
+            uploaded = client.files.create(file=(filename, handle, mime), purpose='user_data')
+    file_id = getattr(uploaded, 'id', None) or (uploaded.get('id') if isinstance(uploaded, dict) else None)
+    if not file_id:
+        raise ReverseError('OpenAI Files API returned no file id for the video')
+    return str(file_id)
+
+
+def _openai_complete(
+    *,
+    model: str,
+    system: str,
+    user_text: str,
+    video_path: Path,
+    public_url: str | None = None,
+    client=None,
+) -> str:
+    """Send Astra the mp4. Codex-equivalent: file in a code-interpreter sandbox."""
     from openai import OpenAI
 
-    client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=DESCRIBE_BUDGET_S)
-    content: list[dict] = [{'type': 'text', 'text': user_text}]
-    for b64 in images:
-        content.append({'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{b64}'}})
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': content},
-        ],
-        max_completion_tokens=MAX_OUTPUT_TOKENS,
-        reasoning_effort='medium',
-    )
-    text = ((response.choices[0].message.content if response.choices else None) or '').strip()
-    if not text:
-        raise ReverseError(f'{model} returned an empty reverse prompt')
-    return text
+    if client is None:
+        client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=DESCRIBE_BUDGET_S)
+    path = Path(video_path)
+    last_error: BaseException | None = None
+    for label, content in astra_content_attempts(path, public_url=public_url, user_text=user_text):
+        try:
+            response = client.responses.create(
+                model=model,
+                instructions=system,
+                input=[{'role': 'user', 'content': content}],
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+            )
+            text = _response_output_text(response)
+            if text:
+                return text
+            last_error = ReverseError(f'{model} returned an empty reverse prompt ({label})')
+        except Exception as exc:
+            last_error = exc
+            if not _retryable_video_error(exc):
+                raise ReverseError(f'{model} refused the video file: {exc}') from exc
+            logger.warning('Astra %s path failed: %s', label, exc)
+
+    file_id = None
+    try:
+        file_id = _openai_upload_video(client, path)
+        response = client.responses.create(
+            model=model,
+            instructions=system,
+            input=[{
+                'role': 'user',
+                'content': [
+                    {'type': 'input_file', 'file_id': file_id},
+                    {'type': 'input_text', 'text': user_text},
+                ],
+            }],
+            tools=[{
+                'type': 'code_interpreter',
+                'container': {
+                    'type': 'auto',
+                    'memory_limit': '4g',
+                    'file_ids': [file_id],
+                },
+            }],
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+        )
+        text = _response_output_text(response)
+        if text:
+            return text
+        raise ReverseError(f'{model} returned an empty reverse prompt (code_interpreter)')
+    except ReverseError:
+        raise
+    except Exception as exc:
+        last_error = exc
+        raise ReverseError(f'{model} could not read the video file ({last_error})') from exc
+    finally:
+        if file_id:
+            try:
+                client.files.delete(file_id)
+            except Exception:
+                logger.debug('could not delete OpenAI file %s', file_id)
 
 
-def _anthropic_complete(*, model: str, system: str, user_text: str, images: list[str]) -> str:
+def _message_text(message) -> str:
+    parts: list[str] = []
+    for block in getattr(message, 'content', None) or []:
+        btype = getattr(block, 'type', None)
+        if btype is None and isinstance(block, dict):
+            btype = block.get('type')
+        if btype != 'text':
+            continue
+        text = getattr(block, 'text', None)
+        if text is None and isinstance(block, dict):
+            text = block.get('text')
+        if text:
+            parts.append(str(text))
+    return '\n'.join(parts).strip()
+
+
+def _anthropic_upload_video(client, path: Path) -> str:
+    mime = mime_for_video(path)
+    filename = path.name or 'clip.mp4'
+    files_api = getattr(client, 'files', None) or getattr(getattr(client, 'beta', None), 'files', None)
+    if files_api is None:
+        raise ReverseError('Anthropic SDK has no files.upload — upgrade anthropic')
+    with path.open('rb') as handle:
+        uploaded = files_api.upload(file=(filename, handle, mime))
+    file_id = getattr(uploaded, 'id', None) or (uploaded.get('id') if isinstance(uploaded, dict) else None)
+    if not file_id:
+        raise ReverseError('Anthropic Files API returned no file id for the video')
+    return str(file_id)
+
+
+def _anthropic_complete(
+    *,
+    model: str,
+    system: str,
+    user_text: str,
+    video_path: Path,
+    public_url: str | None = None,
+    client=None,
+) -> str:
+    """Send Fable the mp4. Codex-equivalent: Files API + code-execution sandbox."""
     import anthropic
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, timeout=DESCRIBE_BUDGET_S)
-    content: list[dict] = []
-    for b64 in images:
-        content.append({
-            'type': 'image',
-            'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': b64},
-        })
-    content.append({'type': 'text', 'text': user_text})
-    message = client.messages.create(
-        model=model,
-        max_tokens=MAX_OUTPUT_TOKENS,
-        system=system,
-        messages=[{'role': 'user', 'content': content}],
-    )
-    parts = []
-    for block in message.content or []:
-        if getattr(block, 'type', '') == 'text' and getattr(block, 'text', ''):
-            parts.append(block.text)
-    text = '\n'.join(parts).strip()
-    if not text:
-        raise ReverseError(f'{model} returned an empty reverse prompt')
-    return text
+    if client is None:
+        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, timeout=DESCRIBE_BUDGET_S)
+    path = Path(video_path)
+    last_error: BaseException | None = None
+    for label, content in fable_content_attempts(path, public_url=public_url, user_text=user_text):
+        try:
+            message = client.messages.create(
+                model=model,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                system=system,
+                messages=[{'role': 'user', 'content': content}],
+            )
+            text = _message_text(message)
+            if text:
+                return text
+            last_error = ReverseError(f'{model} returned an empty reverse prompt ({label})')
+        except Exception as exc:
+            last_error = exc
+            if not _retryable_video_error(exc):
+                raise ReverseError(f'{model} refused the video file: {exc}') from exc
+            logger.warning('Fable %s path failed: %s', label, exc)
+
+    file_id = None
+    try:
+        file_id = _anthropic_upload_video(client, path)
+        message = client.messages.create(
+            model=model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            system=system,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': user_text},
+                    {'type': 'container_upload', 'file_id': file_id},
+                ],
+            }],
+            tools=[{'type': 'code_execution_20250825', 'name': 'code_execution'}],
+        )
+        text = _message_text(message)
+        if text:
+            return text
+        raise ReverseError(f'{model} returned an empty reverse prompt (container_upload)')
+    except ReverseError:
+        raise
+    except Exception as exc:
+        last_error = exc
+        raise ReverseError(f'{model} could not read the video file ({last_error})') from exc
+    finally:
+        if file_id:
+            files_api = getattr(client, 'files', None) or getattr(getattr(client, 'beta', None), 'files', None)
+            try:
+                if files_api is not None:
+                    files_api.delete(file_id)
+            except Exception:
+                logger.debug('could not delete Anthropic file %s', file_id)

@@ -59,7 +59,7 @@ TITLE_ASK = (
 )
 MODEL_ASK = (
     'Which model should reverse this clip?\n'
-    'Gemini watches the video. GPT-6 Astra and Claude Fable 5 read stills from it.'
+    'The video file goes to the model you pick — Gemini, GPT-6 Astra, or Claude Fable 5.'
 )
 MODEL_BUTTONS = [
     [('Gemini', 'pt:revmodel:gemini')],

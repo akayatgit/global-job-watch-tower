@@ -352,6 +352,8 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.started, [])
         model_ask = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
         self.assertIn('Which model', model_ask.text)
+        self.assertIn('video file', model_ask.text.lower())
+        self.assertNotIn('stills', model_ask.text.lower())
         self.assertEqual([row[0][0] for row in model_ask.keyboard[:3]], ['Gemini', 'GPT-6 Astra', 'Claude Fable 5'])
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '1')
         self.assertEqual(self.started, [])
