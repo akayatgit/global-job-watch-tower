@@ -198,6 +198,9 @@ Reverse intake runs on the poll thread, not the prompt-scan queue.
 important. Starting the workflow holds collect+score for 15 minutes
 and SIGTERMs any in-flight daily_prompt_pipeline / score_pending.
 
+**Follow (2026-09-11, hook + twist copy):** title ask is `Whats the
+hook?` Twist ask is `Shall we twist the video?` Skip stays.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

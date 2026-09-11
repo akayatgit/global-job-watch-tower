@@ -55,19 +55,9 @@ TELEGRAM_TEXT_LIMIT = 3900
 # Ashok (2026-09-11): /igtovid must answer at once, one line, no essay.
 REVERSE_ASK = 'Now Send me the Instagram or Pinterest link.'
 REVERSE_USAGE = REVERSE_ASK
-TITLE_ASK = (
-    'What should the header say? (e.g. CINEMATIC AI AD)\n'
-    'The footer is always:\n'
-    'Comment “AI” to get\n'
-    'all the prompts'
-)
-TWIST_ASK = (
-    '💥✏️ Magic pencil — what is the twist?\n'
-    'One line. This is our touch on the recreation: it has to hit every beat '
-    '— timing, emotion, context, imagination.\n'
-    'e.g. the drink becomes liquid gold in a midnight temple\n'
-    'Tap Skip to reverse the original first — Twist is still there after the prompt.'
-)
+# Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
+TITLE_ASK = 'Whats the hook?'
+TWIST_ASK = 'Shall we twist the video?'
 MODEL_ASK = (
     'Which model should reverse this clip?\n'
     'The video file goes to the model you pick — Gemini, GPT-6 Astra, or Claude Fable 5.'
@@ -672,12 +662,12 @@ class PromptDeck:
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '1')
         if source_url:
             self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
-        return ButtonReply(f'🎞 Got it. {TITLE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(TITLE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
     def _ask_twist(self, chat_id: str) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '1')
         return ButtonReply(
-            f'🎞 {TWIST_ASK}',
+            TWIST_ASK,
             [[('Skip — original only', 'pt:twistskip')], [('✖ Cancel', 'pt:cancel')]],
         )
 

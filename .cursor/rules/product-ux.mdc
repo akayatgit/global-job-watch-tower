@@ -886,3 +886,6 @@ it, shows recipient count) → `/pushconfirm`
   breaks `/promptscan` for 15 minutes: revoke the collect+score task,
   refuse new scans, skip idle/beat kicks. Hermes and Chrome stay free
   for the clip. A second reverse refreshes the 15 minutes.
+- **Hook + twist asks are one line (Ashok 2026-09-11).** After the URL:
+  `Whats the hook?` Then `Shall we twist the video?` Skip still there.
+  Do not explain the footer or the magic pencil.
