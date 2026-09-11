@@ -167,6 +167,12 @@ edits to Gemini 3 Pro Image (`google/nano-banana-pro`, 2K). Identity
 lock: pose, lighting, details, subject stay; only the twist applies;
 do not restage the frame.
 
+**Follow (2026-09-11, twist stills still not good):** Pro + a long
+identity essay made stills mushy. Use Nano Banana 2 Lite
+(`google/nano-banana-2-lite`) and a one-line edit:
+`Change from the source frame to {twist}, and keep pose, lighting,
+details and identity`. Lite is 1K-native (2K/4K = `google/nano-banana-2`).
+
 **Follow (2026-09-11, save-the-file URL):** the play URL
 (`/api/partner/v1/assets/…mp4`) opens a browser player — Ashok could
 not download reverse source-15. `?download=1` (or `/download`) sends

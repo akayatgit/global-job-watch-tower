@@ -68,16 +68,27 @@ def generate_image(prompt: str, *, aspect_ratio: str = '1:1') -> Image.Image:
 def _twist_image_model() -> str:
     return (
         getattr(config, 'PROMPT_TWIST_IMAGE_MODEL', '')
-        or 'google/nano-banana-pro'
+        or 'google/nano-banana-2-lite'
     ).strip()
 
 
 def _edit_resolution(model: str) -> str:
-    """Pro Image can do 2K/4K. Flash-class stays 1K."""
+    """Lite is 1K-native. Full banana-2 / Pro can do 2K."""
     low = (model or '').lower()
+    if 'lite' in low:
+        return '1K'
     if 'nano-banana-pro' in low or 'gemini-3-pro-image' in low:
         return '2K'
+    if 'nano-banana-2' in low:
+        return '2K'
     return '1K'
+
+
+def _supports_search_grounding(model: str) -> bool:
+    low = (model or '').lower()
+    if 'lite' in low:
+        return False
+    return 'nano-banana-2' in low or 'flash-image' in low
 
 
 def edit_image(
@@ -87,11 +98,10 @@ def edit_image(
     run=None,
     model: str | None = None,
 ) -> bytes:
-    """text+image→image via Gemini's latest image model (Nano Banana Pro /
-    Gemini 3 Pro Image by default). Returns a JPEG.
+    """text+image→image via Nano Banana 2 Lite by default. Returns a JPEG.
 
-    Used by the reverse-prompt magic pencil so each cut-reference still
-    keeps pose, lighting, detail and identity — only the twist changes.
+    Magic-pencil stills: one short change line + the source JPEG.
+    Lite is 1K (HD-class pixels need `google/nano-banana-2` at 2K).
     """
     import base64
 
@@ -108,7 +118,7 @@ def edit_image(
         'output_format': 'jpg',
         'resolution': _edit_resolution(chosen),
     }
-    if 'nano-banana-2' in chosen.lower() or 'flash-image' in chosen.lower():
+    if _supports_search_grounding(chosen):
         inp['google_search'] = False
         inp['image_search'] = False
     if run is None:

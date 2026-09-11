@@ -855,6 +855,12 @@ it, shows recipient count) → `/pushconfirm`
   (Nano Banana Pro / Gemini 3 Pro Image, 2K). Preserve pose, lighting,
   details, and subject identity with no change. Only the twist is
   applied. Do not restage, re-light, or invent a new shot.
+- **Twist stills: Lite + one line (Ashok 2026-09-11).** Pro + a long
+  identity essay was still not good. Use `google/nano-banana-2-lite`
+  and a prompt as simple as `Change from x to y, and z`
+  (`Change from the source frame to {twist}, and keep pose, lighting,
+  details and identity`). Lite is 1K. For 2K/4K HD pixels, switch to
+  `google/nano-banana-2`.
 - **Asset URLs must offer Save As (Ashok 2026-09-11, source-15).** The
   public `/api/partner/v1/assets/…mp4` link plays in the browser. Add
   `?download=1` (attachment + octet-stream) and a Telegram **⬇️ Save
