@@ -64,12 +64,15 @@ TWIST_USER = (
 )
 
 FRAME_EDIT_PROMPT = (
-    'Edit this photograph. Keep the same camera, crop, product placement and composition. '
-    'Apply this imaginative twist so it is VISIBLE in the still — lighting, materials, '
-    'world, emotion, weather, scale.\n\n'
-    'Twist: {twist}\n'
-    'This still is the {time} cut-reference frame.\n'
-    'Matching beat:\n{beat}'
+    'IDENTITY LOCK. This photograph is the source of truth. Surgical edit only.\n'
+    'Do not change pose, body or hand position, camera, crop, framing, lens or angle. '
+    'Do not change lighting direction, softness, colour temperature, shadows or highlights. '
+    'Do not change subject identity — face, body, product shape, materials already in frame. '
+    'Do not restage, re-light, re-compose, or invent a new shot. The frame stays as it is.\n'
+    'ONLY apply this twist as a light overlay on the existing frame. Everything else '
+    'must match the source pixel-for-pixel in pose, lighting, detail and identity:\n'
+    '{twist}\n'
+    'This is the {time} cut-reference still. Beat flavour only — do not restage:\n{beat}'
 )
 
 
@@ -193,7 +196,8 @@ def twist_reference_frames(
     key_for: Callable[..., str] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> tuple[list[ReferenceFrame], list[str]]:
-    """Each original cut JPEG → nano-banana text+image→image with the twist."""
+    """Each original cut JPEG → Gemini Pro Image edit. Identity stays;
+    only the twist is applied on the same frame."""
     from app.prompts import reverse_prompt, video_creator
     from app.replicate_img import edit_image
 

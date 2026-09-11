@@ -162,6 +162,11 @@ beat (timing, emotion, context, imagination). Each of the 14 cut frames
 goes through nano-banana text+image→image. Original stays. Delivery =
 twisted prompt + twisted stills.
 
+**Follow (2026-09-11, twist stills were hitty):** switch cut-frame
+edits to Gemini 3 Pro Image (`google/nano-banana-pro`, 2K). Identity
+lock: pose, lighting, details, subject stay; only the twist applies;
+do not restage the frame.
+
 **Follow (2026-09-11, save-the-file URL):** the play URL
 (`/api/partner/v1/assets/…mp4`) opens a browser player — Ashok could
 not download reverse source-15. `?download=1` (or `/download`) sends
