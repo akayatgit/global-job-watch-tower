@@ -850,6 +850,10 @@ it, shows recipient count) → `/pushconfirm`
   visible while camera and crop stay. Deliver the twisted prompt and
   the twisted stills. Keep the original set. If no twist was stored,
   the button asks for the line.
+- **Asset URLs must offer Save As (Ashok 2026-09-11, source-15).** The
+  public `/api/partner/v1/assets/…mp4` link plays in the browser. Add
+  `?download=1` (attachment + octet-stream) and a Telegram **⬇️ Save
+  clip** / **⬇️ Save reel** URL button. Never leave only a play URL.
 - **Reverse must not go silent before Gemini (Ashok 2026-09-11, #14).**
   "Started… 2–5 minutes" with no further line is a live incident when
   Replicate never got the clip. Announce queue + download. Give Retry

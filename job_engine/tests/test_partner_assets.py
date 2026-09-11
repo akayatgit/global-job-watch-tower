@@ -126,6 +126,7 @@ class PartnerAssetTests(unittest.TestCase):
         self.assertEqual(get.content, b'hello')
         self.assertTrue(get.headers['content-type'].startswith('text/plain'))
         self.assertEqual(get.headers['cache-control'], 'public, max-age=3600')
+        self.assertEqual(payload['download_url'], payload['url'] + '?download=1')
 
     def test_overwrite_is_idempotent(self):
         key = '/api/partner/v1/assets/job-reel/status/reel-1.json'
@@ -188,6 +189,32 @@ class PartnerAssetTests(unittest.TestCase):
         )
         response = self.client.get('/api/partner/v1/assets/job-reel/videos/reel-2.mp4')
         self.assertEqual(response.headers['content-type'], 'video/mp4')
+
+    def test_download_query_forces_save_as(self):
+        self.client.put(
+            '/api/partner/v1/assets/prompts/20260911/source-15-efdce8d696b2.mp4',
+            content=b'fakevideo',
+            headers={**AUTH, 'Content-Type': 'video/mp4'},
+        )
+        play = self.client.get(
+            '/api/partner/v1/assets/prompts/20260911/source-15-efdce8d696b2.mp4',
+        )
+        self.assertEqual(play.status_code, 200)
+        self.assertEqual(play.headers['content-type'], 'video/mp4')
+        saved = self.client.get(
+            '/api/partner/v1/assets/prompts/20260911/source-15-efdce8d696b2.mp4?download=1',
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.content, b'fakevideo')
+        self.assertTrue(saved.headers['content-type'].startswith('application/octet-stream'))
+        disposition = saved.headers.get('content-disposition', '').lower()
+        self.assertIn('attachment', disposition)
+        self.assertIn('source-15-efdce8d696b2.mp4', disposition)
+        suffix = self.client.get(
+            '/api/partner/v1/assets/prompts/20260911/source-15-efdce8d696b2.mp4/download',
+        )
+        self.assertEqual(suffix.status_code, 200)
+        self.assertIn('attachment', suffix.headers.get('content-disposition', '').lower())
 
     def test_files_land_under_the_assets_root(self):
         self.client.put(

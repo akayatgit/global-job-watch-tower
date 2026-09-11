@@ -26,7 +26,7 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app import config
@@ -77,6 +77,19 @@ def _public_url(key: str) -> str:
     return f'{base}/api/partner/v1/assets/{key}'
 
 
+def _download_url(key: str) -> str:
+    return f'{_public_url(key)}?download=1'
+
+
+def _wants_download(key: str, download: bool, dl: bool) -> tuple[str, bool]:
+    """Play URL stays video/mp4. ?download=1 (or /download) forces Save As."""
+    force = bool(download or dl)
+    if key.endswith('/download'):
+        key = key[: -len('/download')].rstrip('/')
+        force = True
+    return key, force
+
+
 @router.put('/assets/{key:path}', dependencies=[Depends(require_partner_token)])
 async def put_asset(key: str, request: Request):
     key = _validate_key(key)
@@ -110,12 +123,28 @@ async def put_asset(key: str, request: Request):
         meta.parent.mkdir(parents=True, exist_ok=True)
         meta.write_text(content_type, encoding='utf-8')
 
-    return JSONResponse({'ok': True, 'url': _public_url(key), 'size': size})
+    return JSONResponse({
+        'ok': True,
+        'url': _public_url(key),
+        'download_url': _download_url(key),
+        'size': size,
+    })
 
 
 @router.get('/assets/{key:path}')
-def get_asset(key: str):
-    """Public by design (see module docstring) — capability-URL model."""
+def get_asset(
+    key: str,
+    download: bool = Query(default=False),
+    dl: bool = Query(default=False),
+):
+    """Public by design (see module docstring) — capability-URL model.
+
+    Default GET is stream/play (video/mp4, Range/206) so Gemini and
+    <video> tags work. `?download=1` or a `/download` suffix sends
+    Content-Disposition: attachment so a browser tap saves the file
+    instead of opening the player (Ashok, reverse source-15, 2026-09-11).
+    """
+    key, force_download = _wants_download(key, download, dl)
     key = _validate_key(key)
     root = assets_root()
     path = _safe_path(root, key)
@@ -129,9 +158,21 @@ def get_asset(key: str):
     if not content_type:
         content_type = mimetypes.guess_type(key)[0] or 'application/octet-stream'
 
+    filename = path.name
+    if force_download:
+        return FileResponse(
+            path,
+            media_type='application/octet-stream',
+            filename=filename,
+            content_disposition_type='attachment',
+            headers={'Cache-Control': 'private, max-age=3600'},
+        )
+
     # FileResponse (Starlette) handles HTTP Range → 206 for iOS Safari video.
     return FileResponse(
         path,
         media_type=content_type,
+        filename=filename,
+        content_disposition_type='inline',
         headers={'Cache-Control': 'public, max-age=3600'},
     )
