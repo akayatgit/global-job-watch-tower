@@ -148,8 +148,12 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'pintovideo',
     'reverseprompt',
 })
+# Heavy prompt-tower commands (Ollama / scan). Reverse intake is instant
+# and must NOT wait on this queue — Ashok (2026-09-11): /igtovid was slow.
 PROMPT_COMMANDS = frozenset({
     'prompts', 'promptscan', 'addprompt', 'promptstats', 'promptperf',
+})
+REVERSE_INTAKE_COMMANDS = frozenset({
     'igtovid', 'pintovid', 'pintovideo', 'reverseprompt',
 })
 # Synthetic tap the poll loop queues when the OWNER sends a photo with no
@@ -761,7 +765,7 @@ class JobMasterTelegramBot:
     def _management_reply(self, chat_id: str, command: str, arg: str) -> str | ButtonReply:
         allow_commands = {'allowguest', 'allow', 'allowuser'}
         block_commands = {'blockguest', 'block', 'revoke', 'revokeuser'}
-        if command in PROMPT_COMMANDS:
+        if command in PROMPT_COMMANDS or command in REVERSE_INTAKE_COMMANDS:
             return self.deck.handle_command(chat_id, command, arg)
         if command == 'push':
             return self._stage_push(chat_id, arg)

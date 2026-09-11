@@ -414,6 +414,10 @@ need to be told twice.
   "video model failed". Fix: remux to H.264, send the public `.mp4`
   URL, one remux+data-URI retry on E001, say Gemini not Kling.
 
+- **2026-09-11 · /igtovid talk small.** Ashok: too slow, too much
+  essay. Reply at once: `Now Send me the Instagram or Pinterest link.`
+  Reverse intake is not queued behind prompt-scan / Ollama.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

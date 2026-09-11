@@ -52,12 +52,9 @@ REVERSE_POLL_S = 15
 REVERSE_MAX_WAIT_S = 25 * 60
 DESCRIBE_HEARTBEAT_S = 90
 TELEGRAM_TEXT_LIMIT = 3900
-REVERSE_USAGE = (
-    'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
-    "Then I'll ask for the header title, the magic-pencil twist, then which model reverses it "
-    '(Gemini · GPT-6 Astra · Claude Fable 5). I cut the cinematic reel — '
-    '9:16 clip · storyboard · scrolling prompt.'
-)
+# Ashok (2026-09-11): /igtovid must answer at once, one line, no essay.
+REVERSE_ASK = 'Now Send me the Instagram or Pinterest link.'
+REVERSE_USAGE = REVERSE_ASK
 TITLE_ASK = (
     'What should the header say? (e.g. CINEMATIC AI AD)\n'
     'The footer is always:\n'
@@ -499,7 +496,7 @@ class PromptDeck:
         if url:
             return self._ask_title(chat_id, source_url=url)
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-        return ButtonReply(f'🎞 Reverse prompt — {REVERSE_USAGE}', [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
     def maybe_take_url(self, chat_id: str, text: str) -> ButtonReply | None:
         """Owner text carrying an Instagram / Pinterest link: after /igtovid
