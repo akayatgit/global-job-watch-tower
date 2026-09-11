@@ -883,6 +883,64 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertEqual(row.keyword, 'WATCH')
         self.assertIsNone(row.reel_key)
 
+    def test_twist_endpoint_queues_and_task_writes_twisted_set(self):
+        from app import tasks
+        from app.prompts.reverse_prompt import ReverseReading, ReferenceFrame
+
+        with mock.patch('app.tasks.reverse_prompt_video'):
+            reverse_id = self.client.post(
+                '/api/prompts/reverse',
+                json={
+                    'video_base64': base64.b64encode(FAKE_MP4).decode('ascii'),
+                    'twist': 'liquid gold temple',
+                },
+            ).json()['id']
+        row = self.db.get(ReversePrompt, reverse_id)
+        row.status = 'done'
+        row.prompt_text = '[0.0s–8.0s] a juice glass on marble. ' * 6
+        row.keyword = 'JUICE'
+        row.ref_frames = json.dumps([{'t': 0.0, 'key': 'prompts/d/rref.jpg', 'filename': 'cut-01-0.00s.jpg'}])
+        self.db.commit()
+
+        class _SessionCtx:
+            def __init__(self, db):
+                self.db = db
+
+            def __enter__(self):
+                return self.db
+
+            def __exit__(self, *exc):
+                return False
+
+        twisted = ReverseReading(
+            keyword='GOLD',
+            prompt='[0.0s–8.0s] liquid gold climbs a temple glass. ' * 6,
+            model='google/gemini-2.5-flash',
+            raw='{}',
+        )
+        tw_frames = [ReferenceFrame(t=0.0, key='prompts/d/twref.jpg', filename='twist-01-0.00s.jpg')]
+        with mock.patch('app.tasks.twist_reverse_prompt') as queued:
+            response = self.client.post(
+                f'/api/prompts/reverse/{reverse_id}/twist',
+                json={'twist': 'liquid gold temple'},
+            )
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(response.json()['twist_status'], 'queued')
+        queued.delay.assert_called_once()
+
+        with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
+                mock.patch('app.prompts.reverse_twist.twist_prompt_text', return_value=twisted), \
+                mock.patch('app.prompts.reverse_twist.twist_reference_frames', return_value=(tw_frames, [])), \
+                mock.patch('app.tasks.console_log'):
+            result = tasks.twist_reverse_prompt.run(reverse_id)
+        self.assertTrue(result['ok'], result)
+        row = self.db.get(ReversePrompt, reverse_id)
+        self.assertEqual(row.twist_status, 'done')
+        self.assertEqual(row.twist_keyword, 'GOLD')
+        self.assertIn('liquid gold', row.twist_prompt)
+        self.assertIn('twref.jpg', row.twist_frames or '')
+        self.assertEqual(row.prompt_text.startswith('[0.0s–8.0s] a juice glass'), True)
+
 
 if __name__ == '__main__':
     unittest.main()

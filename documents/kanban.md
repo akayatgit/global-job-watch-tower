@@ -155,6 +155,13 @@ the prompt so each timestamp matches that JPEG. First pass stays
 video-only. Failed / too-short rewrite keeps the draft. Catalogue ingest
 waits until after this pass.
 
+**Follow (2026-09-11, magic-pencil twist):** recreating without our
+touch is incomplete. After the title, one twist line (or Skip). After
+the original prompt, a **💥✏️ Twist** button. Gemini rewrites every
+beat (timing, emotion, context, imagination). Each of the 14 cut frames
+goes through nano-banana text+image→image. Original stays. Delivery =
+twisted prompt + twisted stills.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

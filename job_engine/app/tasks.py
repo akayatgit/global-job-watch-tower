@@ -1087,6 +1087,65 @@ def reverse_prompt_video(self, reverse_id: int):
             return {'ok': False, 'error': str(exc)[:500]}
 
 
+@celery.task(name='app.tasks.twist_reverse_prompt', bind=True, max_retries=0)
+def twist_reverse_prompt(self, reverse_id: int):
+    """Magic pencil: rewrite the reverse prompt, then restyle each cut JPEG."""
+    from app.models import ReversePrompt
+    from app.prompts import reverse_twist
+
+    with SessionLocal() as db:
+        row = db.get(ReversePrompt, int(reverse_id))
+        if row is None:
+            return {'ok': False, 'error': 'reverse prompt not found'}
+        tag = f'Reverse #{row.id} twist'
+        log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
+        idea = (row.twist_text or '').strip()
+        draft = (row.prompt_text or '').strip()
+        if not idea or not draft:
+            row.twist_status = 'failed'
+            row.twist_error = 'need the original prompt and a twist line'
+            db.commit()
+            return {'ok': False, 'error': row.twist_error}
+        row.twist_status = 'running'
+        db.commit()
+        try:
+            reading = reverse_twist.twist_prompt_text(draft, idea, log=log)
+            if reading is None:
+                raise RuntimeError('Gemini could not rewrite the prompt with that twist')
+            row.twist_prompt = reading.prompt
+            row.twist_keyword = reading.keyword
+            db.commit()
+            log(f'prompt twisted ({len(reading.prompt)} chars, keyword {reading.keyword})')
+            frames = reverse_twist.frames_from_stored(row.ref_frames)
+            twisted, failed = reverse_twist.twist_reference_frames(
+                frames,
+                twist=idea,
+                twisted_prompt=reading.prompt,
+                prompt_id=row.id,
+                log=log,
+            )
+            row.twist_frames = json.dumps(reverse_twist.serialize_twist_frames(twisted))
+            if failed:
+                row.twist_error = f'{len(failed)} of {len(frames)} stills failed: {", ".join(failed[:8])}'
+            else:
+                row.twist_error = None
+            if not twisted:
+                raise RuntimeError(row.twist_error or 'no twisted stills')
+            row.twist_status = 'done'
+            db.commit()
+            log(f'{len(twisted)} twisted cut frames ready')
+            return {'ok': True, 'frames': len(twisted)}
+        except Exception as exc:
+            db.rollback()
+            row = db.get(ReversePrompt, int(reverse_id))
+            if row is not None:
+                row.twist_status = 'failed'
+                row.twist_error = str(exc)[:2000]
+                db.commit()
+            console_log('worker', f'{tag} FAILED: {exc}', level='error')
+            return {'ok': False, 'error': str(exc)[:500]}
+
+
 def _reverse_browser_fetch(url: str) -> str:
     """Instagram hides media behind a login wall for plain HTTP — the
     logged-in stealth Chrome profile (the LinkedIn lane's) reads the page."""
