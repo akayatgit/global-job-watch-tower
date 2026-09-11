@@ -391,6 +391,11 @@ need to be told twice.
   images go through text+image→image. Original stays; the twisted
   prompt and twisted stills are the recreation set.
 
+- **2026-09-11 · Twisted prompt ≤3000, one look.** Ashok: the final
+  twisted prompt must stay under 3000 characters including spaces, but
+  capture the full essence. The 14 stills must stay consistent — same
+  film, same product, same lighting/palette; only the beat changes.
+
 - **2026-09-11 · Reverse #14 never reached Gemini.** Telegram sat on
   "started" while Replicate had zero Gemini calls. Two doors: deploy
   purges Celery so a queued reverse dies, and Instagram Chrome can hang

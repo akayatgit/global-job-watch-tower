@@ -379,6 +379,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.started, [])
         twist_ask = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
         self.assertIn('magic pencil', twist_ask.text.lower())
+        self.assertIn('3000', twist_ask.text)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '1')
         model_ask = self.deck.maybe_take_twist('1', 'the drink becomes liquid gold in a midnight temple')
         self.assertIn('Which model', model_ask.text)
@@ -640,6 +641,7 @@ class DeckTests(unittest.TestCase):
         }
         self.assertEqual(self.deck.watch_twist('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertTrue(any('Twisted prompt #11' in t for _c, t in self.texts))
+        self.assertTrue(any('/3000 chars' in t for _c, t in self.texts))
         self.assertTrue(any('liquid gold' in t for _c, t in self.texts))
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/twref-01.jpg')

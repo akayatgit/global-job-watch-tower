@@ -67,6 +67,8 @@ TWIST_ASK = (
     '💥✏️ Magic pencil — what is the twist?\n'
     'One line. This is our touch on the recreation: it has to hit every beat '
     '— timing, emotion, context, imagination.\n'
+    'The twisted prompt lands under 3000 characters (full essence, no filler). '
+    'All 14 stills share one look.\n'
     'e.g. the drink becomes liquid gold in a midnight temple\n'
     'Tap Skip to reverse the original first — Twist is still there after the prompt.'
 )
@@ -961,10 +963,13 @@ class PromptDeck:
             head = f"💥✏️ Twisted prompt #{rid}"
             if row.get('twist_keyword'):
                 head += f" · keyword {row['twist_keyword']}"
+            body = str(row.get('twist_prompt') or '')
+            if body:
+                head += f" · {len(body)}/3000 chars"
             if idea:
                 head += f"\nTwist: {idea}"
             head += '\n'
-            for chunk in _chunks(str(row.get('twist_prompt') or '(no twisted prompt)'), TELEGRAM_TEXT_LIMIT - len(head)):
+            for chunk in _chunks(body or '(no twisted prompt)', TELEGRAM_TEXT_LIMIT - len(head)):
                 self.send_text(chat_id, head + chunk)
                 head = ''
         from app.prompts.reverse_prompt import load_reference_frames

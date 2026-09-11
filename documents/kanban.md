@@ -162,6 +162,11 @@ beat (timing, emotion, context, imagination). Each of the 14 cut frames
 goes through nano-banana text+image→image. Original stays. Delivery =
 twisted prompt + twisted stills.
 
+**Follow (2026-09-11, twisted prompt ≤3000):** the final twisted prompt
+must be under 3000 characters including spaces, still the full essence.
+14 stills share one series look (palette, materials, lighting) — only
+the beat changes.
+
 **Follow (2026-09-11, reverse #14 never hit Gemini):** deploy purges
 Celery, so a just-queued reverse can sit forever; Instagram Chrome can
 also hang with no timeout. Resume stuck rows on worker start, 90s
