@@ -162,6 +162,12 @@ beat (timing, emotion, context, imagination). Each of the 14 cut frames
 goes through nano-banana text+image→image. Original stays. Delivery =
 twisted prompt + twisted stills.
 
+**Follow (2026-09-11, save-the-file URL):** the play URL
+(`/api/partner/v1/assets/…mp4`) opens a browser player — Ashok could
+not download reverse source-15. `?download=1` (or `/download`) sends
+`Content-Disposition: attachment`. Telegram gets a **⬇️ Save clip**
+URL button.
+
 **Follow (2026-09-11, reverse #14 never hit Gemini):** deploy purges
 Celery, so a just-queued reverse can sit forever; Instagram Chrome can
 also hang with no timeout. Resume stuck rows on worker start, 90s

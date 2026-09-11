@@ -43,6 +43,20 @@ def public_url(key: str) -> str:
     return f'{base}/api/partner/v1/assets/{key}'
 
 
+def public_download_url(key: str) -> str:
+    """Browser Save-As URL — not the play/stream URL Gemini uses."""
+    return f'{public_url(key)}?download=1'
+
+
+def as_download_url(url: str | None) -> str:
+    text = (url or '').strip()
+    if not text:
+        return ''
+    if 'download=1' in text or text.rstrip('/').endswith('/download'):
+        return text
+    return f"{text}{'&' if '?' in text else '?'}download=1"
+
+
 def asset_key(kind: str, *, prompt_id: int, suffix: str) -> str:
     """prompts/<utc-day>/<kind>-<prompt>-<random>.<suffix> — passes the
     partner assets key whitelist (lowercase, no dot-leading segments)."""

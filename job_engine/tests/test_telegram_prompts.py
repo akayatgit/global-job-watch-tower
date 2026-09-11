@@ -345,7 +345,18 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/reel.mp4')
         caption = self.sent_videos[0][2]
         self.assertIn('reel ready, post this', caption)
-        self.assertIn('Raw clip: https://tower.example/api/partner/v1/assets/prompts/d/video.mp4', caption)
+        self.assertIn(
+            'Save clip: https://tower.example/api/partner/v1/assets/prompts/d/video.mp4?download=1',
+            caption,
+        )
+        self.assertEqual(
+            self.keyboards[0][2][0][0],
+            ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/video.mp4?download=1'),
+        )
+        self.assertEqual(
+            self.keyboards[0][2][1][0],
+            ('⬇️ Save reel', 'https://tower.example/api/partner/v1/assets/prompts/d/reel.mp4?download=1'),
+        )
 
     def test_watch_render_reports_failure_and_timeout(self):
         self.tower.render_status = {'id': 77, 'prompt_id': 3, 'status': 'failed', 'error': 'model 500'}
@@ -501,6 +512,11 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/rreel.mp4')
         self.assertIn('reel ready, post this', self.sent_videos[0][2])
+        self.assertIn('download=1', self.sent_videos[0][2])
+        self.assertEqual(
+            self.keyboards[0][2][0][0],
+            ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1'),
+        )
         prompt_texts = [t for _c, t in self.texts if t.startswith('📝 Prompt #11') or t.startswith('[')]
         self.assertGreaterEqual(len(prompt_texts), 2)
         joined = ''.join(prompt_texts)

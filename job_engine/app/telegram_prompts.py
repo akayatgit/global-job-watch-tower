@@ -125,6 +125,22 @@ def _source_label(prompt: dict[str, Any]) -> str:
     return source
 
 
+def save_url(url: str | None) -> str:
+    from app.prompts.video_creator import as_download_url
+
+    return as_download_url(url)
+
+
+def save_keyboard(*pairs: tuple[str, str | None]) -> list[list[tuple[str, str]]]:
+    """⬇️ Save clip / reel — Telegram URL buttons, not callbacks."""
+    rows: list[list[tuple[str, str]]] = []
+    for label, url in pairs:
+        href = save_url(url)
+        if href:
+            rows.append([(label, href)])
+    return rows
+
+
 class PromptDeck:
     """Owner-only prompt commands + ``pt:`` callbacks. Injected I/O only."""
 
@@ -800,6 +816,19 @@ class PromptDeck:
             sleep(poll_s)
             waited += poll_s
 
+    def _offer_saves(self, chat_id: str, pairs: tuple[tuple[str, str | None], ...]) -> None:
+        """URL buttons that force Save As — the play URL just opens a player."""
+        keyboard = save_keyboard(*pairs)
+        if not keyboard:
+            return
+        text = '⬇️ Tap to SAVE the file on your phone (not play in the browser).'
+        if self.send_keyboard:
+            self.send_keyboard(chat_id, text, keyboard)
+            return
+        if self.send_text:
+            lines = [text] + [f'{label}: {href}' for row in keyboard for label, href in row]
+            self.send_text(chat_id, '\n'.join(lines))
+
     def _deliver_reverse(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -808,13 +837,18 @@ class PromptDeck:
         rid = row.get('id')
         model = f" · {row['model']}" if row.get('model') else ''
         catalogue = f" · catalogue #{row['prompt_id']}" if row.get('prompt_id') else ''
+        clip_save = save_url(row.get('video_url'))
         if row.get('reel_key'):
-            caption = f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}\nSource clip: {row.get('video_url') or ''}".strip()
+            caption = (
+                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}\n"
+                f"Save clip: {clip_save}"
+            ).strip()
             key = row.get('reel_key')
         else:
             caption = (
                 f"🎞 Reverse prompt #{rid} — source clip{model}{catalogue}\n"
-                f"⚠️ Reel not composed: {row.get('reel_error') or 'unknown reason'}\n{row.get('video_url') or ''}"
+                f"⚠️ Reel not composed: {row.get('reel_error') or 'unknown reason'}\n"
+                f"Save clip: {clip_save}"
             ).strip()
             key = row.get('video_key')
         sent = False
@@ -826,6 +860,10 @@ class PromptDeck:
                 logger.exception('reverse video upload failed id=%s', rid)
         if not sent and self.send_text:
             self.send_text(chat_id, caption)
+        self._offer_saves(chat_id, (
+            ('⬇️ Save clip', row.get('video_url')),
+            ('⬇️ Save reel', row.get('reel_url')),
+        ))
         if self.send_text:
             head = f"📝 Prompt #{rid} · keyword {row.get('keyword') or 'PRODUCT'}\n"
             for chunk in _chunks(str(row.get('prompt_text') or '(no prompt text)'), TELEGRAM_TEXT_LIMIT - len(head)):
@@ -1069,27 +1107,37 @@ class PromptDeck:
         reason, so a missing ffmpeg never hides a finished video."""
         prompt_id = render.get('prompt_id')
         model = f" · {render['model']}" if render.get('model') else ''
+        clip_save = save_url(render.get('video_url'))
         if render.get('reel_key'):
             caption = (
                 f"🎬 Prompt #{prompt_id} — reel ready, post this{model}\n"
-                f"Raw clip: {render.get('video_url') or ''}"
+                f"Save clip: {clip_save}"
             ).strip()
             key = render.get('reel_key')
         else:
             why = render.get('reel_error') or 'unknown reason'
             caption = (
                 f"🎬 Prompt #{prompt_id} — raw clip ready{model}\n"
-                f"⚠️ Reel not composed: {why}\n{render.get('video_url') or ''}"
+                f"⚠️ Reel not composed: {why}\n"
+                f"Save clip: {clip_save}"
             ).strip()
             key = render.get('video_key')
         if key and self.fetch_asset and self.send_video_bytes:
             try:
                 self.send_video_bytes(chat_id, self.fetch_asset(key), caption)
+                self._offer_saves(chat_id, (
+                    ('⬇️ Save clip', render.get('video_url')),
+                    ('⬇️ Save reel', render.get('reel_url')),
+                ))
                 return
             except Exception:
                 logger.exception('video upload failed render=%s', render.get('id'))
         if self.send_text:
             self.send_text(chat_id, caption)
+        self._offer_saves(chat_id, (
+            ('⬇️ Save clip', render.get('video_url')),
+            ('⬇️ Save reel', render.get('reel_url')),
+        ))
 
     # ------------------------------------------------------- daily push
 

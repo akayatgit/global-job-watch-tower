@@ -284,6 +284,13 @@ def _telegram_chunks(text: str, max_units: int = 3800) -> list[str]:
     return chunks
 
 
+def _inline_keyboard_button(label: str, data: str) -> dict[str, str]:
+    """http(s) → URL button (Save file). Everything else is a callback tap."""
+    if str(data).startswith(('http://', 'https://')):
+        return {'text': label, 'url': data}
+    return {'text': label, 'callback_data': data}
+
+
 def load_env() -> dict[str, str]:
     values = dict(os.environ)
     if HERMES_ENV.exists():
@@ -342,7 +349,7 @@ class TelegramAPI:
         if keyboard:
             markup = json.dumps({
                 'inline_keyboard': [
-                    [{'text': label, 'callback_data': data} for label, data in row]
+                    [_inline_keyboard_button(label, data) for label, data in row]
                     for row in keyboard
                 ]
             })
@@ -371,7 +378,7 @@ class TelegramAPI:
         if keyboard:
             markup = json.dumps({
                 'inline_keyboard': [
-                    [{'text': label, 'callback_data': data} for label, data in row]
+                    [_inline_keyboard_button(label, data) for label, data in row]
                     for row in keyboard
                 ]
             })

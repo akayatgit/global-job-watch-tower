@@ -12,6 +12,7 @@ from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
     JobMasterTelegramBot,
+    _inline_keyboard_button,
     _telegram_chunks,
     _utf16_units,
 )
@@ -2145,6 +2146,19 @@ class FunnelCommandTests(unittest.TestCase):
         self.assertIn('No checked explicit-fresher gems', text)
         self.assertIn('Funnel 24h: 42 caught · 18 verified · 7 servable', text)
         self.assertIn('/funnel', text)
+
+
+class InlineUrlButtonTests(unittest.TestCase):
+    def test_https_becomes_a_save_url_button(self):
+        href = 'https://tower.jobmaster.agency/api/partner/v1/assets/x.mp4?download=1'
+        self.assertEqual(
+            _inline_keyboard_button('⬇️ Save clip', href),
+            {'text': '⬇️ Save clip', 'url': href},
+        )
+        self.assertEqual(
+            _inline_keyboard_button('✖ Cancel', 'pt:cancel'),
+            {'text': '✖ Cancel', 'callback_data': 'pt:cancel'},
+        )
 
 
 if __name__ == '__main__':

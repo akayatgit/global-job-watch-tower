@@ -174,6 +174,7 @@ class ReverseTwistIn(BaseModel):
 
 def _serialize_reverse(row: ReversePrompt) -> dict:
     from app.prompts.reverse_prompt import load_reference_frames
+    from app.prompts.video_creator import as_download_url
 
     return {
         'id': row.id,
@@ -184,6 +185,7 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'media_url': row.media_url,
         'video_key': row.video_key,
         'video_url': row.video_url,
+        'video_download_url': as_download_url(row.video_url),
         'duration_s': row.duration_s,
         'header_title': row.header_title,
         'vision_engine': row.vision_engine or 'gemini',
@@ -201,6 +203,7 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'prompt_id': row.prompt_id,
         'reel_key': row.reel_key,
         'reel_url': row.reel_url,
+        'reel_download_url': as_download_url(row.reel_url),
         'reel_error': row.reel_error,
         'requested_at': row.requested_at.isoformat() if row.requested_at else None,
         'finished_at': row.finished_at.isoformat() if row.finished_at else None,
