@@ -58,10 +58,9 @@ REVERSE_USAGE = REVERSE_ASK
 # Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
 TITLE_ASK = 'Whats the hook?'
 TWIST_ASK = 'Shall we twist the video?'
-MODEL_ASK = (
-    'Which model should reverse this clip?\n'
-    'The video file goes to the model you pick — Gemini, GPT-6 Astra, or Claude Fable 5.'
-)
+MODEL_ASK = 'Select a Prompt Model…'
+REVERSE_QUEUED = 'processing..'
+REVERSE_STARTED = 'Workflow Started…'
 MODEL_BUTTONS = [
     [('Gemini', 'pt:revmodel:gemini')],
     [('GPT-6 Astra', 'pt:revmodel:astra')],
@@ -673,7 +672,7 @@ class PromptDeck:
 
     def _ask_vision_model(self, chat_id: str) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '1')
-        return ButtonReply(f'🎞 {MODEL_ASK}', MODEL_BUTTONS)
+        return ButtonReply(MODEL_ASK, MODEL_BUTTONS)
 
     def _start_reverse(
         self,
@@ -685,8 +684,6 @@ class PromptDeck:
         vision_engine: str | None = None,
         twist: str | None = None,
     ) -> ButtonReply:
-        from app.prompts.reverse_prompt import vision_label
-
         payload: dict[str, Any] = {'chat_id': str(chat_id)}
         if title:
             payload['title'] = title
@@ -718,15 +715,8 @@ class PromptDeck:
                 self.on_reverse_started(str(chat_id), int(row['id']))
             except Exception:
                 logger.exception('reverse watcher failed to start id=%s', row.get('id'))
-        where = {'instagram': 'the Instagram reel', 'pinterest': 'the Pinterest pin', 'direct': 'the video link'}.get(
-            str(row.get('platform') or ''), 'your video',
-        )
-        label = vision_label(vision_engine or row.get('vision_engine'))
         return ButtonReply(
-            f"🎞 Reverse prompt #{row['id']} started from {where} · {label}. "
-            'I will say when the clip is downloading, then when Gemini is watching it. '
-            'Downloading → timestamped prompt → 14 cut-reference frames → I cut the reel. '
-            'Usually 2–5 minutes. If it sits quiet, tap Retry — deploy can drop the worker job.',
+            REVERSE_STARTED,
             [[('🔄 Retry', f"pt:revretry:{row['id']}"), ('✖ Cancel', 'pt:cancel')]],
         )
 
@@ -777,7 +767,7 @@ class PromptDeck:
                 status = str(row.get('status') or '')
                 if status == 'queued' and status not in announced and self.send_text:
                     announced.add(status)
-                    self.send_text(chat_id, f'⏳ Reverse #{reverse_id}: in the worker queue — waiting for a free lane.')
+                    self.send_text(chat_id, REVERSE_QUEUED)
                 if status == 'downloading' and status not in announced and self.send_text:
                     announced.add(status)
                     self.send_text(
@@ -800,11 +790,7 @@ class PromptDeck:
                     if status not in announced:
                         announced.add(status)
                         last_describe_beat = waited
-                        self.send_text(
-                            chat_id,
-                            f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — "
-                            f'{label} is watching it now (public .mp4 URL, H.264 remux if needed).',
-                        )
+                        self.send_text(chat_id, REVERSE_STARTED)
                     elif waited - last_describe_beat >= DESCRIBE_HEARTBEAT_S:
                         last_describe_beat = waited
                         self.send_text(

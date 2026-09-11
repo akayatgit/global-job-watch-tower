@@ -889,3 +889,8 @@ it, shows recipient count) → `/pushconfirm`
 - **Hook + twist asks are one line (Ashok 2026-09-11).** After the URL:
   `Whats the hook?` Then `Shall we twist the video?` Skip still there.
   Do not explain the footer or the magic pencil.
+- **Reverse Telegram copy stays one line (Ashok 2026-09-11, #19).**
+  Model ask is `Select a Prompt Model…`. Queue is `processing..`.
+  Start and the first describing beat are both `Workflow Started…`.
+  Do not restore the "which model / I will say when / clip downloaded"
+  essays. Heartbeats, download, fail, and done stay detailed.
