@@ -894,3 +894,8 @@ it, shows recipient count) → `/pushconfirm`
   Start and the first describing beat are both `Workflow Started…`.
   Do not restore the "which model / I will say when / clip downloaded"
   essays. Heartbeats, download, fail, and done stay detailed.
+- **Prompts strictly under 3000 characters including spaces (Ashok
+  2026-09-11).** Reverse and twist. Thinking is on so Gemini plans
+  the dense cut (`thinking_budget=8192`, 32k output). A compress
+  retry + deterministic `fit_prompt` keep every timestamp and the
+  Style line. Telegram shows `N chars`. Never ship an 8k essay.

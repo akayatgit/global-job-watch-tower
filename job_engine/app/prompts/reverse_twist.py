@@ -14,16 +14,20 @@ from typing import Callable
 
 from app import config
 from app.prompts.reverse_prompt import (
+    COMPRESS_USER,
     DEFAULT_KEYWORD,
     DESCRIBE_BUDGET_S,
     ENGINE_GEMINI,
     MAX_OUTPUT_TOKENS,
+    PROMPT_CHAR_LIMIT,
+    PROMPT_MAX_CHARS,
     ReferenceFrame,
     ReverseError,
     ReverseReading,
     SEGMENT_RE,
     THINKING_BUDGET,
     _output_text,
+    apply_prompt_cap,
     clean_keyword,
     jpeg_data_uri,
     json_reading_complete,
@@ -51,8 +55,10 @@ You must change, in every timestamped segment:
 
 Keep the same timestamp structure and duration coverage so the shot list still maps to the original cut-reference frames. Do not mention "twist", "magic pencil", or "original". Never invent brand names or on-screen text that was not in the draft.
 
+HARD CAP: the `prompt` value MUST be strictly under 3000 characters including spaces. Think first, then write dense cinematic text. Full essence, no filler.
+
 Return STRICT JSON with exactly three keys:
-{"keyword": "<ONE uppercase word>", "prompt": "<the full rewritten timestamped prompt>", "cuts": [{"start": 0.0, "end": 1.8}]}
+{"keyword": "<ONE uppercase word>", "prompt": "<the rewritten timestamped prompt, under 3000 characters>", "cuts": [{"start": 0.0, "end": 1.8}]}
 The JSON object MUST be complete. Never stop mid-sentence."""
 
 TWIST_USER = (
@@ -60,7 +66,8 @@ TWIST_USER = (
     '{twist}\n\n'
     'Original prompt:\n'
     '---\n{draft}\n---\n'
-    'Rewrite every timestamped segment. Return only complete JSON.'
+    'Think, then rewrite every timestamped segment. The prompt string must be '
+    'strictly under 3000 characters including spaces. Return only complete JSON.'
 )
 
 # Ashok (2026-09-11): keep the edit one line — "Change from x to y, and z".
@@ -170,11 +177,21 @@ def twist_prompt_text(
             retry = parse_reading(_output_text(output), model=model)
             if len(retry.prompt) > len(reading.prompt):
                 reading = retry
+        prompt = (reading.prompt or '').strip()
+        if len(prompt) >= PROMPT_CHAR_LIMIT:
+            if log:
+                log(f'twist prompt {len(prompt)} chars — thinking compress to under {PROMPT_CHAR_LIMIT}')
+            compress = dict(inputs)
+            compress['prompt'] = COMPRESS_USER.format(n=len(prompt))
+            compressed = parse_reading(_output_text(run(model, input=compress)), model=model)
+            if compressed.prompt and len(compressed.prompt) < len(prompt):
+                reading = compressed
     except Exception as exc:
         logger.warning('Magic-pencil prompt failed: %s', exc)
         return None
+    reading = apply_prompt_cap(reading)
     refined = (reading.prompt or '').strip()
-    if not refined or len(refined) < max(80, int(len(draft) * 0.55)):
+    if not refined or len(refined) < max(80, min(int(len(draft) * 0.55), PROMPT_MAX_CHARS // 2)):
         logger.warning('Magic-pencil prompt discarded (empty or too short)')
         return None
     if not reading.keyword or reading.keyword == DEFAULT_KEYWORD:

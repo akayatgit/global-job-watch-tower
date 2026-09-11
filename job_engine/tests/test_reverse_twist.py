@@ -48,6 +48,8 @@ class TwistUnitTests(unittest.TestCase):
         self.assertIn('liquid gold in a midnight temple', seen['input']['prompt'])
         self.assertIn(draft[:40], seen['input']['prompt'])
         self.assertIn('every timestamped segment', seen['input']['system_instruction'].lower())
+        self.assertIn('under 3000', seen['input']['system_instruction'])
+        self.assertGreater(seen['input']['thinking_budget'], 0)
 
     def test_twist_prompt_keeps_original_when_rewrite_is_short(self):
         draft = '[0.0s–8.0s] a juice glass on marble under hard sidelight. ' * 8
@@ -56,6 +58,26 @@ class TwistUnitTests(unittest.TestCase):
             return json.dumps({'keyword': 'X', 'prompt': 'short'})
 
         self.assertIsNone(reverse_twist.twist_prompt_text(draft, 'make it gold', run=run))
+
+    def test_twist_prompt_stays_strictly_under_3000(self):
+        draft = '[0.0s–8.0s] a juice glass on marble under hard sidelight. Style: cold. ' * 6
+        long_prompt = (
+            '[0.0s–8.0s] ' + ('liquid gold climbs the glass in a midnight temple. ' * 80)
+            + '\nStyle: mythic commercial.'
+        )
+        self.assertGreaterEqual(len(long_prompt), 3000)
+
+        def run(model, input):
+            return json.dumps({
+                'keyword': 'GOLD',
+                'prompt': long_prompt,
+                'cuts': [{'start': 0.0, 'end': 8.0}],
+            })
+
+        reading = reverse_twist.twist_prompt_text(draft, 'make it gold', run=run)
+        self.assertIsNotNone(reading)
+        self.assertLess(len(reading.prompt), 3000)
+        self.assertIn('[0.0s–8.0s]', reading.prompt)
 
     def test_twist_frames_edit_each_jpeg_and_rename(self):
         frames = [
