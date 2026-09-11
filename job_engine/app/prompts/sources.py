@@ -84,20 +84,37 @@ def http_fetch(url: str, *, timeout: int = 30) -> str:
         return resp.read().decode('utf-8', errors='replace')
 
 
+BROWSER_FETCH_TIMEOUT_MS = 90_000
+
+
 def browser_fetch(url: str) -> str:
     """Logged-in stealth Chrome (same profile the LinkedIn lane uses).
-    Imported lazily — scrapling is heavy and absent in unit tests."""
+    Imported lazily — scrapling is heavy and absent in unit tests.
+
+    Timeout is mandatory (reverse #14, 2026-09-11): Instagram login walls
+    used to hang StealthySession with no Gemini call and no Telegram update.
+    """
     from scrapling.fetchers import StealthySession
 
     from app import config
     from app.runtime_settings import get_headless
 
-    with StealthySession(
-        headless=get_headless(),
-        real_chrome=True,
-        user_data_dir=str(config.CHROME_BOT_PROFILE),
-    ) as session:
-        page = session.fetch(url)
+    kwargs = {
+        'headless': get_headless(),
+        'real_chrome': True,
+        'user_data_dir': str(config.CHROME_BOT_PROFILE),
+        'timeout': BROWSER_FETCH_TIMEOUT_MS,
+    }
+    try:
+        session_cm = StealthySession(**kwargs)
+    except TypeError:
+        kwargs.pop('timeout', None)
+        session_cm = StealthySession(**kwargs)
+    with session_cm as session:
+        try:
+            page = session.fetch(url, timeout=BROWSER_FETCH_TIMEOUT_MS)
+        except TypeError:
+            page = session.fetch(url)
         raw = getattr(page, 'html_content', None) or getattr(page, 'body', None) or ''
         if isinstance(raw, bytes):
             raw = raw.decode('utf-8', errors='replace')

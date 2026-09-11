@@ -162,6 +162,12 @@ beat (timing, emotion, context, imagination). Each of the 14 cut frames
 goes through nano-banana text+image→image. Original stays. Delivery =
 twisted prompt + twisted stills.
 
+**Follow (2026-09-11, reverse #14 never hit Gemini):** deploy purges
+Celery, so a just-queued reverse can sit forever; Instagram Chrome can
+also hang with no timeout. Resume stuck rows on worker start, 90s
+browser timeout, Telegram says queued/downloading, Retry button +
+auto-kick after 45s in queue.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

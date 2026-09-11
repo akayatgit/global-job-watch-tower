@@ -341,6 +341,8 @@ class PromptDeck:
             return self._skip_intake_twist(chat_id)
         if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
             return self.twist_reply(chat_id, int(parts[1]))
+        if action == 'revretry' and len(parts) >= 2 and parts[1].isdigit():
+            return self.retry_reverse_reply(chat_id, int(parts[1]))
         return ButtonReply(PROMPTS_USAGE)
 
     def detail_reply(self, chat_id: str, prompt_id: int) -> ButtonReply:
@@ -710,9 +712,35 @@ class PromptDeck:
         label = vision_label(vision_engine or row.get('vision_engine'))
         return ButtonReply(
             f"🎞 Reverse prompt #{row['id']} started from {where} · {label}. "
-            'Downloading → timestamped prompt → 14 cut-reference frames → I cut the reel '
-            '(clip · 6-frame storyboard · scrolling prompt). '
-            'Usually 2–5 minutes; the reel, the prompt, then downloadable frames land here.',
+            'I will say when the clip is downloading, then when Gemini is watching it. '
+            'Downloading → timestamped prompt → 14 cut-reference frames → I cut the reel. '
+            'Usually 2–5 minutes. If it sits quiet, tap Retry — deploy can drop the worker job.',
+            [[('🔄 Retry', f"pt:revretry:{row['id']}"), ('✖ Cancel', 'pt:cancel')]],
+        )
+
+    def retry_reverse_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
+        """Owner tapped Retry on a reverse that never reached Gemini."""
+        try:
+            row = self.api_post(f'/api/prompts/reverse/{reverse_id}/retry', {})
+        except Exception as exc:
+            if '404' in str(exc):
+                return ButtonReply(f'No reverse #{reverse_id}.')
+            if '409' in str(exc):
+                return ButtonReply(f'Reverse #{reverse_id} is already finished — no retry needed.')
+            logger.exception('reverse retry failed')
+            return ButtonReply('Tower could not retry — check /health and try again.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower could not retry — check /health and try again.')
+        if row.get('status') == 'failed':
+            return ButtonReply(f"Retry failed: {row.get('error') or 'unknown error'}")
+        if self.on_reverse_started is not None:
+            try:
+                self.on_reverse_started(str(chat_id), reverse_id)
+            except Exception:
+                logger.exception('reverse watcher failed to start id=%s', reverse_id)
+        return ButtonReply(
+            f"🔄 Reverse #{reverse_id} kicked again — waiting for the clip, then Gemini. "
+            'Forward the video file if Instagram keeps hiding it.',
         )
 
     def watch_reverse(
@@ -734,6 +762,24 @@ class PromptDeck:
                 row = None
             if isinstance(row, dict):
                 status = str(row.get('status') or '')
+                if status == 'queued' and status not in announced and self.send_text:
+                    announced.add(status)
+                    self.send_text(chat_id, f'⏳ Reverse #{reverse_id}: in the worker queue — waiting for a free lane.')
+                if status == 'downloading' and status not in announced and self.send_text:
+                    announced.add(status)
+                    self.send_text(
+                        chat_id,
+                        f'⬇️ Reverse #{reverse_id}: downloading the clip '
+                        '(Instagram may need the logged-in browser, ~90s max).',
+                    )
+                if status == 'queued' and waited >= 45 and 'requeued' not in announced:
+                    announced.add('requeued')
+                    try:
+                        self.api_post(f'/api/prompts/reverse/{reverse_id}/retry', {})
+                        if self.send_text:
+                            self.send_text(chat_id, f'🔄 Reverse #{reverse_id}: worker had not picked it up — I kicked it again.')
+                    except Exception:
+                        logger.exception('auto-retry reverse failed id=%s', reverse_id)
                 if status == 'describing' and status not in announced and self.send_text:
                     from app.prompts.reverse_prompt import vision_label
 

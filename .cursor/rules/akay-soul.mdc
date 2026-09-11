@@ -391,6 +391,13 @@ need to be told twice.
   images go through text+image→image. Original stays; the twisted
   prompt and twisted stills are the recreation set.
 
+- **2026-09-11 · Reverse #14 never reached Gemini.** Telegram sat on
+  "started" while Replicate had zero Gemini calls. Two doors: deploy
+  purges Celery so a queued reverse dies, and Instagram Chrome can hang
+  with no timeout. A "test" that only watches `describing` hides both.
+  Resume unfinished reverses on worker start, hard-cap the browser
+  fetch, announce queued/downloading, Retry + auto-kick after 45s.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

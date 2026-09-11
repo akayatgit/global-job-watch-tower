@@ -226,6 +226,27 @@ class FetchAndDescribeTests(unittest.TestCase):
         self.assertEqual(fetched.platform, 'instagram')
         self.assertEqual(fetched.data, FAKE_MP4)
 
+    def test_hung_browser_fetch_times_out_instead_of_blocking_gemini(self):
+        """Reverse #14: Instagram Chrome hung; Replicate never saw a call."""
+        import time
+
+        def http_fetch(url, referer=None, max_bytes=None):
+            raise reverse_prompt.urllib.error.HTTPError(url, 401, 'login', {}, None)
+
+        def hang(_url):
+            time.sleep(3)
+
+        with mock.patch.object(reverse_prompt, 'BROWSER_FETCH_HARD_TIMEOUT_S', 0.3):
+            with self.assertRaises(ReverseError) as ctx:
+                reverse_prompt.fetch_video(
+                    IG_URL,
+                    http_fetch=http_fetch,
+                    browser_fetch=hang,
+                    ffmpeg=None,
+                )
+        self.assertIn('timed out', str(ctx.exception).lower())
+        self.assertIn('forward the video', str(ctx.exception).lower())
+
     def test_fetch_video_rejects_unknown_hosts_and_hls_without_ffmpeg(self):
         with self.assertRaises(ReverseError):
             reverse_prompt.fetch_video('https://youtube.com/watch?v=abc')
@@ -940,6 +961,49 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertIn('liquid gold', row.twist_prompt)
         self.assertIn('twref.jpg', row.twist_frames or '')
         self.assertEqual(row.prompt_text.startswith('[0.0s–8.0s] a juice glass'), True)
+
+    def test_retry_and_resume_kick_stuck_reverses_without_a_prompt(self):
+        from app import tasks
+
+        with mock.patch('app.tasks.reverse_prompt_video') as queued:
+            reverse_id = self.client.post(
+                '/api/prompts/reverse',
+                json={'source_url': IG_URL},
+            ).json()['id']
+        queued.delay.assert_called()
+        row = self.db.get(ReversePrompt, reverse_id)
+        row.status = 'downloading'
+        row.prompt_text = None
+        self.db.commit()
+
+        with mock.patch('app.tasks.reverse_prompt_video') as kicked:
+            response = self.client.post(f'/api/prompts/reverse/{reverse_id}/retry')
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(response.json()['status'], 'queued')
+        kicked.delay.assert_called_once_with(reverse_id)
+
+        row = self.db.get(ReversePrompt, reverse_id)
+        row.status = 'downloading'
+        row.prompt_text = None
+        self.db.commit()
+
+        class _SessionCtx:
+            def __init__(self, db):
+                self.db = db
+
+            def __enter__(self):
+                return self.db
+
+            def __exit__(self, *exc):
+                return False
+
+        seen: list[int] = []
+        with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
+                mock.patch('app.tasks.console_log'):
+            n = tasks.resume_stuck_reverses(delay=seen.append)
+        self.assertEqual(n, 1)
+        self.assertEqual(seen, [reverse_id])
+        self.assertEqual(self.db.get(ReversePrompt, reverse_id).status, 'queued')
 
 
 if __name__ == '__main__':
