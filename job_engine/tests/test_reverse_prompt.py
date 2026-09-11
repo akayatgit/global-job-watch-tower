@@ -96,6 +96,7 @@ class UrlAndParseTests(unittest.TestCase):
         )
         self.assertEqual(reading.keyword, 'SKINCARE')
         self.assertIn('serum bottle', reading.prompt)
+        self.assertEqual(reading.cuts, [(0.0, 1.0)])
         wrapped = reverse_prompt.parse_reading(
             'Sure.\n{"keyword": "WATCH", "prompt": "[0.0s–2.0s] a watch on slate."}\nThanks.',
         )
@@ -134,6 +135,39 @@ class UrlAndParseTests(unittest.TestCase):
         self.assertIn('Macro push-in', reading.prompt)
         self.assertIn('Style:', reading.prompt)
 
+    def test_parse_reading_strips_cuts_array_from_the_prompt(self):
+        reading = reverse_prompt.parse_reading(json.dumps({
+            'keyword': 'WATCH',
+            'prompt': '[0.0s–1.8s] a steel watch on wet slate.\n[1.8s–4.0s] macro push-in.\nStyle: noir.',
+            'cuts': [{'start': 0.0, 'end': 1.8}, {'start': 1.8, 'end': 4.0}],
+        }))
+        self.assertEqual(reading.keyword, 'WATCH')
+        self.assertIn('steel watch', reading.prompt)
+        self.assertNotIn('"cuts"', reading.prompt)
+        self.assertNotIn('"keyword"', reading.prompt)
+        self.assertEqual(reading.cuts, [(0.0, 1.8), (1.8, 4.0)])
+
+    def test_plan_reference_times_follows_cuts_not_an_equal_grid(self):
+        seven = [(i * 1.0, i * 1.0 + 1.0) for i in range(7)]
+        times = reverse_prompt.plan_reference_times(seven, duration_s=7.0, count=14)
+        self.assertEqual(len(times), 14)
+        self.assertAlmostEqual(times[0], 0.0)
+        self.assertLess(times[-1], 7.0)
+        # Start + end of each cut — not 0.5, 1.5, 2.5…
+        self.assertIn(0.0, times)
+        self.assertTrue(any(abs(t - 0.96) < 0.02 for t in times))
+        three = [(0.0, 4.0), (4.0, 5.0), (5.0, 8.0)]
+        filled = reverse_prompt.plan_reference_times(three, duration_s=8.0, count=14)
+        self.assertEqual(len(filled), 14)
+        interiors = [t for t in filled if 0.2 < t < 3.8]
+        self.assertGreaterEqual(len(interiors), 2, 'longest cut should donate interior frames')
+        grid = [round((i + 0.5) / 14 * 8.0, 3) for i in range(14)]
+        self.assertNotEqual(filled, grid)
+        many = [(i * 0.5, i * 0.5 + 0.5) for i in range(10)]
+        trimmed = reverse_prompt.plan_reference_times(many, duration_s=5.0, count=14)
+        self.assertLessEqual(len(trimmed), 14)
+        self.assertAlmostEqual(trimmed[0], 0.0)
+
     def test_build_instruction_carries_every_dimension_and_the_exemplar(self):
         text = reverse_prompt.build_instruction(duration_s=8.0, exemplar='EXEMPLAR BODY')
         self.assertIn('8.0-second', text)
@@ -141,6 +175,7 @@ class UrlAndParseTests(unittest.TestCase):
             self.assertIn(dimension.split('(')[0].strip(), text)
         self.assertIn('EXEMPLAR BODY', text)
         self.assertIn('"keyword"', text)
+        self.assertIn('"cuts"', text)
         bundled = reverse_prompt.load_exemplar()
         self.assertIn('pacific chill', bundled.lower())
         self.assertIn('louis vuitton', bundled.lower())
@@ -237,6 +272,7 @@ class FetchAndDescribeTests(unittest.TestCase):
                 return json.dumps({
                     'keyword': 'COFFEE',
                     'prompt': '[0.0s–8.0s] a ceramic dripper under morning light.',
+                    'cuts': [{'start': 0.0, 'end': 8.0}],
                 })
 
             reading = reverse_prompt.describe_video(
@@ -244,11 +280,33 @@ class FetchAndDescribeTests(unittest.TestCase):
             )
             self.assertEqual(reading.keyword, 'COFFEE')
             self.assertIn('dripper', reading.prompt)
+            self.assertEqual(reading.cuts, [(0.0, 8.0)])
+            self.assertNotIn('"cuts"', reading.prompt)
             self.assertEqual(seen['model'], config.REPLICATE_VISION_MODEL)
             self.assertIn('system_instruction', seen['keys'])
             self.assertIn('8.0-second', seen['prompt'])
             self.assertGreaterEqual(seen['input']['max_output_tokens'], 16384)
             self.assertEqual(seen['input']['thinking_budget'], 0)
+            self.assertIn('cuts', seen['input']['system_instruction'])
+
+    def test_store_reference_frames_uses_injected_grab(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            stored: list[tuple[str, bytes]] = []
+
+            frames = reverse_prompt.store_reference_frames(
+                path,
+                [0.0, 1.76],
+                prompt_id=11,
+                grab=lambda _p, t, **_k: f'JPEG-{t}'.encode(),
+                store=lambda key, data, content_type=None: stored.append((key, data)) or path,
+                key_for=lambda kind, prompt_id, suffix: f'prompts/d/{kind}-{prompt_id}.{suffix}',
+            )
+            self.assertEqual([f.t for f in frames], [0.0, 1.76])
+            self.assertEqual(frames[0].filename, 'cut-01-0.00s.jpg')
+            self.assertEqual(stored[1][1], b'JPEG-1.76')
+            self.assertTrue(stored[0][0].endswith('.jpg'))
 
     def test_resolve_vision_engine_aliases(self):
         self.assertEqual(reverse_prompt.resolve_vision_engine('Gemini'), 'gemini')
@@ -510,6 +568,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertEqual(body['source_url'], 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertEqual(body['header_title'], 'CINEMATIC AI AD')
         self.assertEqual(body['vision_engine'], 'gemini')
+        self.assertEqual(body['ref_frames'], [])
         queued.delay.assert_called_once_with(body['id'])
         listed = self.client.get('/api/prompts/reverse').json()
         self.assertEqual(listed['total'], 1)
@@ -589,9 +648,11 @@ class ReverseApiAndTaskTests(unittest.TestCase):
             reel_url='https://tower.example/api/partner/v1/assets/prompts/d/rreel-1.mp4',
             frames=6, duration_s=8.0, engine='ffmpeg',
         )
+        refs = [reverse_prompt.ReferenceFrame(t=0.0, key='prompts/d/rref-1.jpg', filename='cut-01-0.00s.jpg')]
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
                 mock.patch('app.prompts.reverse_prompt.fetch_video', return_value=fetched), \
                 mock.patch('app.prompts.reverse_prompt.describe_video', return_value=reading), \
+                mock.patch('app.prompts.reverse_prompt.store_reference_frames', return_value=refs), \
                 mock.patch('app.prompts.video_creator.create_reel', return_value=reel), \
                 mock.patch('app.prompts.post_reel.probe', return_value=mock.Mock(duration_s=8.0)), \
                 mock.patch('app.prompts.post_reel.resolve_engine', return_value=(mock.Mock(exe='/usr/bin/ffmpeg'), {})), \
@@ -605,6 +666,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertIn('dripper', row.prompt_text)
         self.assertEqual(row.reel_key, 'prompts/d/rreel-1.mp4')
         self.assertTrue(row.video_key)
+        self.assertIn('rref-1.jpg', row.ref_frames or '')
 
     def test_task_reel_failure_still_finishes_with_the_prompt(self):
         from app import tasks
@@ -628,6 +690,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         reading = ReverseReading(keyword='WATCH', prompt='[0.0s–4.0s] a watch.', model='g', raw='')
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
                 mock.patch('app.prompts.reverse_prompt.describe_video', return_value=reading), \
+                mock.patch('app.prompts.reverse_prompt.store_reference_frames', return_value=[]), \
                 mock.patch('app.prompts.video_creator.create_reel', side_effect=RuntimeError('no engine')), \
                 mock.patch('app.prompts.post_reel.probe', return_value=mock.Mock(duration_s=4.0)), \
                 mock.patch('app.prompts.pipeline.ingest', return_value=(None, 'rejected')), \

@@ -136,6 +136,12 @@ get the mp4 (native video if the API accepts it, otherwise the file in
 their code sandbox). `vision_engine` on `reverse_prompts` (migration
 `f2c4d6e8a910`). Keys: Replicate / OpenAI / Anthropic.
 
+**Follow (2026-09-11, cut-reference frames):** after the reverse prompt,
+Ashok needs ~14 **downloadable** frames to recreate the IG/Pin clip —
+not the reel storyboard. The model returns a `cuts` array (start/end of
+each hard cut); we strip it from the stored prompt and grab JPEGs at
+those times from the downloaded file. Telegram: reel → prompt → documents.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

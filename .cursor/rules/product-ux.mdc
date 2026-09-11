@@ -825,3 +825,11 @@ it, shows recipient count) → `/pushconfirm`
   code sandbox (Files + code interpreter / container_upload), which is
   how Codex lets Astra inspect a clip. Missing API keys refuse that
   button and leave the other two. Same reel either way. Owner-only.
+- **Reverse prompt ships cut-reference frames (Ashok 2026-09-11).** After
+  the video and the prompt, Telegram must send ~14 **downloadable**
+  JPEGs from the source clip at hard-cut timestamps (start + end of each
+  shot). These are for recreating the IG/Pin video with the prompt —
+  not the 6-frame reel storyboard. Times come from the model's `cuts`
+  array (stripped from the stored prompt) or from `[0.0s–1.8s]` segments
+  already in the prompt. Never an equal-interval grid. `sendDocument`
+  so the files stay attachable.

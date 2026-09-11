@@ -35,7 +35,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -119,6 +119,14 @@ class ReverseReading:
     prompt: str
     model: str
     raw: str
+    cuts: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass
+class ReferenceFrame:
+    t: float
+    key: str
+    filename: str
 
 
 # ------------------------------------------------------------------ URLs
@@ -307,26 +315,29 @@ Rules:
 - Use concrete numbers where a filmmaker would (focal length, fps, colour temperature, degrees of orbit, percent push-in).
 - Keep every cut physically plausible and lighting continuous across cuts.
 - End with a one-line "Style:" summary.
-- The JSON object MUST be complete: close the prompt string and the object. Never stop mid-sentence or mid-beat. A short cinematic clip typically needs 3000–8000 characters — write them all.
+- The JSON object MUST be complete: close every string and the object. Never stop mid-sentence or mid-beat. A short cinematic clip typically needs 3000–8000 characters — write them all.
+- Also list every hard cut / shot change as `cuts`. These are the frames a filmmaker needs to recreate the clip — not evenly spaced stills.
 
 Quality bar — this exemplar shows the depth, structure and vocabulary expected. Match its density; do not copy its content:
 ---
 {exemplar}
 ---
 
-Return STRICT JSON with exactly two keys and nothing else:
-{{"keyword": "<ONE uppercase word people would comment to get this prompt — the product category, e.g. SKINCARE, COFFEE, WATCH>", "prompt": "<the full timestamped prompt as one string with newlines>"}}"""
+Return STRICT JSON with exactly three keys and nothing else:
+{{"keyword": "<ONE uppercase word people would comment to get this prompt — the product category, e.g. SKINCARE, COFFEE, WATCH>", "prompt": "<the full timestamped prompt as one string with newlines>", "cuts": [{{"start": 0.0, "end": 1.8}}]}}
+`cuts` covers the full duration in order. `start` / `end` are seconds at the first and last frame of that shot. Do not put the cuts array inside the prompt string."""
 
 USER_PROMPT = (
     'Reverse-engineer this {duration} product video into the generation prompt described in your '
-    'instructions. Cover the full duration with timestamped segments. Return only complete JSON — '
-    'close the prompt string and the object. Never stop mid-sentence.'
+    'instructions. Cover the full duration with timestamped segments. List every hard cut in `cuts`. '
+    'Return only complete JSON — close the prompt string, the cuts array and the object. Never stop mid-sentence.'
 )
 
 USER_PROMPT_RETRY = (
     'Your previous JSON was cut off mid-prompt. Return ONLY the complete JSON object '
-    '{{"keyword":"<ONE uppercase word>","prompt":"<full timestamped prompt>"}} covering this '
-    '{duration} clip. Close the prompt string and the object. Do not stop mid-sentence.'
+    '{{"keyword":"<ONE uppercase word>","prompt":"<full timestamped prompt>",'
+    '"cuts":[{{"start":0.0,"end":1.8}}]}} covering this {duration} clip. Close every string, '
+    'the cuts array and the object. Do not stop mid-sentence.'
 )
 
 
@@ -485,32 +496,282 @@ def _json_string_field(body: str, key: str) -> tuple[str | None, bool]:
     return (value or None), False
 
 
+SEGMENT_RE = re.compile(
+    r'\[(\d+(?:\.\d+)?)\s*s?\s*[–\-\—to]+\s*(\d+(?:\.\d+)?)\s*s?\]',
+    re.I,
+)
+REFERENCE_FRAME_COUNT = 14
+CUT_END_INSET_S = 0.04
+
+
+def _as_seconds(raw) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    text = str(raw or '').strip().lower().replace('seconds', '').replace('second', '').rstrip('s')
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _cut_pair(item) -> tuple[float, float] | None:
+    if isinstance(item, (int, float)) and not isinstance(item, bool):
+        t = float(item)
+        return (t, t)
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        start, end = _as_seconds(item[0]), _as_seconds(item[1])
+        if start is None or end is None:
+            return None
+        return (start, end)
+    if not isinstance(item, dict):
+        return None
+    start = _as_seconds(item.get('start') if item.get('start') is not None else item.get('from', item.get('t0', item.get('in'))))
+    end = _as_seconds(item.get('end') if item.get('end') is not None else item.get('to', item.get('t1', item.get('out'))))
+    if start is None and item.get('t') is not None:
+        start = _as_seconds(item.get('t'))
+        end = start
+    if start is None or end is None:
+        return None
+    return (start, end)
+
+
+def coerce_cuts(raw) -> list[tuple[float, float]]:
+    """Accept cuts / timestamps in the shapes models actually emit."""
+    if not raw:
+        return []
+    if isinstance(raw, dict):
+        raw = raw.get('cuts') or raw.get('shots') or raw.get('frames') or raw.get('timestamps') or []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    if raw and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in raw):
+        return [(float(t), float(t)) for t in raw]
+    out: list[tuple[float, float]] = []
+    for item in raw:
+        pair = _cut_pair(item)
+        if pair is not None:
+            out.append(pair)
+    return out
+
+
+def cuts_from_prompt(prompt: str) -> list[tuple[float, float]]:
+    """Shot ranges already written as `[0.0s–1.8s]` in the generation prompt."""
+    pairs: list[tuple[float, float]] = []
+    for match in SEGMENT_RE.finditer(prompt or ''):
+        start, end = float(match.group(1)), float(match.group(2))
+        if end < start:
+            start, end = end, start
+        pairs.append((start, end))
+    return pairs
+
+
+def normalize_cuts(cuts: list[tuple[float, float]], duration_s: float | None) -> list[tuple[float, float]]:
+    limit = duration_s if duration_s and duration_s > 0 else None
+    cleaned: list[tuple[float, float]] = []
+    for start, end in cuts:
+        if start < 0:
+            start = 0.0
+        if end < 0:
+            end = 0.0
+        if end < start:
+            start, end = end, start
+        if limit is not None:
+            start = min(start, limit)
+            end = min(end, limit)
+        if cleaned and abs(start - cleaned[-1][0]) < 0.02 and abs(end - cleaned[-1][1]) < 0.02:
+            continue
+        cleaned.append((start, end))
+    return cleaned
+
+
+def plan_reference_times(
+    cuts: list[tuple[float, float]],
+    *,
+    duration_s: float | None,
+    count: int = REFERENCE_FRAME_COUNT,
+) -> list[float]:
+    """~14 timestamps from hard cuts — start + end of each shot.
+
+    Not an equal grid. Extra slots go to interiors of the longest cuts.
+    Surplus short cuts are dropped; the first start and last end stay.
+    """
+    count = max(2, int(count or REFERENCE_FRAME_COUNT))
+    ranges = normalize_cuts(cuts, duration_s)
+    if not ranges:
+        end = duration_s if duration_s and duration_s > 0 else 0.0
+        ranges = [(0.0, end)]
+
+    def _end_in_shot(start: float, end: float) -> float:
+        if end - start > CUT_END_INSET_S * 2:
+            return end - CUT_END_INSET_S
+        return end if end > start else start
+
+    points: list[float] = []
+    if all(abs(end - start) < 0.02 for start, end in ranges):
+        points = [start for start, _end in ranges]
+    else:
+        for start, end in ranges:
+            points.append(start)
+            points.append(_end_in_shot(start, end))
+        points[0] = ranges[0][0]
+        points[-1] = _end_in_shot(*ranges[-1])
+
+    # Always keep the first frame of the first cut and the last of the last.
+    must = {round(ranges[0][0], 3), round(_end_in_shot(*ranges[-1]), 3)}
+
+    def _dedupe(values: list[float]) -> list[float]:
+        kept: list[float] = []
+        for t in values:
+            t = max(0.0, float(t))
+            if duration_s and duration_s > 0:
+                t = min(t, duration_s)
+            if kept and abs(t - kept[-1]) < 0.02:
+                continue
+            kept.append(round(t, 3))
+        return kept
+
+    points = _dedupe(points)
+    if len(points) > count:
+        ranked = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
+        keep: list[float] = [ranges[0][0], _end_in_shot(*ranges[-1])]
+        for start, end in ranked:
+            if len(_dedupe(keep)) >= count:
+                break
+            keep.append(start)
+            keep.append(_end_in_shot(start, end))
+        points = _dedupe(sorted(keep))[:count]
+        for required in must:
+            if required not in points and len(points) == count:
+                points[-2] = required
+                points = _dedupe(sorted(points))[:count]
+    elif len(points) < count:
+        longest = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
+        extras: list[float] = []
+        for frac in (0.35, 0.7, 0.2, 0.85, 0.5):
+            for start, end in longest:
+                span = end - start
+                if span < 0.3:
+                    continue
+                extras.append(start + span * frac)
+            merged = _dedupe(sorted(points + extras))
+            if len(merged) >= count:
+                points = merged[:count]
+                break
+        else:
+            points = _dedupe(sorted(points + extras))[:count]
+    return points
+
+
 def parse_reading(text: str, *, model: str = '') -> ReverseReading:
     """The model is asked for JSON; tolerate fences, prose around it, a
     truncated JSON object, or a bare prompt (keyword falls back to PRODUCT).
 
     Never store the `{ "keyword": …, "prompt": … }` wrapper as the prompt —
     that is what reverse #7 scrolled in the reel and pasted in Telegram.
+    The `cuts` / `frames` array is stripped here and never enters prompt_text.
     """
     raw = (text or '').strip()
     body = _strip_fences(raw)
     data = _load_json_object(body)
     if isinstance(data, dict) and str(data.get('prompt') or '').strip():
-        return ReverseReading(keyword=clean_keyword(data.get('keyword')), prompt=str(data['prompt']).strip(), model=model, raw=raw)
+        prompt = str(data['prompt']).strip()
+        cuts = coerce_cuts(data.get('cuts') or data.get('shots') or data.get('frames') or data.get('timestamps')) or cuts_from_prompt(prompt)
+        return ReverseReading(
+            keyword=clean_keyword(data.get('keyword')),
+            prompt=prompt,
+            model=model,
+            raw=raw,
+            cuts=cuts,
+        )
     keyword_raw, _closed = _json_string_field(body, 'keyword')
     prompt_val, _prompt_closed = _json_string_field(body, 'prompt')
     if prompt_val and prompt_val.strip():
+        prompt = prompt_val.strip()
         return ReverseReading(
             keyword=clean_keyword(keyword_raw),
-            prompt=prompt_val.strip(),
+            prompt=prompt,
             model=model,
             raw=raw,
+            cuts=cuts_from_prompt(prompt),
         )
     if len(body) < 80:
         raise ReverseError(f'vision model returned no prompt: {body[:120] or "(empty)"}')
     if body.lstrip().startswith('{') and '"prompt"' in body:
         raise ReverseError('vision model returned truncated JSON with no recoverable prompt')
-    return ReverseReading(keyword=DEFAULT_KEYWORD, prompt=body, model=model, raw=raw)
+    return ReverseReading(keyword=DEFAULT_KEYWORD, prompt=body, model=model, raw=raw, cuts=cuts_from_prompt(body))
+
+
+def frame_jpeg_at(
+    video_path: Path,
+    t: float,
+    *,
+    ffmpeg: str | None = None,
+) -> bytes:
+    """One JPEG at timestamp `t` from the downloaded clip (ffmpeg seek)."""
+    from app.prompts import post_reel
+
+    exe = ffmpeg or post_reel.ffmpeg_exe()
+    cmd = [
+        exe, '-v', 'error', '-ss', f'{max(0.0, t):.3f}', '-i', str(video_path),
+        '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '3', '-',
+    ]
+    result = subprocess.run(cmd, capture_output=True, timeout=60)
+    if result.returncode != 0 or len(result.stdout) < 64:
+        err = (result.stderr or b'').decode('utf-8', errors='replace').strip()[:160]
+        raise ReverseError(f'could not grab frame at {t:.2f}s: {err or "empty jpeg"}')
+    return result.stdout
+
+
+def store_reference_frames(
+    video_path: Path,
+    times: list[float],
+    *,
+    prompt_id: int,
+    grab: Callable[..., bytes] | None = None,
+    store: Callable[..., Path] | None = None,
+    key_for: Callable[..., str] | None = None,
+    ffmpeg: str | None = None,
+) -> list[ReferenceFrame]:
+    """Write one JPEG per cut timestamp next to the source clip."""
+    from app.prompts import video_creator
+
+    grab = grab or (lambda path, t, **_kw: frame_jpeg_at(path, t, ffmpeg=ffmpeg))
+    store = store or video_creator.store_bytes
+    key_for = key_for or video_creator.asset_key
+    frames: list[ReferenceFrame] = []
+    for index, t in enumerate(times, start=1):
+        try:
+            data = grab(video_path, t)
+        except Exception as exc:
+            logger.warning('reference frame %s at %.3fs failed: %s', index, t, exc)
+            continue
+        if not data:
+            continue
+        key = key_for(f'rref{index:02d}', prompt_id=prompt_id, suffix='jpg')
+        store(key, data, content_type='image/jpeg')
+        frames.append(ReferenceFrame(
+            t=round(float(t), 3),
+            key=key,
+            filename=f'cut-{index:02d}-{t:.2f}s.jpg',
+        ))
+    return frames
+
+
+def serialize_reference_frames(frames: list[ReferenceFrame]) -> list[dict]:
+    return [{'t': frame.t, 'key': frame.key, 'filename': frame.filename} for frame in frames]
+
+
+def load_reference_frames(raw) -> list[dict]:
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict) and item.get('key')]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return []
+        return load_reference_frames(data)
+    return []
 
 
 def _output_text(output) -> str:

@@ -141,6 +141,7 @@ class DeckTests(unittest.TestCase):
         self.tower = FakeTower()
         self.sent_photos: list[tuple[str, bytes, str]] = []
         self.sent_videos: list[tuple[str, bytes, str]] = []
+        self.sent_docs: list[tuple[str, bytes, str, str]] = []
         self.texts: list[tuple[str, str]] = []
         self.started: list[tuple[str, int]] = []
         self.deck = PromptDeck(
@@ -151,6 +152,7 @@ class DeckTests(unittest.TestCase):
             fetch_asset=lambda key: b'ASSET:' + key.encode(),
             send_photo_bytes=lambda c, d, cap: self.sent_photos.append((c, d, cap)),
             send_video_bytes=lambda c, d, cap: self.sent_videos.append((c, d, cap)),
+            send_document_bytes=lambda c, d, filename='f.jpg', caption='': self.sent_docs.append((c, d, filename, caption)),
             send_text=lambda c, t: self.texts.append((c, t)),
             on_render_started=lambda c, r: self.started.append((c, r)),
             on_reverse_started=lambda c, r: self.started.append((c, r)),
@@ -446,6 +448,10 @@ class DeckTests(unittest.TestCase):
             'prompt_text': long_prompt, 'model': 'google/gemini-2.5-flash',
             'prompt_id': 44, 'reel_key': 'prompts/d/rreel.mp4',
             'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+            'ref_frames': [
+                {'t': 0.0, 'key': 'prompts/d/rref-01.jpg', 'filename': 'cut-01-0.00s.jpg'},
+                {'t': 1.76, 'key': 'prompts/d/rref-02.jpg', 'filename': 'cut-02-1.76s.jpg'},
+            ],
         }
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/rreel.mp4')
@@ -455,6 +461,12 @@ class DeckTests(unittest.TestCase):
         joined = ''.join(prompt_texts)
         self.assertIn(long_prompt.split('\n', 1)[0], joined)
         self.assertIn('keyword COFFEE', self.texts[0][1])
+        self.assertNotIn('"cuts"', joined)
+        self.assertTrue(any('cut-reference frames' in t for _c, t in self.texts))
+        self.assertEqual(len(self.sent_docs), 2)
+        self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/rref-01.jpg')
+        self.assertEqual(self.sent_docs[0][2], 'cut-01-0.00s.jpg')
+        self.assertIn('0.00s', self.sent_docs[0][3])
 
     def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
         states = iter([

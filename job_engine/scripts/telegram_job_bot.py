@@ -424,6 +424,16 @@ class TelegramAPI:
             fields['caption'] = _truncate_utf16(caption, 1024)
         self._multipart('sendVideo', fields, 'video', 'prompt.mp4', data, 'video/mp4', timeout=600)
 
+    def send_document_bytes(
+        self, chat_id: str, data: bytes, filename: str = 'frame.jpg', caption: str = '',
+    ) -> None:
+        """sendDocument keeps the original JPEG so Ashok can download and attach it."""
+        name = (filename or 'frame.jpg').replace('/', '-')
+        fields = {'chat_id': str(chat_id)}
+        if caption:
+            fields['caption'] = _truncate_utf16(caption, 1024)
+        self._multipart('sendDocument', fields, 'document', name, data, 'image/jpeg')
+
     def get_file_bytes(self, file_id: str) -> tuple[bytes, str]:
         """Download a photo or video the owner sent (Bot API getFile → file path).
         Videos use a longer timeout; Telegram's bot-download ceiling is 20 MB
@@ -505,6 +515,7 @@ class JobMasterTelegramBot:
             fetch_asset=self._fetch_local_asset,
             send_photo_bytes=getattr(self.api, 'send_photo_bytes', None),
             send_video_bytes=getattr(self.api, 'send_video_bytes', None),
+            send_document_bytes=getattr(self.api, 'send_document_bytes', None),
             send_text=self.api.send,
             on_render_started=self._start_render_watch,
             on_reverse_started=self._start_reverse_watch,

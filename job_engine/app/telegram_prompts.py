@@ -125,6 +125,7 @@ class PromptDeck:
         fetch_asset: Callable[[str], bytes] | None = None,
         send_photo_bytes: Callable[[str, bytes, str], None] | None = None,
         send_video_bytes: Callable[[str, bytes, str], None] | None = None,
+        send_document_bytes: Callable[..., None] | None = None,
         send_text: Callable[[str, str], None] | None = None,
         on_render_started: Callable[[str, int], None] | None = None,
         on_reverse_started: Callable[[str, int], None] | None = None,
@@ -138,6 +139,7 @@ class PromptDeck:
         self.fetch_asset = fetch_asset
         self.send_photo_bytes = send_photo_bytes
         self.send_video_bytes = send_video_bytes
+        self.send_document_bytes = send_document_bytes
         self.send_text = send_text
 
     # ------------------------------------------------------------ commands
@@ -588,9 +590,9 @@ class PromptDeck:
         label = vision_label(vision_engine or row.get('vision_engine'))
         return ButtonReply(
             f"🎞 Reverse prompt #{row['id']} started from {where} · {label}. "
-            'Downloading → timestamped prompt → I cut the reel '
+            'Downloading → timestamped prompt → 14 cut-reference frames → I cut the reel '
             '(clip · 6-frame storyboard · scrolling prompt). '
-            'Usually 2–5 minutes; the reel and the prompt text land here.',
+            'Usually 2–5 minutes; the reel, the prompt, then downloadable frames land here.',
         )
 
     def watch_reverse(
@@ -661,6 +663,44 @@ class PromptDeck:
             for chunk in _chunks(str(row.get('prompt_text') or '(no prompt text)'), TELEGRAM_TEXT_LIMIT - len(head)):
                 self.send_text(chat_id, head + chunk)
                 head = ''
+        self._deliver_reference_frames(chat_id, row)
+
+    def _deliver_reference_frames(self, chat_id: str, row: dict[str, Any]) -> None:
+        """Downloadable cut frames AFTER the prompt — not the reel storyboard."""
+        from app.prompts.reverse_prompt import load_reference_frames
+
+        frames = load_reference_frames(row.get('ref_frames'))
+        rid = row.get('id')
+        if not frames:
+            if self.send_text and row.get('ref_error'):
+                self.send_text(chat_id, f"⚠️ Cut-reference frames for #{rid}: {row.get('ref_error')}")
+            return
+        if self.send_text:
+            self.send_text(
+                chat_id,
+                f'🖼 {len(frames)} cut-reference frames for #{rid} — download these '
+                '(not the storyboard). Attach them with the prompt to recreate the clip.',
+            )
+        if not self.fetch_asset or not self.send_document_bytes:
+            if self.send_text:
+                keys = ', '.join(str(frame.get('key') or '') for frame in frames[:14])
+                self.send_text(chat_id, f'Reference frame keys: {keys}')
+            return
+        for index, frame in enumerate(frames, start=1):
+            key = str(frame.get('key') or '')
+            if not key:
+                continue
+            t = frame.get('t')
+            name = str(frame.get('filename') or f'cut-{index:02d}-{t}s.jpg')
+            caption = f'{index}/{len(frames)} · {t:.2f}s' if isinstance(t, (int, float)) else f'{index}/{len(frames)}'
+            try:
+                self.send_document_bytes(
+                    chat_id, self.fetch_asset(key), filename=name, caption=caption,
+                )
+            except TypeError:
+                self.send_document_bytes(chat_id, self.fetch_asset(key), name, caption)
+            except Exception:
+                logger.exception('reference frame upload failed id=%s key=%s', rid, key)
 
     # ----------------------------------------------------- render watcher
 

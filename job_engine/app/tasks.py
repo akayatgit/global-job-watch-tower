@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 
 from celery.signals import worker_ready
@@ -1002,6 +1003,21 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.model = reading.model
                 db.commit()
                 log(f'prompt written by {reading.model} ({len(reading.prompt)} chars, keyword {reading.keyword})')
+                try:
+                    times = reverse_prompt.plan_reference_times(
+                        reading.cuts or reverse_prompt.cuts_from_prompt(reading.prompt),
+                        duration_s=info.duration_s,
+                    )
+                    frames = reverse_prompt.store_reference_frames(
+                        video_path, times, prompt_id=row.id,
+                    )
+                    row.ref_frames = json.dumps(reverse_prompt.serialize_reference_frames(frames))
+                    row.ref_error = None if frames else 'no cut-reference frames could be grabbed'
+                    log(f'{len(frames)} cut-reference frames at {", ".join(f"{f.t:.2f}s" for f in frames)}')
+                except Exception as exc:
+                    row.ref_error = str(exc)[:2000]
+                    log(f'cut-reference frames skipped: {exc}')
+                db.commit()
                 try:  # into the catalogue when the prompt gate accepts it
                     catalogue, outcome = ingest(db, Candidate(
                         text=reading.prompt, source='reverse', source_url=row.source_url,

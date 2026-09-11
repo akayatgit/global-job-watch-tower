@@ -95,16 +95,18 @@ URL or forwarded clip
   → fetch_video (HTTP + stealth Chrome + ffmpeg HLS)
   → store source MP4
   → Gemini on Replicate (google/gemini-2.5-flash) watches the clip
-  → keyword + timestamped prompt (verbatim)
+  → keyword + timestamped prompt (verbatim) + `cuts` array
+  → strip `cuts` from the stored prompt · grab ~14 JPEGs at those times
   → post_reel.compose_reel (same template as prompt-to-video)
-  → reel lands in Telegram + the prompt text
+  → Telegram: reel → prompt → downloadable cut-reference frames
 ```
 
 | Step | Law |
 |---|---|
 | Intake | `/igtovid` · `/pintovid` · `/pintovideo` · `/reverseprompt`. URL (or forwarded video) then **header title** then **model buttons** (Gemini · GPT-6 Astra · Claude Fable 5). Footer is hardcoded. A stray direct `.mp4` in chat does **not** start a run unless he already typed the command. Cancel clears the wait. |
 | Download | `app/prompts/reverse_prompt.py::fetch_video`. Plain HTTP with a Safari UA first (Pinterest pages often carry the mp4 in JSON). Instagram login walls fall through to the logged-in stealth Chrome profile (`sources.browser_fetch`). HLS playlists are stitched by ffmpeg. Cap `PROMPT_REVERSE_MAX_VIDEO_MB` (80). Telegram forwarded files are ≤20 MB — larger clips must arrive as a link. |
-| Describe | After the title, Telegram asks **Gemini · GPT-6 Astra · Claude Fable 5**. **Every engine gets the video file** — we never extract stills and call that the reverse (Ashok 2026-09-11: Codex handed Astra the mp4). Gemini via Replicate (`REPLICATE_VISION_MODEL`) watches a `data:video/mp4;base64,…` URI. GPT-6 Astra (`gpt-6-astra`, `OPENAI_API_KEY`) tries native `input_video` / `input_file`, then Files API + `code_interpreter` with the mp4 in the container. Claude Fable 5 (`claude-fable-5`, `ANTHROPIC_API_KEY`) tries a native video block, then Files API + `container_upload` + code execution. Same system instruction + exemplar + JSON salvage/retry. Missing keys refuse that button and keep the other two. Stored as `vision_engine` (`gemini \| astra \| fable`); `model` is the API id that wrote the prompt. **This is the one place an AI authors a prompt** — stored and shown verbatim, never rewritten, and never shipped half-finished. |
+| Describe | After the title, Telegram asks **Gemini · GPT-6 Astra · Claude Fable 5**. **Every engine gets the video file** — we never extract stills and call that the reverse (Ashok 2026-09-11: Codex handed Astra the mp4). Gemini via Replicate (`REPLICATE_VISION_MODEL`) watches a `data:video/mp4;base64,…` URI. GPT-6 Astra (`gpt-6-astra`, `OPENAI_API_KEY`) tries native `input_video` / `input_file`, then Files API + `code_interpreter` with the mp4 in the container. Claude Fable 5 (`claude-fable-5`, `ANTHROPIC_API_KEY`) tries a native video block, then Files API + `container_upload` + code execution. Same system instruction + exemplar + JSON salvage/retry. JSON is `keyword` + `prompt` + `cuts` (hard-cut start/end seconds). **`cuts` is stripped before storage** — the prompt Ashok copies never contains the array. Missing keys refuse that button and keep the other two. Stored as `vision_engine` (`gemini \| astra \| fable`); `model` is the API id that wrote the prompt. **This is the one place an AI authors a prompt** — stored and shown verbatim, never rewritten, and never shipped half-finished. |
+| Recreate frames | After the prompt, grab **~14 JPEGs from the downloaded clip at cut timestamps** (start + end of each shot; interiors of the longest cuts if fewer than 14; never an equal-interval grid). Not the 6-frame reel storyboard. Telegram sends them as **downloadable documents** (`sendDocument`, filenames `cut-01-0.00s.jpg`) so Ashok can attach them with the prompt and recreate the clip. Stored as `ref_frames` JSON (migration `a3c9e1b72d04`). A grab failure keeps the prompt (`ref_error`); the row is still `done`. |
 | Reel | Same composer, same 6 storyboard frames from **the source clip**, prompt scrolls verbatim. Keys `prompts/<day>/rreel-<id>-….mp4`. A reel failure keeps the clip + prompt (`reel_error`); the row is still `done`. |
 | Catalogue | Best-effort ingest through the existing `read_prompt` gate (`source='reverse'`). Rejection is fine — the reverse row still holds the text. |
 
@@ -125,7 +127,7 @@ Owner surface (local tower, `/api/prompts`):
 | `POST /{id}/render {image_base64, chat_id, content_type}` | Store image, render card, queue video → render row |
 | `GET /renders/{id}` | `queued | running | done | failed`, `video_url` (raw clip), `reel_url` (post asset) or `reel_error`, `card_image_url` (preview) |
 | `POST /reverse {source_url \| video_base64, chat_id, title, vision_engine}` | Queue a reverse-prompt run (`vision_engine`: gemini · astra · fable). Must stay registered **before** `GET /{id}` |
-| `GET /reverse` · `GET /reverse/{id}` | Recent rows / one row: `queued \| downloading \| describing \| composing \| done \| failed`, clip + prompt + reel |
+| `GET /reverse` · `GET /reverse/{id}` | Recent rows / one row: `queued \| downloading \| describing \| composing \| done \| failed`, clip + prompt + `ref_frames` + reel |
 
 Partner surface (AvatarPitch, bearer `PARTNER_API_TOKEN`): **`GET /api/partner/v1/prompts?day=`** — the day's top-10 with full text, scores, provenance and any finished `video_url` (raw clip) / `reel_url` (post asset) / `card_image_url`. Rows verbatim; the tower owns scoring, AvatarPitch renders/presents.
 
@@ -134,7 +136,7 @@ Partner surface (AvatarPitch, bearer `PARTNER_API_TOKEN`): **`GET /api/partner/v
 - `video_prompts` — text, fingerprint (unique), source/source_url/author/source_posted_at, model_hint, category, heuristic_score, ai_detail/ai_flow/ai_score/ai_reasons, final_score, baseline_mean/std, is_outlier, embedding (JSON), status (`new | shortlisted | posted | rejected`), rating, performance (JSON), performance_score, posted_at, exemplar.
 - `prompt_shortlists` — (day, rank) unique → prompt_id.
 - `prompt_renders` — prompt_id, chat_id, product_image_key, card_image_key, video_key, video_url, **reel_key, reel_url, reel_error** (migration `c8d4f0b23e56`), model, status, error, timestamps.
-- `reverse_prompts` (migration `d9e5a1c47f02`) — platform (`instagram \| pinterest \| direct \| upload`), source/media URL, stored clip, duration, **header_title**, **vision_engine** (`gemini \| astra \| fable`, migration `f2c4d6e8a910`), **keyword + prompt_text** (verbatim from the chosen model), optional `prompt_id` into the catalogue, reel key/url/error, status (`queued \| downloading \| describing \| composing \| done \| failed`).
+- `reverse_prompts` (migration `d9e5a1c47f02`) — platform (`instagram \| pinterest \| direct \| upload`), source/media URL, stored clip, duration, **header_title**, **vision_engine** (`gemini \| astra \| fable`, migration `f2c4d6e8a910`), **keyword + prompt_text** (verbatim from the chosen model; `cuts` stripped), **ref_frames / ref_error** (migration `a3c9e1b72d04` — ~14 cut-reference JPEGs), optional `prompt_id` into the catalogue, reel key/url/error, status (`queued \| downloading \| describing \| composing \| done \| failed`).
 
 Guest/alert/broadcast SQLite state is untouched; the deck's pending states live in the same `bot_state` table (`prompt_selected:`, `prompt_await_image:`, `pending_prompt_photo:`, `prompt_await_url:`, `pending_prompt_video:`, `prompt_daily_sent:<day>`).
 

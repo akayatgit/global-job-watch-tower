@@ -168,6 +168,8 @@ class ReverseIn(BaseModel):
 
 
 def _serialize_reverse(row: ReversePrompt) -> dict:
+    from app.prompts.reverse_prompt import load_reference_frames
+
     return {
         'id': row.id,
         'status': row.status,
@@ -182,6 +184,8 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'vision_engine': row.vision_engine or 'gemini',
         'keyword': row.keyword,
         'prompt_text': row.prompt_text,
+        'ref_frames': load_reference_frames(row.ref_frames),
+        'ref_error': row.ref_error,
         'model': row.model,
         'prompt_id': row.prompt_id,
         'reel_key': row.reel_key,

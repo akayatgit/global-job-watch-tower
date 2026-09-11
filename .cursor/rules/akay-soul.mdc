@@ -372,6 +372,12 @@ need to be told twice.
   workaround ("I gave the video to Astra from Codex"). Gemini watches
   the mp4; Astra/Fable get the file in their sandbox. Same reel after.
 
+- **2026-09-11 · Recreate frames, not storyboard.** Reverse is cracked;
+  next he recreates the IG/Pin clip himself. After the prompt, ship ~14
+  downloadable cut-reference JPEGs (start/end of each hard cut from the
+  model's `cuts` array, stripped out of the prompt). Not the display
+  storyboard. Attachable files, cut-based times, never an equal grid.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

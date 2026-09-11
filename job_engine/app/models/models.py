@@ -289,6 +289,9 @@ class ReversePrompt(Base):
     # What the vision model wrote — stored verbatim, the reel shows it as-is
     keyword: Mapped[str | None] = mapped_column(String(60), nullable=True)
     prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Cut-based recreate frames (JSON [{t, key, filename}]) — not the reel storyboard
+    ref_frames: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ref_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # The catalogue row this prompt also became (when the gate accepted it)
     prompt_id: Mapped[int | None] = mapped_column(ForeignKey('video_prompts.id'), nullable=True)
