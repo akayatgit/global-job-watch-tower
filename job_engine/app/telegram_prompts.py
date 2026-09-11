@@ -727,8 +727,8 @@ class PromptDeck:
             try:
                 data = self.fetch_asset(key)
                 self._send_reference_document(chat_id, data, name, caption, sleep=sleep)
-            except Exception:
-                logger.exception('reference frame upload failed id=%s key=%s', rid, key)
+            except Exception as exc:
+                logger.warning('reference frame upload failed id=%s key=%s: %s', rid, key, exc)
                 failed.append(f'{index}/{len(frames)}')
             if index < len(frames):
                 sleep(REF_SEND_GAP_S)
