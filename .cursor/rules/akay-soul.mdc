@@ -391,6 +391,12 @@ need to be told twice.
   images go through text+image→image. Original stays; the twisted
   prompt and twisted stills are the recreation set.
 
+- **2026-09-11 · Twist stills were hitty.** Ashok: use Gemini's latest
+  image model; keep pose, lighting, details, identity with no change;
+  only the twist; keep the frame as it is. Nano Banana Pro
+  (`google/nano-banana-pro`, 2K) + an identity-lock edit prompt. Do
+  not restage or re-light.
+
 - **2026-09-11 · Save, don't just play.** The partner `.mp4` URL streams
   in the browser. Ashok could not download reverse source-15. Give a
   `?download=1` Save-As URL and a Telegram **⬇️ Save clip** button.

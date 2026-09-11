@@ -65,6 +65,21 @@ def generate_image(prompt: str, *, aspect_ratio: str = '1:1') -> Image.Image:
     return Image.open(BytesIO(data)).convert('RGB')
 
 
+def _twist_image_model() -> str:
+    return (
+        getattr(config, 'PROMPT_TWIST_IMAGE_MODEL', '')
+        or 'google/nano-banana-pro'
+    ).strip()
+
+
+def _edit_resolution(model: str) -> str:
+    """Pro Image can do 2K/4K. Flash-class stays 1K."""
+    low = (model or '').lower()
+    if 'nano-banana-pro' in low or 'gemini-3-pro-image' in low:
+        return '2K'
+    return '1K'
+
+
 def edit_image(
     prompt: str,
     image: bytes,
@@ -72,10 +87,11 @@ def edit_image(
     run=None,
     model: str | None = None,
 ) -> bytes:
-    """text+image→image (nano-banana-2 `image_input`). Returns a JPEG.
+    """text+image→image via Gemini's latest image model (Nano Banana Pro /
+    Gemini 3 Pro Image by default). Returns a JPEG.
 
     Used by the reverse-prompt magic pencil so each cut-reference still
-    carries the twist while keeping the original camera and crop.
+    keeps pose, lighting, detail and identity — only the twist changes.
     """
     import base64
 
@@ -83,24 +99,25 @@ def edit_image(
     if not token and run is None:
         raise RuntimeError('REPLICATE_API_TOKEN missing in job_engine/.env')
 
-    chosen = (model or getattr(config, 'PROMPT_TWIST_IMAGE_MODEL', '') or config.REPLICATE_MODEL).strip()
+    chosen = (model or _twist_image_model()).strip()
     uri = f'data:image/jpeg;base64,{base64.standard_b64encode(image).decode("ascii")}'
     inp = {
         'prompt': prompt,
         'image_input': [uri],
         'aspect_ratio': 'match_input_image',
         'output_format': 'jpg',
-        'resolution': '1K',
-        'google_search': False,
-        'image_search': False,
+        'resolution': _edit_resolution(chosen),
     }
+    if 'nano-banana-2' in chosen.lower() or 'flash-image' in chosen.lower():
+        inp['google_search'] = False
+        inp['image_search'] = False
     if run is None:
         import replicate
 
         from app.prompts.video_creator import replicate_render
 
         client = replicate.Client(api_token=token)
-        output = replicate_render(client, chosen, input=inp, budget_s=180)
+        output = replicate_render(client, chosen, input=inp, budget_s=300)
     else:
         output = run(chosen, input=inp)
     item = output[0] if isinstance(output, list) else output
@@ -114,5 +131,5 @@ def edit_image(
     if len(data) >= 3 and data[:2] == b'\xff\xd8':
         return data
     buf = BytesIO()
-    Image.open(BytesIO(data)).convert('RGB').save(buf, format='JPEG', quality=90)
+    Image.open(BytesIO(data)).convert('RGB').save(buf, format='JPEG', quality=95)
     return buf.getvalue()

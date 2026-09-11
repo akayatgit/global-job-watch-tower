@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest import mock
 
+from app import config
 from app.prompts import reverse_twist
 from app.prompts.reverse_prompt import ReferenceFrame
 
@@ -81,6 +83,10 @@ class TwistUnitTests(unittest.TestCase):
         self.assertEqual([f.filename for f in out], ['twist-01-0.00s.jpg', 'twist-02-1.76s.jpg'])
         self.assertEqual(len(stored), 2)
         self.assertTrue(all('liquid gold temple' in p for p in seen))
+        self.assertTrue(all('IDENTITY LOCK' in p for p in seen))
+        self.assertTrue(all('Do not change pose' in p for p in seen))
+        self.assertTrue(all('Do not change lighting' in p for p in seen))
+        self.assertTrue(all('Do not restage' in p for p in seen))
         self.assertIn('0.00s', seen[0])
         self.assertIn('gold pours', seen[0])
 
@@ -96,12 +102,21 @@ class EditImageTests(unittest.TestCase):
             seen['input'] = input
             return b'\xff\xd8' + b'JPEGDATA' + b'\xff\xd9'
 
-        out = edit_image('make it gold', b'\xff\xd8ORIG\xff\xd9', run=run, model='google/nano-banana-2')
+        with mock.patch.object(config, 'PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-pro'):
+            out = edit_image('make it gold', b'\xff\xd8ORIG\xff\xd9', run=run)
         self.assertTrue(out.startswith(b'\xff\xd8'))
+        self.assertEqual(seen['model'], 'google/nano-banana-pro')
         self.assertEqual(seen['input']['prompt'], 'make it gold')
         self.assertEqual(len(seen['input']['image_input']), 1)
         self.assertTrue(seen['input']['image_input'][0].startswith('data:image/jpeg;base64,'))
         self.assertEqual(seen['input']['aspect_ratio'], 'match_input_image')
+        self.assertEqual(seen['input']['resolution'], '2K')
+        flash = edit_image(
+            'make it gold', b'\xff\xd8ORIG\xff\xd9', run=run, model='google/nano-banana-2',
+        )
+        self.assertTrue(flash.startswith(b'\xff\xd8'))
+        self.assertEqual(seen['model'], 'google/nano-banana-2')
+        self.assertEqual(seen['input']['resolution'], '1K')
 
 
 if __name__ == '__main__':

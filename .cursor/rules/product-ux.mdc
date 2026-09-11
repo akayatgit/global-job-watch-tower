@@ -850,6 +850,11 @@ it, shows recipient count) → `/pushconfirm`
   visible while camera and crop stay. Deliver the twisted prompt and
   the twisted stills. Keep the original set. If no twist was stored,
   the button asks for the line.
+- **Twist stills stay the same frame (Ashok 2026-09-11).** Hitty
+  quality from Flash nano-banana-2. Use Gemini's latest image model
+  (Nano Banana Pro / Gemini 3 Pro Image, 2K). Preserve pose, lighting,
+  details, and subject identity with no change. Only the twist is
+  applied. Do not restage, re-light, or invent a new shot.
 - **Asset URLs must offer Save As (Ashok 2026-09-11, source-15).** The
   public `/api/partner/v1/assets/…mp4` link plays in the browser. Add
   `?download=1` (attachment + octet-stream) and a Telegram **⬇️ Save
