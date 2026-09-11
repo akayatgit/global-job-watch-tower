@@ -168,6 +168,18 @@ class UrlAndParseTests(unittest.TestCase):
         self.assertLessEqual(len(trimmed), 14)
         self.assertAlmostEqual(trimmed[0], 0.0)
 
+    def test_plan_reference_times_fills_point_stamps_to_fourteen(self):
+        """Reverse #12: the model gave six point times — we still owe 14 frames."""
+        times = reverse_prompt.plan_reference_times(
+            [(0.0, 0.0), (2.0, 2.0), (3.5, 3.5), (5.0, 5.0), (6.5, 6.5), (8.0, 8.0)],
+            duration_s=8.0,
+            count=14,
+        )
+        self.assertEqual(len(times), 14)
+        self.assertAlmostEqual(times[0], 0.0)
+        self.assertTrue(any(abs(t - 2.0) < 0.02 for t in times))
+        self.assertTrue(any(abs(t - 3.5) < 0.02 for t in times))
+
     def test_build_instruction_carries_every_dimension_and_the_exemplar(self):
         text = reverse_prompt.build_instruction(duration_s=8.0, exemplar='EXEMPLAR BODY')
         self.assertIn('8.0-second', text)
@@ -176,6 +188,8 @@ class UrlAndParseTests(unittest.TestCase):
         self.assertIn('EXEMPLAR BODY', text)
         self.assertIn('"keyword"', text)
         self.assertIn('"cuts"', text)
+        self.assertIn('recreate-reference', text)
+        self.assertIn('first and last frame of every hard cut', text)
         bundled = reverse_prompt.load_exemplar()
         self.assertIn('pacific chill', bundled.lower())
         self.assertIn('louis vuitton', bundled.lower())
@@ -288,6 +302,9 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertGreaterEqual(seen['input']['max_output_tokens'], 16384)
             self.assertEqual(seen['input']['thinking_budget'], 0)
             self.assertIn('cuts', seen['input']['system_instruction'])
+            self.assertIn('recreate-reference', seen['input']['system_instruction'])
+            self.assertIn('start-frame', seen['prompt'])
+            self.assertNotIn('images', seen['input'])
 
     def test_store_reference_frames_uses_injected_grab(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -307,6 +324,109 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertEqual(frames[0].filename, 'cut-01-0.00s.jpg')
             self.assertEqual(stored[1][1], b'JPEG-1.76')
             self.assertTrue(stored[0][0].endswith('.jpg'))
+
+    def test_pick_attention_frames_keeps_first_last_and_caps_at_ten(self):
+        frames = [
+            reverse_prompt.ReferenceFrame(t=float(i), key=f'k{i:02d}', filename=f'cut-{i:02d}-{i:.2f}s.jpg')
+            for i in range(14)
+        ]
+        picked = reverse_prompt.pick_attention_frames(frames)
+        self.assertEqual(len(picked), 10)
+        self.assertEqual(picked[0].t, 0.0)
+        self.assertEqual(picked[-1].t, 13.0)
+        self.assertEqual(reverse_prompt.pick_attention_frames(frames[:4]), frames[:4])
+
+    def test_refine_prompt_sends_video_and_cut_jpegs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            frames = [
+                reverse_prompt.ReferenceFrame(
+                    t=float(i), key=f'k{i:02d}', filename=f'cut-{i:02d}-{i:.2f}s.jpg',
+                )
+                for i in range(14)
+            ]
+            draft = '[0.0s–8.0s] a juice glass on marble. Style: cold commercial. ' * 6
+            seen: dict = {}
+
+            def run(model, input):
+                seen['input'] = input
+                seen['model'] = model
+                return json.dumps({
+                    'keyword': 'JUICE',
+                    'prompt': '[0.0s–8.0s] ' + (
+                        'condensed juice glass, exact crop and condensation from the 0.00s frame. '
+                        * 12
+                    ) + 'Style: cold commercial.',
+                    'cuts': [{'start': 0.0, 'end': 8.0}],
+                })
+
+            refined = reverse_prompt.refine_prompt_with_frames(
+                path,
+                prompt=draft,
+                frames=frames,
+                duration_s=8.0,
+                engine='gemini',
+                keyword='DRINK',
+                run=run,
+                read_asset=lambda key: b'JPEG-' + key.encode(),
+            )
+            self.assertIsNotNone(refined)
+            self.assertEqual(refined.keyword, 'JUICE')
+            self.assertIn('condensed juice', refined.prompt)
+            self.assertIn('images', seen['input'])
+            self.assertEqual(len(seen['input']['images']), 10)
+            self.assertTrue(all(
+                uri.startswith('data:image/jpeg;base64,') for uri in seen['input']['images']
+            ))
+            self.assertIn('videos', seen['input'])
+            self.assertIn(draft[:40], seen['input']['prompt'])
+            self.assertIn('cut-00-0.00s.jpg', seen['input']['prompt'])
+            self.assertIn('cut-13-13.00s.jpg', seen['input']['prompt'])
+            self.assertIn('cut-reference', seen['input']['system_instruction'].lower())
+            self.assertIn('recreate-reference', seen['input']['prompt'].lower())
+
+    def test_refine_prompt_keeps_draft_when_rewrite_is_too_short(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            frames = [reverse_prompt.ReferenceFrame(t=0.0, key='k0', filename='cut-01-0.00s.jpg')]
+            draft = '[0.0s–8.0s] a juice glass on marble under hard sidelight. ' * 8
+
+            def run(model, input):
+                return json.dumps({'keyword': 'X', 'prompt': 'short'})
+
+            refined = reverse_prompt.refine_prompt_with_frames(
+                path, prompt=draft, frames=frames, duration_s=8.0,
+                run=run, read_asset=lambda _key: b'JPEGDATA',
+            )
+            self.assertIsNone(refined)
+
+    def test_refine_prompt_astra_sends_images_with_the_video(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            frames = [reverse_prompt.ReferenceFrame(t=0.0, key='k0', filename='cut-01-0.00s.jpg')]
+            seen: dict = {}
+            long_prompt = '[0.0s–3.0s] a gold-anklet foot matching the 0.00s still. Style: mythic. ' * 6
+
+            def complete(*, model, system, user_text, video_path, public_url=None, images=None):
+                seen['images'] = images
+                seen['system'] = system
+                seen['user'] = user_text
+                seen['path'] = Path(video_path)
+                return json.dumps({'keyword': 'DEITY', 'prompt': long_prompt})
+
+            refined = reverse_prompt.refine_prompt_with_frames(
+                path, prompt=long_prompt, frames=frames, duration_s=3.0,
+                engine='astra', complete=complete, read_asset=lambda _key: b'JPEGDATA',
+            )
+            self.assertEqual(refined.keyword, 'DEITY')
+            self.assertEqual(seen['path'], path)
+            self.assertEqual(len(seen['images']), 1)
+            self.assertTrue(seen['images'][0].startswith('data:image/jpeg;base64,'))
+            self.assertIn('cut-01-0.00s.jpg', seen['user'])
+            self.assertIn('video file', seen['user'].lower())
 
     def test_resolve_vision_engine_aliases(self):
         self.assertEqual(reverse_prompt.resolve_vision_engine('Gemini'), 'gemini')
@@ -667,6 +787,66 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         self.assertEqual(row.reel_key, 'prompts/d/rreel-1.mp4')
         self.assertTrue(row.video_key)
         self.assertIn('rref-1.jpg', row.ref_frames or '')
+
+    def test_task_catalogue_ingests_the_refined_prompt(self):
+        from app import tasks
+        from app.prompts.video_creator import ReelAsset
+
+        with mock.patch('app.tasks.reverse_prompt_video'):
+            reverse_id = self.client.post(
+                '/api/prompts/reverse',
+                json={'video_base64': base64.b64encode(FAKE_MP4).decode('ascii')},
+            ).json()['id']
+
+        class _SessionCtx:
+            def __init__(self, db):
+                self.db = db
+
+            def __enter__(self):
+                return self.db
+
+            def __exit__(self, *exc):
+                return False
+
+        draft = ReverseReading(
+            keyword='DRINK',
+            prompt='[0.0s–8.0s] a juice glass on marble. ' * 8,
+            model='google/gemini-2.5-flash',
+            raw='{}',
+        )
+        refined = ReverseReading(
+            keyword='JUICE',
+            prompt='[0.0s–8.0s] attended juice glass matching cut-01. ' * 8,
+            model='google/gemini-2.5-flash',
+            raw='{}',
+        )
+        reel = ReelAsset(
+            reel_key='prompts/d/rreel-2.mp4',
+            reel_path=Path(self.tmp.name) / 'prompts/d/rreel-2.mp4',
+            reel_url='https://tower.example/api/partner/v1/assets/prompts/d/rreel-2.mp4',
+            frames=6, duration_s=8.0, engine='ffmpeg',
+        )
+        refs = [reverse_prompt.ReferenceFrame(t=0.0, key='prompts/d/rref-2.jpg', filename='cut-01-0.00s.jpg')]
+        ingested: list[str] = []
+
+        def ingest(_db, candidate):
+            ingested.append(candidate.text)
+            return None, 'rejected'
+
+        with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
+                mock.patch('app.prompts.reverse_prompt.describe_video', return_value=draft), \
+                mock.patch('app.prompts.reverse_prompt.store_reference_frames', return_value=refs), \
+                mock.patch('app.prompts.reverse_prompt.refine_prompt_with_frames', return_value=refined), \
+                mock.patch('app.prompts.video_creator.create_reel', return_value=reel), \
+                mock.patch('app.prompts.post_reel.probe', return_value=mock.Mock(duration_s=8.0)), \
+                mock.patch('app.prompts.pipeline.ingest', side_effect=ingest), \
+                mock.patch('app.tasks.console_log'):
+            result = tasks.reverse_prompt_video.run(reverse_id)
+        self.assertTrue(result['ok'], result)
+        row = self.db.get(ReversePrompt, reverse_id)
+        self.assertEqual(row.keyword, 'JUICE')
+        self.assertIn('attended juice', row.prompt_text)
+        self.assertEqual(ingested, [row.prompt_text])
 
     def test_task_reel_failure_still_finishes_with_the_prompt(self):
         from app import tasks

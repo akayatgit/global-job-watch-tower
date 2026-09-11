@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 CALLBACK_PREFIX = 'pt:'
 RENDER_POLL_S = 15
 RENDER_MAX_WAIT_S = 20 * 60
+REF_SEND_GAP_S = 0.45
+REF_SEND_TRIES = 4
+RETRY_AFTER_RE = re.compile(r'retry after (\d+)', re.I)
 PERF_TOKEN_RE = re.compile(r'\b(likes|comments|saves|shares|views)\s*[=:]\s*(\d+)', re.I)
 STATE_SELECTED = 'prompt_selected:{chat}'
 STATE_AWAIT_IMAGE = 'prompt_await_image:{chat}'
@@ -621,7 +624,7 @@ class PromptDeck:
                     label = vision_label(row.get('vision_engine'))
                     self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — {label} is watching it now.")
                 if status == 'done':
-                    self._deliver_reverse(chat_id, row)
+                    self._deliver_reverse(chat_id, row, sleep=sleep)
                     return 'done'
                 if status == 'failed':
                     if self.send_text:
@@ -634,7 +637,9 @@ class PromptDeck:
             sleep(poll_s)
             waited += poll_s
 
-    def _deliver_reverse(self, chat_id: str, row: dict[str, Any]) -> None:
+    def _deliver_reverse(
+        self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         """Reel first (or the source clip with the reason), then the prompt
         text verbatim so it can be copied straight into the caption."""
         rid = row.get('id')
@@ -663,10 +668,34 @@ class PromptDeck:
             for chunk in _chunks(str(row.get('prompt_text') or '(no prompt text)'), TELEGRAM_TEXT_LIMIT - len(head)):
                 self.send_text(chat_id, head + chunk)
                 head = ''
-        self._deliver_reference_frames(chat_id, row)
+        self._deliver_reference_frames(chat_id, row, sleep=sleep)
 
-    def _deliver_reference_frames(self, chat_id: str, row: dict[str, Any]) -> None:
-        """Downloadable cut frames AFTER the prompt — not the reel storyboard."""
+    def _send_reference_document(
+        self, chat_id: str, data: bytes, filename: str, caption: str, *, sleep: Callable[[float], None],
+    ) -> None:
+        last: BaseException | None = None
+        for attempt in range(REF_SEND_TRIES):
+            try:
+                try:
+                    self.send_document_bytes(chat_id, data, filename=filename, caption=caption)
+                except TypeError:
+                    self.send_document_bytes(chat_id, data, filename, caption)
+                return
+            except Exception as exc:
+                last = exc
+                wait = retry_after_s(exc) or (0.7 * (attempt + 1))
+                logger.warning('reference frame send %s try %s failed: %s', filename, attempt + 1, exc)
+                sleep(wait)
+        raise RuntimeError(str(last) if last else 'sendDocument failed')
+
+    def _deliver_reference_frames(
+        self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        """Downloadable cut frames AFTER the prompt — not the reel storyboard.
+
+        Telegram flood-waits if we blast documents after the reel. Pause
+        between sends and retry; never silently drop 4–14.
+        """
         from app.prompts.reverse_prompt import load_reference_frames
 
         frames = load_reference_frames(row.get('ref_frames'))
@@ -686,21 +715,29 @@ class PromptDeck:
                 keys = ', '.join(str(frame.get('key') or '') for frame in frames[:14])
                 self.send_text(chat_id, f'Reference frame keys: {keys}')
             return
+        failed: list[str] = []
         for index, frame in enumerate(frames, start=1):
             key = str(frame.get('key') or '')
             if not key:
+                failed.append(str(index))
                 continue
             t = frame.get('t')
             name = str(frame.get('filename') or f'cut-{index:02d}-{t}s.jpg')
             caption = f'{index}/{len(frames)} · {t:.2f}s' if isinstance(t, (int, float)) else f'{index}/{len(frames)}'
             try:
-                self.send_document_bytes(
-                    chat_id, self.fetch_asset(key), filename=name, caption=caption,
-                )
-            except TypeError:
-                self.send_document_bytes(chat_id, self.fetch_asset(key), name, caption)
-            except Exception:
-                logger.exception('reference frame upload failed id=%s key=%s', rid, key)
+                data = self.fetch_asset(key)
+                self._send_reference_document(chat_id, data, name, caption, sleep=sleep)
+            except Exception as exc:
+                logger.warning('reference frame upload failed id=%s key=%s: %s', rid, key, exc)
+                failed.append(f'{index}/{len(frames)}')
+            if index < len(frames):
+                sleep(REF_SEND_GAP_S)
+        if failed and self.send_text:
+            self.send_text(
+                chat_id,
+                f'⚠️ {len(failed)} of {len(frames)} cut frames did not arrive ({", ".join(failed)}). '
+                'Say so and I will resend them.',
+            )
 
     # ----------------------------------------------------- render watcher
 
@@ -817,6 +854,21 @@ class PromptDeck:
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
+
+
+def retry_after_s(exc: BaseException) -> float | None:
+    """Telegram flood-wait: 'Too Many Requests: retry after 4'."""
+    match = RETRY_AFTER_RE.search(str(exc))
+    if match:
+        return float(match.group(1))
+    headers = getattr(getattr(exc, 'headers', None), 'get', None)
+    if callable(headers):
+        raw = headers('Retry-After')
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _as_reply(value: str | ButtonReply) -> ButtonReply:

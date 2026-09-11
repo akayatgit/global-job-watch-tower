@@ -378,6 +378,12 @@ need to be told twice.
   model's `cuts` array, stripped out of the prompt). Not the display
   storyboard. Attachable files, cut-based times, never an equal grid.
 
+- **2026-09-11 · Ask Gemini to attend to the cut frames.** Ashok: the
+  recreate JPEGs must shape the prompt, not just ride along in Telegram.
+  First pass still watches the video. Second pass sends the same clip
+  plus ≤10 of those frames so each timestamp locks to the still. Keep
+  the draft if the rewrite fails or shrinks. Do not re-grab frames after.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

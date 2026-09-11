@@ -142,6 +142,19 @@ not the reel storyboard. The model returns a `cuts` array (start/end of
 each hard cut); we strip it from the stored prompt and grab JPEGs at
 those times from the downloaded file. Telegram: reel → prompt → documents.
 
+**Follow (2026-09-11, #12 only 3/6 arrived):** blasting `sendDocument` after
+the reel hit Telegram flood-wait; we swallowed the error so frames 4–6
+vanished. Retry + pause between uploads; tell Ashok if any are still
+missing. Point-timestamp `cuts` now expand into shot ranges so we still
+fill to 14.
+
+**Follow (2026-09-11, Gemini attend to cut frames):** the downloadable
+JPEGs are also the recreate references. After we grab them, send the
+video + ≤10 of those frames back to Gemini (Astra/Fable too) and rewrite
+the prompt so each timestamp matches that JPEG. First pass stays
+video-only. Failed / too-short rewrite keeps the draft. Catalogue ingest
+waits until after this pass.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

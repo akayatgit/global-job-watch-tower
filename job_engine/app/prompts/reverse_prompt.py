@@ -11,7 +11,8 @@ Pipeline (worker, `app.tasks.reverse_prompt_video`):
 
     URL ─▶ fetch_video ─▶ stored clip ─▶ describe_video (Gemini / GPT-6
     Astra / Claude Fable 5 each get the video file) ─▶ keyword +
-    timestamped prompt ─▶ post_reel.compose_reel ─▶ reel MP4
+    timestamped prompt ─▶ cut-reference JPEGs ─▶ refine_prompt_with_frames
+    (same video + ≤10 of those JPEGs) ─▶ post_reel.compose_reel ─▶ reel MP4
 
 Downloading: plain HTTP with a browser UA first (Pinterest pages carry the
 mp4 in their JSON; direct .mp4 links pass through), then the logged-in
@@ -314,6 +315,7 @@ Rules:
 - Never write marketing copy, hashtags or captions — this is a generation prompt.
 - Use concrete numbers where a filmmaker would (focal length, fps, colour temperature, degrees of orbit, percent push-in).
 - Keep every cut physically plausible and lighting continuous across cuts.
+- Give extra attention to the first and last frame of every hard cut. Those instants become the recreate-reference images attached with this prompt. For each one, lock product pose and crop, glass / liquid / condensation, hand or prop, lighting direction and colour, camera height / lens / distance, and the set. Write the timestamped prompt so a video model hitting those exact frames would match them.
 - End with a one-line "Style:" summary.
 - The JSON object MUST be complete: close every string and the object. Never stop mid-sentence or mid-beat. A short cinematic clip typically needs 3000–8000 characters — write them all.
 - Also list every hard cut / shot change as `cuts`. These are the frames a filmmaker needs to recreate the clip — not evenly spaced stills.
@@ -330,7 +332,8 @@ Return STRICT JSON with exactly three keys and nothing else:
 USER_PROMPT = (
     'Reverse-engineer this {duration} product video into the generation prompt described in your '
     'instructions. Cover the full duration with timestamped segments. List every hard cut in `cuts`. '
-    'Return only complete JSON — close the prompt string, the cuts array and the object. Never stop mid-sentence.'
+    'Give extra attention to the start-frame and end-frame of each cut — those are the recreate-reference '
+    'images. Return only complete JSON — close the prompt string, the cuts array and the object. Never stop mid-sentence.'
 )
 
 USER_PROMPT_RETRY = (
@@ -339,6 +342,24 @@ USER_PROMPT_RETRY = (
     '"cuts":[{{"start":0.0,"end":1.8}}]}} covering this {duration} clip. Close every string, '
     'the cuts array and the object. Do not stop mid-sentence.'
 )
+
+REFINE_SYSTEM = """You are the same senior commercial director. You already watched the clip and drafted a timestamped prompt. Now you are also given the exact cut-reference JPEGs (labeled by timestamp) that will be attached when a human recreates this video.
+
+Watch the clip again AND study every attached frame. Rewrite ONE generation prompt so each timestamped segment would produce a frame that matches the JPEG at that time — product pose, crop, lighting, camera, set, glass/liquid/hand. Do not mention JPEGs, "reference image", or the cuts array inside the prompt string.
+
+Return STRICT JSON with exactly three keys:
+{"keyword": "<ONE uppercase word>", "prompt": "<the full rewritten timestamped prompt>", "cuts": [{"start": 0.0, "end": 1.8}]}
+The JSON object MUST be complete. Never stop mid-sentence."""
+
+REFINE_USER = (
+    'These JPEG frames are the recreate-reference images for this {duration} clip:\n'
+    '{frame_list}\n\n'
+    'Draft prompt to rewrite (keep the timestamp structure, raise the match to these frames):\n'
+    '---\n{draft}\n---\n'
+    'Watch the video and attend to the attached frames. Return only complete JSON.'
+)
+
+ATTENTION_IMAGE_LIMIT = 10
 
 
 def default_exemplar_path() -> Path:
@@ -585,40 +606,42 @@ def normalize_cuts(cuts: list[tuple[float, float]], duration_s: float | None) ->
     return cleaned
 
 
+def _shot_ranges(cuts: list[tuple[float, float]], duration_s: float | None) -> list[tuple[float, float]]:
+    """Point timestamps become shot ranges between consecutive cuts."""
+    ranges = normalize_cuts(cuts, duration_s)
+    if not ranges:
+        end = duration_s if duration_s and duration_s > 0 else 0.0
+        return [(0.0, end)]
+    if all(abs(end - start) < 0.05 for start, end in ranges):
+        stamps = sorted({round(start, 3) for start, _end in ranges})
+        end = duration_s if duration_s and duration_s > 0 else stamps[-1]
+        if stamps[-1] < end - 0.05:
+            stamps.append(round(end, 3))
+        if len(stamps) == 1:
+            return [(stamps[0], end)]
+        return [(stamps[i], stamps[i + 1]) for i in range(len(stamps) - 1)]
+    return ranges
+
+
 def plan_reference_times(
     cuts: list[tuple[float, float]],
     *,
     duration_s: float | None,
     count: int = REFERENCE_FRAME_COUNT,
 ) -> list[float]:
-    """~14 timestamps from hard cuts — start + end of each shot.
+    """14 timestamps from hard cuts — start + end of each shot.
 
-    Not an equal grid. Extra slots go to interiors of the longest cuts.
-    Surplus short cuts are dropped; the first start and last end stay.
+    Not an equal grid. Extra slots go into the longest shots (or the
+    largest gaps when the model only gave point timestamps). Surplus
+    short cuts are dropped; the first start and last end stay.
     """
     count = max(2, int(count or REFERENCE_FRAME_COUNT))
-    ranges = normalize_cuts(cuts, duration_s)
-    if not ranges:
-        end = duration_s if duration_s and duration_s > 0 else 0.0
-        ranges = [(0.0, end)]
+    ranges = _shot_ranges(cuts, duration_s)
 
     def _end_in_shot(start: float, end: float) -> float:
         if end - start > CUT_END_INSET_S * 2:
             return end - CUT_END_INSET_S
         return end if end > start else start
-
-    points: list[float] = []
-    if all(abs(end - start) < 0.02 for start, end in ranges):
-        points = [start for start, _end in ranges]
-    else:
-        for start, end in ranges:
-            points.append(start)
-            points.append(_end_in_shot(start, end))
-        points[0] = ranges[0][0]
-        points[-1] = _end_in_shot(*ranges[-1])
-
-    # Always keep the first frame of the first cut and the last of the last.
-    must = {round(ranges[0][0], 3), round(_end_in_shot(*ranges[-1]), 3)}
 
     def _dedupe(values: list[float]) -> list[float]:
         kept: list[float] = []
@@ -631,12 +654,20 @@ def plan_reference_times(
             kept.append(round(t, 3))
         return kept
 
+    points: list[float] = []
+    for start, end in ranges:
+        points.append(start)
+        points.append(_end_in_shot(start, end))
+    points[0] = ranges[0][0]
+    points[-1] = _end_in_shot(*ranges[-1])
+    must = {round(ranges[0][0], 3), round(_end_in_shot(*ranges[-1]), 3)}
     points = _dedupe(points)
+
     if len(points) > count:
         ranked = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
         keep: list[float] = [ranges[0][0], _end_in_shot(*ranges[-1])]
         for start, end in ranked:
-            if len(_dedupe(keep)) >= count:
+            if len(_dedupe(sorted(keep))) >= count:
                 break
             keep.append(start)
             keep.append(_end_in_shot(start, end))
@@ -646,12 +677,11 @@ def plan_reference_times(
                 points[-2] = required
                 points = _dedupe(sorted(points))[:count]
     elif len(points) < count:
-        longest = sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True)
         extras: list[float] = []
         for frac in (0.35, 0.7, 0.2, 0.85, 0.5):
-            for start, end in longest:
+            for start, end in sorted(ranges, key=lambda pair: pair[1] - pair[0], reverse=True):
                 span = end - start
-                if span < 0.3:
+                if span < 0.15:
                     continue
                 extras.append(start + span * frac)
             merged = _dedupe(sorted(points + extras))
@@ -659,8 +689,21 @@ def plan_reference_times(
                 points = merged[:count]
                 break
         else:
-            points = _dedupe(sorted(points + extras))[:count]
-    return points
+            points = _dedupe(sorted(points + extras))
+        # Largest remaining gap (still inside a cut / between named times)
+        while len(points) < count:
+            seq = list(points)
+            if duration_s and duration_s > points[-1] + 0.08:
+                seq.append(duration_s)
+            best_i, best_gap = -1, 0.0
+            for i in range(len(seq) - 1):
+                gap = seq[i + 1] - seq[i]
+                if gap > best_gap:
+                    best_gap, best_i = gap, i
+            if best_i < 0 or best_gap < 0.12:
+                break
+            points = _dedupe(sorted(points + [(seq[best_i] + seq[best_i + 1]) / 2]))
+    return points[:count]
 
 
 def parse_reading(text: str, *, model: str = '') -> ReverseReading:
@@ -741,10 +784,19 @@ def store_reference_frames(
     key_for = key_for or video_creator.asset_key
     frames: list[ReferenceFrame] = []
     for index, t in enumerate(times, start=1):
-        try:
-            data = grab(video_path, t)
-        except Exception as exc:
-            logger.warning('reference frame %s at %.3fs failed: %s', index, t, exc)
+        data = b''
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                data = grab(video_path, t)
+                if data:
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning('reference frame %s at %.3fs try %s failed: %s', index, t, attempt + 1, exc)
+        if not data:
+            if last_exc:
+                logger.warning('reference frame %s at %.3fs skipped: %s', index, t, last_exc)
             continue
         if not data:
             continue
@@ -772,6 +824,155 @@ def load_reference_frames(raw) -> list[dict]:
             return []
         return load_reference_frames(data)
     return []
+
+
+def jpeg_data_uri(blob: bytes) -> str:
+    return f'data:image/jpeg;base64,{base64.standard_b64encode(blob).decode("ascii")}'
+
+
+def pick_attention_frames(
+    frames: list[ReferenceFrame],
+    limit: int = ATTENTION_IMAGE_LIMIT,
+) -> list[ReferenceFrame]:
+    """Gemini accepts at most 10 images. Keep first + last cut frames and
+    spread the rest — never drop the clip's opening or closing still."""
+    ordered = sorted(frames, key=lambda f: (f.t, f.filename or '', f.key))
+    n = len(ordered)
+    if n <= limit:
+        return list(ordered)
+    if limit <= 1:
+        return [ordered[0]]
+    indexes = {0, n - 1}
+    if limit > 2:
+        for i in range(1, limit - 1):
+            indexes.add(round(i * (n - 1) / (limit - 1)))
+    idx = 1
+    while len(indexes) < limit and idx < n - 1:
+        indexes.add(idx)
+        idx += 1
+    return [ordered[i] for i in sorted(indexes)][:limit]
+
+
+def read_reference_jpeg(key: str, *, read_asset=None) -> bytes | None:
+    if read_asset is not None:
+        rec = read_asset(key)
+        if rec is None:
+            return None
+        if isinstance(rec, (bytes, bytearray)):
+            blob = bytes(rec)
+        elif isinstance(rec, dict):
+            blob = rec.get('data') or b''
+            if isinstance(blob, str):
+                blob = blob.encode('latin-1')
+        else:
+            return None
+        return blob if len(blob) >= 8 else None
+    from app.prompts import video_creator
+
+    path = video_creator.assets_root() / key
+    try:
+        blob = path.read_bytes()
+    except OSError:
+        return None
+    return blob if len(blob) >= 8 else None
+
+
+def load_reference_jpegs(
+    frames: list[ReferenceFrame],
+    *,
+    read_asset=None,
+) -> list[tuple[ReferenceFrame, bytes]]:
+    out: list[tuple[ReferenceFrame, bytes]] = []
+    for frame in pick_attention_frames(frames):
+        blob = read_reference_jpeg(frame.key, read_asset=read_asset)
+        if blob:
+            out.append((frame, blob))
+    return out
+
+
+def refine_prompt_with_frames(
+    video_path: Path,
+    *,
+    prompt: str,
+    frames: list[ReferenceFrame],
+    duration_s: float | None,
+    engine: str | None = ENGINE_GEMINI,
+    keyword: str | None = None,
+    public_url: str | None = None,
+    run: Callable[..., object] | None = None,
+    complete: Callable[..., str] | None = None,
+    read_asset=None,
+    log: Callable[[str], None] | None = None,
+) -> ReverseReading | None:
+    """Second pass: watch the clip again with the cut-reference JPEGs.
+
+    First pass stays video-only (Ashok rejected stills-as-the-reverse).
+    These JPEGs are extra attention so each timestamp matches the frame
+    a human will attach when recreating the clip. Failure or a much
+    shorter rewrite keeps the draft. Frames are not re-extracted.
+    """
+    draft = (prompt or '').strip()
+    if not draft or not frames:
+        return None
+    loaded = load_reference_jpegs(frames, read_asset=read_asset)
+    if not loaded:
+        return None
+    labels = '\n'.join(
+        f'- {frame.filename or f"{frame.t:.2f}s"} at {frame.t:.2f}s'
+        for frame, _ in loaded
+    )
+    user = (
+        REFINE_USER
+        .replace('{duration}', _duration_label(duration_s))
+        .replace('{frame_list}', labels)
+        .replace('{draft}', draft)
+    )
+    images = [jpeg_data_uri(blob) for _, blob in loaded]
+    engine_key = resolve_vision_engine(engine)
+    if log:
+        log(f'{vision_label(engine_key)} attending to {len(images)} cut-reference frames')
+    try:
+        if engine_key == ENGINE_GEMINI:
+            reading = _describe_gemini(
+                video_path,
+                duration_s=duration_s,
+                run=run,
+                log=log,
+                exemplar='',
+                public_url=public_url,
+                _attempt=0,
+                system_instruction=REFINE_SYSTEM,
+                user_prompt=user,
+                images=images,
+            )
+        else:
+            model = vision_api_model(engine_key)
+            complete_fn = complete
+            if complete_fn is None:
+                missing = vision_key_missing(engine_key)
+                if missing:
+                    logger.warning('Cut-frame prompt refine skipped: %s', missing)
+                    return None
+                complete_fn = _openai_complete if engine_key == ENGINE_ASTRA else _anthropic_complete
+            text = complete_fn(
+                model=model,
+                system=REFINE_SYSTEM,
+                user_text=user + '\n' + VIDEO_FILE_NOTE,
+                video_path=video_path,
+                public_url=public_url,
+                images=images,
+            )
+            reading = parse_reading(text, model=model)
+    except Exception as exc:
+        logger.warning('Cut-frame prompt refine failed: %s', exc)
+        return None
+    refined = (reading.prompt or '').strip()
+    if not refined or len(refined) < max(80, int(len(draft) * 0.55)):
+        logger.warning('Cut-frame prompt refine discarded (empty or too short)')
+        return None
+    if keyword and (not reading.keyword or reading.keyword == DEFAULT_KEYWORD):
+        reading.keyword = clean_keyword(keyword)
+    return reading
 
 
 def _output_text(output) -> str:
@@ -843,7 +1044,9 @@ def describe_video(
     Every engine gets the video file — Gemini natively, Astra/Fable as the
     mp4 (native video block if the API accepts it, otherwise the file in
     their code sandbox, the way Codex hands Astra a clip). `run` /
-    `complete` are injectable for tests. Never extract stills ourselves.
+    `complete` are injectable for tests. Never extract stills ourselves
+    for this first pass — cut JPEGs are a second `refine_prompt_with_frames`
+    call after the frames exist.
     """
     engine_key = resolve_vision_engine(engine)
     if engine_key == ENGINE_GEMINI:
@@ -877,9 +1080,13 @@ def _describe_gemini(
     exemplar: str | None,
     public_url: str | None,
     _attempt: int,
+    system_instruction: str | None = None,
+    user_prompt: str | None = None,
+    images: list[str] | None = None,
 ) -> ReverseReading:
     """Gemini (Replicate) watches the clip. Thinking is off so the token
     budget is the JSON. If the first JSON still does not close, one retry.
+    Optional `images` is the second-pass cut-reference JPEGs only.
     """
     model = vision_api_model(ENGINE_GEMINI)
     if run is None:
@@ -897,13 +1104,15 @@ def _describe_gemini(
 
     prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
     inputs = {
-        'prompt': prompt_tmpl.format(duration=_duration_label(duration_s)),
+        'prompt': user_prompt or prompt_tmpl.format(duration=_duration_label(duration_s)),
         'videos': [video_input_for_vision(video_path, public_url=public_url)],
-        'system_instruction': build_instruction(duration_s=duration_s, exemplar=exemplar),
+        'system_instruction': system_instruction or build_instruction(duration_s=duration_s, exemplar=exemplar),
         'temperature': 0.7,
         'max_output_tokens': MAX_OUTPUT_TOKENS,
         'thinking_budget': THINKING_BUDGET,
     }
+    if images:
+        inputs['images'] = list(images)[:ATTENTION_IMAGE_LIMIT]
     output = run(model, input=inputs)
     text = _output_text(output)
     reading = parse_reading(text, model=model)
@@ -918,6 +1127,9 @@ def _describe_gemini(
             exemplar=exemplar,
             public_url=public_url,
             _attempt=1,
+            system_instruction=system_instruction,
+            user_prompt=user_prompt,
+            images=images,
         )
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
             return retry
@@ -1091,6 +1303,26 @@ def _openai_upload_video(client, path: Path) -> str:
     return str(file_id)
 
 
+def _astra_image_blocks(images: list[str] | None) -> list[dict]:
+    return [{'type': 'input_image', 'image_url': uri} for uri in (images or []) if uri]
+
+
+def _fable_image_blocks(images: list[str] | None) -> list[dict]:
+    blocks: list[dict] = []
+    for uri in images or []:
+        if not uri:
+            continue
+        raw = uri.split(',', 1)[-1]
+        media = 'image/jpeg'
+        if uri.startswith('data:') and ';base64,' in uri:
+            media = uri.split(';', 1)[0].split(':', 1)[-1] or media
+        blocks.append({
+            'type': 'image',
+            'source': {'type': 'base64', 'media_type': media, 'data': raw},
+        })
+    return blocks
+
+
 def _openai_complete(
     *,
     model: str,
@@ -1099,20 +1331,24 @@ def _openai_complete(
     video_path: Path,
     public_url: str | None = None,
     client=None,
+    images: list[str] | None = None,
 ) -> str:
-    """Send Astra the mp4. Codex-equivalent: file in a code-interpreter sandbox."""
+    """Send Astra the mp4. Codex-equivalent: file in a code-interpreter sandbox.
+    Optional `images` are second-pass cut-reference JPEGs — never a stills-only reverse.
+    """
     from openai import OpenAI
 
     if client is None:
         client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=DESCRIBE_BUDGET_S)
     path = Path(video_path)
+    extra = _astra_image_blocks(images)
     last_error: BaseException | None = None
     for label, content in astra_content_attempts(path, public_url=public_url, user_text=user_text):
         try:
             response = client.responses.create(
                 model=model,
                 instructions=system,
-                input=[{'role': 'user', 'content': content}],
+                input=[{'role': 'user', 'content': list(content) + extra}],
                 max_output_tokens=MAX_OUTPUT_TOKENS,
             )
             text = _response_output_text(response)
@@ -1136,6 +1372,7 @@ def _openai_complete(
                 'content': [
                     {'type': 'input_file', 'file_id': file_id},
                     {'type': 'input_text', 'text': user_text},
+                    *extra,
                 ],
             }],
             tools=[{
@@ -1203,13 +1440,17 @@ def _anthropic_complete(
     video_path: Path,
     public_url: str | None = None,
     client=None,
+    images: list[str] | None = None,
 ) -> str:
-    """Send Fable the mp4. Codex-equivalent: Files API + code-execution sandbox."""
+    """Send Fable the mp4. Codex-equivalent: Files API + code-execution sandbox.
+    Optional `images` are second-pass cut-reference JPEGs — never a stills-only reverse.
+    """
     import anthropic
 
     if client is None:
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, timeout=DESCRIBE_BUDGET_S)
     path = Path(video_path)
+    extra = _fable_image_blocks(images)
     last_error: BaseException | None = None
     for label, content in fable_content_attempts(path, public_url=public_url, user_text=user_text):
         try:
@@ -1217,7 +1458,7 @@ def _anthropic_complete(
                 model=model,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 system=system,
-                messages=[{'role': 'user', 'content': content}],
+                messages=[{'role': 'user', 'content': list(content) + extra}],
             )
             text = _message_text(message)
             if text:
@@ -1241,6 +1482,7 @@ def _anthropic_complete(
                 'content': [
                     {'type': 'text', 'text': user_text},
                     {'type': 'container_upload', 'file_id': file_id},
+                    *extra,
                 ],
             }],
             tools=[{'type': 'code_execution_20250825', 'name': 'code_execution'}],
