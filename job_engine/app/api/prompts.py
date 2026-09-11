@@ -281,6 +281,30 @@ def reverse_status(reverse_id: int, db: Session = Depends(get_db)):
     return _serialize_reverse(row)
 
 
+@router.post('/reverse/{reverse_id}/retry', status_code=202)
+def reverse_retry(reverse_id: int, db: Session = Depends(get_db)):
+    """Kick a stuck reverse again (queued / hung download / no Gemini call)."""
+    from app.tasks import reverse_prompt_video
+
+    row = db.get(ReversePrompt, int(reverse_id))
+    if row is None:
+        raise HTTPException(404, 'reverse prompt not found')
+    if (row.prompt_text or '').strip() and row.status == 'done':
+        return _serialize_reverse(row)
+    if row.status not in ('queued', 'downloading', 'describing', 'failed'):
+        raise HTTPException(409, f'reverse #{row.id} is {row.status} — cannot retry')
+    row.status = 'queued'
+    row.error = None
+    db.commit()
+    try:
+        reverse_prompt_video.delay(row.id)
+    except Exception as exc:
+        row.status = 'failed'
+        row.error = f'worker queue unavailable: {exc}'
+        db.commit()
+    return _serialize_reverse(row)
+
+
 @router.post('/reverse/{reverse_id}/twist', status_code=202)
 def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Session = Depends(get_db)):
     """Queue the magic-pencil pass on a finished reverse: Gemini rewrites

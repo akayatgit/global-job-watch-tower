@@ -850,3 +850,11 @@ it, shows recipient count) → `/pushconfirm`
   visible while camera and crop stay. Deliver the twisted prompt and
   the twisted stills. Keep the original set. If no twist was stored,
   the button asks for the line.
+- **Reverse must not go silent before Gemini (Ashok 2026-09-11, #14).**
+  "Started… 2–5 minutes" with no further line is a live incident when
+  Replicate never got the clip. Announce queue + download. Give Retry
+  on the start message. Auto-kick a reverse still queued after 45s.
+  Worker boot re-queues unfinished rows (deploy purge). Instagram
+  Chrome fetch has a 90s page timeout and a 100s hard cap — on timeout
+  tell the owner to forward the video file. Never wait forever on a
+  login wall.

@@ -115,6 +115,12 @@ class FakeTower:
             return {'status': 'posted'}
         if path.endswith('/render'):
             return {'id': 77, 'prompt_id': 3, 'status': 'queued'}
+        if path.endswith('/retry') and '/reverse/' in path:
+            rid = int(path.split('/')[-2])
+            row = dict(self.reverse_status or {'id': rid, 'status': 'queued'})
+            row.update({'id': rid, 'status': 'queued', 'error': None})
+            self.reverse_status = row
+            return row
         if path.endswith('/twist') and '/reverse/' in path:
             rid = int(path.split('/')[-2])
             idea = ((payload or {}).get('twist') or '').strip()
@@ -384,7 +390,9 @@ class DeckTests(unittest.TestCase):
         started = self._pick_model('1', 'gemini')
         self.assertIn('Reverse prompt #11 started', started.text)
         self.assertIn('Gemini', started.text)
+        self.assertIn('Retry', started.text)
         self.assertEqual(self.started, [('1', 11)])
+        self.assertEqual(started.keyboard[0][0], ('🔄 Retry', 'pt:revretry:11'))
         payload = self.tower.posts[-1][1]
         self.assertEqual(payload['source_url'], 'https://www.instagram.com/reel/AbC123/')
         self.assertEqual(payload['title'], 'CINEMATIC AI AD')
@@ -567,6 +575,33 @@ class DeckTests(unittest.TestCase):
         self.assertIn('GPT-6 Astra is watching', self.texts[0][1])
         self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
+
+    def test_watch_reverse_announces_queued_and_kicks_again(self):
+        posts: list[str] = []
+
+        def get(path, params=None):
+            return {'id': 14, 'status': 'queued'}
+
+        def post(path, payload=None):
+            posts.append(path)
+            return {'id': 14, 'status': 'queued'}
+
+        self.deck.api_get = get
+        self.deck.api_post = post
+        self.assertEqual(
+            self.deck.watch_reverse('1', 14, poll_s=15, max_wait_s=50, sleep=lambda s: None),
+            'timeout',
+        )
+        self.assertTrue(any('worker queue' in t for _c, t in self.texts))
+        self.assertTrue(any('kicked it again' in t for _c, t in self.texts))
+        self.assertTrue(any(p.endswith('/14/retry') for p in posts))
+
+    def test_retry_button_kicks_stuck_reverse(self):
+        self.tower.reverse_status = {'id': 14, 'status': 'queued', 'prompt_text': None}
+        reply = self.deck.handle_callback('1', 'pt:revretry:14')
+        self.assertIn('kicked again', reply.text.lower())
+        self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse/14/retry')
+        self.assertIn(('1', 14), self.started)
 
     def test_twist_button_uses_stored_line(self):
         self.tower.reverse_status = {

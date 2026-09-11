@@ -750,6 +750,12 @@ def _kick_detail_drain(**_kwargs):
             enrich_pending_requirements.apply_async(countdown=10)
     except Exception:
         logger.warning('detail drain kickoff failed', exc_info=True)
+    try:
+        n = resume_stuck_reverses()
+        if n:
+            console_log('worker', f'resumed {n} stuck reverse prompt(s) after worker start')
+    except Exception:
+        logger.warning('reverse resume on boot failed', exc_info=True)
 
 
 @celery.task(name='app.tasks.enrich_company_profiles', bind=True, max_retries=1)
@@ -1144,6 +1150,36 @@ def twist_reverse_prompt(self, reverse_id: int):
                 db.commit()
             console_log('worker', f'{tag} FAILED: {exc}', level='error')
             return {'ok': False, 'error': str(exc)[:500]}
+
+
+def resume_stuck_reverses(*, delay=None) -> int:
+    """Re-queue reverse rows that never got a prompt.
+
+    Deploy purges Celery (scripts/deploy_local.sh). A reverse that was
+    'queued' or hung in Chrome ('downloading') dies with no Gemini call
+    — reverse #14, 2026-09-11. Kick them again on worker start.
+    """
+    from app.models import ReversePrompt
+
+    kick = delay or reverse_prompt_video.delay
+    unfinished = ('queued', 'downloading', 'describing')
+    n = 0
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(ReversePrompt).where(
+                ReversePrompt.status.in_(unfinished),
+            )
+        ).scalars().all()
+        for row in rows:
+            if (row.prompt_text or '').strip():
+                continue
+            row.status = 'queued'
+            row.error = None
+            db.commit()
+            kick(row.id)
+            n += 1
+            console_log('worker', f'Reverse #{row.id} re-queued (was stuck before Gemini)')
+    return n
 
 
 def _reverse_browser_fetch(url: str) -> str:

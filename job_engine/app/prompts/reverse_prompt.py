@@ -50,6 +50,10 @@ USER_AGENT = (
 )
 HTTP_TIMEOUT_S = 60
 DOWNLOAD_TIMEOUT_S = 600
+# Hard cap around sources.browser_fetch (90s page timeout). Must not use
+# ThreadPoolExecutor as a context manager — shutdown(wait=True) would sit
+# on a hung Chrome until the worker dies (reverse #14, 2026-09-11).
+BROWSER_FETCH_HARD_TIMEOUT_S = 100
 MIN_VIDEO_BYTES = 50_000
 DESCRIBE_BUDGET_S = 600
 DEFAULT_KEYWORD = 'PRODUCT'
@@ -255,7 +259,22 @@ def fetch_video(
         logger.info('plain fetch of %s gave nothing usable: %s', page_url, exc)
     if not candidates and browser_fetch is not None:
         try:
-            candidates = extract_media_urls(browser_fetch(page_url))
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+            pool = ThreadPoolExecutor(max_workers=1)
+            try:
+                future = pool.submit(browser_fetch, page_url)
+                try:
+                    page_html = future.result(timeout=BROWSER_FETCH_HARD_TIMEOUT_S)
+                except FuturesTimeout as exc:
+                    raise ReverseError(
+                        'Instagram / Pinterest page timed out — forward the video file here instead'
+                    ) from exc
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+            candidates = extract_media_urls(page_html)
+        except ReverseError:
+            raise
         except Exception as exc:
             logger.warning('browser fetch of %s failed: %s', page_url, exc)
     if not candidates:
