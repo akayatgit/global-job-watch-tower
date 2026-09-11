@@ -1,21 +1,21 @@
 """Instagram reel composer — cinematic 9:16 post (Ashok 2026-09-11).
 
-The white card is gone. Layout matches the dark reference:
+Layout is locked to the dark Snickers reference, mapped onto 1080×1920:
 
-    TITLE                          ← owner-typed header, glow + shadow
-    [ 9:16 clip, rounded ]  STORYBOARD
-                            [6 frames, clip aspect]
-                            PROMPT
+    TITLE                          ← owner-typed header, centered, Inter
+    [ 9:16 clip, rounded ]  STORYBOARD   ← white-bordered panel, 3×2
+                            [6 frames]
+                            PROMPT       ← white-bordered panel
                             <scrolling verbatim>
-    Comment “AI” to get            ← hardcoded footer, glow + shadow
-    all the prompts
+    Comment “AI” to get            ← hardcoded footer, centered, sits
+    all the prompts                   just under the hero (not the canvas edge)
 
-Background is one storyboard frame, heavily blurred and darkened so the
-theme of the clip paints the canvas. The hero box is a true 9:16 — the
-old card's 900×820 hole made every vertical clip look square.
+Background is one storyboard frame, heavily blurred and darkened.
+The hero is a true 9:16 hole sized like the reference (~660×1173) so a
+vertical clip fills the left column instead of a small postage stamp.
 
-The prompt starts scrolling on frame 1 and finishes near the end (no
-12 % hold). Text is the stored prompt verbatim — never rewritten.
+The prompt starts scrolling on frame 1 and finishes near the end.
+Text is the stored prompt verbatim — never rewritten.
 """
 
 from __future__ import annotations
@@ -25,12 +25,11 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 from app.prompts.post_card import (
     H,
     W,
-    _font,
     _rounded,
     cover_fit,
 )
@@ -46,61 +45,97 @@ from app.prompts.reel_engines import (  # noqa: F401 — re-exported for callers
 
 logger = logging.getLogger(__name__)
 
-# Canvas gutters (reference: tight, not the old 90 px card margins).
-MARGIN = 52
-GUTTER = 28
+FONTS_DIR = Path(__file__).resolve().parent / 'fonts'
+_FONT_FILES = {
+    'bold': FONTS_DIR / 'Inter-Bold.ttf',
+    'medium': FONTS_DIR / 'Inter-Medium.ttf',
+    'regular': FONTS_DIR / 'Inter-Regular.ttf',
+}
+_FONT_FALLBACKS = {
+    'bold': (
+        '/usr/share/fonts/truetype/macos/Inter-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    ),
+    'medium': (
+        '/usr/share/fonts/truetype/macos/Inter-Medium.ttf',
+        '/usr/share/fonts/truetype/macos/Inter-Regular.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    ),
+    'regular': (
+        '/usr/share/fonts/truetype/macos/Inter-Regular.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    ),
+}
 
-# Header — large white, left-aligned over the hero, glow + shadow.
-TITLE_Y = 58
-TITLE_MAX_PT = 72
-TITLE_MIN_PT = 40
-TITLE_AREA_H = 150
+# Snickers reference → 1080×1920. Tight side margins, large 9:16 hero,
+# right rail ~1/3, footer parked under the hero (not the canvas floor).
+MARGIN = 36
+GUTTER = 20
 
-# Hero is a true 9:16 portrait (558×992). The old HERO_BOX was 900×820.
-HERO_W = 558
-HERO_H = 992
+TITLE_TOP = 68
+TITLE_MAX_PT = 74
+TITLE_MIN_PT = 42
+TITLE_TRACK = 3
+TITLE_AREA_H = 120
+
+HERO_W = 660
+HERO_H = 1173  # 660 × 16/9
 HERO_X = MARGIN
-HERO_Y = TITLE_AREA_H + 16
-HERO_RADIUS = 32
+HERO_Y = TITLE_TOP + TITLE_AREA_H
+HERO_RADIUS = 28
 HERO_BOX = (HERO_X, HERO_Y, HERO_X + HERO_W, HERO_Y + HERO_H)
 
-# Right rail: storyboard on top, prompt underneath.
 RIGHT_X = HERO_X + HERO_W + GUTTER
 RIGHT_W = W - MARGIN - RIGHT_X
-LABEL_PT = 22
+LABEL_PT = 18
+LABEL_TRACK = 2
+LABEL_H = 36
 STORYBOARD_FRAMES = 6
+STORYBOARD_COLS = 3
+STORYBOARD_ROWS = 2
 STORYBOARD_GAP = 8
-STORYBOARD_RADIUS = 10
-STORYBOARD_H = 460
-STORYBOARD_TOP = HERO_Y + 36
-PROMPT_TOP = STORYBOARD_TOP + STORYBOARD_H + 56
+STORYBOARD_RADIUS = 8
+STORYBOARD_H = 448
+STORYBOARD_TOP = HERO_Y + LABEL_H
+PROMPT_LABEL_TOP = STORYBOARD_TOP + STORYBOARD_H + 18
+PROMPT_TOP = PROMPT_LABEL_TOP + LABEL_H
 PROMPT_BOTTOM = HERO_Y + HERO_H
 PROMPT_H = PROMPT_BOTTOM - PROMPT_TOP
+# Inner text width inside the white-bordered prompt panel.
+PANEL_STROKE = 2
+PANEL_RADIUS = 18
+PANEL_PAD = 14
+PROMPT_INNER_W = max(1, RIGHT_W - 2 * (PANEL_STROKE + PANEL_PAD))
 # Back-compat aliases used by older tests / helpers.
 COL_W = RIGHT_W
 CONTENT_H = PROMPT_H
 CONTENT_TOP = PROMPT_TOP
 
-BODY_PT = 22
-LINE_H = 30
+BODY_PT = 20
+LINE_H = 28
 # Start immediately; tiny hold only at the end so the last line can land.
 SCROLL_HOLD_START = 0.0
 SCROLL_HOLD_END = 0.04
 SCROLL_HOLD = SCROLL_HOLD_START  # alias — tests that pass hold= still work
 MAX_FPS = 30
 
-# Hardcoded footer (Ashok 2026-09-11) — two lines, glow + shadow.
+# Hardcoded footer — sits just under the hero, same glow as the header.
 FOOTER_LINES = ('Comment “AI” to get', 'all the prompts')
-FOOTER_PT = 62
-FOOTER_GAP = 6
-FOOTER_BOTTOM_PAD = 64
+FOOTER_PT = 58
+FOOTER_TRACK = 1
+FOOTER_GAP = 4
+FOOTER_AFTER_HERO = 44
+FOOTER_Y = HERO_Y + HERO_H + FOOTER_AFTER_HERO
 
 # Theme background: one storyboard frame, blurred like the reference.
 BG_BLUR_RADIUS = 64
 BG_DARKEN = 0.38
 INK = (255, 255, 255)
 INK_MUTED = (214, 214, 214)
-INK_LABEL = (230, 230, 230)
+INK_LABEL = (236, 236, 236)
+PANEL_INK = (255, 255, 255)
 
 
 @dataclass
@@ -111,6 +146,22 @@ class ReelResult:
     duration_s: float
     storyboard_frames: int
     engine: str = 'ffmpeg'
+
+
+def _font(size: int, *, bold: bool = False, weight: str | None = None) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Inter first (bundled, matches the reference), then system fallbacks."""
+    kind = weight or ('bold' if bold else 'regular')
+    paths = (_FONT_FILES.get(kind),) + _FONT_FALLBACKS.get(kind, ())
+    for path in paths:
+        if path and Path(path).exists():
+            try:
+                return ImageFont.truetype(str(path), size)
+            except OSError:
+                continue
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 # ------------------------------------------------------------------ engine
@@ -141,31 +192,118 @@ def sample_frames(
     return (engine or require_engine()).sample_frames(video, info, count=count)
 
 
+# ------------------------------------------------------------------ type
+
+def _scratch() -> ImageDraw.ImageDraw:
+    return ImageDraw.Draw(Image.new('RGB', (1, 1)))
+
+
+def _text_size(text: str, font) -> tuple[int, int]:
+    box = _scratch().textbbox((0, 0), text, font=font)
+    return box[2] - box[0], box[3] - box[1]
+
+
+def spaced_width(text: str, font, tracking: int = 0) -> float:
+    if not text:
+        return 0.0
+    draw = _scratch()
+    return float(sum(draw.textlength(ch, font=font) for ch in text) + tracking * max(len(text) - 1, 0))
+
+
+def render_spaced_line(text: str, font, *, fill: tuple[int, int, int] = INK, tracking: int = 0) -> Image.Image:
+    """One line of tracked type on a tight transparent strip."""
+    draw = _scratch()
+    width = max(1, int(math.ceil(spaced_width(text, font, tracking))))
+    _l, t, _r, b = draw.textbbox((0, 0), text or ' ', font=font)
+    height = max(1, b - t)
+    strip = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    painter = ImageDraw.Draw(strip)
+    x = 0.0
+    y = -t
+    for i, ch in enumerate(text):
+        painter.text((int(round(x)), int(y)), ch, font=font, fill=(*fill, 255))
+        x += draw.textlength(ch, font=font) + (tracking if i < len(text) - 1 else 0)
+    return strip
+
+
+def draw_glow_text(
+    canvas: Image.Image,
+    xy: tuple[float, float],
+    text: str,
+    font,
+    *,
+    fill: tuple[int, int, int] = INK,
+    align: str = 'left',
+    tracking: int = 0,
+) -> None:
+    """Crisp white type with a soft white glow and a blurred black shadow."""
+    if not text:
+        return
+    glyph = render_spaced_line(text, font, fill=fill, tracking=tracking)
+    tw, th = glyph.size
+    x, y = xy
+    if align == 'center':
+        x -= tw / 2
+    pad = 36
+    layer = Image.new('RGBA', (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
+    shadow_src = Image.new('RGBA', layer.size, (0, 0, 0, 0))
+    shadow_src.paste((0, 0, 0, 200), (pad, pad + 6, pad + tw, pad + 6 + th), glyph.split()[-1])
+    shadow = shadow_src.filter(ImageFilter.GaussianBlur(radius=14))
+    glow_src = Image.new('RGBA', layer.size, (0, 0, 0, 0))
+    glow_src.paste((255, 255, 255, 110), (pad, pad, pad + tw, pad + th), glyph.split()[-1])
+    glow = glow_src.filter(ImageFilter.GaussianBlur(radius=8))
+    type_layer = Image.new('RGBA', layer.size, (0, 0, 0, 0))
+    type_layer.paste(glyph, (pad, pad), glyph)
+    composed = Image.alpha_composite(Image.alpha_composite(shadow, glow), type_layer)
+    if canvas.mode != 'RGBA':
+        canvas_rgba = canvas.convert('RGBA')
+        canvas_rgba.paste(composed, (int(x - pad), int(y - pad)), composed)
+        canvas.paste(canvas_rgba.convert('RGB'))
+    else:
+        canvas.paste(composed, (int(x - pad), int(y - pad)), composed)
+
+
+def _draw_spaced(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str, font, fill, tracking: int = 5) -> None:
+    x, y = xy
+    for i, ch in enumerate(text):
+        draw.text((x, y), ch, font=font, fill=fill)
+        x += draw.textlength(ch, font=font) + (tracking if i < len(text) - 1 else 0)
+
+
+def _draw_label(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: str, y: int) -> None:
+    font = _font(LABEL_PT, weight='medium')
+    x1, _y1, x2, _y2 = box
+    width = spaced_width(text, font, LABEL_TRACK)
+    _draw_spaced(draw, ((x1 + x2 - width) / 2, y), text, font, INK_LABEL, LABEL_TRACK)
+
+
+def _panel(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int]) -> None:
+    draw.rounded_rectangle(box, radius=PANEL_RADIUS, outline=PANEL_INK, width=PANEL_STROKE)
+
+
 # ------------------------------------------------------------------ layout
 
 def storyboard_layout(
     aspect: float,
     *,
-    box_w: int = RIGHT_W,
-    box_h: int = STORYBOARD_H,
+    box_w: int | None = None,
+    box_h: int | None = None,
     count: int = STORYBOARD_FRAMES,
     gap: int = STORYBOARD_GAP,
 ) -> tuple[int, int, int, int]:
-    """(cols, rows, cell_w, cell_h) — the grid of `count` cells in the clip's
-    aspect ratio with the largest cells that still fit the column."""
-    best: tuple[int, int, int, int] | None = None
-    for cols in range(1, count + 1):
-        rows = math.ceil(count / cols)
-        cell_w = (box_w - (cols - 1) * gap) / cols
-        cell_h = cell_w / aspect
-        if rows * cell_h + (rows - 1) * gap > box_h:
-            cell_h = (box_h - (rows - 1) * gap) / rows
-            cell_w = cell_h * aspect
-        if cell_w < 1 or cell_h < 1:
-            continue
-        if best is None or cell_w * cell_h > best[2] * best[3]:
-            best = (cols, rows, int(cell_w), int(cell_h))
-    return best or (count, 1, max(1, box_w // count), max(1, int(box_w // count / aspect)))
+    """(cols, rows, cell_w, cell_h) — 3×2 grid that fills the white panel.
+
+    Frames are cover-fitted into the cells so a 9:16 clip still reads as
+    9:16 inside each tile (the reference's compact storyboard, not tiny
+    letterboxed portraits floating in black).
+    """
+    del aspect, count
+    inner_w = box_w if box_w is not None else RIGHT_W - 2 * (PANEL_STROKE + PANEL_PAD)
+    inner_h = box_h if box_h is not None else STORYBOARD_H - 2 * (PANEL_STROKE + PANEL_PAD)
+    cols, rows = STORYBOARD_COLS, STORYBOARD_ROWS
+    cell_w = max(1, (inner_w - (cols - 1) * gap) // cols)
+    cell_h = max(1, (inner_h - (rows - 1) * gap) // rows)
+    return cols, rows, cell_w, cell_h
 
 
 def draw_storyboard(
@@ -175,8 +313,10 @@ def draw_storyboard(
     aspect: float,
     origin: tuple[int, int] | None = None,
 ) -> None:
-    cols, _rows, cell_w, cell_h = storyboard_layout(aspect)
-    ox, oy = origin or (RIGHT_X, STORYBOARD_TOP)
+    inner_w = RIGHT_W - 2 * (PANEL_STROKE + PANEL_PAD)
+    inner_h = STORYBOARD_H - 2 * (PANEL_STROKE + PANEL_PAD)
+    cols, _rows, cell_w, cell_h = storyboard_layout(aspect, box_w=inner_w, box_h=inner_h)
+    ox, oy = origin or (RIGHT_X + PANEL_STROKE + PANEL_PAD, STORYBOARD_TOP + PANEL_STROKE + PANEL_PAD)
     draw = ImageDraw.Draw(canvas)
     for i in range(STORYBOARD_FRAMES):
         col, row = i % cols, i // cols
@@ -215,13 +355,12 @@ def wrap_by_width(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) ->
     return lines
 
 
-def render_prompt_column(prompt_text: str, *, width: int = RIGHT_W) -> Image.Image:
+def render_prompt_column(prompt_text: str, *, width: int = PROMPT_INNER_W) -> Image.Image:
     """The whole prompt as one tall transparent strip; the reel shows a
     window of it that slides down over the clip. Never truncated."""
     font = _font(BODY_PT)
-    scratch = ImageDraw.Draw(Image.new('RGB', (1, 1)))
-    lines = wrap_by_width(scratch, prompt_text, font, width - 6)
-    height = max(PROMPT_H, len(lines) * LINE_H + 8)
+    lines = wrap_by_width(_scratch(), prompt_text, font, width - 4)
+    height = max(PROMPT_H - 2 * PANEL_PAD, len(lines) * LINE_H + 8)
     strip = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(strip)
     y = 0
@@ -236,7 +375,7 @@ def scroll_offset(
     t: float,
     duration_s: float,
     text_h: int,
-    box_h: int = PROMPT_H,
+    box_h: int = 0,
     *,
     hold: float | None = None,
     hold_start: float = SCROLL_HOLD_START,
@@ -248,6 +387,7 @@ def scroll_offset(
     now and starts with a delay"). Linear to the last line, tiny rest at
     the end so the closer can read it.
     """
+    box_h = box_h or max(1, PROMPT_H - 2 * PANEL_PAD)
     if hold is not None:
         hold_start = hold
         hold_end = hold
@@ -269,91 +409,47 @@ def blurred_backdrop(frame: Image.Image) -> Image.Image:
     return ImageEnhance.Brightness(soft).enhance(BG_DARKEN)
 
 
-def _text_size(text: str, font) -> tuple[int, int]:
-    scratch = ImageDraw.Draw(Image.new('RGB', (1, 1)))
-    box = scratch.textbbox((0, 0), text, font=font)
-    return box[2] - box[0], box[3] - box[1]
-
-
-def draw_glow_text(
-    canvas: Image.Image,
-    xy: tuple[float, float],
-    text: str,
-    font,
-    *,
-    fill: tuple[int, int, int] = INK,
-    align: str = 'left',
-) -> None:
-    """Crisp white type with a soft white glow and a blurred black shadow
-    (the reference header / footer)."""
-    tw, th = _text_size(text, font)
-    x, y = xy
-    if align == 'center':
-        x -= tw / 2
-    pad = 36
-    layer = Image.new('RGBA', (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-    draw.text((pad, pad + 6), text, font=font, fill=(0, 0, 0, 200))
-    shadow = layer.filter(ImageFilter.GaussianBlur(radius=14))
-    glow = Image.new('RGBA', layer.size, (0, 0, 0, 0))
-    ImageDraw.Draw(glow).text((pad, pad), text, font=font, fill=(255, 255, 255, 110))
-    glow = glow.filter(ImageFilter.GaussianBlur(radius=8))
-    type_layer = Image.new('RGBA', layer.size, (0, 0, 0, 0))
-    ImageDraw.Draw(type_layer).text((pad, pad), text, font=font, fill=(*fill, 255))
-    composed = Image.alpha_composite(Image.alpha_composite(shadow, glow), type_layer)
-    if canvas.mode != 'RGBA':
-        canvas_rgba = canvas.convert('RGBA')
-        canvas_rgba.paste(composed, (int(x - pad), int(y - pad)), composed)
-        canvas.paste(canvas_rgba.convert('RGB'))
-    else:
-        canvas.paste(composed, (int(x - pad), int(y - pad)), composed)
-
-
 def fit_header(text: str, max_width: int) -> tuple[object, list[str]]:
-    """Largest title that fits the width; wraps to two lines if needed."""
+    """Largest centered title that fits the width; wraps to two lines if needed."""
     raw = ' '.join((text or '').split()) or 'AI VIDEO'
     size = TITLE_MAX_PT
-    scratch = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+    scratch = _scratch()
     while size >= TITLE_MIN_PT:
         font = _font(size, bold=True)
-        if scratch.textlength(raw, font=font) <= max_width:
+        if spaced_width(raw, font, TITLE_TRACK) <= max_width:
             return font, [raw]
-        # Two-line wrap at the last space before the midpoint.
         words = raw.split()
         if len(words) >= 2:
             mid = max(1, len(words) // 2)
             for cut in (mid, mid - 1, mid + 1):
                 if 0 < cut < len(words):
                     a, b = ' '.join(words[:cut]), ' '.join(words[cut:])
-                    if scratch.textlength(a, font=font) <= max_width and scratch.textlength(b, font=font) <= max_width:
+                    if spaced_width(a, font, TITLE_TRACK) <= max_width and spaced_width(b, font, TITLE_TRACK) <= max_width:
                         return font, [a, b]
         size -= 2
     font = _font(TITLE_MIN_PT, bold=True)
     return font, wrap_by_width(scratch, raw, font, max_width)[:2]
 
 
-def _draw_spaced(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, font, fill, tracking: int = 5) -> None:
-    x, y = xy
-    for ch in text:
-        draw.text((x, y), ch, font=font, fill=fill)
-        x += int(draw.textlength(ch, font=font)) + tracking
-
-
 def draw_header(canvas: Image.Image, title: str) -> None:
     font, lines = fit_header(title, W - 2 * MARGIN)
-    y = TITLE_Y
-    for line in lines:
-        draw_glow_text(canvas, (HERO_X, y), line, font)
-        y += int(_text_size(line, font)[1] * 1.05)
+    if not lines:
+        return
+    heights = [_text_size(line, font)[1] for line in lines]
+    block = sum(int(h * 1.08) for h in heights)
+    y = TITLE_TOP + max(0, (TITLE_AREA_H - block) // 2)
+    cx = W / 2
+    for line, lh in zip(lines, heights):
+        draw_glow_text(canvas, (cx, y), line, font, align='center', tracking=TITLE_TRACK)
+        y += int(lh * 1.08)
 
 
 def draw_footer(canvas: Image.Image) -> None:
     font = _font(FOOTER_PT, bold=True)
     line_heights = [_text_size(line, font)[1] for line in FOOTER_LINES]
-    block = sum(line_heights) + FOOTER_GAP * (len(FOOTER_LINES) - 1)
-    y = H - FOOTER_BOTTOM_PAD - block
+    y = FOOTER_Y
     for line, lh in zip(FOOTER_LINES, line_heights):
-        draw_glow_text(canvas, (W / 2, y), line, font, align='center')
+        draw_glow_text(canvas, (W / 2, y), line, font, align='center', tracking=FOOTER_TRACK)
         y += lh + FOOTER_GAP
 
 
@@ -365,10 +461,13 @@ def base_canvas(title: str, frames: list[Image.Image], *, aspect: float, handle:
     canvas = blurred_backdrop(source)
     draw = ImageDraw.Draw(canvas)
     draw_header(canvas, title)
-    label = _font(LABEL_PT, bold=True)
-    _draw_spaced(draw, (RIGHT_X, HERO_Y), 'STORYBOARD', label, INK_LABEL)
+    storyboard_box = (RIGHT_X, STORYBOARD_TOP, RIGHT_X + RIGHT_W, STORYBOARD_TOP + STORYBOARD_H)
+    prompt_box = (RIGHT_X, PROMPT_TOP, RIGHT_X + RIGHT_W, PROMPT_BOTTOM)
+    _draw_label(draw, storyboard_box, 'STORYBOARD', HERO_Y + 6)
+    _panel(draw, storyboard_box)
     draw_storyboard(canvas, frames, aspect=aspect)
-    _draw_spaced(draw, (RIGHT_X, PROMPT_TOP - 36), 'PROMPT', label, INK_LABEL)
+    _draw_label(draw, prompt_box, 'PROMPT', PROMPT_LABEL_TOP + 6)
+    _panel(draw, prompt_box)
     draw_footer(canvas)
     return canvas
 
@@ -398,6 +497,9 @@ def compose_reel(
     column = render_prompt_column(prompt_text)
     hero_mask = Image.new('L', (HERO_W, HERO_H), 0)
     ImageDraw.Draw(hero_mask).rounded_rectangle((0, 0, HERO_W, HERO_H), radius=HERO_RADIUS, fill=255)
+    prompt_window_h = max(1, PROMPT_H - 2 * PANEL_PAD)
+    prompt_x = RIGHT_X + PANEL_STROKE + PANEL_PAD
+    prompt_y = PROMPT_TOP + PANEL_PAD
 
     out.parent.mkdir(parents=True, exist_ok=True)
     sink = engine.open_sink(out, fps=fps, size=(W, H), audio_from=video if info.has_audio else None)
@@ -407,12 +509,12 @@ def compose_reel(
             rounded = hero.convert('RGBA')
             rounded.putalpha(hero_mask)
             canvas.paste(rounded, (HERO_X, HERO_Y), rounded)
-            offset = scroll_offset(sink.frames / fps, info.duration_s, column.height)
-            window = column.crop((0, offset, RIGHT_W, offset + PROMPT_H))
+            offset = scroll_offset(sink.frames / fps, info.duration_s, column.height, prompt_window_h)
+            window = column.crop((0, offset, column.width, offset + prompt_window_h))
             if window.mode == 'RGBA':
-                canvas.paste(window, (RIGHT_X, PROMPT_TOP), window)
+                canvas.paste(window, (prompt_x, prompt_y), window)
             else:
-                canvas.paste(window, (RIGHT_X, PROMPT_TOP))
+                canvas.paste(window, (prompt_x, prompt_y))
             sink.write(canvas)
     except BaseException:
         sink.abort()

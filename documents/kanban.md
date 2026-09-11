@@ -109,6 +109,13 @@ Prompt scroll starts on frame 1 (no 12 % hold). Reverse intake is now
 URL → header title → run (`header_title` on `reverse_prompts`,
 migration `e1b2c3d4f506`).
 
+**Follow (2026-09-11, layout lock):** first live reel (emerald ring)
+missed the Snickers reference — DejaVu, left-aligned title, tiny hero,
+footer at the canvas floor, no white panels. Re-locked to the
+reference: Inter, centered title/footer, 660×1173 9:16 hero, 3×2
+storyboard + prompt in white-bordered panels, footer just under the
+hero (`app/prompts/fonts/Inter-*.ttf`).
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

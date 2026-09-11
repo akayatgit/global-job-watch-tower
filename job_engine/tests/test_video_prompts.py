@@ -822,20 +822,22 @@ def _synthetic_clip(path: Path, *, size: str = '90x160', seconds: int = 2, fps: 
 
 
 class PostReelTests(unittest.TestCase):
-    def test_storyboard_grid_keeps_the_clip_aspect_and_fits_the_column(self):
+    def test_storyboard_grid_is_three_by_two_and_fills_the_panel(self):
         cols, rows, cw, ch = post_reel.storyboard_layout(9 / 16)
-        self.assertEqual(cols * rows >= 6, True)
-        self.assertAlmostEqual(cw / ch, 9 / 16, delta=0.02)
-        self.assertLessEqual(cols * cw + (cols - 1) * post_reel.STORYBOARD_GAP, post_reel.RIGHT_W)
-        self.assertLessEqual(rows * ch + (rows - 1) * post_reel.STORYBOARD_GAP, post_reel.STORYBOARD_H)
-        wide_cols, wide_rows, ww, wh = post_reel.storyboard_layout(16 / 9)
-        self.assertAlmostEqual(ww / wh, 16 / 9, delta=0.03)
-        self.assertLessEqual(wide_rows * wh + (wide_rows - 1) * post_reel.STORYBOARD_GAP, post_reel.STORYBOARD_H)
+        self.assertEqual((cols, rows), (3, 2))
+        inner_w = post_reel.RIGHT_W - 2 * (post_reel.PANEL_STROKE + post_reel.PANEL_PAD)
+        inner_h = post_reel.STORYBOARD_H - 2 * (post_reel.PANEL_STROKE + post_reel.PANEL_PAD)
+        self.assertLessEqual(cols * cw + (cols - 1) * post_reel.STORYBOARD_GAP, inner_w)
+        self.assertLessEqual(rows * ch + (rows - 1) * post_reel.STORYBOARD_GAP, inner_h)
+        self.assertGreater(cw, 70)
+        self.assertGreater(ch, 70)
 
-    def test_hero_box_is_true_nine_by_sixteen_not_square(self):
+    def test_hero_box_is_true_nine_by_sixteen_and_large_like_the_reference(self):
         x1, y1, x2, y2 = post_reel.HERO_BOX
         self.assertAlmostEqual((x2 - x1) / (y2 - y1), 9 / 16, delta=0.01)
         self.assertEqual((x2 - x1, y2 - y1), (post_reel.HERO_W, post_reel.HERO_H))
+        self.assertGreaterEqual(post_reel.HERO_W, 640)
+        self.assertGreaterEqual(post_reel.HERO_H, 1100)
 
     def test_prompt_starts_scrolling_immediately_and_finishes_before_the_end(self):
         text_h, box_h, dur = 2000, 660, 10.0
@@ -852,10 +854,15 @@ class PostReelTests(unittest.TestCase):
     def test_prompt_column_is_verbatim_and_never_truncated(self):
         long_text = ' '.join([PERFUME] * 4)
         strip = post_reel.render_prompt_column(long_text)
-        self.assertEqual(strip.width, post_reel.RIGHT_W)
-        self.assertGreater(strip.height, post_reel.PROMPT_H)
+        self.assertEqual(strip.width, post_reel.PROMPT_INNER_W)
+        self.assertGreater(strip.height, post_reel.PROMPT_H - 2 * post_reel.PANEL_PAD)
         from PIL import ImageDraw
-        lines = post_reel.wrap_by_width(ImageDraw.Draw(Image.new('RGB', (1, 1))), long_text, post_reel._font(22), post_reel.RIGHT_W - 6)
+        lines = post_reel.wrap_by_width(
+            ImageDraw.Draw(Image.new('RGB', (1, 1))),
+            long_text,
+            post_reel._font(post_reel.BODY_PT),
+            post_reel.PROMPT_INNER_W - 4,
+        )
         self.assertEqual(' '.join(lines), ' '.join(long_text.split()))
 
     def test_footer_is_hardcoded_comment_ai_and_backdrop_is_dark(self):
@@ -868,9 +875,32 @@ class PostReelTests(unittest.TestCase):
         self.assertEqual(post_reel.FOOTER_LINES, ('Comment “AI” to get', 'all the prompts'))
         other = post_reel.base_canvas('OTHER TITLE', [frame] * 6, aspect=9 / 16)
         # Header region must actually paint the owner title (not a blank bar).
-        header_a = canvas.crop((40, 40, 700, 150)).tobytes()
-        header_b = other.crop((40, 40, 700, 150)).tobytes()
+        header_box = (0, post_reel.TITLE_TOP, post_reel.W, post_reel.TITLE_TOP + post_reel.TITLE_AREA_H)
+        header_a = canvas.crop(header_box).tobytes()
+        header_b = other.crop(header_box).tobytes()
         self.assertNotEqual(header_a, header_b)
+        # Footer sits under the hero — not glued to the canvas floor.
+        self.assertLess(post_reel.FOOTER_Y, post_reel.H - 300)
+        self.assertGreater(post_reel.FOOTER_Y, post_reel.HERO_Y + post_reel.HERO_H)
+        # White borders on the storyboard + prompt panels.
+        storyboard_edge = canvas.getpixel((post_reel.RIGHT_X + 1, post_reel.STORYBOARD_TOP + 20))
+        self.assertGreater(sum(storyboard_edge) / 3, 180)
+        prompt_edge = canvas.getpixel((post_reel.RIGHT_X + 1, post_reel.PROMPT_TOP + 20))
+        self.assertGreater(sum(prompt_edge) / 3, 180)
+
+    def test_title_is_center_aligned_like_the_reference(self):
+        frame = Image.new('RGB', (90, 160), (180, 40, 20))
+        canvas = post_reel.base_canvas('AD', [frame] * 6, aspect=9 / 16)
+        band = canvas.crop((0, post_reel.TITLE_TOP, post_reel.W, post_reel.TITLE_TOP + post_reel.TITLE_AREA_H))
+        arr = list(band.convert('RGB').tobytes())
+        triples = list(zip(arr[0::3], arr[1::3], arr[2::3]))
+        left = triples[: len(triples) // 2]
+        right = triples[len(triples) // 2 :]
+        left_bright = sum(1 for p in left if sum(p) > 400)
+        right_bright = sum(1 for p in right if sum(p) > 400)
+        # A two-letter title must sit in the middle, not the left gutter.
+        self.assertGreater(left_bright + right_bright, 40)
+        self.assertLess(abs(left_bright - right_bright) / max(left_bright + right_bright, 1), 0.45)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg not installed')
     def test_compose_reel_from_a_real_clip_keeps_duration_audio_and_size(self):

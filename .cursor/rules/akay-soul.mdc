@@ -347,6 +347,13 @@ need to be told twice.
   the prompts` footer, prompt scrolling from frame 1. When the layout
   fights the clip's aspect, change the hole, not the clip.
 
+- **2026-09-11 · The ring vs the Snickers.** First cinematic reel came
+  back with the wrong font, tracking, alignment, a tiny hero, and the
+  footer glued to the floor with a void above it. Ashok held the
+  reference next to our output. Law: when he gives a template, copy the
+  section ratios — font, tracking, centering, padding, borders — do not
+  approximate and call it shipped.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

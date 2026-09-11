@@ -77,9 +77,9 @@ Comment “AI” to get                   ← hardcoded footer, glow + shadow
 all the prompts
 ```
 
-Background is one storyboard frame, Gaussian-blurred (radius 64) and darkened — not the old white card. Hero box is **558×992 (true 9:16)**; the previous 900×820 hole made every vertical clip look square.
+Background is one storyboard frame, Gaussian-blurred (radius 64) and darkened — not the old white card. Hero box is **660×1173 (true 9:16, sized like the Snickers reference)**; title and footer are Inter, centered, with the reference tracking. Storyboard and prompt sit in white-bordered rounded panels. Footer sits just under the hero — not glued to the canvas floor.
 
-- **Storyboard** (right rail): six stills at the mid-points of six equal slices, in the clip's own aspect ratio; the grid (3×2 for 9:16, 2×3 for 16:9) is the largest that fits the rail (`storyboard_layout`).
+- **Storyboard** (right rail, white-bordered 3×2): six stills cover-fitted into a compact grid that fills the panel — the reference's storyboard, not tiny letterboxed portraits.
 - **Prompt** (right rail, under the storyboard): the stored prompt **verbatim, never truncated**, rendered as one tall transparent strip. Scroll **starts on frame 1** (no lead-in hold) and finishes with a tiny rest at the end so the last line can land. Short prompts sit still.
 - Frame rate = the clip's (capped at 30), duration = the clip's, **audio copied** when the clip has a track (Veo). The engine decodes already cover-fitted to the hero box; Pillow composites; the engine encodes H.264 yuv420p `+faststart` for iPhone playback.
 - Stored as `prompts/<day>/reel-<id>-<rand>.mp4` next to the raw clip; `prompt_renders.reel_key / reel_url`. A composition failure sets `reel_error` and keeps the clip — the render is still `done`.
