@@ -576,6 +576,19 @@ class DeckTests(unittest.TestCase):
         self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
 
+    def test_watch_reverse_heartbeats_while_gemini_is_watching(self):
+        self.deck.api_get = lambda path, params=None: {
+            'id': 14, 'status': 'describing', 'duration_s': 25.0, 'vision_engine': 'gemini',
+        }
+        self.assertEqual(
+            self.deck.watch_reverse('1', 14, poll_s=45, max_wait_s=100, sleep=lambda s: None),
+            'timeout',
+        )
+        watching = [t for _c, t in self.texts if 'watching' in t.lower()]
+        self.assertGreaterEqual(len(watching), 2)
+        self.assertIn('Replicate', watching[0])
+        self.assertTrue(any('still watching' in t.lower() for t in watching))
+
     def test_watch_reverse_announces_queued_and_kicks_again(self):
         posts: list[str] = []
 

@@ -168,6 +168,11 @@ also hang with no timeout. Resume stuck rows on worker start, 90s
 browser timeout, Telegram says queued/downloading, Retry button +
 auto-kick after 45s in queue.
 
+**Follow (2026-09-11, #14 stuck on “Gemini is watching”):** clip
+downloaded (25s); Telegram announced describing *before* Replicate had
+a prediction. Cause: we POSTed a multi-MB data-URI. Prefer the public
+`.mp4` URL, 90s create timeout, 90s Telegram heartbeat.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

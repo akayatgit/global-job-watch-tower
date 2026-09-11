@@ -282,13 +282,12 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertEqual(raw, FAKE_MP4)
             huge = Path(tmp) / 'huge.mp4'
             huge.write_bytes(FAKE_MP4)
-            with mock.patch.object(reverse_prompt, 'DATA_URI_MAX_BYTES', 10):
-                self.assertEqual(
-                    reverse_prompt.video_input_for_vision(
-                        huge, public_url='https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
-                    ),
-                    'https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
-                )
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4'
+            self.assertEqual(reverse_prompt.video_input_for_vision(huge, public_url=public), public)
+            self.assertEqual(
+                reverse_prompt.video_input_for_vision(path, public_url=public),
+                public,
+            )
 
     def test_describe_video_uses_injected_run(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -326,6 +325,53 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertIn('recreate-reference', seen['input']['system_instruction'])
             self.assertIn('start-frame', seen['prompt'])
             self.assertNotIn('images', seen['input'])
+
+    def test_describe_video_prefers_the_public_mp4_url(self):
+        """Reverse #14: data-URI upload never became a Replicate prediction."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-14.mp4'
+            seen: list[str] = []
+            logs: list[str] = []
+
+            def run(model, input):
+                seen.append(input['videos'][0])
+                return json.dumps({
+                    'keyword': 'WATCH',
+                    'prompt': '[0.0s–8.0s] a steel watch on wet slate under hard sidelight.',
+                })
+
+            reading = reverse_prompt.describe_video(
+                path, duration_s=8.0, run=run, public_url=public, log=logs.append,
+            )
+            self.assertEqual(seen, [public])
+            self.assertEqual(reading.keyword, 'WATCH')
+            self.assertTrue(any('Gemini payload:' in line and public in line for line in logs))
+
+    def test_describe_video_falls_back_to_data_uri_when_public_url_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-14.mp4'
+            seen: list[str] = []
+
+            def run(model, input):
+                video = input['videos'][0]
+                seen.append(video)
+                if video.startswith('http'):
+                    raise RuntimeError('could not retrieve video: 403')
+                return json.dumps({
+                    'keyword': 'WATCH',
+                    'prompt': '[0.0s–8.0s] a steel watch on wet slate under hard sidelight.',
+                })
+
+            reading = reverse_prompt.describe_video(
+                path, duration_s=8.0, run=run, public_url=public,
+            )
+            self.assertEqual(seen[0], public)
+            self.assertTrue(seen[1].startswith('data:video/mp4;base64,'))
+            self.assertEqual(reading.keyword, 'WATCH')
 
     def test_store_reference_frames_uses_injected_grab(self):
         with tempfile.TemporaryDirectory() as tmp:

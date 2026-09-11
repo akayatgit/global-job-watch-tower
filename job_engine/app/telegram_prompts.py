@@ -50,6 +50,7 @@ STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
 REVERSE_MAX_WAIT_S = 25 * 60
+DESCRIBE_HEARTBEAT_S = 90
 TELEGRAM_TEXT_LIMIT = 3900
 REVERSE_USAGE = (
     'Send me the Instagram reel or Pinterest pin link (or forward the video file itself). '
@@ -755,6 +756,7 @@ class PromptDeck:
         """Block until the reverse prompt finishes, deliver reel + prompt."""
         waited = 0.0
         announced: set[str] = set()
+        last_describe_beat = 0.0
         while True:
             try:
                 row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
@@ -780,12 +782,26 @@ class PromptDeck:
                             self.send_text(chat_id, f'🔄 Reverse #{reverse_id}: worker had not picked it up — I kicked it again.')
                     except Exception:
                         logger.exception('auto-retry reverse failed id=%s', reverse_id)
-                if status == 'describing' and status not in announced and self.send_text:
+                if status == 'describing' and self.send_text:
                     from app.prompts.reverse_prompt import vision_label
 
-                    announced.add(status)
                     label = vision_label(row.get('vision_engine'))
-                    self.send_text(chat_id, f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — {label} is watching it now.")
+                    if status not in announced:
+                        announced.add(status)
+                        last_describe_beat = waited
+                        self.send_text(
+                            chat_id,
+                            f"⬇️ Reverse #{reverse_id}: clip downloaded ({_seconds(row.get('duration_s'))}) — "
+                            f'{label} is watching it now. A Gemini row should appear on Replicate within ~90s '
+                            '(public .mp4 URL, not a giant upload).',
+                        )
+                    elif waited - last_describe_beat >= DESCRIBE_HEARTBEAT_S:
+                        last_describe_beat = waited
+                        self.send_text(
+                            chat_id,
+                            f'⏳ Reverse #{reverse_id}: {label} still watching '
+                            f'({int(waited)}s) — check Replicate if no prediction exists.',
+                        )
                 if status == 'done':
                     self._deliver_reverse(chat_id, row, sleep=sleep)
                     return 'done'
