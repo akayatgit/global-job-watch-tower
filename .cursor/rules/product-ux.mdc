@@ -808,3 +808,11 @@ it, shows recipient count) → `/pushconfirm`
   aesthetic-fonts reference. Margin under the title. The whole parent
   layout (title + hero + footer) sits in the vertical center of 9:16 —
   not a bit high. Footer stays white Inter.
+- **Reverse prompt must be complete JSON, not a trimmed blob (Ashok
+  2026-09-11, Prompt #7).** If Gemini hits a token cap, the header said
+  PRODUCT while the text was still `{ "keyword": "DEITY", "prompt": "… The
+  camera`. That truncated wrapper must never be stored, scrolled, or
+  pasted. Salvage keyword + prompt from unfinished JSON, disable
+  thinking so the budget is the prompt, and retry once. Telegram already
+  splits long prompts across messages — the stored text itself has to be
+  the full generation prompt.

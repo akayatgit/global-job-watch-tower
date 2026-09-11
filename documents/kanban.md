@@ -121,6 +121,13 @@ reel was accepted except: stack sat high, no title-bottom margin, title
 needed a Vogue serif in gold. Playfair Display `(236, 201, 64)`,
 `TITLE_BOTTOM_MARGIN`, stack centered on 1080×1920.
 
+**Follow (2026-09-11, reverse #7 truncated):** Prompt #7 died mid-sentence
+(`The camera`) in both the reel scroll and Telegram. Header said
+`keyword PRODUCT` wrapping `"keyword": "DEITY"` — Gemini 2.5 Flash
+thinking ate a 4096-token cap, `parse_reading` stored the raw JSON
+blob. Fix: `thinking_budget=0`, `max_output_tokens=32768`, salvage
+truncated JSON, retry once. Never ship a half prompt.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

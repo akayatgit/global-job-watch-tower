@@ -359,6 +359,13 @@ need to be told twice.
   no gap under the title, and the title needed a Vogue serif in the gold
   from his aesthetic-fonts reference. Copy the correction exactly.
 
+- **2026-09-11 · Reverse prompt #7 was cut off.** The reel and Telegram
+  both died at "The camera" because Gemini's thinking ate a 4096-token
+  budget and we stored the truncated JSON wrapper (`PRODUCT` around
+  `DEITY`). A reverse prompt that is not a closed JSON object is not
+  done — raise the token cap, turn thinking off, salvage the string,
+  retry once. Never show the `{ "keyword": … }` blob as the prompt.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

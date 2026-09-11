@@ -105,6 +105,35 @@ class UrlAndParseTests(unittest.TestCase):
         with self.assertRaises(ReverseError):
             reverse_prompt.parse_reading('nope')
 
+    def test_parse_reading_salvages_truncated_json_like_prompt_7(self):
+        """Reverse #7: Gemini hit the token cap mid-string. json.loads fails,
+        and the old fallback stored the wrapper as keyword PRODUCT."""
+        truncated = (
+            '{\n'
+            '  "keyword": "DEITY",\n'
+            '  "prompt": "[0.0s–0.8s] An extreme low-angle shot of a bare foot.\\n'
+            '[0.8s–1.8s] The foot makes contact with the cracked earth.\\n'
+            '[1.8s–3.0s] A slow crane-up begins. The camera'
+        )
+        self.assertFalse(reverse_prompt.json_reading_complete(truncated))
+        reading = reverse_prompt.parse_reading(truncated)
+        self.assertEqual(reading.keyword, 'DEITY')
+        self.assertTrue(reading.prompt.startswith('[0.0s–0.8s]'))
+        self.assertIn('crane-up begins', reading.prompt)
+        self.assertTrue(reading.prompt.endswith('The camera'))
+        self.assertNotIn('"keyword"', reading.prompt)
+        self.assertNotIn('"prompt"', reading.prompt)
+
+    def test_parse_reading_salvages_unescaped_newlines_inside_prompt(self):
+        blob = (
+            '{\n  "keyword": "RING",\n  "prompt": "[0.0s–1.0s] A gold ring on slate.\n'
+            '[1.0s–3.0s] Macro push-in. Style: cinematic realism."\n}'
+        )
+        reading = reverse_prompt.parse_reading(blob)
+        self.assertEqual(reading.keyword, 'RING')
+        self.assertIn('Macro push-in', reading.prompt)
+        self.assertIn('Style:', reading.prompt)
+
     def test_build_instruction_carries_every_dimension_and_the_exemplar(self):
         text = reverse_prompt.build_instruction(duration_s=8.0, exemplar='EXEMPLAR BODY')
         self.assertIn('8.0-second', text)
@@ -200,6 +229,7 @@ class FetchAndDescribeTests(unittest.TestCase):
             def run(model, input):
                 seen['model'] = model
                 seen['keys'] = sorted(input)
+                seen['input'] = input
                 seen['prompt'] = input['prompt']
                 video = input['videos'][0]
                 self.assertIsInstance(video, str)
@@ -217,6 +247,41 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertEqual(seen['model'], config.REPLICATE_VISION_MODEL)
             self.assertIn('system_instruction', seen['keys'])
             self.assertIn('8.0-second', seen['prompt'])
+            self.assertGreaterEqual(seen['input']['max_output_tokens'], 16384)
+            self.assertEqual(seen['input']['thinking_budget'], 0)
+
+    def test_describe_video_retries_truncated_json_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            calls: list[dict] = []
+
+            def run(model, input):
+                calls.append(input)
+                if len(calls) == 1:
+                    return (
+                        '{"keyword": "DEITY", "prompt": "[0.0s–0.8s] a descending foot.\\n'
+                        '[1.8s–3.0s] The camera'
+                    )
+                return json.dumps({
+                    'keyword': 'DEITY',
+                    'prompt': (
+                        '[0.0s–0.8s] a descending foot.\n'
+                        '[0.8s–1.8s] impact burst of gold.\n'
+                        '[1.8s–3.0s] crane-up reveals saffron dhoti.\n'
+                        'Style: mythic cinematic realism.'
+                    ),
+                })
+
+            logs: list[str] = []
+            reading = reverse_prompt.describe_video(
+                path, duration_s=3.0, run=run, exemplar='BAR', log=logs.append,
+            )
+            self.assertEqual(len(calls), 2)
+            self.assertIn('cut off', calls[1]['prompt'].lower())
+            self.assertEqual(reading.keyword, 'DEITY')
+            self.assertIn('Style:', reading.prompt)
+            self.assertTrue(any('truncated' in line for line in logs))
 
 
 class ReverseApiAndTaskTests(unittest.TestCase):

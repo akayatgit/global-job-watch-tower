@@ -53,6 +53,12 @@ DOWNLOAD_TIMEOUT_S = 600
 MIN_VIDEO_BYTES = 50_000
 DESCRIBE_BUDGET_S = 600
 DEFAULT_KEYWORD = 'PRODUCT'
+# Gemini 2.5 Flash thinking is ON by default and shares max_output_tokens.
+# Reverse #7 (2026-09-11) died mid-JSON at 4096 — thinking ate the budget,
+# parse_reading stored the truncated blob as keyword PRODUCT. 32k + thinking
+# off leaves room for a full cinematic prompt (typically 3–8k characters).
+MAX_OUTPUT_TOKENS = 32768
+THINKING_BUDGET = 0
 # Data-URI ceiling: Telegram's bot download is 20 MB; Instagram reels sit
 # well under this. Larger clips ride a public .mp4 URL so Gemini can see
 # the suffix (Replicate's Files API URL has none — that is what killed #1).
@@ -293,6 +299,7 @@ Rules:
 - Use concrete numbers where a filmmaker would (focal length, fps, colour temperature, degrees of orbit, percent push-in).
 - Keep every cut physically plausible and lighting continuous across cuts.
 - End with a one-line "Style:" summary.
+- The JSON object MUST be complete: close the prompt string and the object. Never stop mid-sentence or mid-beat. A short cinematic clip typically needs 3000–8000 characters — write them all.
 
 Quality bar — this exemplar shows the depth, structure and vocabulary expected. Match its density; do not copy its content:
 ---
@@ -304,7 +311,14 @@ Return STRICT JSON with exactly two keys and nothing else:
 
 USER_PROMPT = (
     'Reverse-engineer this {duration} product video into the generation prompt described in your '
-    'instructions. Cover the full duration with timestamped segments. Return only the JSON.'
+    'instructions. Cover the full duration with timestamped segments. Return only complete JSON — '
+    'close the prompt string and the object. Never stop mid-sentence.'
+)
+
+USER_PROMPT_RETRY = (
+    'Your previous JSON was cut off mid-prompt. Return ONLY the complete JSON object '
+    '{{"keyword":"<ONE uppercase word>","prompt":"<full timestamped prompt>"}} covering this '
+    '{duration} clip. Close the prompt string and the object. Do not stop mid-sentence.'
 )
 
 
@@ -349,25 +363,101 @@ def clean_keyword(raw: str | None) -> str:
     return word[0].upper()[:18]
 
 
-def parse_reading(text: str, *, model: str = '') -> ReverseReading:
-    """The model is asked for JSON; tolerate fences, prose around it, or a
-    bare prompt (then the keyword falls back to PRODUCT)."""
-    raw = (text or '').strip()
-    body = _strip_fences(raw)
-    data = None
+_JSON_ESCAPES = {
+    '"': '"',
+    '\\': '\\',
+    '/': '/',
+    'b': '\b',
+    'f': '\f',
+    'n': '\n',
+    'r': '\r',
+    't': '\t',
+}
+
+
+def _load_json_object(body: str) -> dict | None:
     try:
         data = json.loads(body)
+        return data if isinstance(data, dict) else None
     except ValueError:
-        match = re.search(r'\{.*\}', body, re.S)
-        if match:
-            try:
-                data = json.loads(match.group(0))
-            except ValueError:
-                data = None
+        pass
+    match = re.search(r'\{.*\}', body, re.S)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def json_reading_complete(text: str) -> bool:
+    """True only when the model closed a JSON object with a non-empty prompt."""
+    data = _load_json_object(_strip_fences(text or ''))
+    return bool(isinstance(data, dict) and str(data.get('prompt') or '').strip())
+
+
+def _json_string_field(body: str, key: str) -> tuple[str | None, bool]:
+    """Read a JSON string field even when the closing quote / brace is missing.
+
+    Gemini sometimes emits a literal newline inside the prompt string (invalid
+    JSON) or hits the token cap mid-value. Returns (value, closed).
+    """
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*"', body)
+    if not match:
+        return None, False
+    i = match.end()
+    out: list[str] = []
+    while i < len(body):
+        ch = body[i]
+        if ch == '\\':
+            if i + 1 >= len(body):
+                return ''.join(out), False
+            nxt = body[i + 1]
+            if nxt == 'u' and i + 5 < len(body):
+                hexpart = body[i + 2:i + 6]
+                try:
+                    out.append(chr(int(hexpart, 16)))
+                    i += 6
+                    continue
+                except ValueError:
+                    pass
+            out.append(_JSON_ESCAPES.get(nxt, nxt))
+            i += 2
+            continue
+        if ch == '"':
+            return ''.join(out), True
+        out.append(ch)
+        i += 1
+    value = ''.join(out).rstrip()
+    return (value or None), False
+
+
+def parse_reading(text: str, *, model: str = '') -> ReverseReading:
+    """The model is asked for JSON; tolerate fences, prose around it, a
+    truncated JSON object, or a bare prompt (keyword falls back to PRODUCT).
+
+    Never store the `{ "keyword": …, "prompt": … }` wrapper as the prompt —
+    that is what reverse #7 scrolled in the reel and pasted in Telegram.
+    """
+    raw = (text or '').strip()
+    body = _strip_fences(raw)
+    data = _load_json_object(body)
     if isinstance(data, dict) and str(data.get('prompt') or '').strip():
         return ReverseReading(keyword=clean_keyword(data.get('keyword')), prompt=str(data['prompt']).strip(), model=model, raw=raw)
+    keyword_raw, _closed = _json_string_field(body, 'keyword')
+    prompt_val, _prompt_closed = _json_string_field(body, 'prompt')
+    if prompt_val and prompt_val.strip():
+        return ReverseReading(
+            keyword=clean_keyword(keyword_raw),
+            prompt=prompt_val.strip(),
+            model=model,
+            raw=raw,
+        )
     if len(body) < 80:
         raise ReverseError(f'vision model returned no prompt: {body[:120] or "(empty)"}')
+    if body.lstrip().startswith('{') and '"prompt"' in body:
+        raise ReverseError('vision model returned truncated JSON with no recoverable prompt')
     return ReverseReading(keyword=DEFAULT_KEYWORD, prompt=body, model=model, raw=raw)
 
 
@@ -423,9 +513,15 @@ def describe_video(
     log: Callable[[str], None] | None = None,
     exemplar: str | None = None,
     public_url: str | None = None,
+    _attempt: int = 0,
 ) -> ReverseReading:
     """Gemini (Replicate) watches the clip and returns keyword + timestamped
-    prompt. `run(model, input) -> output` is injectable for tests."""
+    prompt. `run(model, input) -> output` is injectable for tests.
+
+    Thinking is disabled (`thinking_budget=0`) so the token budget is the
+    JSON, not a hidden chain-of-thought. If the first JSON still does not
+    close, one retry asks for the complete object.
+    """
     model = config.REPLICATE_VISION_MODEL
     if run is None:
         token = getattr(config, 'REPLICATE_API_TOKEN', '')
@@ -440,12 +536,30 @@ def describe_video(
         def run(model, input):  # noqa: A001
             return replicate_render(client, model, input=input, budget_s=DESCRIBE_BUDGET_S, log=log)
 
+    prompt_tmpl = USER_PROMPT_RETRY if _attempt else USER_PROMPT
     inputs = {
-        'prompt': USER_PROMPT.format(duration=_duration_label(duration_s)),
+        'prompt': prompt_tmpl.format(duration=_duration_label(duration_s)),
         'videos': [video_input_for_vision(video_path, public_url=public_url)],
         'system_instruction': build_instruction(duration_s=duration_s, exemplar=exemplar),
         'temperature': 0.7,
-        'max_output_tokens': 4096,
+        'max_output_tokens': MAX_OUTPUT_TOKENS,
+        'thinking_budget': THINKING_BUDGET,
     }
     output = run(model, input=inputs)
-    return parse_reading(_output_text(output), model=model)
+    text = _output_text(output)
+    reading = parse_reading(text, model=model)
+    if _attempt == 0 and not json_reading_complete(text):
+        if log:
+            log('vision JSON was truncated — asking once more for the complete object')
+        retry = describe_video(
+            video_path,
+            duration_s=duration_s,
+            run=run,
+            log=log,
+            exemplar=exemplar,
+            public_url=public_url,
+            _attempt=1,
+        )
+        if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
+            return retry
+    return reading
