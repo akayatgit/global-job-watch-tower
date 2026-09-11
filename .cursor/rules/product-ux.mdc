@@ -872,3 +872,7 @@ it, shows recipient count) → `/pushconfirm`
   Kling. Remux HEVC/HLS to H.264. Send the public `.mp4` URL (Replicate
   fetches — no giant upload). On E001, remux + data-URI once. Telegram
   says Gemini, with Retry / forward-the-file. Heartbeat while watching.
+- ** /igtovid is one line, instantly (Ashok 2026-09-11).** After
+  `/igtovid` / `/pintovid` say only: `Now Send me the Instagram or
+  Pinterest link.` No essay about title / twist / models / reel.
+  Answer on the poll thread — do not queue behind `/promptscan`.

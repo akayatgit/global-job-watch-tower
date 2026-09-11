@@ -184,6 +184,10 @@ Gemini returned E001, Telegram said "video model failed". Remux to
 H.264, send the public `.mp4` URL, retry once as data-URI, label the
 error as Gemini.
 
+**Follow (2026-09-11, /igtovid UX):** command was slow and essay-long.
+Instant one-liner: `Now Send me the Instagram or Pinterest link.`
+Reverse intake runs on the poll thread, not the prompt-scan queue.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

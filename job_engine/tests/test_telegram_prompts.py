@@ -20,7 +20,10 @@ from app.telegram_prompts import (
     STATE_AWAIT_TWIST_APPLY, STATE_AWAIT_URL, STATE_PHOTO, STATE_VIDEO,
 )
 from app.telegram_sessions import TelegramSessionStore
-from scripts.telegram_job_bot import PROMPT_PHOTO_TAP, PROMPT_VIDEO_TAP, JobMasterTelegramBot
+from scripts.telegram_job_bot import (
+    PROMPT_COMMANDS, PROMPT_PHOTO_TAP, PROMPT_VIDEO_TAP,
+    REVERSE_INTAKE_COMMANDS, JobMasterTelegramBot,
+)
 from tests.test_telegram_job_bot import FakeEngine, FakeTelegramAPI
 
 TODAY = datetime.now(timezone.utc).date().isoformat()
@@ -380,7 +383,9 @@ class DeckTests(unittest.TestCase):
 
     def test_igtovid_url_then_title_then_model_starts_reverse(self):
         reply = self.deck.handle_command('1', 'igtovid', '')
-        self.assertIn('Instagram reel or Pinterest pin', reply.text)
+        self.assertEqual(reply.text, 'Now Send me the Instagram or Pinterest link.')
+        self.assertNotIn('magic-pencil', reply.text.lower())
+        self.assertNotIn('cinematic', reply.text.lower())
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '1')
         asked = self.deck.maybe_take_url('1', 'see https://www.instagram.com/reel/AbC123/')
         self.assertIsNotNone(asked)
@@ -746,10 +751,19 @@ class BotWiringTests(unittest.TestCase):
         self.assertIn('/pintovid', text)
         self.assertIn('reverse prompt', text.lower())
 
+    def test_reverse_intake_is_not_queued_behind_prompt_scan(self):
+        """/igtovid must answer on the poll thread — not wait for Ollama."""
+        self.assertTrue(REVERSE_INTAKE_COMMANDS)
+        self.assertFalse(REVERSE_INTAKE_COMMANDS & PROMPT_COMMANDS)
+        self.assertIn('igtovid', REVERSE_INTAKE_COMMANDS)
+        self.assertIn('promptscan', PROMPT_COMMANDS)
+
     def test_owner_igtovid_asks_for_url_then_title_starts_reverse(self):
         self.bot._process_locked('100', '/igtovid')
         _chat, text, keyboard = self.api.keyboards_sent[-1]
-        self.assertIn('Instagram reel or Pinterest pin', text)
+        self.assertEqual(text, 'Now Send me the Instagram or Pinterest link.')
+        self.assertNotIn('Gemini', text)
+        self.assertNotIn('cinematic', text.lower())
         self.assertEqual(keyboard, [[('✖ Cancel', 'pt:cancel')]])
         self.bot._process_locked('100', 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertIn('header', self.api.keyboards_sent[-1][1].lower())
