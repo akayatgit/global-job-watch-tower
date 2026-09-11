@@ -282,13 +282,9 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertEqual(raw, FAKE_MP4)
             huge = Path(tmp) / 'huge.mp4'
             huge.write_bytes(FAKE_MP4)
-            with mock.patch.object(reverse_prompt, 'DATA_URI_MAX_BYTES', 10):
-                self.assertEqual(
-                    reverse_prompt.video_input_for_vision(
-                        huge, public_url='https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
-                    ),
-                    'https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4',
-                )
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-1.mp4'
+            self.assertEqual(reverse_prompt.video_input_for_vision(huge, public_url=public), public)
+            self.assertEqual(reverse_prompt.video_input_for_vision(path, public_url=public), public)
 
     def test_describe_video_uses_injected_run(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -326,6 +322,112 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertIn('recreate-reference', seen['input']['system_instruction'])
             self.assertIn('start-frame', seen['prompt'])
             self.assertNotIn('images', seen['input'])
+
+    def test_describe_video_prefers_the_public_mp4_url(self):
+        """#14 / #16: data-URI upload never becomes a healthy Gemini row."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-16.mp4'
+            seen: list[str] = []
+            logs: list[str] = []
+
+            def run(model, input):
+                seen.append(input['videos'][0])
+                return json.dumps({
+                    'keyword': 'WATCH',
+                    'prompt': '[0.0s–8.0s] a steel watch on wet slate under hard sidelight.',
+                })
+
+            reading = reverse_prompt.describe_video(
+                path, duration_s=8.0, run=run, public_url=public, log=logs.append,
+            )
+            self.assertEqual(seen, [public])
+            self.assertEqual(reading.keyword, 'WATCH')
+            self.assertTrue(any('Gemini payload:' in line and public in line for line in logs))
+
+    def test_describe_video_retries_e001_with_remuxed_data_uri(self):
+        """Reverse #16: Pinterest clip reached Gemini then Google returned E001."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            public = 'https://tower.example/api/partner/v1/assets/prompts/d/source-16.mp4'
+            seen: list[str] = []
+
+            def run(model, input):
+                video = input['videos'][0]
+                seen.append(video)
+                if video.startswith('http'):
+                    raise RuntimeError(
+                        'video model failed: Prediction failed: Async prediction failed: '
+                        'ModelError: An error occurred while processing your request (E001) (1cah9wlWR99)'
+                    )
+                return json.dumps({
+                    'keyword': 'WATCH',
+                    'prompt': '[0.0s–8.0s] a steel watch on wet slate under hard sidelight.',
+                })
+
+            with mock.patch.object(reverse_prompt, 'prepare_vision_clip', return_value=True) as prep:
+                reading = reverse_prompt.describe_video(
+                    path, duration_s=8.0, run=run, public_url=public,
+                )
+            self.assertEqual(seen[0], public)
+            self.assertTrue(seen[1].startswith('data:video/mp4;base64,'))
+            self.assertEqual(reading.keyword, 'WATCH')
+            self.assertTrue(prep.called)
+
+    def test_describe_video_e001_without_retry_payload_is_human(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+
+            def run(model, input):
+                raise RuntimeError(
+                    'Gemini failed: Prediction failed: An error occurred while processing your request (E001)'
+                )
+
+            with mock.patch.object(reverse_prompt, 'prepare_vision_clip', return_value=False):
+                with self.assertRaises(ReverseError) as ctx:
+                    reverse_prompt.describe_video(path, duration_s=8.0, run=run)
+            self.assertIn('Gemini could not read this clip (E001)', str(ctx.exception))
+            self.assertNotIn('video model failed', str(ctx.exception).lower())
+
+    def test_prepare_vision_clip_remuxes_hevc_for_gemini(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'pin.mp4'
+            path.write_bytes(FAKE_MP4)
+
+            def run(cmd):
+                joined = ' '.join(cmd)
+                if '-c:v' not in joined:
+                    return mock.Mock(
+                        returncode=1, stdout='',
+                        stderr='Stream #0:0: Video: hevc (Main) (hvc1 / 0x31637668), yuv420p',
+                    )
+                Path(cmd[-1]).write_bytes(FAKE_MP4 + b'REMUX')
+                return mock.Mock(returncode=0, stdout='', stderr='')
+
+            changed = reverse_prompt.prepare_vision_clip(path, ffmpeg='/usr/bin/ffmpeg', run=run)
+            self.assertTrue(changed)
+            self.assertTrue(path.read_bytes().endswith(b'REMUX'))
+
+    def test_prepare_vision_clip_skips_h264(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ok.mp4'
+            path.write_bytes(FAKE_MP4)
+
+            def run(cmd):
+                return mock.Mock(
+                    returncode=1, stdout='',
+                    stderr='Stream #0:0: Video: h264 (High) (avc1 / 0x31637661), yuv420p',
+                )
+
+            self.assertFalse(reverse_prompt.prepare_vision_clip(path, ffmpeg='/usr/bin/ffmpeg', run=run))
+
+    def test_is_gemini_safe_banner(self):
+        self.assertTrue(reverse_prompt.is_gemini_safe_banner('Video: h264 (High) (avc1 / 0x31637661)'))
+        self.assertFalse(reverse_prompt.is_gemini_safe_banner('Video: hevc (Main) (hvc1 / 0x31637668)'))
+        self.assertFalse(reverse_prompt.is_gemini_safe_banner('Video: vp9, yuv420p'))
 
     def test_store_reference_frames_uses_injected_grab(self):
         with tempfile.TemporaryDirectory() as tmp:

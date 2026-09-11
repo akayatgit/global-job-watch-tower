@@ -760,6 +760,13 @@ class ReplicateRenderTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             video_creator.replicate_render(_FakeClient(pred), 'kwaivgi/kling-v2.1', input={}, budget_s=900, sleep=lambda s: None)
         self.assertEqual(str(ctx.exception), 'video model failed: NSFW content detected')
+        gem = _FakePrediction(['processing', 'failed'], error='An error occurred while processing your request (E001) (1cah9wlWR99)')
+        with self.assertRaises(RuntimeError) as ctx:
+            video_creator.replicate_render(
+                _FakeClient(gem), 'google/gemini-2.5-flash', input={}, budget_s=900, sleep=lambda s: None,
+            )
+        self.assertIn('Gemini failed:', str(ctx.exception))
+        self.assertIn('E001', str(ctx.exception))
 
     def test_poll_blips_are_tolerated_then_fatal(self):
         pred = _FakePrediction(['processing', 'succeeded'], output='https://r.example/o.mp4', reload_errors=3)
@@ -770,6 +777,25 @@ class ReplicateRenderTests(unittest.TestCase):
             video_creator.replicate_render(_FakeClient(dead), 'm/x', input={}, budget_s=900, sleep=lambda s: None)
         self.assertIn('lost contact', str(ctx.exception))
         self.assertEqual(dead.reloads, video_creator.POLL_ERRORS_TOLERATED)
+
+    def test_create_hang_fails_instead_of_blocking_gemini(self):
+        """Reverse #14: predictions.create sat on a data-URI POST forever."""
+        import time
+
+        class _HangClient:
+            def __init__(self):
+                self.predictions = type('P', (), {'create': staticmethod(lambda **kw: time.sleep(3))})()
+                self.models = type('M', (), {
+                    'predictions': type('MP', (), {'create': staticmethod(lambda **kw: time.sleep(3))})(),
+                })()
+
+        with mock.patch.object(video_creator, 'CREATE_TIMEOUT_S', 0.3):
+            with self.assertRaises(RuntimeError) as ctx:
+                video_creator.replicate_render(
+                    _HangClient(), 'google/gemini-2.5-flash', input={'videos': ['data:x']},
+                    budget_s=10, sleep=lambda s: None,
+                )
+        self.assertIn('create still uploading', str(ctx.exception).lower())
 
     def test_success_without_a_file_is_an_error(self):
         pred = _FakePrediction(['succeeded'], output=[])

@@ -179,6 +179,11 @@ also hang with no timeout. Resume stuck rows on worker start, 90s
 browser timeout, Telegram says queued/downloading, Retry button +
 auto-kick after 45s in queue.
 
+**Follow (2026-09-11, reverse #16 Pinterest E001):** clip downloaded,
+Gemini returned E001, Telegram said "video model failed". Remux to
+H.264, send the public `.mp4` URL, retry once as data-URI, label the
+error as Gemini.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then

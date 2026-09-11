@@ -991,6 +991,11 @@ def reverse_prompt_video(self, reverse_id: int):
             video_path = video_creator.assets_root() / row.video_key
             if not video_path.is_file():
                 raise RuntimeError('stored clip is missing from the asset root')
+            try:
+                if reverse_prompt.prepare_vision_clip(video_path, log=log):
+                    log(f'clip remuxed to H.264 for Gemini ({video_path.stat().st_size // 1024} KB)')
+            except Exception as exc:
+                log(f'Gemini remux skipped: {exc}')
             info = post_reel.probe(video_path)
             row.duration_s = round(info.duration_s, 2) if info.duration_s else None
 
