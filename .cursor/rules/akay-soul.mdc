@@ -438,6 +438,12 @@ need to be told twice.
   Start + first watching beat → `Workflow Started…`. Heartbeats and
   fail/done stay detailed.
 
+- **2026-09-11 · Prompts strictly under 3000 — thinking back on.**
+  Ashok: the generation prompt (reverse and twist) must stay under
+  3000 characters including spaces. Thinking was off after #7 ate a
+  4096-token cap. Now 32k output + 8k thinking, the model plans the
+  cut, then a compress retry + `fit_prompt` enforce the door.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

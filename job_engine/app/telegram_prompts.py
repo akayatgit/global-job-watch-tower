@@ -861,8 +861,12 @@ class PromptDeck:
             ('⬇️ Save reel', row.get('reel_url')),
         ))
         if self.send_text:
-            head = f"📝 Prompt #{rid} · keyword {row.get('keyword') or 'PRODUCT'}\n"
-            for chunk in _chunks(str(row.get('prompt_text') or '(no prompt text)'), TELEGRAM_TEXT_LIMIT - len(head)):
+            prompt_text = str(row.get('prompt_text') or '(no prompt text)')
+            head = (
+                f"📝 Prompt #{rid} · keyword {row.get('keyword') or 'PRODUCT'} "
+                f"· {len(prompt_text)} chars\n"
+            )
+            for chunk in _chunks(prompt_text, TELEGRAM_TEXT_LIMIT - len(head)):
                 self.send_text(chat_id, head + chunk)
                 head = ''
         self._deliver_reference_frames(chat_id, row, sleep=sleep)
@@ -992,13 +996,15 @@ class PromptDeck:
         rid = row.get('id')
         if self.send_text:
             idea = (row.get('twist_text') or '').strip()
+            twist_prompt = str(row.get('twist_prompt') or '(no twisted prompt)')
             head = f"💥✏️ Twisted prompt #{rid}"
             if row.get('twist_keyword'):
                 head += f" · keyword {row['twist_keyword']}"
+            head += f" · {len(twist_prompt)} chars"
             if idea:
                 head += f"\nTwist: {idea}"
             head += '\n'
-            for chunk in _chunks(str(row.get('twist_prompt') or '(no twisted prompt)'), TELEGRAM_TEXT_LIMIT - len(head)):
+            for chunk in _chunks(twist_prompt, TELEGRAM_TEXT_LIMIT - len(head)):
                 self.send_text(chat_id, head + chunk)
                 head = ''
         from app.prompts.reverse_prompt import load_reference_frames

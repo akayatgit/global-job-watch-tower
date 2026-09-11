@@ -317,11 +317,57 @@ class FetchAndDescribeTests(unittest.TestCase):
             self.assertIn('system_instruction', seen['keys'])
             self.assertIn('8.0-second', seen['prompt'])
             self.assertGreaterEqual(seen['input']['max_output_tokens'], 16384)
-            self.assertEqual(seen['input']['thinking_budget'], 0)
+            self.assertEqual(seen['input']['thinking_budget'], reverse_prompt.THINKING_BUDGET)
+            self.assertGreater(seen['input']['thinking_budget'], 0)
             self.assertIn('cuts', seen['input']['system_instruction'])
+            self.assertIn('under 3000', seen['input']['system_instruction'])
             self.assertIn('recreate-reference', seen['input']['system_instruction'])
             self.assertIn('start-frame', seen['prompt'])
             self.assertNotIn('images', seen['input'])
+
+    def test_fit_prompt_stays_strictly_under_3000_and_keeps_timestamps(self):
+        bloated = (
+            '[0.0s–2.0s] ' + ('a gold pour in a midnight temple, hard rim, 35mm. ' * 40) + '\n'
+            '[2.0s–4.0s] ' + ('hand holds the glass, condensation, slow orbit. ' * 40) + '\n'
+            '[4.0s–8.0s] ' + ('hero lockup, steam, sacred hush, wet slate. ' * 40) + '\n'
+            'Style: mythic cinematic realism, no text, no logo.'
+        )
+        self.assertGreaterEqual(len(bloated), reverse_prompt.PROMPT_CHAR_LIMIT)
+        fitted = reverse_prompt.fit_prompt(bloated)
+        self.assertLess(len(fitted), reverse_prompt.PROMPT_CHAR_LIMIT)
+        self.assertLessEqual(len(fitted), reverse_prompt.PROMPT_MAX_CHARS)
+        self.assertIn('[0.0s–2.0s]', fitted)
+        self.assertIn('[2.0s–4.0s]', fitted)
+        self.assertIn('[4.0s–8.0s]', fitted)
+        self.assertIn('Style:', fitted)
+
+    def test_describe_video_caps_an_overlong_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'clip.mp4'
+            path.write_bytes(FAKE_MP4)
+            long_prompt = (
+                '[0.0s–8.0s] ' + ('ceramic dripper under morning sidelight, steam, 35mm. ' * 80)
+                + '\nStyle: quiet commercial realism.'
+            )
+            self.assertGreaterEqual(len(long_prompt), reverse_prompt.PROMPT_CHAR_LIMIT)
+            calls: list[str] = []
+
+            def run(model, input):
+                calls.append(input['prompt'][:80])
+                return json.dumps({
+                    'keyword': 'COFFEE',
+                    'prompt': long_prompt,
+                    'cuts': [{'start': 0.0, 'end': 8.0}],
+                })
+
+            logs: list[str] = []
+            reading = reverse_prompt.describe_video(
+                path, duration_s=8.0, run=run, exemplar='BAR', log=logs.append,
+            )
+            self.assertLess(len(reading.prompt), reverse_prompt.PROMPT_CHAR_LIMIT)
+            self.assertIn('[0.0s–8.0s]', reading.prompt)
+            self.assertTrue(any('compress' in line for line in logs))
+            self.assertGreaterEqual(len(calls), 2)
 
     def test_describe_video_prefers_the_public_mp4_url(self):
         """#14 / #16: data-URI upload never becomes a healthy Gemini row."""

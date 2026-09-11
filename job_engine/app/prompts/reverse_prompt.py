@@ -57,12 +57,15 @@ BROWSER_FETCH_HARD_TIMEOUT_S = 100
 MIN_VIDEO_BYTES = 50_000
 DESCRIBE_BUDGET_S = 600
 DEFAULT_KEYWORD = 'PRODUCT'
-# Gemini 2.5 Flash thinking is ON by default and shares max_output_tokens.
-# Reverse #7 (2026-09-11) died mid-JSON at 4096 — thinking ate the budget,
-# parse_reading stored the truncated blob as keyword PRODUCT. 32k + thinking
-# off leaves room for a full cinematic prompt (typically 3–8k characters).
+# Gemini 2.5 Flash thinking shares max_output_tokens. Reverse #7 (2026-09-11)
+# died mid-JSON at 4096 — thinking ate the budget. We keep 32k output so
+# thinking can come back. Ashok (2026-09-11): prompts MUST stay strictly
+# under 3000 characters including spaces — thinking plans that cut.
 MAX_OUTPUT_TOKENS = 32768
-THINKING_BUDGET = 0
+THINKING_BUDGET = 8192
+PROMPT_CHAR_LIMIT = 3000
+PROMPT_MAX_CHARS = PROMPT_CHAR_LIMIT - 1  # stored / fitted max (2999)
+STYLE_LINE_RE = re.compile(r'(?im)(?:^|\n)(style:\s*.+)$')
 ENGINE_GEMINI = 'gemini'
 ENGINE_ASTRA = 'astra'
 ENGINE_FABLE = 'fable'
@@ -425,46 +428,58 @@ Rules:
 - Keep every cut physically plausible and lighting continuous across cuts.
 - Give extra attention to the first and last frame of every hard cut. Those instants become the recreate-reference images attached with this prompt. For each one, lock product pose and crop, glass / liquid / condensation, hand or prop, lighting direction and colour, camera height / lens / distance, and the set. Write the timestamped prompt so a video model hitting those exact frames would match them.
 - End with a one-line "Style:" summary.
-- The JSON object MUST be complete: close every string and the object. Never stop mid-sentence or mid-beat. A short cinematic clip typically needs 3000–8000 characters — write them all.
+- HARD CAP: the `prompt` value MUST be strictly under 3000 characters including spaces. Think first — pick the shots and the densest words — then write. Full essence, no filler. Never pad toward 8k.
+- The JSON object MUST be complete: close every string and the object. Never stop mid-sentence or mid-beat.
 - Also list every hard cut / shot change as `cuts`. These are the frames a filmmaker needs to recreate the clip — not evenly spaced stills.
 
-Quality bar — this exemplar shows the depth, structure and vocabulary expected. Match its density; do not copy its content:
+Quality bar — this exemplar shows the structure and vocabulary expected. Match its craft, not its length. Your prompt stays under 3000 characters including spaces; do not copy the exemplar's length:
 ---
 {exemplar}
 ---
 
 Return STRICT JSON with exactly three keys and nothing else:
-{{"keyword": "<ONE uppercase word people would comment to get this prompt — the product category, e.g. SKINCARE, COFFEE, WATCH>", "prompt": "<the full timestamped prompt as one string with newlines>", "cuts": [{{"start": 0.0, "end": 1.8}}]}}
+{{"keyword": "<ONE uppercase word people would comment to get this prompt — the product category, e.g. SKINCARE, COFFEE, WATCH>", "prompt": "<the timestamped prompt as one string with newlines, strictly under 3000 characters>", "cuts": [{{"start": 0.0, "end": 1.8}}]}}
 `cuts` covers the full duration in order. `start` / `end` are seconds at the first and last frame of that shot. Do not put the cuts array inside the prompt string."""
 
 USER_PROMPT = (
     'Reverse-engineer this {duration} product video into the generation prompt described in your '
-    'instructions. Cover the full duration with timestamped segments. List every hard cut in `cuts`. '
+    'instructions. Think first, then write. Cover the full duration with timestamped segments. '
+    'The prompt string MUST be strictly under 3000 characters including spaces. '
+    'List every hard cut in `cuts`. '
     'Give extra attention to the start-frame and end-frame of each cut — those are the recreate-reference '
     'images. Return only complete JSON — close the prompt string, the cuts array and the object. Never stop mid-sentence.'
 )
 
 USER_PROMPT_RETRY = (
     'Your previous JSON was cut off mid-prompt. Return ONLY the complete JSON object '
-    '{{"keyword":"<ONE uppercase word>","prompt":"<full timestamped prompt>",'
+    '{{"keyword":"<ONE uppercase word>","prompt":"<timestamped prompt under 3000 characters>",'
     '"cuts":[{{"start":0.0,"end":1.8}}]}} covering this {duration} clip. Close every string, '
-    'the cuts array and the object. Do not stop mid-sentence.'
+    'the cuts array and the object. Do not stop mid-sentence. Stay strictly under 3000 characters including spaces.'
+)
+
+COMPRESS_USER = (
+    'The prompt is {n} characters — too long. Think, then rewrite it STRICTLY UNDER 3000 '
+    'characters including spaces. Keep every timestamp. Keep camera, product, action, emotion, '
+    'world, and one Style: line. No filler. Return only complete JSON.'
 )
 
 REFINE_SYSTEM = """You are the same senior commercial director. You already watched the clip and drafted a timestamped prompt. Now you are also given the exact cut-reference JPEGs (labeled by timestamp) that will be attached when a human recreates this video.
 
 Watch the clip again AND study every attached frame. Rewrite ONE generation prompt so each timestamped segment would produce a frame that matches the JPEG at that time — product pose, crop, lighting, camera, set, glass/liquid/hand. Do not mention JPEGs, "reference image", or the cuts array inside the prompt string.
 
+HARD CAP: the `prompt` value MUST be strictly under 3000 characters including spaces. Think first, then write dense cinematic text.
+
 Return STRICT JSON with exactly three keys:
-{"keyword": "<ONE uppercase word>", "prompt": "<the full rewritten timestamped prompt>", "cuts": [{"start": 0.0, "end": 1.8}]}
+{"keyword": "<ONE uppercase word>", "prompt": "<the rewritten timestamped prompt, under 3000 characters>", "cuts": [{"start": 0.0, "end": 1.8}]}
 The JSON object MUST be complete. Never stop mid-sentence."""
 
 REFINE_USER = (
     'These JPEG frames are the recreate-reference images for this {duration} clip:\n'
     '{frame_list}\n\n'
-    'Draft prompt to rewrite (keep the timestamp structure, raise the match to these frames):\n'
+    'Draft prompt to rewrite (keep the timestamp structure, raise the match to these frames, '
+    'stay strictly under 3000 characters including spaces):\n'
     '---\n{draft}\n---\n'
-    'Watch the video and attend to the attached frames. Return only complete JSON.'
+    'Watch the video and attend to the attached frames. Think, then return only complete JSON.'
 )
 
 ATTENTION_IMAGE_LIMIT = 10
@@ -693,6 +708,88 @@ def cuts_from_prompt(prompt: str) -> list[tuple[float, float]]:
             start, end = end, start
         pairs.append((start, end))
     return pairs
+
+
+def extract_style_line(prompt: str) -> str:
+    match = STYLE_LINE_RE.search(prompt or '')
+    return match.group(1).strip() if match else ''
+
+
+def _trim_words(text: str, limit: int) -> str:
+    if limit <= 0:
+        return ''
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(' ', 1)[0].rstrip(' ,;:.-')
+    return cut or text[:limit]
+
+
+def _split_prompt_parts(prompt: str) -> tuple[list[str], str]:
+    """Timestamped blocks plus a trailing Style: line."""
+    text = (prompt or '').strip()
+    style = extract_style_line(text)
+    body = text
+    if style:
+        match = STYLE_LINE_RE.search(text)
+        if match:
+            body = text[:match.start()].strip()
+    matches = list(SEGMENT_RE.finditer(body))
+    if not matches:
+        return ([body] if body else [], style)
+    parts: list[str] = []
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        parts.append(body[match.start():end].strip())
+    return parts, style
+
+
+def fit_prompt(prompt: str, limit: int = PROMPT_MAX_CHARS) -> str:
+    """Hard cap including spaces. Keep every timestamp and the Style lock.
+
+    Ashok: strictly under 3000 characters — default limit is 2999.
+    """
+    text = re.sub(r'\n{3,}', '\n\n', (prompt or '').strip())
+    if len(text) <= limit:
+        return text
+    parts, style = _split_prompt_parts(text)
+    style_line = style if style else ''
+    if style_line and not style_line.lower().startswith('style:'):
+        style_line = f'Style: {style_line}'
+    style_cost = (1 + len(style_line)) if style_line else 0
+    budget = max(80, limit - style_cost)
+
+    def total() -> int:
+        if not parts:
+            return 0
+        return sum(len(p) for p in parts) + (len(parts) - 1)
+
+    for _ in range(64):
+        if total() <= budget:
+            break
+        idx = max(range(len(parts)), key=lambda i: len(parts[i]))
+        longest = parts[idx]
+        header = SEGMENT_RE.match(longest)
+        floor = len(header.group(0)) + 1 if header else 24
+        if len(longest) <= floor:
+            break
+        need = total() - budget
+        parts[idx] = _trim_words(longest, max(floor, len(longest) - max(need, 16)))
+    out = '\n'.join(p for p in parts if p)
+    if style_line:
+        if len(out) + 1 + len(style_line) <= limit:
+            out = f'{out}\n{style_line}' if out else style_line
+        else:
+            out = _trim_words(out, max(0, limit - len(style_line) - 1))
+            out = f'{out}\n{style_line}'.strip()
+    if len(out) > limit:
+        out = _trim_words(out, limit)
+    return out
+
+
+def apply_prompt_cap(reading: ReverseReading) -> ReverseReading:
+    """Last door: stored prompt is strictly under 3000 characters."""
+    reading.prompt = fit_prompt(reading.prompt or '')
+    return reading
 
 
 def normalize_cuts(cuts: list[tuple[float, float]], duration_s: float | None) -> list[tuple[float, float]]:
@@ -1074,8 +1171,9 @@ def refine_prompt_with_frames(
     except Exception as exc:
         logger.warning('Cut-frame prompt refine failed: %s', exc)
         return None
+    reading = apply_prompt_cap(reading)
     refined = (reading.prompt or '').strip()
-    if not refined or len(refined) < max(80, int(len(draft) * 0.55)):
+    if not refined or len(refined) < max(80, min(int(len(draft) * 0.55), PROMPT_MAX_CHARS // 2)):
         logger.warning('Cut-frame prompt refine discarded (empty or too short)')
         return None
     if keyword and (not reading.keyword or reading.keyword == DEFAULT_KEYWORD):
@@ -1191,8 +1289,9 @@ def _describe_gemini(
     user_prompt: str | None = None,
     images: list[str] | None = None,
 ) -> ReverseReading:
-    """Gemini (Replicate) watches the clip. Thinking is off so the token
-    budget is the JSON. If the first JSON still does not close, one retry.
+    """Gemini (Replicate) watches the clip. Thinking is on (8k) so it can
+    plan a prompt strictly under 3000 characters. 32k output leaves room
+    for thinking + JSON. If the first JSON still does not close, one retry.
     Optional `images` is the second-pass cut-reference JPEGs only.
     """
     model = vision_api_model(ENGINE_GEMINI)
@@ -1256,8 +1355,33 @@ def _describe_gemini(
             images=images,
         )
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
-            return retry
-    return reading
+            reading = retry
+    return _maybe_compress_reading(reading, inputs=inputs, run=run, model=model, log=log)
+
+
+def _maybe_compress_reading(
+    reading: ReverseReading,
+    *,
+    inputs: dict,
+    run,
+    model: str,
+    log: Callable[[str], None] | None,
+) -> ReverseReading:
+    """If Gemini wrote past the 3000-char door, think once more and fit."""
+    prompt = (reading.prompt or '').strip()
+    if len(prompt) < PROMPT_CHAR_LIMIT:
+        return apply_prompt_cap(reading)
+    if log:
+        log(f'prompt {len(prompt)} chars — thinking compress to under {PROMPT_CHAR_LIMIT}')
+    compress = dict(inputs)
+    compress['prompt'] = COMPRESS_USER.format(n=len(prompt))
+    try:
+        compressed = parse_reading(_output_text(run(model, input=compress)), model=model)
+        if compressed.prompt and len(compressed.prompt) < len(prompt):
+            reading = compressed
+    except Exception as exc:
+        logger.warning('prompt compress retry failed: %s', exc)
+    return apply_prompt_cap(reading)
 
 
 def _describe_file(
@@ -1305,8 +1429,25 @@ def _describe_file(
             _attempt=1,
         )
         if json_reading_complete(retry.raw) or len(retry.prompt) > len(reading.prompt):
-            return retry
-    return reading
+            reading = retry
+    prompt = (reading.prompt or '').strip()
+    if len(prompt) >= PROMPT_CHAR_LIMIT:
+        if log:
+            log(f'prompt {len(prompt)} chars — thinking compress to under {PROMPT_CHAR_LIMIT}')
+        try:
+            text = complete(
+                model=model,
+                system=system,
+                user_text=COMPRESS_USER.format(n=len(prompt)) + '\n' + VIDEO_FILE_NOTE,
+                video_path=video_path,
+                public_url=public_url,
+            )
+            compressed = parse_reading(text, model=model)
+            if compressed.prompt and len(compressed.prompt) < len(prompt):
+                reading = compressed
+        except Exception as exc:
+            logger.warning('prompt compress retry failed: %s', exc)
+    return apply_prompt_cap(reading)
 
 
 def _gemini_cannot_read(exc: BaseException) -> bool:

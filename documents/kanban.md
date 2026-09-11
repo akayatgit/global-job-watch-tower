@@ -206,6 +206,13 @@ Model ask is **Select a Prompt Model…**. Queue is **processing..**.
 Start + first "watching" beat are both **Workflow Started…**. Keep
 Retry / Cancel. Heartbeats and fail/done stay detailed.
 
+**Follow (2026-09-11, prompt <3000 + thinking on):** Ashok: prompts
+must stay strictly under 3000 characters including spaces. Turn
+thinking back on (`thinking_budget=8192`, keep 32k output — #7 died
+when thinking ate 4096). Model is told the cap; one compress retry;
+`fit_prompt` is the last door. Same cap on reverse + twist. Telegram
+shows `N chars`.
+
 **Acceptance (open):** Ashok opens `:8001`, sees Prompt Tower not Jobs,
 taps Scan now, watches Live fill **with a non-zero prompt count of real
 product prompts (no samurai)**, then
