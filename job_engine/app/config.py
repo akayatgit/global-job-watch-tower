@@ -177,7 +177,10 @@ PROMPT_TWIST_IMAGE_MODEL = (
     'google/nano-banana-2-lite'
 ).strip()
 # After twisted stills: Gemini Omni motion transfer on Replicate.
-# Original clip = motion. Twisted JPEGs = look. Default google/gemini-omni-1.1.
+# Omni accepts prompt + source video only — never image/last_frame/
+# reference_images with video (Replicate ValueError). Stills stay for
+# Telegram; future non-Omni models may attach frames again.
+# Default google/gemini-omni-1.1.
 PROMPT_TWIST_VIDEO_MODEL = (
     os.getenv('PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1') or
     'google/gemini-omni-1.1'
