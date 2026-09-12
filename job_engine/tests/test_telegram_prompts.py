@@ -398,13 +398,11 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(asked.text, 'Whats the hook?')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '1')
         self.assertEqual(self.started, [])
-        twist_ask = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
-        self.assertEqual(twist_ask.text, 'Shall we twist the video?')
-        self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '1')
-        model_ask = self.deck.maybe_take_twist('1', 'the drink becomes liquid gold in a midnight temple')
+        model_ask = self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
         self.assertIn('Select a Prompt Model', model_ask.text)
         self.assertEqual([row[0][0] for row in model_ask.keyboard[:3]], ['Gemini', 'GPT-6 Astra', 'Claude Fable 5'])
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '1')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '')
         self.assertEqual(self.started, [])
         started = self._pick_model('1', 'gemini')
         self.assertIn('Workflow Started', started.text)
@@ -414,15 +412,13 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(payload['source_url'], 'https://www.instagram.com/reel/AbC123/')
         self.assertEqual(payload['title'], 'CINEMATIC AI AD')
         self.assertEqual(payload['vision_engine'], 'gemini')
-        self.assertEqual(payload['twist'], 'the drink becomes liquid gold in a midnight temple')
+        self.assertNotIn('twist', payload)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '')
-        self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
 
     def test_astra_button_sends_vision_engine(self):
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
-        self._skip_twist('1')
         started = self._pick_model('1', 'astra')
         self.assertIn('Workflow Started', started.text)
         self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'astra')
@@ -430,7 +426,6 @@ class DeckTests(unittest.TestCase):
     def test_missing_openai_key_keeps_model_buttons(self):
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
-        self._skip_twist('1')
         with mock.patch.object(config, 'OPENAI_API_KEY', ''):
             reply = self._pick_model('1', 'astra')
         self.assertIn('OPENAI_API_KEY', reply.text)
@@ -441,9 +436,7 @@ class DeckTests(unittest.TestCase):
         reply = self.deck.handle_command('1', 'pintovid', 'https://www.pinterest.com/pin/123456/')
         self.assertEqual(reply.text, 'Whats the hook?')
         self.assertEqual(self.started, [])
-        twist_ask = self.deck.maybe_take_title('1', 'PACIFIC CHILL')
-        self.assertEqual(twist_ask.text, 'Shall we twist the video?')
-        model_ask = self._skip_twist('1')
+        model_ask = self.deck.maybe_take_title('1', 'PACIFIC CHILL')
         self.assertIn('Select a Prompt Model', model_ask.text)
         started = self._pick_model('1', 'fable')
         self.assertIn('Workflow Started', started.text)
@@ -460,7 +453,6 @@ class DeckTests(unittest.TestCase):
         self.assertIsNotNone(reply)
         self.assertEqual(reply.text, 'Whats the hook?')
         self.deck.maybe_take_title('1', 'NIGHT REEL')
-        self._skip_twist('1')
         started = self._pick_model('1', 'gemini')
         self.assertIn('Workflow Started', started.text)
 
@@ -475,12 +467,11 @@ class DeckTests(unittest.TestCase):
         self.assertIsNone(self.deck.maybe_take_title('1', 'CINEMATIC AI AD'))
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
-        self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '1')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '1')
         self.deck.handle_callback('1', 'pt:cancel')
-        self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST.format(chat='1'), ''), '')
+        self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
-        self._skip_twist('1')
         self.deck.handle_callback('1', 'pt:cancel')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
         self.assertIn('link', self.deck.handle_callback('1', 'pt:revmodel:gemini').text.lower())
@@ -490,9 +481,7 @@ class DeckTests(unittest.TestCase):
         asked = self.deck.handle_callback('1', 'pt:video')
         self.assertEqual(asked.text, 'Whats the hook?')
         self.assertEqual(self.tower.posts, [])
-        twist_ask = self.deck.maybe_take_title('1', 'ROBE FILM')
-        self.assertEqual(twist_ask.text, 'Shall we twist the video?')
-        model_ask = self._skip_twist('1')
+        model_ask = self.deck.maybe_take_title('1', 'ROBE FILM')
         self.assertIn('Select a Prompt Model', model_ask.text)
         started = self._pick_model('1', 'gemini')
         self.assertIn('Workflow Started', started.text)
@@ -502,7 +491,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(payload['video_base64']), b'JPEGBYTES-vid-9')
         self.assertEqual(self.sessions.get_state(STATE_VIDEO.format(chat='1'), ''), '')
 
-    def test_watch_reverse_delivers_reel_then_chunked_prompt(self):
+    def test_watch_reverse_delivers_reel_without_flooding_the_prompt(self):
         long_prompt = '\n'.join(f'[{i}.0s–{i + 1}.0s] shot detail ' + ('x' * 80) for i in range(60))
         self.tower.reverse_status = {
             'id': 11, 'status': 'done', 'keyword': 'COFFEE',
@@ -518,23 +507,26 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/rreel.mp4')
         self.assertIn('reel ready, post this', self.sent_videos[0][2])
         self.assertIn('download=1', self.sent_videos[0][2])
+        self.assertEqual(self.keyboards[0][1], 'Shall we twist the video?')
+        keyboard = self.keyboards[0][2]
         self.assertEqual(
-            self.keyboards[0][2][0][0],
+            keyboard[0][0],
             ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1'),
         )
-        prompt_texts = [t for _c, t in self.texts if t.startswith('📝 Prompt #11') or t.startswith('[')]
-        self.assertGreaterEqual(len(prompt_texts), 2)
-        joined = ''.join(prompt_texts)
-        self.assertIn(long_prompt.split('\n', 1)[0], joined)
-        self.assertIn('keyword COFFEE', self.texts[0][1])
-        self.assertNotIn('"cuts"', joined)
+        self.assertEqual(keyboard[-2], [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')])
+        self.assertEqual(keyboard[-1], [('💥 Twist', 'pt:twist:11')])
+        self.assertFalse(any('📝 Prompt #11' in t for _c, t in self.texts))
+        self.assertFalse(any(long_prompt.split('\n', 1)[0] in t for _c, t in self.texts))
+        shown = self.deck.handle_callback('1', 'pt:show:11')
+        self.assertTrue(shown.text.startswith('📝 Prompt #11'))
+        self.assertIn(long_prompt.split('\n', 1)[0], shown.text)
+        copied = self.deck.handle_callback('1', 'pt:copy:11')
+        self.assertEqual(copied.text, 'Prompt file sent — open it to copy.')
+        self.assertEqual(self.sent_docs[-1][2], 'prompt-11.txt')
         self.assertTrue(any('cut-reference frames' in t for _c, t in self.texts))
-        self.assertEqual(len(self.sent_docs), 2)
         self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/rref-01.jpg')
         self.assertEqual(self.sent_docs[0][2], 'cut-01-0.00s.jpg')
         self.assertIn('0.00s', self.sent_docs[0][3])
-        self.assertTrue(any('Twist' in t for _c, t, _k in self.keyboards))
-        self.assertEqual(self.keyboards[-1][2], [[('💥✏️ Twist', 'pt:twist:11')]])
 
     def test_watch_reverse_retries_flood_until_every_frame_arrives(self):
         hits: dict[str, int] = {}
@@ -666,7 +658,7 @@ class DeckTests(unittest.TestCase):
             'id': 11, 'status': 'done', 'prompt_text': '[0.0s–8.0s] a juice glass.',
         }
         reply = self.deck.handle_callback('1', 'pt:twist:11')
-        self.assertIn('send the twist', reply.text.lower())
+        self.assertEqual(reply.text, 'Shall we twist the video?')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TWIST_APPLY.format(chat='1'), ''), '11')
         started = self.deck.maybe_take_twist('1', 'rain of rose petals on the bottle')
         self.assertIn('Twist #11 started', started.text)
@@ -684,8 +676,16 @@ class DeckTests(unittest.TestCase):
             ],
         }
         self.assertEqual(self.deck.watch_twist('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertTrue(any('Twisted prompt #11' in t for _c, t in self.texts))
+        self.assertTrue(any('Twist #11 ready' in t for _c, t in self.texts))
         self.assertTrue(any('liquid gold' in t for _c, t in self.texts))
+        self.assertFalse(any('[0.0s–8.0s] liquid gold pours' in t for _c, t in self.texts))
+        self.assertEqual(self.keyboards[-1][1], 'Prompt ready.')
+        self.assertEqual(
+            self.keyboards[-1][2][-1],
+            [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')],
+        )
+        shown = self.deck.handle_callback('1', 'pt:show:11')
+        self.assertIn('liquid gold pours', shown.text)
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/twref-01.jpg')
 
@@ -768,15 +768,13 @@ class BotWiringTests(unittest.TestCase):
         self.bot._process_locked('100', 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertEqual(self.api.keyboards_sent[-1][1], 'Whats the hook?')
         self.bot._process_locked('100', 'CINEMATIC AI AD')
-        self.assertEqual(self.api.keyboards_sent[-1][1], 'Shall we twist the video?')
-        self.bot._process_locked('100', 'liquid gold in a midnight temple')
         self.assertIn('Select a Prompt Model', self.api.keyboards_sent[-1][1])
         self.bot._process_locked('100', f'{BTN_PREFIX}pt:revmodel:gemini')
         self.assertIn('Workflow Started', self.api.keyboards_sent[-1][1])
         self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse')
         self.assertEqual(self.tower.posts[-1][1]['title'], 'CINEMATIC AI AD')
         self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'gemini')
-        self.assertEqual(self.tower.posts[-1][1]['twist'], 'liquid gold in a midnight temple')
+        self.assertNotIn('twist', self.tower.posts[-1][1])
 
     def test_guest_can_start_reverse_from_command_or_url(self):
         self.bot._process_locked('555', '/igtovid')
@@ -789,8 +787,6 @@ class BotWiringTests(unittest.TestCase):
         self.bot._process_locked('100', PROMPT_VIDEO_TAP)
         self.assertEqual(self.api.keyboards_sent[-1][1], 'Whats the hook?')
         self.bot._process_locked('100', 'ROBE FILM')
-        self.assertEqual(self.api.keyboards_sent[-1][1], 'Shall we twist the video?')
-        self.bot._process_locked('100', f'{BTN_PREFIX}pt:twistskip')
         self.assertIn('Select a Prompt Model', self.api.keyboards_sent[-1][1])
         self.bot._process_locked('100', f'{BTN_PREFIX}pt:revmodel:gemini')
         self.assertIn('Workflow Started', self.api.keyboards_sent[-1][1])

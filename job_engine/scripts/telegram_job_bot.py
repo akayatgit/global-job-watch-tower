@@ -1306,7 +1306,7 @@ class JobMasterTelegramBot:
             'PROMPT TOWER · ALL COMMANDS',
             '',
             'Everyone: /igtovid · /pintovid — send the Instagram or Pinterest link.',
-            'Then Whats the hook? → Shall we twist the video? → Select a Prompt Model…',
+            'Then Whats the hook? → Select a Prompt Model… → Show / Copy / Twist on the finished clip.',
             '',
             'Ops:',
             "/prompts [YYYY-MM-DD] — today's top-10",
