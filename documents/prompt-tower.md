@@ -1,16 +1,16 @@
-# Prompt Tower — "Jobs are now prompts" (pivot 2026-09-09)
+# Prompt Tower
 
 | Field | Value |
 |---|---|
-| **Ruling** | Ashok, 2026-09-09: *"Jobs are now prompts. Do what I say. We don't need jobs."* |
+| **Ruling** | Ashok, 2026-09-12: every user runs `/igtovid` · `/pintovid`. This is a Prompt application. |
 | **Product** | Daily top-10 **AI video prompts for D2C product videos** (Veo / Kling / Sora), scored by Hermes, posted on Instagram for authority, sold later as prompt + video packs |
 | **Authority channel** | Instagram, cinematic 9:16 reel: owner-typed header → 9:16 clip · storyboard · scrolling prompt → hardcoded `Comment “AI” to get / all the prompts` |
-| **Owner surface** | **VIGIL admin** at `http://127.0.0.1:8001` is the collection cockpit (Tower · Prompts · Scores · Sources · Activity · Live · Health). Telegram is delivery + approve-to-video, not the monitor. |
+| **Owner surface** | **VIGIL admin** at `http://127.0.0.1:8001` is the collection cockpit (Tower · Prompts · Scores · Sources · Activity · Live · Health). Telegram is delivery + public reverse + approve-to-video. |
 
 | **Learning loop** | RAG of proven winners (rated ≥4 or strong engagement) → few-shot anchors + baseline for tomorrow's scoring → outliers flagged 🔥 |
 | **Two workflows (Ashok 2026-09-10)** | **prompt to video** — daily top-10 → Telegram ✅ + product photo → Kling → reel. **reverse prompt** — `/igtovid` · `/pintovid` → Instagram / Pinterest URL (or forwarded video) → **header title** → Gemini writes a timestamped prompt → **the same cinematic reel**. |
 | **Render** | Replicate image→video (`REPLICATE_VIDEO_MODEL`, default `kwaivgi/kling-v2.1`) → MP4 + Instagram card stored in the AvatarPitch asset root, served at `/api/partner/v1/assets/{key}` (play) and `?download=1` (Save As — Telegram **⬇️ Save clip**) |
-| **Jobs stack** | **Asleep, not deleted.** `TOWER_MODE=prompts` (default) pauses the job beat; `TOWER_MODE=jobs` wakes it. Every job table, search, command and test stays intact (source-safety law). |
+| **Public Telegram** | **Every user** — `/igtovid` · `/pintovid` · paste an Instagram / Pinterest link. Copy is one line: `Now Send me the Instagram or Pinterest link.` → `Whats the hook?` → `Shall we twist the video?` → `Select a Prompt Model…` → `Workflow Started…` |
 | **Code** | `job_engine/app/prompts/` · `app/api/prompts.py` · `app/telegram_prompts.py` · tasks in `app/tasks.py` · migration `b7c3e9a12d45` |
 
 ---
@@ -44,7 +44,7 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | Shortlist | `app/prompts/pipeline.py::build_shortlist` | Top `PROMPT_SHORTLIST_SIZE` (10) with `final_score ≥ PROMPT_MIN_SCORE` (55), collected in the last 48h, outliers first. Diversity pass: **≤3 per origin** — a subreddit or a web page's host (`prompt_origin`), manual exempt — so one page cannot own the day; then a **fill pass** tops the deck up from the best leftovers so a thin day is never a 3-row "top 10" (2026-09-10: keyed on `source='web'`, six handbooks counted as one and the deck stalled at 3). Idempotent per UTC day; `force` rebuilds. |
 | Learn | `pipeline.record_rating / record_performance` → `rag.promote_winners` | ⭐≥4 **or** performance ≥24 pts (≈1,000 weighted interactions: likes + 3·comments + 4·saves + 4·shares + views/100 on a log scale) ⇒ exemplar. Winners feed tomorrow's anchors and baseline. |
 
-## 3. Telegram deck (owner-only)
+## 3. Telegram deck
 
 | Command / tap | What happens |
 |---|---|
@@ -59,9 +59,9 @@ sources ──► normalize/dedupe ──► RAG embed ──► Hermes score �
 | `/addprompt <text>` | Manual ingest (rejects captions), scored right away. |
 | `/promptscan` | Runs the daily pipeline now (Celery). **Paused 15 min** whenever `/igtovid` starts — reverse owns the worker lane. |
 | `/promptstats` | Prompts, scored/pending, shortlisted today, posted, videos, winners, baseline μ±σ, sources, last catch. |
-| `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). Instant: `Now Send me the Instagram or Pinterest link.` Then **Whats the hook?** then **Shall we twist the video?** (Skip stays). Footer is hardcoded. |
+| `/igtovid` · `/pintovid` [`url`] | **Reverse prompt** (§3b). **Public — every user.** Instant: `Now Send me the Instagram or Pinterest link.` Then **Whats the hook?** then **Shall we twist the video?** (Skip stays). Footer is hardcoded. |
 
-Guests never see any of it: `pt:` taps and prompt commands are gated on the real owner check; a guest's photo is ignored exactly as before.
+`/prompts` · scan · stats stay owner-only. Reverse intake, hook, twist, model pick, photo, and forwarded clip are **public**.
 
 ### 3a. The reel — the post is a video, not a picture (2026-09-10)
 

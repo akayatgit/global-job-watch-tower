@@ -1,6 +1,6 @@
 """Prompt Tower on Telegram: /prompts deck, select → 📸 → ✅ make video,
-⭐ rating, /promptperf, render watcher delivery, once-a-day push, and the
-owner-only wiring inside scripts/telegram_job_bot.py."""
+⭐ rating, /promptperf, render watcher delivery, once-a-day push, and public
+/igtovid · /pintovid for every user."""
 
 from __future__ import annotations
 
@@ -745,11 +745,11 @@ class BotWiringTests(unittest.TestCase):
 
     def test_help_lists_prompt_tower_first(self):
         text = self.bot._owner_help()
-        self.assertLess(text.index('Prompt Tower'), text.index('/topfreshers'))
+        self.assertIn('PROMPT TOWER', text)
+        self.assertNotIn('/topfreshers', text)
         self.assertIn('/promptperf', text)
         self.assertIn('/igtovid', text)
         self.assertIn('/pintovid', text)
-        self.assertIn('reverse prompt', text.lower())
 
     def test_reverse_intake_is_not_queued_behind_prompt_scan(self):
         """/igtovid must answer on the poll thread — not wait for Ollama."""
@@ -778,11 +778,11 @@ class BotWiringTests(unittest.TestCase):
         self.assertEqual(self.tower.posts[-1][1]['vision_engine'], 'gemini')
         self.assertEqual(self.tower.posts[-1][1]['twist'], 'liquid gold in a midnight temple')
 
-    def test_guest_cannot_start_reverse_from_command_or_url(self):
+    def test_guest_can_start_reverse_from_command_or_url(self):
         self.bot._process_locked('555', '/igtovid')
-        self.assertFalse(any('Reverse prompt' in text for _c, text in self.api.sent))
+        self.assertEqual(self.api.sent[-1][1], 'Now Send me the Instagram or Pinterest link.')
         self.bot._process_locked('555', 'https://www.instagram.com/reel/AbC123xyz/')
-        self.assertEqual([p for p, _ in self.tower.posts if p == '/api/prompts/reverse'], [])
+        self.assertEqual(self.api.sent[-1][1], 'Whats the hook?')
 
     def test_owner_video_tap_asks_for_title_then_uploads(self):
         self.sessions.set_state(STATE_VIDEO.format(chat='100'), 'tg-vid')

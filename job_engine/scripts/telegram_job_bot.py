@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Dedicated Telegram ingress for JobMaster.
+"""Telegram ingress for Prompt Tower.
 
-Hermes does not receive this bot's updates. Natural-language understanding is
-constrained to intent extraction; Watch Tower APIs and deterministic formatters
-own every job, link, number, and comparison sent to users.
+Every user gets /igtovid · /pintovid. No JobMaster, LinkedIn, or jobseeker
+copy is sent — Ashok 2026-09-12.
 """
 
 from __future__ import annotations
@@ -63,6 +62,7 @@ from app.telegram_guests import (  # noqa: E402
 )
 from app.telegram_prompts import (  # noqa: E402
     CALLBACK_PREFIX as PROMPT_CALLBACK_PREFIX,
+    REVERSE_ASK,
     STATE_PHOTO as PROMPT_PHOTO_STATE,
     STATE_VIDEO as PROMPT_VIDEO_STATE,
     PromptDeck,
@@ -85,24 +85,10 @@ SMOKE_ROW_RE = re.compile(r'^\d+\. .+ — .+ — .+$', re.MULTILINE)
 SMOKE_BANNED = ('mcp__', 'provider:', 'model:', 'endpoint:', 'watch tower data')
 COMMAND_RE = re.compile(r'^/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$', re.I)
 OWNER_BOARD_COMMANDS = {
-    'towerinsights': 'tower',
     'health': 'health',
-    'hiringsignals': 'signals',
-    'hiringinsights': 'signals',
-    'signals': 'signals',
-    'searches': 'searches',
-    'watchlist': 'watchlist',
-    'fresh': 'fresh',
-    'brief': 'brief',
-    'boards': 'help',
 }
-OWNER_QUERY_COMMANDS = {
-    'stats': lambda arg: f'How many {arg or ""} jobs in the past 24 hours?'.strip(),
-    'governmentjobs': lambda _arg: 'Government jobs',
-}
-# Jobs at one company over a time window — routed to the same deterministic
-# engine formatter guests get through natural chat ("jobs at Deloitte 24h").
-OWNER_COMPANY_COMMANDS = frozenset({'companyjobs'})
+OWNER_QUERY_COMMANDS: dict[str, Any] = {}
+OWNER_COMPANY_COMMANDS = frozenset()
 OWNER_MANAGEMENT_COMMANDS = frozenset({
     'allowguest',
     'allow',
@@ -115,38 +101,28 @@ OWNER_MANAGEMENT_COMMANDS = frozenset({
     'guestlist',
     'history',
     'guestprofile',
-    'waitlist',
     'checkaccess',
     'push',
     'pushconfirm',
     'pushcancel',
     'pushstats',
-    # MNC-first collection (2026-08-14): grow the giant watchlist from the
-    # phone; reset the tower's caught data behind a two-step confirm.
-    'addcompany',
-    'companies',
     'resetdata',
     'resetconfirm',
     'resetcancel',
-    # Video gems (2026-08-14): verified rows that EXPLICITLY say fresher /
-    # 0 experience — with company: / skill: / role: filters.
-    'topfreshers',
-    # Funnel diagnostic (2026-08-19): where jobs die between LinkedIn and
-    # the bot — caught / cities / roles / verified / servable counts.
-    'funnel',
-    # Prompt Tower (2026-09-09 pivot): daily top-10 video prompts, manual
-    # adds, scan-now, performance feedback, tower stats.
     'prompts',
     'promptscan',
     'addprompt',
     'promptstats',
     'promptperf',
-    # Reverse prompt (2026-09-10): Instagram / Pinterest URL → Gemini
-    # timestamped prompt → same reel template.
     'igtovid',
     'pintovid',
     'pintovideo',
     'reverseprompt',
+})
+# Daily-deck taps stay owner-only. Reverse taps (model / twist / cancel /
+# photo / video) are public — Ashok 2026-09-12.
+OWNER_DECK_ACTIONS = frozenset({
+    'list', 'scan', 'stats', 'sel', 'img', 'go', 'rate', 'posted',
 })
 # Heavy prompt-tower commands (Ollama / scan). Reverse intake is instant
 # and must NOT wait on this queue — Ashok (2026-09-11): /igtovid was slow.
@@ -207,6 +183,11 @@ OWNER_COMMANDS = frozenset((
     *OWNER_MANAGEMENT_COMMANDS,
     *OWNER_ROLE_SWITCH_COMMANDS,
 ))
+PUBLIC_MENU = [
+    {'command': 'igtovid', 'description': 'Reverse an Instagram reel into a prompt'},
+    {'command': 'pintovid', 'description': 'Reverse a Pinterest pin into a prompt'},
+    {'command': 'help', 'description': 'How Prompt Tower works'},
+]
 OWNER_MENU = [
     {'command': 'prompts', 'description': "Today's top-10 video prompts (tap to open)"},
     {'command': 'promptscan', 'description': 'Collect + score prompts now'},
@@ -216,37 +197,18 @@ OWNER_MENU = [
     {'command': 'igtovid', 'description': 'Reverse prompt from an Instagram reel'},
     {'command': 'pintovid', 'description': 'Reverse prompt from a Pinterest pin'},
     {'command': 'help', 'description': 'All commands with options'},
-    {'command': 'topfreshers', 'description': 'Video gems — explicit fresher/0-exp, checked'},
-    {'command': 'addcompany', 'description': 'Watch an MNC — add to the list'},
-    {'command': 'companies', 'description': 'Full MNC watchlist roster'},
-    {'command': 'funnel', 'description': 'Where jobs die: caught → servable'},
-    {'command': 'resetdata', 'description': 'Stage a tower data reset'},
-    {'command': 'resetconfirm', 'description': 'Execute the staged reset'},
-    {'command': 'resetcancel', 'description': 'Discard the staged reset'},
     {'command': 'allowguest', 'description': 'Un-block / VIP a person'},
     {'command': 'blockguest', 'description': 'Block a person (public by default)'},
     {'command': 'guests', 'description': 'Access dashboard'},
-    {'command': 'history', 'description': 'Guest conversation history'},
-    {'command': 'guestprofile', 'description': 'Guest role/experience/city'},
-    {'command': 'checkaccess', 'description': 'Why can/can\'t a person text?'},
-    {'command': 'waitlist', 'description': 'Experienced-hire email waitlist'},
+    {'command': 'history', 'description': 'User conversation history'},
+    {'command': 'checkaccess', 'description': "Why can/can't a person text?"},
     {'command': 'push', 'description': 'Stage a broadcast (text/photo)'},
     {'command': 'pushconfirm', 'description': 'Send the staged broadcast'},
     {'command': 'pushcancel', 'description': 'Discard the staged broadcast'},
     {'command': 'pushstats', 'description': 'Last broadcast reach + likes'},
-    {'command': 'actasguest', 'description': 'Test this chat as a guest'},
+    {'command': 'actasguest', 'description': 'Test this chat as a user'},
     {'command': 'actasowner', 'description': 'Back to owner mode'},
-    {'command': 'stats', 'description': 'Live job count · add a role'},
-    {'command': 'companyjobs', 'description': 'Jobs at a company · 24h/7/30'},
-    {'command': 'towerinsights', 'description': 'Tower insights'},
     {'command': 'health', 'description': 'Tower health'},
-    {'command': 'hiringsignals', 'description': 'Hiring signals'},
-    {'command': 'searches', 'description': 'Roles being watched'},
-    {'command': 'watchlist', 'description': 'Watched companies'},
-    {'command': 'fresh', 'description': 'Freshest catches'},
-    {'command': 'governmentjobs', 'description': 'Government jobs'},
-    {'command': 'brief', 'description': 'Daily hiring brief'},
-    {'command': 'boards', 'description': 'VIGIL command menu'},
 ]
 
 
@@ -649,19 +611,18 @@ class JobMasterTelegramBot:
                 return "Already testing as a guest. Send /actasowner to switch back."
             self.sessions.set_state(f'simulate_guest:{chat_id}', '1')
             try:
-                self.api.call('deleteMyCommands', {
+                self.api.call('setMyCommands', {
                     'scope': json.dumps({'type': 'chat', 'chat_id': scope_chat_id}),
+                    'commands': json.dumps(PUBLIC_MENU),
                 })
             except Exception:
                 LOG.exception(
-                    'failed to hide command menu for guest simulation chat=%s', chat_id,
+                    'failed to show public command menu for user simulation chat=%s', chat_id,
                 )
             return (
-                'Testing mode ON. This chat now behaves exactly like a guest: '
-                'the command menu is hidden, VIGIL/management commands are '
-                "denied (you'll see the same reply a guest sees), and search "
-                "conversations here are recorded like a guest's for /history "
-                'and /guestprofile. Send /actasowner anytime to switch back.'
+                'Testing mode ON. This chat now behaves like any user: '
+                '/igtovid · /pintovid work, ops commands do not. '
+                'Send /actasowner anytime to switch back.'
             )
         if not self._is_simulating_guest(chat_id):
             return 'Already in owner mode.'
@@ -689,8 +650,6 @@ class JobMasterTelegramBot:
             return self._owner_help()
         if command in OWNER_MANAGEMENT_COMMANDS:
             return self._management_reply(chat_id, command, arg)
-        if command in OWNER_COMPANY_COMMANDS:
-            return self._companyjobs_reply(chat_id, arg, update_id=update_id)
         if command in OWNER_BOARD_COMMANDS:
             tokens = (arg or '').split()
             unfiltered = any(t.lower().lstrip('-–—') == 'unfiltered' for t in tokens)
@@ -706,13 +665,7 @@ class JobMasterTelegramBot:
                     OWNER_BOARD_COMMANDS[command], days=days, unfiltered=True,
                 )
             return self.board_renderer(OWNER_BOARD_COMMANDS[command], days=days)
-        query = OWNER_QUERY_COMMANDS[command](arg)
-        try:
-            return self.engine.handle(query, chat_id, update_id=update_id)
-        except TypeError as exc:
-            if 'update_id' not in str(exc):
-                raise
-            return self.engine.handle(query, chat_id)
+        return REVERSE_ASK
 
     def _companyjobs_reply(
         self,
@@ -1348,48 +1301,24 @@ class JobMasterTelegramBot:
         )
 
     def _owner_help(self) -> str:
-        """/help for Ashok — every command with its options on one sheet."""
+        """/help for Ashok — Prompt Tower commands only."""
         lines = [
-            'JOBMASTER · ALL COMMANDS',
+            'PROMPT TOWER · ALL COMMANDS',
             '',
-            'Prompt Tower — two workflows:',
-            '1) prompt to video: /prompts → tap a number → 📸 product photo → ✅ reel',
-            '2) reverse prompt: /igtovid or /pintovid → Instagram / Pinterest URL '
-            '(or forward the video) → type the header title → pick Gemini, '
-            'GPT-6 Astra or Claude Fable 5 → timestamped prompt → same cinematic 9:16 reel',
+            'Everyone: /igtovid · /pintovid — send the Instagram or Pinterest link.',
+            'Then Whats the hook? → Shall we twist the video? → Select a Prompt Model…',
             '',
-            'Prompt Tower (daily video prompts):',
-            "/prompts [YYYY-MM-DD] — today's top-10 with buttons: tap a number → "
-            'full prompt → 📸 send product image → ✅ make video · ⭐ rate · 📣 posted',
-            '/promptscan — collect from every source + score with Hermes now',
-            '/addprompt <text> — add a prompt you found (scored immediately)',
-            '/promptperf <id> likes=.. comments=.. saves=.. shares=.. views=.. — '
-            "Instagram numbers after posting; winners calibrate tomorrow's scoring",
-            '/promptstats — prompts, winners baseline, sources, videos',
-            '/igtovid [url] · /pintovid [url] — reverse prompt from a best-performing '
-            'reel / pin (or send the video file), then the header title, then '
-            'Gemini · GPT-6 Astra · Claude Fable 5. Same cinematic 9:16 reel. Footer is hardcoded.',
-            '',
-            'Jobs (asleep while TOWER_MODE=prompts):',
-            '/topfreshers [company:<name>] [skill:<term>] [role:<term>] '
-            '[city:<chennai/bangalore/remote>] [time:<24hrs>] [0] — '
-            'checked fresher gems, 10 at a time (More for next page)',
-            '/companyjobs <company> [24h | 7 | 30] — jobs at one company '
-            '(also today, 1, 2, 4, 14)',
-            '/funnel [hours] — where jobs die: caught → cities → roles → '
-            'verified → servable',
-            '/fresh · /towerinsights · /hiringsignals · /watchlist [days] — '
-            'boards accept a day window',
-            '/stats [role] — live 24h job count',
-            '/addcompany <name> — watch a new MNC (first scrape queues now)',
-            '/history <@username or ID> [1–40] — delivered guest conversations',
-            '/guestprofile <@username or ID> — remembered role/experience/city',
-            '/checkaccess <@username or ID> — why a person can/can\'t text',
+            'Ops:',
+            "/prompts [YYYY-MM-DD] — today's top-10",
+            '/promptscan — collect + score now',
+            '/addprompt <text> — add a prompt',
+            '/promptperf <id> likes=.. comments=.. saves=.. views=..',
+            '/promptstats — tower numbers',
+            '/history <@username or ID> [1–40]',
+            '/checkaccess <@username or ID>',
             '/allowguest <@username or ID> [minutes] · /blockguest <@username or ID>',
-            '/push <message> — stage a broadcast → /pushconfirm within 10 min',
-            '/resetdata — stage a tower wipe → /resetconfirm within 10 min',
-            'Add -unfiltered to any job list (searches, /companyjobs, /fresh) '
-            'to include unchecked rows.',
+            '/push <message> → /pushconfirm within 10 min',
+            '/health — tower health',
             '',
             'Everything:',
         ]
@@ -1399,11 +1328,6 @@ class JobMasterTelegramBot:
                 continue
             seen.add(item['command'])
             lines.append(f"/{item['command']} — {item['description']}")
-        lines.append('')
-        lines.append(
-            'Guests never see this sheet — they just type what they want '
-            '("data jobs in Chennai") or use the buttons.'
-        )
         return '\n'.join(lines)
 
     def _add_company_reply(self, arg: str) -> str:
@@ -1505,12 +1429,15 @@ class JobMasterTelegramBot:
         )
 
     def _configure_command_menu(self) -> bool:
-        """Remove global commands and expose VIGIL operations only to Ashok."""
+        """Public menu is reverse prompt. Owner chat also gets ops commands."""
         try:
             for scope_type in ('default', 'all_private_chats'):
                 self.api.call(
-                    'deleteMyCommands',
-                    {'scope': json.dumps({'type': scope_type})},
+                    'setMyCommands',
+                    {
+                        'scope': json.dumps({'type': scope_type}),
+                        'commands': json.dumps(PUBLIC_MENU),
+                    },
                 )
             previous_owner_ids = {
                 value
@@ -1763,22 +1690,8 @@ class JobMasterTelegramBot:
                 self._active_chats.discard(chat_id)
 
     def _pre_ack(self, chat_id: str, text: str) -> bool:
-        clean = (text or '').strip()
-        parsed = self._command(clean)
-        if (
-            not clean
-            or clean.startswith(BTN_PREFIX)  # button taps reply instantly — no "Thinking…"
-            or RESET_RE.match(clean)
-            or clean.lower() in {'/start', '/help', 'help', '/myalerts'}
-            or (parsed and parsed[0] in OWNER_COMMANDS)
-        ):
-            return False
-        try:
-            self.api.send(chat_id, 'Thinking…')
-            return True
-        except Exception:
-            LOG.exception('immediate acknowledgement failed chat=%s', chat_id)
-            return False
+        """Never send Thinking… — Prompt Tower answers in one line."""
+        return False
 
     def _handle_alert_or_push_callback(self, chat_id: str, payload: str) -> ButtonReply | None:
         """Alert/push taps can arrive from a delivered alert or broadcast at
@@ -1811,7 +1724,7 @@ class JobMasterTelegramBot:
         if payload == 'push:stop':
             telegram_broadcast.stop(self.sessions, chat_id)
             return ButtonReply(
-                "🔕 You won't receive further updates from JobMaster. Send /start anytime to come back."
+                "🔕 You won't receive further updates. Send /igtovid anytime to come back."
             )
         if payload.startswith('push:like:'):
             raw_id = payload[len('push:like:'):]
@@ -1832,22 +1745,16 @@ class JobMasterTelegramBot:
         self.api.send_keyboard(chat_id, reply.text, reply.keyboard)
 
     def smoke(self, chat_id: str, query: str) -> None:
-        """Send only a contract-valid grounded production search result."""
-        reply = self.engine.handle(query, chat_id)
-        low = reply.lower()
-        links = SMOKE_LINK_RE.findall(reply)
-        rows = SMOKE_ROW_RE.findall(reply)
-        if (
-            len(links) != PAGE_SIZE
-            or len(rows) != PAGE_SIZE
-            or len(set(links)) != PAGE_SIZE
-            or any(marker in low for marker in SMOKE_BANNED)
-        ):
-            raise RuntimeError(
-                f'production smoke contract failed: rows={len(rows)} links={len(links)}'
-            )
-        self.api.send(chat_id, 'Thinking…')
-        self.api.send(chat_id, reply)
+        """Public reverse must answer in one line and never leak job copy."""
+        reply = self.deck.handle_command(chat_id, 'igtovid', query)
+        text = reply.text if isinstance(reply, ButtonReply) else str(reply)
+        low = text.lower()
+        if any(marker in low for marker in ('jobmaster', 'linkedin', 'verified job', 'job-market')):
+            raise RuntimeError(f'prompt smoke leaked job copy: {text[:120]}')
+        if isinstance(reply, ButtonReply):
+            self.api.send_keyboard(chat_id, reply.text, reply.keyboard)
+        else:
+            self.api.send(chat_id, text)
 
     def _process_locked(
         self,
@@ -1866,9 +1773,12 @@ class JobMasterTelegramBot:
             # a NUL prefix can never appear in a real Telegram text message,
             # so this can never collide with anything a guest actually types.
             payload = clean[len(BTN_PREFIX):]
-            # Prompt Tower deck taps (and the owner's photo event) — owner
-            # only; a guest tapping a leaked pt: button gets the normal flow.
-            if payload.startswith(PROMPT_CALLBACK_PREFIX) and self._effective_is_owner(chat_id):
+            # Prompt Tower deck taps — every user (Ashok 2026-09-12).
+            if payload.startswith(PROMPT_CALLBACK_PREFIX):
+                action = payload[len(PROMPT_CALLBACK_PREFIX):].split(':', 1)[0]
+                if action in OWNER_DECK_ACTIONS and not self._effective_is_owner(chat_id):
+                    self._send_button_reply(chat_id, ButtonReply(REVERSE_ASK), update_id=update_id)
+                    return
                 deck_reply = self.deck.handle_callback(chat_id, payload)
                 self._send_button_reply(chat_id, deck_reply, update_id=update_id)
                 if self.health_enabled:
@@ -1893,10 +1803,9 @@ class JobMasterTelegramBot:
                             last_kind='topfreshers_more',
                         )
                     return
-            button_reply = (
-                self._handle_alert_or_push_callback(chat_id, payload)
-                or self.button_flow.handle_callback(chat_id, payload)
-            )
+            button_reply = self._handle_alert_or_push_callback(chat_id, payload)
+            if button_reply is None:
+                button_reply = ButtonReply(REVERSE_ASK)
             self._send_button_reply(chat_id, button_reply, update_id=update_id)
             if self.health_enabled:
                 self._write_health(
@@ -1922,18 +1831,26 @@ class JobMasterTelegramBot:
                     )
                 return
         parsed = self._command(clean)
-        # /help is owner-only as a COMMAND surface: Ashok gets the full
-        # command sheet; guests keep the simple engine help line (Gate 3.0 —
-        # the ops deck is never exposed to customer chats).
+        if parsed and parsed[0] in REVERSE_INTAKE_COMMANDS:
+            command, arg = parsed
+            try:
+                reply = self.deck.handle_command(chat_id, command, arg)
+            except Exception:
+                LOG.exception('reverse command failed chat=%s command=%s', chat_id, command)
+                reply = REVERSE_ASK
+            self._send_button_reply(chat_id, reply if isinstance(reply, ButtonReply) else ButtonReply(str(reply)), update_id=update_id)
+            if self.health_enabled:
+                self._write_health(
+                    status='running', last_result='ok', last_chat=chat_id,
+                    last_kind='reverse_prompt', last_text=f'/{command}',
+                )
+            return
         if parsed and (
             parsed[0] in OWNER_COMMANDS
             or (parsed[0] == 'help' and self._effective_is_owner(chat_id))
         ):
             command, arg = parsed
             if command in OWNER_ROLE_SWITCH_COMMANDS and self._is_owner(chat_id):
-                # Gated on the REAL owner check, never the simulated one, so
-                # Ashok can always flip this switch even while testing as a
-                # guest — see _toggle_role_switch.
                 reply = self._toggle_role_switch(chat_id, command)
             elif self._effective_is_owner(chat_id):
                 try:
@@ -1945,9 +1862,9 @@ class JobMasterTelegramBot:
                     )
                 except Exception:
                     LOG.exception('owner command failed chat=%s command=%s', chat_id, command)
-                    reply = 'That VIGIL command could not reach live tower data. Try again shortly.'
+                    reply = 'Tower could not reach live data. Try again shortly.'
             else:
-                reply = 'JobMaster can help you find verified jobs. Ask naturally in any sentence.'
+                reply = REVERSE_ASK
             if isinstance(reply, ButtonReply):
                 self._send_button_reply(chat_id, reply, update_id=update_id)
             else:
@@ -1963,119 +1880,33 @@ class JobMasterTelegramBot:
                     last_text=f'/{command}',
                 )
             return
-        # Reverse prompt: an Instagram / Pinterest URL after /igtovid, or a
-        # reel / pin link pasted on its own. Owner only — guests stay in
-        # the job button flow even if they paste a social URL.
-        if self._effective_is_owner(chat_id):
-            reverse = (
-                self.deck.maybe_take_twist(chat_id, clean)
-                or self.deck.maybe_take_title(chat_id, clean)
-                or self.deck.maybe_take_url(chat_id, clean)
-            )
-            if reverse is not None:
-                self._send_button_reply(chat_id, reverse, update_id=update_id)
-                if self.health_enabled:
-                    self._write_health(
-                        status='running', last_result='ok', last_chat=chat_id,
-                        last_kind='reverse_prompt', last_text=clean[:120],
-                    )
-                return
-        is_reset = bool(RESET_RE.match(clean))
-        if clean.lower() == '/start':
-            # /start is an explicit "let's begin" — always launches the
-            # primary button-driven flow, overwriting any stale state.
-            button_reply = self.button_flow.start(chat_id)
-            self._send_button_reply(chat_id, button_reply, update_id=update_id)
+        reverse = (
+            self.deck.maybe_take_twist(chat_id, clean)
+            or self.deck.maybe_take_title(chat_id, clean)
+            or self.deck.maybe_take_url(chat_id, clean)
+        )
+        if reverse is not None:
+            self._send_button_reply(chat_id, reverse, update_id=update_id)
+            if self.health_enabled:
+                self._write_health(
+                    status='running', last_result='ok', last_chat=chat_id,
+                    last_kind='reverse_prompt', last_text=clean[:120],
+                )
             return
-        if clean.lower() == '/myalerts':
-            text, keyboard = telegram_alerts.format_my_alerts(self.sessions.list_job_alerts(chat_id))
-            reply = ButtonReply(text, keyboard)
-            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
-                self.sessions.save_update_reply(update_id, reply.text)
+        if clean.lower() in {'/start', '/help', 'help', '/myalerts'} or GREETING_RE.match(clean):
+            reply = self.deck.handle_command(chat_id, 'igtovid', '')
             self._send_button_reply(chat_id, reply, update_id=update_id)
             return
-        if clean.lower() in {'/help', 'help'}:
-            reply = self.voice.speak(
-                'JobMaster provides verified jobs and live job-market insights. '
-                'Ask naturally in any sentence.'
-            )
-            if update_id is not None:
-                self.sessions.save_update_reply(update_id, reply)
-            self.api.send(chat_id, reply)
-            return
-        if is_reset:
-            # Guide guests straight back into the primary button path after
-            # a reset, instead of leaving them at a bare confirmation line.
-            engine_reply = self.engine.handle(clean, chat_id)
-            button_reply = self.button_flow.start(chat_id)
-            combined = ButtonReply(f'{engine_reply}\n\n{button_reply.text}', button_reply.keyboard)
-            self._send_button_reply(chat_id, combined, update_id=update_id)
-            self._last_request.pop(chat_id, None)
-            return
-        onboarding_state = self.sessions.load_onboarding(chat_id)
-        old_style_onboarding_active = (
-            onboarding_state is not None
-            and not str(onboarding_state.get('stage') or '').startswith('btn_')
-        )
-        if not old_style_onboarding_active and GREETING_RE.match(clean):
-            # A bare greeting from a chat with no in-progress LEGACY text
-            # onboarding launches the new button-driven flow instead of the
-            # old text prompt — see app/telegram_buttons.py.
-            button_reply = self.button_flow.start(chat_id)
-            self._send_button_reply(chat_id, button_reply, update_id=update_id)
-            return
-        waitlist_reply = self.button_flow.handle_text(chat_id, clean)
-        if waitlist_reply is not None:
-            # Only ever True while a guest is mid waitlist-email capture —
-            # an integral part of the button flow, not a "give up" case.
-            self._send_button_reply(chat_id, waitlist_reply, update_id=update_id)
-            return
-        now = time.monotonic()
-        last = self._last_request.get(chat_id, 0.0)
-        if now - last < 1.0:
-            reply = 'One request at a time.'
-            if update_id is not None:
-                self.sessions.save_update_reply(update_id, reply)
-            self.api.send(chat_id, reply)
-            return
-        if not acked:
-            self.api.send(chat_id, 'Thinking…')
-        engine_ok = True
-        try:
-            try:
-                reply = self.engine.handle(clean, chat_id, update_id=update_id)
-            except TypeError as exc:
-                if 'update_id' not in str(exc):
-                    raise
-                # Test doubles and legacy capability adapters may not yet
-                # expose the atomic outbox keyword.
-                reply = self.engine.handle(clean, chat_id)
-        except Exception:
-            LOG.exception('request failed chat=%s text=%r', chat_id, clean[:120])
-            reply = 'JobMaster could not reach live Watch Tower data. Try again shortly.'
-            engine_ok = False
-        if engine_ok:
-            # Warmth pass only on a real grounded reply — never risk an extra
-            # model call on the already-degraded error path. Fact-locked: see
-            # app/telegram_voice.py.
-            reply = self.voice.speak(reply)
         if update_id is not None and self.sessions.load_update_reply(update_id) is None:
-            self.sessions.save_update_reply(update_id, reply)
-        self.api.send(chat_id, reply)
-        self._last_request[chat_id] = time.monotonic()
-        if MORE_RE.match(clean):
-            self._page_count += 1
-        else:
-            self._query_count += 1
+            self.sessions.save_update_reply(update_id, REVERSE_ASK)
+        self.api.send(chat_id, REVERSE_ASK)
         if self.health_enabled:
             self._write_health(
                 status='running',
                 last_result='ok',
                 last_chat=chat_id,
-                last_kind='more' if MORE_RE.match(clean) else 'message',
+                last_kind='reverse_prompt',
                 last_text=clean[:120],
-                query_count=self._query_count,
-                page_count=self._page_count,
             )
 
     @staticmethod
@@ -2128,7 +1959,7 @@ class JobMasterTelegramBot:
     def run(self) -> int:
         self.api.call('deleteWebhook', {'drop_pending_updates': 'false'})
         me = self.api.call('getMe').get('result') or {}
-        LOG.info('JobMaster Telegram started bot=@%s', me.get('username', 'unknown'))
+        LOG.info('Prompt Tower Telegram started bot=@%s', me.get('username', 'unknown'))
         owner_commands_ready = self._configure_command_menu()
         offset_raw = self.sessions.get_state('telegram_update_offset', '')
         if offset_raw.isdigit():
@@ -2194,18 +2025,13 @@ class JobMasterTelegramBot:
                             text is None
                             and photo_file_id
                             and chat.get('id') is not None
-                            and self._is_owner(str(chat['id']))
                         ):
-                            # Owner photo with no caption = "here is the
-                            # product image" for the prompt deck.
                             text = PROMPT_PHOTO_TAP
                         elif (
                             text is None
                             and video_file_id
                             and chat.get('id') is not None
-                            and self._is_owner(str(chat['id']))
                         ):
-                            # Owner forwarded a video = reverse-prompt source.
                             text = PROMPT_VIDEO_TAP
                         if chat.get('type') == 'private' and chat.get('id'):
                             if isinstance(text, str):
@@ -2233,16 +2059,10 @@ class JobMasterTelegramBot:
                                     observe_identity(chat_id, username)
                                     telegram_broadcast.record_activity(self.sessions, chat_id)
                                 elif photo_file_id:
-                                    # Owner-only /push-with-image path: the
-                                    # durable inbox is text-only, so the photo
-                                    # itself is stashed out of band and
-                                    # consumed once by /push (see
-                                    # _management_reply). A stray photo
-                                    # without a matching /push command is
-                                    # simply overwritten by the next one.
-                                    self.sessions.set_state(
-                                        f'pending_push_photo:{chat_id}', photo_file_id,
-                                    )
+                                    if self._is_owner(chat_id):
+                                        self.sessions.set_state(
+                                            f'pending_push_photo:{chat_id}', photo_file_id,
+                                        )
                                     self.sessions.set_state(
                                         PROMPT_PHOTO_STATE.format(chat=chat_id), photo_file_id,
                                     )
@@ -2389,10 +2209,10 @@ def _run_prompt_daily_loop(bot: 'JobMasterTelegramBot') -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='JobMaster Telegram service')
+    parser = argparse.ArgumentParser(description='Prompt Tower Telegram service')
     parser.add_argument('command', nargs='?', default='run', choices=['run', 'smoke'])
     parser.add_argument('--chat', default='')
-    parser.add_argument('--query', default='Fresh jobs in Bangalore in AI space for fresher')
+    parser.add_argument('--query', default='')
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -2418,10 +2238,6 @@ def main(argv: list[str] | None = None) -> int:
             return 8
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    dispatch_thread = threading.Thread(
-        target=_run_alert_dispatch_loop, args=(bot,), daemon=True, name='jobmaster-alert-dispatch',
-    )
-    dispatch_thread.start()
     prompt_thread = threading.Thread(
         target=_run_prompt_daily_loop, args=(bot,), daemon=True, name='prompt-daily-deck',
     )

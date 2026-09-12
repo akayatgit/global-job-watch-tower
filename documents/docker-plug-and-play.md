@@ -25,7 +25,7 @@ API healthcheck: `GET /api/deploy/status` (no DB, no auth).
 
 | Host-only | Why |
 |---|---|
-| Chrome bot profile + real LinkedIn scraping | Stealth profile lives in `~/.config/google-chrome-linkedin`; scrape jobs queued in-container will fail without it — that's expected |
+| Chrome bot profile | Stealth profile stays on the host; container scrapes are optional |
 | Ollama relevance | No GPU in container; image defaults `RELEVANCE_MODE=keyword` (Plan B). Point `OLLAMA_*` env at a host Ollama to restore quality mode |
 | `~/.hermes` Telegram gateway | COURIER/DIRECTOR run beside the repo on the ThinkPad, not in this image |
 | Secrets | Nothing baked in — `.env` files are dockerignored; pass env via compose |

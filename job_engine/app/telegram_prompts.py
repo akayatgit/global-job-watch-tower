@@ -1,11 +1,13 @@
-"""Prompt Tower on Telegram — Ashok's daily top-10 deck (owner-only).
+"""Prompt Tower on Telegram — daily top-10 plus public reverse prompt.
+
+Every user can run /igtovid · /pintovid. No jobseeker copy.
 
 Everything here is deterministic formatting over the tower API: the list,
 the full prompt, the ⭐ rating, the "📸 product image → ✅ make video" flow,
 the render watcher that uploads the finished MP4 + Instagram card back
 into the chat, and reverse prompt (`/igtovid` · `/pintovid`) which delivers
-the Gemini-authored timestamped prompt verbatim. No model composes job
-facts; reverse prompt is the one place a model authors a generation prompt.
+the Gemini-authored timestamped prompt verbatim. Reverse prompt is the
+one place a model authors a generation prompt.
 
 Callback data prefix: ``pt:``. Owner photo without a caption arrives as the
 synthetic ``pt:photo`` tap (see scripts/telegram_job_bot.py) so the durable
@@ -129,7 +131,7 @@ def save_keyboard(*pairs: tuple[str, str | None]) -> list[list[tuple[str, str]]]
 
 
 class PromptDeck:
-    """Owner-only prompt commands + ``pt:`` callbacks. Injected I/O only."""
+    """Prompt commands + ``pt:`` callbacks for every user. Injected I/O only."""
 
     def __init__(
         self,
@@ -496,7 +498,7 @@ class PromptDeck:
         return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
     def maybe_take_url(self, chat_id: str, text: str) -> ButtonReply | None:
-        """Owner text carrying an Instagram / Pinterest link: after /igtovid
+        """Any user text carrying an Instagram / Pinterest link: after /igtovid
         any fetchable link counts; without the command only reel / pin
         links start a run (a stray direct .mp4 link in chat does not)."""
         from app.prompts.reverse_prompt import detect_platform, find_url
