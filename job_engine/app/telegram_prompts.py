@@ -1190,8 +1190,16 @@ class PromptDeck:
                     self._deliver_twist(chat_id, row, sleep=sleep)
                     return 'done'
                 if status == 'failed':
-                    if self.send_text:
-                        self.send_text(chat_id, f"❌ Twist #{reverse_id} failed: {row.get('twist_error') or 'unknown error'}")
+                    err = row.get('twist_error') or 'unknown error'
+                    text = f'❌ Twist #{reverse_id} failed: {err}'
+                    keyboard = [
+                        [('🔄 Retry twist', f'pt:twist:{reverse_id}')],
+                        [('Show prompt', f'pt:show:{reverse_id}')],
+                    ]
+                    if self.send_keyboard:
+                        self.send_keyboard(chat_id, text, keyboard)
+                    elif self.send_text:
+                        self.send_text(chat_id, text)
                     return 'failed'
             if waited >= max_wait_s:
                 if self.send_text:
