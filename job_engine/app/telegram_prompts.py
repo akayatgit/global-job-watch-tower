@@ -69,7 +69,9 @@ REVERSE_ASK = 'Now Paste the link.'
 REVERSE_USAGE = REVERSE_ASK
 # Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
 TITLE_ASK = 'Whats the hook?'
-# Ashok (2026-09-12): twist lives on the finished clip, next to Save.
+# Ashok (2026-09-12): twist lives on the finished clip.
+# Ready message is one word — no timing essay, no Save clip/reel (2026-09-12).
+READY_CAPTION = 'Ready…'
 TWIST_ASK = 'Shall we twist the video?'
 START_TWIST = '▶ Start the Twist'
 MODEL_ASK = 'Select a Prompt Model…'
@@ -958,12 +960,10 @@ class PromptDeck:
             waited += poll_s
 
     def _reverse_done_keyboard(self, row: dict[str, Any], *, offer_twist: bool = True) -> list[list[tuple[str, str]]]:
-        """Save + Play + Images / Show / Copy / Twist. Nothing auto-sends."""
-        keyboard = save_keyboard(
-            ('⬇️ Save clip', row.get('video_url')),
-            ('⬇️ Save reel', row.get('reel_url')),
-            ('⬇️ Save twist', row.get('twist_video_url')),
-        )
+        """Play + Images / Show / Copy / Twist. No Save clip / Save reel (Ashok 2026-09-12)."""
+        keyboard: list[list[tuple[str, str]]] = []
+        # Save twist only when a twisted MP4 exists — never Save clip / Save reel.
+        keyboard.extend(save_keyboard(('⬇️ Save twist', row.get('twist_video_url'))))
         rid = row.get('id')
         if rid is None:
             return keyboard
@@ -1004,24 +1004,9 @@ class PromptDeck:
             self.send_text(chat_id, '\n'.join(lines))
 
     def _done_caption(self, row: dict[str, Any], *, offer_twist: bool = True) -> str:
-        from app.prompts.gen_timings import format_line
-
-        rid = row.get('id')
-        if not offer_twist and row.get('twist_video_key'):
-            bits = [f'✅ Twist #{rid} ready.']
-        elif not offer_twist:
-            bits = [f'✅ Reverse #{rid} ready.']
-        else:
-            bits = [f'✅ Reverse #{rid} ready.']
-        if row.get('reel_error') and not row.get('reel_key'):
-            bits.append(f"⚠️ Reel not composed: {row.get('reel_error')}")
-        if row.get('twist_video_error') and not row.get('twist_video_key'):
-            bits.append(f"⚠️ Twisted video: {row.get('twist_video_error')}")
-        timing = format_line(row.get('timings'))
-        if timing:
-            bits.append(timing)
-        bits.append(TWIST_ASK if offer_twist else 'Tap below for clip, reel, images, or prompt.')
-        return '\n'.join(bits)
+        """One word. Timing + twist ask live in buttons / logs, not the chat (Ashok 2026-09-12)."""
+        del row, offer_twist
+        return READY_CAPTION
 
     def _offer_reverse_done(
         self, chat_id: str, row: dict[str, Any], *, offer_twist: bool = True,
