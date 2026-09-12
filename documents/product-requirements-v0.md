@@ -32,7 +32,7 @@ Prompt Tower has two public workflows and one owner deck.
 
 Public Telegram copy is one line at a time:
 
-1. `Now Send me the Instagram or Pinterest link.`
+1. `Now Paste the link.`
 2. `Whats the hook?`
 3. `Shall we twist the video?`
 4. `Select a Prompt Model…`

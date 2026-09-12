@@ -58,7 +58,9 @@ TWIST_MAX_WAIT_S = 30 * 60
 DESCRIBE_HEARTBEAT_S = 90
 TELEGRAM_TEXT_LIMIT = 3900
 # Ashok (2026-09-11): /igtovid must answer at once, one line, no essay.
-REVERSE_ASK = 'Now Send me the Instagram or Pinterest link.'
+# Canary copy (Ashok 2026-09-12): if Telegram still shows the old line,
+# ThinkPad has not picked up main — deploy is the bug, not the bot logic.
+REVERSE_ASK = 'Now Paste the link.'
 REVERSE_USAGE = REVERSE_ASK
 # Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
 TITLE_ASK = 'Whats the hook?'

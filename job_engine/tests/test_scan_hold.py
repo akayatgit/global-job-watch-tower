@@ -21,6 +21,11 @@ class _FakeRedis:
     def get(self, key):
         return self.kv.get(key)
 
+    def delete(self, *keys):
+        for key in keys:
+            self.kv.pop(key, None)
+        return len(keys)
+
 
 class _FakeControl:
     def __init__(self, active=None):
@@ -64,8 +69,13 @@ class ScanHoldTests(unittest.TestCase):
         for item in self.patches:
             item.stop()
         self.tmp.cleanup()
+        scan_hold.clear_hold()
 
-    def test_hold_and_expiry(self):
+    def test_clear_hold_drops_the_lane_lock(self):
+        scan_hold.hold_scan(seconds=900, now=1_000.0)
+        self.assertTrue(scan_hold.is_held(now=1_000.0))
+        scan_hold.clear_hold()
+        self.assertFalse(scan_hold.is_held(now=1_000.0))
         left = scan_hold.hold_scan(seconds=900, now=1_000.0)
         self.assertEqual(left, 900)
         self.assertTrue(scan_hold.is_held(now=1_000.0))
