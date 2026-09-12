@@ -55,13 +55,40 @@ class TwistUnitTests(unittest.TestCase):
         self.assertIn('under 3000', seen['input']['system_instruction'])
         self.assertGreater(seen['input']['thinking_budget'], 0)
 
-    def test_twist_prompt_keeps_original_when_rewrite_is_short(self):
+    def test_twist_prompt_falls_back_when_rewrite_is_short(self):
         draft = '[0.0s–8.0s] a juice glass on marble under hard sidelight. ' * 8
 
         def run(model, input):
             return json.dumps({'keyword': 'X', 'prompt': 'short'})
 
-        self.assertIsNone(reverse_twist.twist_prompt_text(draft, 'make it gold', run=run))
+        reading = reverse_twist.twist_prompt_text(draft, 'make it gold', run=run)
+        self.assertIsNotNone(reading)
+        self.assertIn('[0.0s–8.0s]', reading.prompt)
+        self.assertIn('juice glass', reading.prompt)
+        self.assertIn('gold', reading.prompt.lower())
+        self.assertIn('fallback', reading.model)
+
+    def test_twist_prompt_falls_back_when_gemini_errors(self):
+        draft = '[0.0s–1.8s] a glass on marble.\n[1.8s–4.0s] a hand pours.\nStyle: cold.'
+
+        def run(model, input):
+            raise RuntimeError('E001')
+
+        notes: list[str] = []
+        reading = reverse_twist.twist_prompt_text(
+            draft, 'Eiffel tower assembly', run=run, log=notes.append,
+        )
+        self.assertIsNotNone(reading)
+        self.assertIn('Eiffel tower assembly', reading.prompt)
+        self.assertIn('glass on marble', reading.prompt)
+        self.assertTrue(any('fallback' in n.lower() or 'missed' in n.lower() for n in notes))
+
+    def test_fallback_stamps_twist_on_every_beat(self):
+        draft = '[0.0s–1.8s] a glass on marble.\n[1.8s–4.0s] a hand pours.\nStyle: midnight.'
+        text = reverse_twist.fallback_twist_prompt(draft, 'Eiffel tower')
+        self.assertIn('[0.0s–1.8s]', text)
+        self.assertIn('[1.8s–4.0s]', text)
+        self.assertEqual(text.lower().count('eiffel tower'), 3)
 
     def test_twist_prompt_stays_strictly_under_3000(self):
         draft = '[0.0s–8.0s] a juice glass on marble under hard sidelight. Style: cold. ' * 6

@@ -776,6 +776,16 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertIn('1–1 of 1', frames.text)
 
+    def test_watch_twist_failed_offers_retry(self):
+        self.tower.reverse_status = {
+            'id': 26, 'status': 'done',
+            'twist_status': 'failed',
+            'twist_error': 'Gemini could not rewrite the prompt with that twist',
+        }
+        self.assertEqual(self.deck.watch_twist('1', 26, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'failed')
+        self.assertEqual(self.keyboards[-1][1], '❌ Twist #26 failed: Gemini could not rewrite the prompt with that twist')
+        self.assertEqual(self.keyboards[-1][2][0], [('🔄 Retry twist', 'pt:twist:26')])
+
 
 class BotWiringTests(unittest.TestCase):
     def setUp(self):

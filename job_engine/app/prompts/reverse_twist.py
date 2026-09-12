@@ -22,7 +22,6 @@ from app.prompts.reverse_prompt import (
     ENGINE_GEMINI,
     MAX_OUTPUT_TOKENS,
     PROMPT_CHAR_LIMIT,
-    PROMPT_MAX_CHARS,
     ReferenceFrame,
     ReverseError,
     ReverseReading,
@@ -31,6 +30,7 @@ from app.prompts.reverse_prompt import (
     _output_text,
     apply_prompt_cap,
     clean_keyword,
+    cuts_from_prompt,
     jpeg_data_uri,
     json_reading_complete,
     parse_reading,
@@ -133,6 +133,42 @@ def segment_for_time(prompt: str, t: float) -> str:
     return best
 
 
+def twist_rewrite_ok(draft: str, refined: str) -> bool:
+    """Keep a rewrite that still has the shot list. Length is not a veto —
+    under 3000 is the law; a shorter complete beat sheet is fine."""
+    refined = (refined or '').strip()
+    if len(refined) < 80:
+        return False
+    need = len(list(SEGMENT_RE.finditer(draft or '')))
+    got = len(list(SEGMENT_RE.finditer(refined)))
+    return not (need and got == 0)
+
+
+def fallback_twist_prompt(draft: str, idea: str) -> str:
+    """Gemini missed: keep every original beat and stamp the twist on it.
+    Stills + Omni can still run. Never mention 'twist' in the text."""
+    from app.prompts.reverse_prompt import _split_prompt_parts, fit_prompt
+
+    idea = clean_twist(idea)
+    parts, style = _split_prompt_parts(draft)
+    if not parts:
+        parts = [(draft or '').strip()]
+    needle = idea.lower()
+    lines: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if needle and needle in part.lower():
+            lines.append(part)
+        else:
+            lines.append(f'{part.rstrip(" .")} — {idea}.')
+    text = '\n'.join(lines)
+    if style:
+        extra = style if (needle and needle in style.lower()) else f'{style.rstrip(".")}, {idea}'
+        text = f'{text}\n{extra}' if text else extra
+    return fit_prompt(text)
+
+
 def twist_prompt_text(
     prompt: str,
     twist: str,
@@ -141,8 +177,8 @@ def twist_prompt_text(
     log: Callable[[str], None] | None = None,
 ) -> ReverseReading | None:
     """Gemini second call: rewrite every beat. Text only — the video
-    already authored the original. Failure or a much shorter rewrite
-    returns None so the original stays."""
+    already authored the original. After retries, stamp the twist onto
+    the original beats rather than failing the whole pass."""
     draft = (prompt or '').strip()
     idea = clean_twist(twist)
     if not draft or not idea:
@@ -152,8 +188,8 @@ def twist_prompt_text(
     if run is None:
         missing = vision_key_missing(ENGINE_GEMINI)
         if missing:
-            logger.warning('Magic-pencil prompt skipped: %s', missing)
-            return None
+            logger.warning('Magic-pencil prompt skipped: %s — using fallback', missing)
+            return _fallback_reading(draft, idea, model='fallback', log=log, reason=missing)
         import replicate
 
         from app.prompts.video_creator import replicate_render
@@ -170,37 +206,64 @@ def twist_prompt_text(
         'max_output_tokens': MAX_OUTPUT_TOKENS,
         'thinking_budget': THINKING_BUDGET,
     }
-    try:
-        output = run(model, input=inputs)
-        text = _output_text(output)
-        reading = parse_reading(text, model=model)
-        if not json_reading_complete(text):
-            if log:
-                log('twist JSON was truncated — asking once more')
+    last_err = 'no usable rewrite'
+    for attempt in range(3):
+        try:
             output = run(model, input=inputs)
-            retry = parse_reading(_output_text(output), model=model)
-            if len(retry.prompt) > len(reading.prompt):
-                reading = retry
-        prompt = (reading.prompt or '').strip()
-        if len(prompt) >= PROMPT_CHAR_LIMIT:
+            text = _output_text(output)
+            reading = parse_reading(text, model=model)
+            if not json_reading_complete(text):
+                if log:
+                    log(f'twist JSON was truncated — retry {attempt + 1}/3')
+                output = run(model, input=inputs)
+                retry = parse_reading(_output_text(output), model=model)
+                if len(retry.prompt) > len(reading.prompt):
+                    reading = retry
+            prompt = (reading.prompt or '').strip()
+            if len(prompt) >= PROMPT_CHAR_LIMIT:
+                if log:
+                    log(f'twist prompt {len(prompt)} chars — thinking compress to under {PROMPT_CHAR_LIMIT}')
+                compress = dict(inputs)
+                compress['prompt'] = COMPRESS_USER.format(n=len(prompt))
+                compressed = parse_reading(_output_text(run(model, input=compress)), model=model)
+                if compressed.prompt and len(compressed.prompt) < len(prompt):
+                    reading = compressed
+            reading = apply_prompt_cap(reading)
+            refined = (reading.prompt or '').strip()
+            if twist_rewrite_ok(draft, refined):
+                if not reading.keyword or reading.keyword == DEFAULT_KEYWORD:
+                    reading.keyword = clean_keyword(idea.split()[0] if idea else DEFAULT_KEYWORD)
+                return reading
+            last_err = f'short or missing timestamps ({len(refined)} chars)'
             if log:
-                log(f'twist prompt {len(prompt)} chars — thinking compress to under {PROMPT_CHAR_LIMIT}')
-            compress = dict(inputs)
-            compress['prompt'] = COMPRESS_USER.format(n=len(prompt))
-            compressed = parse_reading(_output_text(run(model, input=compress)), model=model)
-            if compressed.prompt and len(compressed.prompt) < len(prompt):
-                reading = compressed
-    except Exception as exc:
-        logger.warning('Magic-pencil prompt failed: %s', exc)
-        return None
-    reading = apply_prompt_cap(reading)
-    refined = (reading.prompt or '').strip()
-    if not refined or len(refined) < max(80, min(int(len(draft) * 0.55), PROMPT_MAX_CHARS // 2)):
-        logger.warning('Magic-pencil prompt discarded (empty or too short)')
-        return None
-    if not reading.keyword or reading.keyword == DEFAULT_KEYWORD:
-        reading.keyword = clean_keyword(idea.split()[0] if idea else DEFAULT_KEYWORD)
-    return reading
+                log(f'twist rewrite rejected: {last_err}')
+        except Exception as exc:
+            last_err = str(exc)[:240]
+            logger.warning('Magic-pencil prompt failed (try %s/3): %s', attempt + 1, exc)
+            if log:
+                log(f'twist rewrite try {attempt + 1}/3 failed: {last_err}')
+    return _fallback_reading(draft, idea, model=model, log=log, reason=last_err)
+
+
+def _fallback_reading(
+    draft: str,
+    idea: str,
+    *,
+    model: str,
+    log: Callable[[str], None] | None,
+    reason: str,
+) -> ReverseReading:
+    if log:
+        log(f'Gemini rewrite missed ({reason}) — stamping the twist onto the original beats')
+    logger.warning('Magic-pencil fallback: %s', reason)
+    prompt = fallback_twist_prompt(draft, idea)
+    return ReverseReading(
+        keyword=clean_keyword(idea.split()[0] if idea else DEFAULT_KEYWORD),
+        prompt=prompt,
+        model=f'{model}+fallback' if model else 'fallback',
+        raw='',
+        cuts=cuts_from_prompt(prompt),
+    )
 
 
 def twist_reference_frames(

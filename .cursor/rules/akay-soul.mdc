@@ -461,6 +461,12 @@ need to be told twice.
   Images and the prompt go out only on tap: Images = 4 then More;
   Show / Copy for the prompt. Clock every generation step (`⏱`).
 
+- **2026-09-12 · Twist #26 died on the rewrite.** Gemini returned
+  nothing usable and the worker treated that as the whole twist
+  failing. Retry the rewrite; if it still misses, stamp the twist
+  on the original beats so Nano Banana + Omni still run. Dead-end
+  "could not rewrite" is not a product.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

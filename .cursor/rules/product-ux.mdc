@@ -922,6 +922,10 @@ it, shows recipient count) → `/pushconfirm`
   `started_at` plus per-step seconds (`download` · `describe` ·
   `frames` · `refine` · `reel` · `twist_*` · `omni`). Telegram
   shows one `⏱` line. Aim: cut the wait.
+- **Twist rewrite must not dead-end (Ashok 2026-09-12).** Gemini
+  gets 3 tries. A short/errored rewrite no longer kills the pass —
+  stamp the owner's twist onto every original beat, then stills +
+  Omni. Failed twist (stills/queue) shows **Retry twist**.
 - **A second Gemini tap must not re-ask the link (Ashok 2026-09-12).**
   The URL arrives before the hook. If that URL (or last reverse)
   is still known, start or resume — never `Send the link` again.
