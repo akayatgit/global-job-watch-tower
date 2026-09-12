@@ -539,6 +539,12 @@ class JobMasterTelegramBot:
         self._active_chats: set[str] = set()
         self._query_count = 0
         self._page_count = 0
+        # One live watcher per reverse/twist/render id — duplicate taps and
+        # resume_open_watches used to stack threads and spam Telegram.
+        self._watch_guard = threading.Lock()
+        self._reverse_watchers: dict[int, threading.Thread] = {}
+        self._twist_watchers: dict[int, threading.Thread] = {}
+        self._render_watchers: dict[int, threading.Thread] = {}
 
     @staticmethod
     def _command(text: str) -> tuple[str, str] | None:
@@ -556,37 +562,68 @@ class JobMasterTelegramBot:
         with urllib.request.urlopen(url, timeout=300) as resp:
             return resp.read()
 
-    def _start_render_watch(self, chat_id: str, render_id: int) -> None:
-        """Background watcher: polls the render row, uploads card + video."""
-        thread = threading.Thread(
-            target=self._watch_render_safely,
-            args=(chat_id, render_id),
-            daemon=True,
-            name=f'prompt-render-{render_id}',
-        )
-        thread.start()
+    def _start_render_watch(self, chat_id: str, render_id: int) -> bool:
+        """Background watcher: polls the render row, uploads card + video.
+
+        Returns True only when a new thread was started.
+        """
+        rid = int(render_id)
+        with self._watch_guard:
+            alive = self._render_watchers.get(rid)
+            if alive is not None and alive.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._watch_render_safely,
+                args=(chat_id, rid),
+                daemon=True,
+                name=f'prompt-render-{rid}',
+            )
+            self._render_watchers[rid] = thread
+            thread.start()
+            return True
 
     def _watch_render_safely(self, chat_id: str, render_id: int) -> None:
         try:
             self.deck.watch_render(chat_id, render_id)
         except Exception:
             LOG.exception('render watch crashed render=%s', render_id)
+        finally:
+            with self._watch_guard:
+                current = self._render_watchers.get(int(render_id))
+                if current is threading.current_thread():
+                    self._render_watchers.pop(int(render_id), None)
 
-    def _start_reverse_watch(self, chat_id: str, reverse_id: int) -> None:
-        """Background watcher: polls the reverse-prompt row, uploads reel + text."""
-        thread = threading.Thread(
-            target=self._watch_reverse_safely,
-            args=(chat_id, reverse_id),
-            daemon=True,
-            name=f'prompt-reverse-{reverse_id}',
-        )
-        thread.start()
+    def _start_reverse_watch(self, chat_id: str, reverse_id: int) -> bool:
+        """Background watcher: polls the reverse-prompt row.
+
+        Returns True only when a new thread was started — a second Gemini tap
+        or resume must not stack another watcher (6× Workflow Started / ready).
+        """
+        rid = int(reverse_id)
+        with self._watch_guard:
+            alive = self._reverse_watchers.get(rid)
+            if alive is not None and alive.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._watch_reverse_safely,
+                args=(chat_id, rid),
+                daemon=True,
+                name=f'prompt-reverse-{rid}',
+            )
+            self._reverse_watchers[rid] = thread
+            thread.start()
+            return True
 
     def _watch_reverse_safely(self, chat_id: str, reverse_id: int) -> None:
         try:
             self.deck.watch_reverse(chat_id, reverse_id)
         except Exception:
             LOG.exception('reverse watch crashed reverse=%s', reverse_id)
+        finally:
+            with self._watch_guard:
+                current = self._reverse_watchers.get(int(reverse_id))
+                if current is threading.current_thread():
+                    self._reverse_watchers.pop(int(reverse_id), None)
 
     def _start_reverse_upload(
         self,
@@ -634,20 +671,33 @@ class JobMasterTelegramBot:
             except Exception:
                 LOG.exception('reverse upload failure notice failed chat=%s', chat_id)
 
-    def _start_twist_watch(self, chat_id: str, reverse_id: int) -> None:
-        thread = threading.Thread(
-            target=self._watch_twist_safely,
-            args=(chat_id, reverse_id),
-            daemon=True,
-            name=f'prompt-twist-{reverse_id}',
-        )
-        thread.start()
+    def _start_twist_watch(self, chat_id: str, reverse_id: int) -> bool:
+        """Returns True only when a new twist watcher thread was started."""
+        rid = int(reverse_id)
+        with self._watch_guard:
+            alive = self._twist_watchers.get(rid)
+            if alive is not None and alive.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._watch_twist_safely,
+                args=(chat_id, rid),
+                daemon=True,
+                name=f'prompt-twist-{rid}',
+            )
+            self._twist_watchers[rid] = thread
+            thread.start()
+            return True
 
     def _watch_twist_safely(self, chat_id: str, reverse_id: int) -> None:
         try:
             self.deck.watch_twist(chat_id, reverse_id)
         except Exception:
             LOG.exception('twist watch crashed reverse=%s', reverse_id)
+        finally:
+            with self._watch_guard:
+                current = self._twist_watchers.get(int(reverse_id))
+                if current is threading.current_thread():
+                    self._twist_watchers.pop(int(reverse_id), None)
 
     def resume_open_watches(self) -> int:
         """After deploy, keep watching unfinished reverses so Telegram
@@ -667,12 +717,12 @@ class JobMasterTelegramBot:
                 continue
             status = str(row.get('status') or '')
             if status in {'queued', 'downloading', 'describing', 'composing'}:
-                self._start_reverse_watch(chat_id, int(row['id']))
-                n += 1
+                if self._start_reverse_watch(chat_id, int(row['id'])):
+                    n += 1
             twist = str(row.get('twist_status') or '')
             if twist in {'queued', 'running', 'stills', 'omni'}:
-                self._start_twist_watch(chat_id, int(row['id']))
-                n += 1
+                if self._start_twist_watch(chat_id, int(row['id'])):
+                    n += 1
         if n:
             LOG.info('resumed %s open reverse/twist watchers after start', n)
         return n
@@ -1902,9 +1952,16 @@ class JobMasterTelegramBot:
         *,
         update_id: int | None = None,
     ) -> None:
+        text = (reply.text or '').strip() if isinstance(reply, ButtonReply) else str(reply or '')
+        keyboard = reply.keyboard if isinstance(reply, ButtonReply) else None
+        # Empty noop replies (duplicate Gemini / Twist taps) must not hit Telegram.
+        if not text and not keyboard:
+            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                self.sessions.save_update_reply(update_id, '(noop)')
+            return
         if update_id is not None and self.sessions.load_update_reply(update_id) is None:
-            self.sessions.save_update_reply(update_id, reply.text)
-        self.api.send_keyboard(chat_id, reply.text, reply.keyboard)
+            self.sessions.save_update_reply(update_id, text or reply.text)
+        self.api.send_keyboard(chat_id, text or reply.text, keyboard)
 
     def smoke(self, chat_id: str, query: str) -> None:
         """Public reverse must answer in one line and never leak job copy."""
