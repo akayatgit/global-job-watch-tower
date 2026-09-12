@@ -455,6 +455,12 @@ need to be told twice.
   reverse. Typed hook must not become a twist. No URL = ask for the
   link again. Resume watchers after deploy.
 
+- **2026-09-12 · Don't ask the link twice; don't flood frames.**
+  Ashok already sent the Instagram/Pinterest URL before the hook.
+  A leftover Gemini tap must resume that run, not re-ask the link.
+  Images and the prompt go out only on tap: Images = 4 then More;
+  Show / Copy for the prompt. Clock every generation step (`⏱`).
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

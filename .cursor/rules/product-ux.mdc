@@ -9,8 +9,9 @@ alwaysApply: true
 sends seeker copy, hiring-site links, or `Thinking…` then an essay.
 `/igtovid` and `/pintovid` are **public**. `/start` · `/help` · hi →
 `Now Send me the Instagram or Pinterest link.` Finished reverse: Save
-clip / Save reel / Show prompt / Copy prompt / Twist — never dump the
-prompt. Docs and PRD describe a Prompt application only.
+clip / Save reel / Images / Show prompt / Copy prompt / Twist — never
+dump the prompt or the 14 frames. Docs and PRD describe a Prompt
+application only.
 
 The user (admin) is a human, not an engineer. Every screen must be a joy to
 use — they should love opening the app, never fight it.
@@ -911,13 +912,21 @@ it, shows recipient count) → `/pushconfirm`
   (motion transfer: original clip + twisted frames). Telegram
   delivers that MP4 with `sendVideo` — the final Gemini twisted
   video. Stills stay if Omni fails.
-- **Videos as Telegram videos, frames as one ZIP (Ashok 2026-09-12).**
+- **Videos as Telegram videos; frames only on tap (Ashok 2026-09-12).**
   Original Instagram clip and the template reel both go out as
   `sendVideo` (tap to view + save). URL Save buttons are not
-  enough. All cut / twist JPEGs are one `sendDocument` ZIP
-  (`frames-N.zip` / `twist-frames-N.zip`) — download all.
+  enough. Do **not** auto-send the ~14 cut JPEGs (ZIP or flood).
+  **🖼 Images** sends **4**, then **More images ▸**. Never dump all
+  even if asked. Prompt stays behind Show / Copy — only on request.
+- **Time every generation step (Ashok 2026-09-12).** Store
+  `started_at` plus per-step seconds (`download` · `describe` ·
+  `frames` · `refine` · `reel` · `twist_*` · `omni`). Telegram
+  shows one `⏱` line. Aim: cut the wait.
+- **A second Gemini tap must not re-ask the link (Ashok 2026-09-12).**
+  The URL arrives before the hook. If that URL (or last reverse)
+  is still known, start or resume — never `Send the link` again.
 - **Never start a reverse without a clip (Ashok 2026-09-12).** Leftover
   intake Twist / Skip / stale Gemini buttons must not queue a hollow
-  run. Re-ask `Now Send me the Instagram or Pinterest link.` A
-  `processing..` that stays queued after deploy must say so and offer
-  Retry — watcher threads resume on bot start.
+  run. No URL and no last reverse → `Now Send me the Instagram or
+  Pinterest link.` A `processing..` that stays queued after deploy
+  must say so and offer Retry — watcher threads resume on bot start.
