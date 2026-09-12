@@ -153,12 +153,14 @@ class PromptDeck:
         on_render_started: Callable[[str, int], None] | None = None,
         on_reverse_started: Callable[[str, int], None] | None = None,
         on_twist_started: Callable[[str, int], None] | None = None,
+        on_reverse_upload: Callable[..., None] | None = None,
         send_keyboard: Callable[[str, str, list], None] | None = None,
     ):
         self.sessions = sessions
         self.on_render_started = on_render_started
         self.on_reverse_started = on_reverse_started
         self.on_twist_started = on_twist_started
+        self.on_reverse_upload = on_reverse_upload
         self.send_keyboard = send_keyboard
         self.api_get = api_get
         self.api_post = api_post
@@ -373,6 +375,8 @@ class PromptDeck:
             return self.omni_reply(chat_id, int(parts[1]))
         if action == 'revretry' and len(parts) >= 2 and parts[1].isdigit():
             return self.retry_reverse_reply(chat_id, int(parts[1]))
+        if action in {'playclip', 'playreel', 'playtwist'} and len(parts) >= 2 and parts[1].isdigit():
+            return self.play_video_reply(chat_id, int(parts[1]), kind=action)
         return ButtonReply(PROMPTS_USAGE)
 
     def detail_reply(self, chat_id: str, prompt_id: int) -> ButtonReply:
@@ -746,12 +750,28 @@ class PromptDeck:
         vision_engine: str | None = None,
         twist: str | None = None,
     ) -> ButtonReply:
-        """Forwarded video: ask for the header first, then the model."""
+        """Forwarded video: ask for the header first, then the model.
+
+        When ``on_reverse_upload`` is wired, reply instantly and download in
+        the background — never hold the chat on a multi-MB Telegram fetch.
+        """
         if not title:
             return self._ask_title(chat_id)
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
         if not file_id or self.download_photo is None:
             return ButtonReply('I could not read that video — send it as a video (not a file), or send the link.')
+        if self.on_reverse_upload is not None:
+            try:
+                self.on_reverse_upload(
+                    str(chat_id),
+                    title=title,
+                    vision_engine=vision_engine,
+                    twist=twist,
+                )
+            except Exception:
+                logger.exception('reverse upload kick failed chat=%s', chat_id)
+                return ButtonReply('Tower could not start the reverse prompt — check /health and try again.')
+            return ButtonReply(REVERSE_STARTED, [[('✖ Cancel', 'pt:cancel')]])
         try:
             data, _content_type = self.download_photo(file_id)
         except Exception as exc:
@@ -760,6 +780,33 @@ class PromptDeck:
             return ButtonReply(f'Could not download the video from Telegram{hint}.')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
         return self._start_reverse(chat_id, video=data, title=title, vision_engine=vision_engine, twist=twist)
+
+    def finish_video_upload(
+        self,
+        chat_id: str,
+        *,
+        title: str | None = None,
+        vision_engine: str | None = None,
+        twist: str | None = None,
+    ) -> ButtonReply:
+        """Background path: download the pending Telegram file, then queue."""
+        file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
+        if not file_id or self.download_photo is None:
+            self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+        try:
+            data, _content_type = self.download_photo(file_id)
+        except Exception as exc:
+            logger.exception('telegram video download failed')
+            hint = (
+                ' (Telegram lets bots download files up to 20 MB — send the link instead)'
+                if 'too big' in str(exc).lower() or '400' in str(exc) else ''
+            )
+            return ButtonReply(f'Could not download the video from Telegram{hint}.')
+        self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
+        return self._start_reverse(
+            chat_id, video=data, title=title, vision_engine=vision_engine, twist=twist,
+        )
 
     def _ask_title(self, chat_id: str, *, source_url: str | None = None) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '')
@@ -856,10 +903,13 @@ class PromptDeck:
         max_wait_s: float = REVERSE_MAX_WAIT_S,
         sleep: Callable[[float], None] = time.sleep,
     ) -> str:
-        """Block until the reverse prompt finishes, deliver reel + prompt."""
+        """Poll until done — stay silent mid-flight. One message only at the end.
+
+        The start tap already said Workflow Started…. No processing / download /
+        heartbeat spam. Auto-retry quietly if the worker never picks up.
+        """
         waited = 0.0
-        announced: set[str] = set()
-        last_describe_beat = 0.0
+        requeued = False
         while True:
             try:
                 row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
@@ -867,70 +917,56 @@ class PromptDeck:
                 row = None
             if isinstance(row, dict):
                 status = str(row.get('status') or '')
-                if status == 'queued' and status not in announced and self.send_text:
-                    announced.add(status)
-                    self.send_text(chat_id, REVERSE_QUEUED)
-                if status == 'downloading' and status not in announced and self.send_text:
-                    announced.add(status)
-                    self.send_text(
-                        chat_id,
-                        f'⬇️ Reverse #{reverse_id}: downloading the clip '
-                        '(Instagram may need the logged-in browser, ~90s max).',
-                    )
-                if status == 'queued' and waited >= 90 and 'queued-wait' not in announced:
-                    announced.add('queued-wait')
-                    if self.send_text:
-                        self.send_text(
-                            chat_id,
-                            f'⏳ Reverse #{reverse_id} is still queued — worker may be down. '
-                            'Tap Retry, or send /igtovid and the link again.',
-                        )
-                if status == 'queued' and waited >= 45 and 'requeued' not in announced:
-                    announced.add('requeued')
+                if status == 'queued' and waited >= 45 and not requeued:
+                    requeued = True
                     try:
                         self.api_post(f'/api/prompts/reverse/{reverse_id}/retry', {})
-                        if self.send_text:
-                            self.send_text(chat_id, f'🔄 Reverse #{reverse_id}: worker had not picked it up — I kicked it again.')
                     except Exception:
                         logger.exception('auto-retry reverse failed id=%s', reverse_id)
-                if status == 'describing' and self.send_text:
-                    from app.prompts.reverse_prompt import vision_label
-
-                    label = vision_label(row.get('vision_engine'))
-                    if status not in announced:
-                        announced.add(status)
-                        last_describe_beat = waited
-                        self.send_text(chat_id, REVERSE_STARTED)
-                    elif waited - last_describe_beat >= DESCRIBE_HEARTBEAT_S:
-                        last_describe_beat = waited
-                        self.send_text(
-                            chat_id,
-                            f'⏳ Reverse #{reverse_id}: {label} still watching '
-                            f'({int(waited)}s) — a Replicate row should exist. Tap Retry if not.',
-                        )
                 if status == 'done':
                     self._deliver_reverse(chat_id, row, sleep=sleep)
                     return 'done'
                 if status == 'failed':
-                    if self.send_text:
-                        self.send_text(chat_id, f"❌ Reverse prompt #{reverse_id} failed: {_reverse_fail_text(row)}")
+                    text = f"❌ Reverse prompt #{reverse_id} failed: {_reverse_fail_text(row)}"
+                    keyboard = [[('🔄 Retry', f'pt:revretry:{reverse_id}'), ('✖ Cancel', 'pt:cancel')]]
+                    if self.send_keyboard:
+                        self.send_keyboard(chat_id, text, keyboard)
+                    elif self.send_text:
+                        self.send_text(chat_id, text)
                     return 'failed'
             if waited >= max_wait_s:
-                if self.send_text:
-                    self.send_text(chat_id, f'⏳ Reverse prompt #{reverse_id} is still running after {int(max_wait_s // 60)} min — I will stop watching.')
+                text = (
+                    f'⏳ Reverse #{reverse_id} is still running after '
+                    f'{int(max_wait_s // 60)} min — tap Retry or send the link again.'
+                )
+                keyboard = [[('🔄 Retry', f'pt:revretry:{reverse_id}'), ('✖ Cancel', 'pt:cancel')]]
+                if self.send_keyboard:
+                    self.send_keyboard(chat_id, text, keyboard)
+                elif self.send_text:
+                    self.send_text(chat_id, text)
                 return 'timeout'
             sleep(poll_s)
             waited += poll_s
 
     def _reverse_done_keyboard(self, row: dict[str, Any], *, offer_twist: bool = True) -> list[list[tuple[str, str]]]:
-        """Save clip / reel + Images / Show / Copy / Twist. Frames stay behind Images."""
+        """Save + Play + Images / Show / Copy / Twist. Nothing auto-sends."""
         keyboard = save_keyboard(
             ('⬇️ Save clip', row.get('video_url')),
             ('⬇️ Save reel', row.get('reel_url')),
+            ('⬇️ Save twist', row.get('twist_video_url')),
         )
         rid = row.get('id')
         if rid is None:
             return keyboard
+        play_row: list[tuple[str, str]] = []
+        if row.get('video_key'):
+            play_row.append(('▶️ Clip', f'pt:playclip:{int(rid)}'))
+        if row.get('reel_key'):
+            play_row.append(('▶️ Reel', f'pt:playreel:{int(rid)}'))
+        if row.get('twist_video_key'):
+            play_row.append(('▶️ Twist', f'pt:playtwist:{int(rid)}'))
+        if play_row:
+            keyboard.append(play_row)
         from app.prompts.reverse_prompt import load_reference_frames
 
         kind = 'timgs' if load_reference_frames(row.get('twist_frames')) else 'imgs'
@@ -941,7 +977,7 @@ class PromptDeck:
         ])
         if offer_twist:
             keyboard.append([('💥 Twist', f'pt:twist:{int(rid)}')])
-        elif not row.get('twist_video_key'):
+        elif not row.get('twist_video_key') and load_reference_frames(row.get('twist_frames')):
             keyboard.append([(START_TWIST, f'pt:omni:{int(rid)}')])
         return keyboard
 
@@ -958,14 +994,32 @@ class PromptDeck:
             lines = [text] + [f'{label}: {href}' for row in keyboard for label, href in row]
             self.send_text(chat_id, '\n'.join(lines))
 
+    def _done_caption(self, row: dict[str, Any], *, offer_twist: bool = True) -> str:
+        from app.prompts.gen_timings import format_line
+
+        rid = row.get('id')
+        if not offer_twist and row.get('twist_video_key'):
+            bits = [f'✅ Twist #{rid} ready.']
+        elif not offer_twist:
+            bits = [f'✅ Reverse #{rid} ready.']
+        else:
+            bits = [f'✅ Reverse #{rid} ready.']
+        if row.get('reel_error') and not row.get('reel_key'):
+            bits.append(f"⚠️ Reel not composed: {row.get('reel_error')}")
+        if row.get('twist_video_error') and not row.get('twist_video_key'):
+            bits.append(f"⚠️ Twisted video: {row.get('twist_video_error')}")
+        timing = format_line(row.get('timings'))
+        if timing:
+            bits.append(timing)
+        bits.append(TWIST_ASK if offer_twist else 'Tap below for clip, reel, images, or prompt.')
+        return '\n'.join(bits)
+
     def _offer_reverse_done(
         self, chat_id: str, row: dict[str, Any], *, offer_twist: bool = True,
     ) -> None:
-        """One bar: Save + Show + Copy + Twist. Never dump the prompt."""
+        """Exactly one message: status + buttons. Never dump prompt/images/video."""
         keyboard = self._reverse_done_keyboard(row, offer_twist=offer_twist)
-        if not keyboard:
-            return
-        text = TWIST_ASK if offer_twist else 'Prompt ready.'
+        text = self._done_caption(row, offer_twist=offer_twist)
         if self.send_keyboard:
             self.send_keyboard(chat_id, text, keyboard)
             return
@@ -1014,7 +1068,7 @@ class PromptDeck:
         return first
 
     def _send_video_file(self, chat_id: str, key: str | None, caption: str, *, rid=None) -> bool:
-        """Telegram sendVideo — playable + Save, same as the template reel."""
+        """Telegram sendVideo — only after the owner taps Play."""
         if not key or not self.fetch_asset or not self.send_video_bytes:
             return False
         try:
@@ -1024,50 +1078,35 @@ class PromptDeck:
             logger.exception('video upload failed id=%s key=%s', rid, key)
             return False
 
+    def play_video_reply(self, chat_id: str, reverse_id: int, *, kind: str) -> ButtonReply:
+        """▶️ Clip / Reel / Twist — one video, only on tap."""
+        try:
+            row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
+        except Exception as exc:
+            if '404' in str(exc):
+                return ButtonReply(f'No reverse #{reverse_id}.')
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        key_field = {
+            'playclip': 'video_key',
+            'playreel': 'reel_key',
+            'playtwist': 'twist_video_key',
+        }.get(kind, '')
+        label = {'playclip': 'clip', 'playreel': 'reel', 'playtwist': 'twist video'}.get(kind, 'video')
+        key = row.get(key_field) if key_field else None
+        if not key:
+            err = row.get('reel_error') if kind == 'playreel' else row.get('twist_video_error')
+            return ButtonReply(err or f'No {label} ready for #{reverse_id}.')
+        caption = f'🎞 Reverse #{reverse_id} — {label}. Tap to save on your phone.'
+        if self._send_video_file(chat_id, key, caption, rid=reverse_id):
+            return ButtonReply(f'{label.capitalize()} sent.')
+        return ButtonReply(f'Could not send the {label} — try the Save button instead.')
+
     def _deliver_reverse(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Original clip AND reel as Telegram videos (tap to save). Prompt
-        stays behind Show / Copy — Ashok 2026-09-12, no flood."""
-        rid = row.get('id')
-        model = f" · {row['model']}" if row.get('model') else ''
-        catalogue = f" · catalogue #{row['prompt_id']}" if row.get('prompt_id') else ''
-        clip_save = save_url(row.get('video_url'))
-        source_key = row.get('video_key')
-        reel_key = row.get('reel_key')
-        sent = False
-        if reel_key:
-            if source_key:
-                sent = self._send_video_file(
-                    chat_id,
-                    source_key,
-                    (
-                        f"🎞 Reverse prompt #{rid} — original clip{model}{catalogue}\n"
-                        "Tap the video to save it on your phone."
-                    ).strip(),
-                    rid=rid,
-                ) or sent
-            sent = self._send_video_file(
-                chat_id,
-                reel_key,
-                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}".strip(),
-                rid=rid,
-            ) or sent
-        else:
-            caption = (
-                f"🎞 Reverse prompt #{rid} — source clip{model}{catalogue}\n"
-                f"⚠️ Reel not composed: {row.get('reel_error') or 'unknown reason'}\n"
-                f"Save clip: {clip_save}"
-            ).strip()
-            sent = self._send_video_file(chat_id, source_key, caption, rid=rid)
-            if not sent and self.send_text:
-                self.send_text(chat_id, caption)
-        if not sent and reel_key and self.send_text:
-            self.send_text(
-                chat_id,
-                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}".strip(),
-            )
-        self._offer_timing(chat_id, row)
+        """One message with buttons. Clip / reel / prompt / images wait for a tap."""
         self._offer_reverse_done(chat_id, row, offer_twist=True)
 
     def _send_reference_document(
@@ -1231,12 +1270,10 @@ class PromptDeck:
         max_wait_s: float = TWIST_MAX_WAIT_S,
         sleep: Callable[[float], None] = time.sleep,
     ) -> str:
-        """Block until the magic-pencil pass finishes, then deliver."""
+        """Silent mid-flight. One message when stills are ready, done, or failed."""
         from app.prompts.reverse_prompt import load_reference_frames
 
         waited = 0.0
-        announced: set[str] = set()
-        last_beat = 0.0
         while True:
             try:
                 row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
@@ -1244,14 +1281,7 @@ class PromptDeck:
                 row = None
             if isinstance(row, dict):
                 status = str(row.get('twist_status') or '')
-                if status == 'running' and status not in announced and self.send_text:
-                    announced.add(status)
-                    self.send_text(
-                        chat_id,
-                        f'💥✏️ Twist #{reverse_id}: rewriting every beat, restyling the '
-                        'cut frames, then Gemini Omni motion transfer.',
-                    )
-                stills = load_reference_frames(row.get('twist_frames')) if isinstance(row, dict) else []
+                stills = load_reference_frames(row.get('twist_frames'))
                 waiting = (
                     bool(stills)
                     and not row.get('twist_video_key')
@@ -1260,19 +1290,6 @@ class PromptDeck:
                 if waiting:
                     self._offer_stills_gate(chat_id, row, stills)
                     return 'stills'
-                if status == 'omni' and status not in announced and self.send_text:
-                    announced.add(status)
-                    self.send_text(
-                        chat_id,
-                        f'💥 Twist #{reverse_id} — Gemini Omni is making the video. About 2–6 min.',
-                    )
-                if status == 'omni' and self.send_text:
-                    if waited - last_beat >= DESCRIBE_HEARTBEAT_S:
-                        last_beat = waited
-                        self.send_text(
-                            chat_id,
-                            f'💥 Twist #{reverse_id} still rendering the twisted video…',
-                        )
                 if status == 'done':
                     self._deliver_twist(chat_id, row, sleep=sleep)
                     return 'done'
@@ -1291,7 +1308,7 @@ class PromptDeck:
             if waited >= max_wait_s:
                 text = (
                     f'⏳ Twist #{reverse_id} is still running after {int(max_wait_s // 60)} min '
-                    '— I will stop watching.'
+                    '— tap below when you want to continue.'
                 )
                 keyboard = [[(START_TWIST, f'pt:omni:{reverse_id}')]]
                 if self.send_keyboard:
@@ -1318,27 +1335,8 @@ class PromptDeck:
     def _deliver_twist(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        rid = row.get('id')
-        idea = (row.get('twist_text') or '').strip()
-        if self.send_text:
-            line = f'💥 Twist #{rid} ready.'
-            if idea:
-                line += f' {idea}'
-            self.send_text(chat_id, line)
-        video_key = row.get('twist_video_key')
-        if video_key:
-            self._send_video_file(
-                chat_id,
-                video_key,
-                f'🎬 Twist #{rid} — Gemini Omni motion transfer. Tap the video to save it.',
-                rid=rid,
-            )
-        elif self.send_text and row.get('twist_video_error'):
-            self.send_text(chat_id, f"⚠️ Twisted video for #{rid}: {row.get('twist_video_error')}")
-        self._offer_timing(chat_id, row)
+        """One message — twisted video waits for ▶️ Twist."""
         self._offer_reverse_done(chat_id, row, offer_twist=False)
-        if self.send_text and row.get('twist_error'):
-            self.send_text(chat_id, f"⚠️ {row.get('twist_error')}")
 
     # ----------------------------------------------------- render watcher
 

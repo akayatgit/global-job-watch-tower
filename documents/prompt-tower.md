@@ -10,7 +10,7 @@
 | **Learning loop** | RAG of proven winners (rated ≥4 or strong engagement) → few-shot anchors + baseline for tomorrow's scoring → outliers flagged 🔥 |
 | **Two workflows (Ashok 2026-09-10)** | **prompt to video** — daily top-10 → Telegram ✅ + product photo → Kling → reel. **reverse prompt** — `/igtovid` · `/pintovid` → Instagram / Pinterest URL (or forwarded video) → **header title** → Gemini writes a timestamped prompt → **the same cinematic reel**. |
 | **Render** | Replicate image→video (`REPLICATE_VIDEO_MODEL`, default `kwaivgi/kling-v2.1`) → MP4 + Instagram card stored in the AvatarPitch asset root, served at `/api/partner/v1/assets/{key}` (play) and `?download=1` (Save As — Telegram **⬇️ Save clip**) |
-| **Public Telegram** | **Every user** — `/igtovid` · `/pintovid` · paste an Instagram / Pinterest link. Copy is one line: `Now Send me the Instagram or Pinterest link.` → `Whats the hook?` → `Select a Prompt Model…` → `Workflow Started…`. Finished clip: Save + **Images (4 then More)** + Show prompt + Copy prompt + Twist. A second Gemini tap resumes — never re-asks the link. |
+| **Public Telegram** | **Every user** — `/igtovid` · `/pintovid` · paste an Instagram / Pinterest link. Copy is one line: `Now Send me the Instagram or Pinterest link.` → `Whats the hook?` → `Select a Prompt Model…` → `Workflow Started…`. Mid-flight is silent. Finished clip: **one** message with Save + ▶️ + Images (4 then More) + Show / Copy / Twist — never auto-send videos, frames, or the prompt. Intake answers on the poll thread; video upload is background. |
 | **Code** | `job_engine/app/prompts/` · `app/api/prompts.py` · `app/telegram_prompts.py` · tasks in `app/tasks.py` · migration `b7c3e9a12d45` |
 
 ---

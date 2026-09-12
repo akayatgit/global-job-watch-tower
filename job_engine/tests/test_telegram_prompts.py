@@ -543,7 +543,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(payload['video_base64']), b'JPEGBYTES-vid-9')
         self.assertEqual(self.sessions.get_state(STATE_VIDEO.format(chat='1'), ''), '')
 
-    def test_watch_reverse_delivers_reel_without_flooding_the_prompt(self):
+    def test_watch_reverse_delivers_one_message_with_buttons_only(self):
         long_prompt = '\n'.join(f'[{i}.0s–{i + 1}.0s] shot detail ' + ('x' * 80) for i in range(60))
         self.tower.reverse_status = {
             'id': 11, 'status': 'done', 'keyword': 'COFFEE',
@@ -551,6 +551,7 @@ class DeckTests(unittest.TestCase):
             'prompt_id': 44, 'reel_key': 'prompts/d/rreel.mp4',
             'video_key': 'prompts/d/src.mp4',
             'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+            'reel_url': 'https://tower.example/api/partner/v1/assets/prompts/d/rreel.mp4',
             'ref_frames': [
                 {'t': 0.0, 'key': 'prompts/d/rref-01.jpg', 'filename': 'cut-01-0.00s.jpg'},
                 {'t': 1.76, 'key': 'prompts/d/rref-02.jpg', 'filename': 'cut-02-1.76s.jpg'},
@@ -558,28 +559,31 @@ class DeckTests(unittest.TestCase):
             'timings': {'started_at': '2026-09-12T14:00:00+00:00', 'total': 121, 'download': 18, 'describe': 70, 'reel': 8},
         }
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(len(self.sent_videos), 2)
-        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
-        self.assertIn('original clip', self.sent_videos[0][2])
-        self.assertIn('Tap the video to save', self.sent_videos[0][2])
-        self.assertEqual(self.sent_videos[1][1], b'ASSET:prompts/d/rreel.mp4')
-        self.assertIn('reel ready, post this', self.sent_videos[1][2])
+        self.assertEqual(self.sent_videos, [])
         self.assertEqual(self.sent_docs, [])
-        self.assertTrue(any(t.startswith('⏱ ') and 'download' in t for _c, t in self.texts))
-        self.assertEqual(self.keyboards[0][1], 'Shall we twist the video?')
+        self.assertEqual(self.texts, [])
+        self.assertEqual(len(self.keyboards), 1)
+        self.assertTrue(self.keyboards[0][1].startswith('✅ Reverse #11 ready.'))
+        self.assertIn('⏱ ', self.keyboards[0][1])
+        self.assertIn('Shall we twist the video?', self.keyboards[0][1])
         keyboard = self.keyboards[0][2]
         self.assertEqual(
             keyboard[0][0],
             ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1'),
         )
+        self.assertIn(('▶️ Clip', 'pt:playclip:11'), keyboard[2])
+        self.assertIn(('▶️ Reel', 'pt:playreel:11'), keyboard[2])
         self.assertEqual(keyboard[-3], [('🖼 Images', 'pt:imgs:11')])
         self.assertEqual(keyboard[-2], [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')])
         self.assertEqual(keyboard[-1], [('💥 Twist', 'pt:twist:11')])
         self.assertFalse(any('📝 Prompt #11' in t for _c, t in self.texts))
-        self.assertFalse(any(long_prompt.split('\n', 1)[0] in t for _c, t in self.texts))
         shown = self.deck.handle_callback('1', 'pt:show:11')
         self.assertTrue(shown.text.startswith('📝 Prompt #11'))
         self.assertIn(long_prompt.split('\n', 1)[0], shown.text)
+        played = self.deck.handle_callback('1', 'pt:playclip:11')
+        self.assertEqual(played.text, 'Clip sent.')
+        self.assertEqual(len(self.sent_videos), 1)
+        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
         copied = self.deck.handle_callback('1', 'pt:copy:11')
         self.assertEqual(copied.text, 'Prompt file sent — open it to copy.')
         self.assertEqual(self.sent_docs[-1][2], 'prompt-11.txt')
@@ -647,7 +651,7 @@ class DeckTests(unittest.TestCase):
         self.assertIn('1 missed (2)', reply.text)
         self.assertIn('More images', reply.text)
 
-    def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
+    def test_watch_reverse_stays_silent_until_done_even_while_describing(self):
         states = iter([
             {'id': 11, 'status': 'describing', 'duration_s': 8.2, 'vision_engine': 'astra'},
             {
@@ -660,11 +664,13 @@ class DeckTests(unittest.TestCase):
         self.tower.get = lambda path, params=None: next(states)
         self.deck.api_get = self.tower.get
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertIn('Workflow Started', self.texts[0][1])
-        self.assertIn('Reel not composed: no video engine', self.sent_videos[0][2])
-        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
+        self.assertEqual(self.texts, [])
+        self.assertEqual(self.sent_videos, [])
+        self.assertEqual(len(self.keyboards), 1)
+        self.assertIn('Reel not composed: no video engine', self.keyboards[0][1])
+        self.assertIn(('▶️ Clip', 'pt:playclip:11'), self.keyboards[0][2][0])
 
-    def test_watch_reverse_heartbeats_while_gemini_is_watching(self):
+    def test_watch_reverse_never_heartbeats_while_gemini_is_watching(self):
         self.deck.api_get = lambda path, params=None: {
             'id': 16, 'status': 'describing', 'duration_s': 25.0, 'vision_engine': 'gemini',
         }
@@ -672,9 +678,10 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 16, poll_s=45, max_wait_s=100, sleep=lambda s: None),
             'timeout',
         )
-        watching = [t for _c, t in self.texts if 'watching' in t.lower()]
-        self.assertTrue(any('Workflow Started' in t for _c, t in self.texts))
-        self.assertTrue(any('still watching' in t.lower() for t in watching))
+        self.assertEqual(self.texts, [])
+        self.assertEqual(len(self.keyboards), 1)
+        self.assertIn('still running', self.keyboards[0][1])
+        self.assertEqual(self.keyboards[0][2][0][0][0], '🔄 Retry')
 
     def test_watch_reverse_rewrites_e001_as_gemini_not_video_model(self):
         self.deck.api_get = lambda path, params=None: {
@@ -685,10 +692,11 @@ class DeckTests(unittest.TestCase):
             ),
         }
         self.assertEqual(self.deck.watch_reverse('1', 16, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'failed')
-        self.assertIn('Gemini could not read this clip (E001)', self.texts[0][1])
-        self.assertNotIn('video model failed', self.texts[0][1])
+        self.assertEqual(self.texts, [])
+        self.assertIn('Gemini could not read this clip (E001)', self.keyboards[0][1])
+        self.assertNotIn('video model failed', self.keyboards[0][1])
 
-    def test_watch_reverse_announces_queued_and_kicks_again(self):
+    def test_watch_reverse_quietly_kicks_a_stuck_queue(self):
         posts: list[str] = []
 
         def get(path, params=None):
@@ -704,9 +712,9 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 14, poll_s=15, max_wait_s=50, sleep=lambda s: None),
             'timeout',
         )
-        self.assertTrue(any(t == 'processing..' for _c, t in self.texts))
-        self.assertTrue(any('kicked it again' in t for _c, t in self.texts))
+        self.assertEqual(self.texts, [])
         self.assertTrue(any(p.endswith('/14/retry') for p in posts))
+        self.assertIn('still running', self.keyboards[0][1])
 
     def test_watch_reverse_says_when_the_queue_is_dead(self):
         self.deck.api_get = lambda path, params=None: {'id': 14, 'status': 'queued'}
@@ -715,8 +723,9 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 14, poll_s=45, max_wait_s=100, sleep=lambda s: None),
             'timeout',
         )
-        self.assertTrue(any('still queued' in t for _c, t in self.texts))
-        self.assertTrue(any('link again' in t for _c, t in self.texts))
+        self.assertEqual(self.texts, [])
+        self.assertTrue(any('still running' in t for _c, t, _k in self.keyboards))
+        self.assertTrue(any('Retry' in label for _c, _t, kb in self.keyboards for row in kb for label, _d in row))
 
     def test_retry_button_kicks_stuck_reverse(self):
         self.tower.reverse_status = {'id': 14, 'status': 'queued', 'prompt_text': None}
@@ -749,7 +758,7 @@ class DeckTests(unittest.TestCase):
         self.assertIn('Twist #11 started', started.text)
         self.assertEqual(self.tower.posts[-1][1]['twist'], 'rain of rose petals on the bottle')
 
-    def test_watch_twist_delivers_prompt_and_frames(self):
+    def test_watch_twist_delivers_one_message_with_buttons_only(self):
         self.tower.reverse_status = {
             'id': 11, 'status': 'done',
             'twist_status': 'done',
@@ -763,21 +772,21 @@ class DeckTests(unittest.TestCase):
             'twist_video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/twvid.mp4',
         }
         self.assertEqual(self.deck.watch_twist('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertTrue(any('Twist #11 ready' in t for _c, t in self.texts))
-        self.assertTrue(any('liquid gold' in t for _c, t in self.texts))
-        self.assertFalse(any('[0.0s–8.0s] liquid gold pours' in t for _c, t in self.texts))
-        self.assertEqual(self.sent_videos[-1][1], b'ASSET:prompts/d/twvid.mp4')
-        self.assertIn('Gemini Omni', self.sent_videos[-1][2])
-        self.assertIn('Tap the video to save', self.sent_videos[-1][2])
-        self.assertEqual(self.keyboards[-1][1], 'Prompt ready.')
+        self.assertEqual(self.texts, [])
+        self.assertEqual(self.sent_videos, [])
+        self.assertEqual(len(self.keyboards), 1)
+        self.assertTrue(self.keyboards[0][1].startswith('✅ Twist #11 ready.'))
+        self.assertIn(('▶️ Twist', 'pt:playtwist:11'), self.keyboards[0][2][1])
+        self.assertEqual(self.keyboards[0][2][-2], [('🖼 Images', 'pt:timgs:11')])
         self.assertEqual(
-            self.keyboards[-1][2][-1],
+            self.keyboards[0][2][-1],
             [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')],
         )
         shown = self.deck.handle_callback('1', 'pt:show:11')
         self.assertIn('liquid gold pours', shown.text)
-        self.assertEqual(self.sent_docs, [])
-        self.assertEqual(self.keyboards[-1][2][-2], [('🖼 Images', 'pt:timgs:11')])
+        played = self.deck.handle_callback('1', 'pt:playtwist:11')
+        self.assertEqual(played.text, 'Twist video sent.')
+        self.assertEqual(self.sent_videos[-1][1], b'ASSET:prompts/d/twvid.mp4')
         frames = self.deck.images_reply('1', 11, kind='twist', sleep=lambda s: None)
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertIn('1–1 of 1', frames.text)
@@ -823,6 +832,7 @@ class BotWiringTests(unittest.TestCase):
             owner_chat_ids={'100'},
             tower_post=self.tower.post,
         )
+        self.bot._sync_reverse_upload = True
         self.bot.deck.on_render_started = lambda c, r: None
         self.key_patches = [
             mock.patch.object(config, 'REPLICATE_API_TOKEN', 'r8_test'),
@@ -874,6 +884,10 @@ class BotWiringTests(unittest.TestCase):
         self.assertFalse(REVERSE_INTAKE_COMMANDS & PROMPT_COMMANDS)
         self.assertIn('igtovid', REVERSE_INTAKE_COMMANDS)
         self.assertIn('promptscan', PROMPT_COMMANDS)
+        self.assertTrue(self.bot._is_reverse_foreground('100', '/igtovid'))
+        self.assertTrue(self.bot._is_reverse_foreground('100', 'https://www.instagram.com/reel/AbC123xyz/'))
+        self.assertTrue(self.bot._is_reverse_foreground('100', f'{BTN_PREFIX}pt:revmodel:gemini'))
+        self.assertFalse(self.bot._is_reverse_foreground('100', f'{BTN_PREFIX}pt:imgs:11'))
 
     def test_owner_igtovid_asks_for_url_then_title_starts_reverse(self):
         self.bot._process_locked('100', '/igtovid')
@@ -905,10 +919,15 @@ class BotWiringTests(unittest.TestCase):
         self.assertEqual(self.api.keyboards_sent[-1][1], 'Whats the hook?')
         self.bot._process_locked('100', 'ROBE FILM')
         self.assertIn('Select a Prompt Model', self.api.keyboards_sent[-1][1])
+        before = len(self.api.keyboards_sent)
         self.bot._process_locked('100', f'{BTN_PREFIX}pt:revmodel:gemini')
-        self.assertIn('Workflow Started', self.api.keyboards_sent[-1][1])
+        # Instant Workflow Started — upload finished sync in tests.
+        self.assertIn('Workflow Started', self.api.keyboards_sent[before][1])
         self.assertIn('video_base64', self.tower.posts[-1][1])
         self.assertEqual(self.tower.posts[-1][1]['title'], 'ROBE FILM')
+        # No second "Workflow Started" from the background upload path.
+        started_msgs = [t for _c, t, _k in self.api.keyboards_sent[before:] if 'Workflow Started' in t]
+        self.assertEqual(len(started_msgs), 1)
 
     def test_resume_open_watches_reattaches_unfinished_reverses(self):
         self.tower.reverses = [
