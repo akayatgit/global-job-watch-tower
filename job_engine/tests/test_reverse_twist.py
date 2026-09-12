@@ -152,6 +152,7 @@ class TwistUnitTests(unittest.TestCase):
             ],
         )
         first = attempts[0]
+        self.assertEqual(len(attempts), 2)
         self.assertEqual(first['video'], 'https://tower.example/clip.mp4')
         self.assertEqual(first['image'], 'https://tower.example/a.jpg')
         self.assertEqual(first['last_frame'], 'https://tower.example/b.jpg')
@@ -159,7 +160,6 @@ class TwistUnitTests(unittest.TestCase):
         self.assertEqual(first['resolution'], '720p')
         self.assertEqual(first['aspect_ratio'], '9:16')
         self.assertTrue(any('task' not in item and 'video' in item for item in attempts))
-        self.assertTrue(any('video' not in item and item.get('image') for item in attempts))
 
     def test_render_twist_video_stores_omni_mp4(self):
         seen: list[dict] = []

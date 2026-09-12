@@ -45,6 +45,9 @@ TWIST_TEXT_MAX = 400
 TWIST_IMAGE_BUDGET_S = 180
 TWIST_VIDEO_MODEL = 'google/gemini-omni-1.1'
 OMNI_MAX_S = 10
+# One hung Omni schema used to burn 15 min × 5 attempts. Two short tries.
+OMNI_ATTEMPT_BUDGET_S = 360
+OMNI_MAX_ATTEMPTS = 2
 
 TWIST_SYSTEM = """You are the magic pencil. You have a finished timestamped generation prompt that recreates a product video beat-for-beat.
 
@@ -418,7 +421,7 @@ def omni_input_attempts(
     if video and not first:
         attempts.append(base(task='edit', video=video))
         attempts.append(base(video=video))
-    return attempts
+    return attempts[:OMNI_MAX_ATTEMPTS]
 
 
 def _play_url(url: str | None) -> str:
@@ -471,7 +474,7 @@ def render_twist_video(
         import replicate
 
         client = replicate.Client(api_token=token)
-        budget_s = float(getattr(config, 'PROMPT_VIDEO_TIMEOUT_S', 900))
+        budget_s = float(getattr(config, 'PROMPT_TWIST_OMNI_TIMEOUT_S', OMNI_ATTEMPT_BUDGET_S) or OMNI_ATTEMPT_BUDGET_S)
 
         def run(model, input):  # noqa: A001
             return video_creator.replicate_render(

@@ -762,6 +762,9 @@ def _kick_detail_drain(**_kwargs):
         n = resume_stuck_reverses()
         if n:
             console_log('worker', f'resumed {n} stuck reverse prompt(s) after worker start')
+        k = resume_stuck_twists()
+        if k:
+            console_log('worker', f'resumed {k} stuck twist Omni pass(es) after worker start')
     except Exception:
         logger.warning('reverse resume on boot failed', exc_info=True)
 
@@ -1179,40 +1182,45 @@ def twist_reverse_prompt(self, reverse_id: int):
         row.twist_status = 'running'
         db.commit()
         try:
-            clock.start('twist_prompt')
-            reading = reverse_twist.twist_prompt_text(draft, idea, log=log)
-            if reading is None:
-                raise RuntimeError('Gemini could not rewrite the prompt with that twist')
-            row.twist_prompt = reading.prompt
-            row.twist_keyword = reading.keyword
-            took = clock.stop('twist_prompt')
-            row.timings = clock.snapshot()
-            db.commit()
-            log(f'prompt twisted in {took}s ({len(reading.prompt)} chars, keyword {reading.keyword})')
-            frames = reverse_twist.frames_from_stored(row.ref_frames)
-            clock.start('twist_frames')
-            twisted, failed = reverse_twist.twist_reference_frames(
-                frames,
-                twist=idea,
-                twisted_prompt=reading.prompt,
-                prompt_id=row.id,
-                log=log,
-            )
-            row.twist_frames = json.dumps(reverse_twist.serialize_twist_frames(twisted))
-            if failed:
-                row.twist_error = f'{len(failed)} of {len(frames)} stills failed: {", ".join(failed[:8])}'
+            twisted = reverse_twist.frames_from_stored(row.twist_frames)
+            if twisted and (row.twist_prompt or '').strip():
+                log(f'{len(twisted)} twisted stills already stored — Omni only')
             else:
-                row.twist_error = None
-            if not twisted:
-                raise RuntimeError(row.twist_error or 'no twisted stills')
-            took = clock.stop('twist_frames')
-            row.timings = clock.snapshot()
-            log(f'{len(twisted)} twisted stills in {took}s')
+                clock.start('twist_prompt')
+                reading = reverse_twist.twist_prompt_text(draft, idea, log=log)
+                if reading is None:
+                    raise RuntimeError('Gemini could not rewrite the prompt with that twist')
+                row.twist_prompt = reading.prompt
+                row.twist_keyword = reading.keyword
+                took = clock.stop('twist_prompt')
+                row.timings = clock.snapshot()
+                db.commit()
+                log(f'prompt twisted in {took}s ({len(reading.prompt)} chars, keyword {reading.keyword})')
+                frames = reverse_twist.frames_from_stored(row.ref_frames)
+                clock.start('twist_frames')
+                twisted, failed = reverse_twist.twist_reference_frames(
+                    frames,
+                    twist=idea,
+                    twisted_prompt=reading.prompt,
+                    prompt_id=row.id,
+                    log=log,
+                )
+                row.twist_frames = json.dumps(reverse_twist.serialize_twist_frames(twisted))
+                if failed:
+                    row.twist_error = f'{len(failed)} of {len(frames)} stills failed: {", ".join(failed[:8])}'
+                else:
+                    row.twist_error = None
+                if not twisted:
+                    raise RuntimeError(row.twist_error or 'no twisted stills')
+                took = clock.stop('twist_frames')
+                row.timings = clock.snapshot()
+                db.commit()
+                log(f'{len(twisted)} twisted stills in {took}s — starting Gemini Omni')
             try:
                 clock.start('omni')
                 video = reverse_twist.render_twist_video(
                     twist=idea,
-                    twisted_prompt=reading.prompt,
+                    twisted_prompt=row.twist_prompt or '',
                     frames=twisted,
                     video_url=row.video_url,
                     duration_s=row.duration_s,
@@ -1282,6 +1290,32 @@ def resume_stuck_reverses(*, delay=None) -> int:
             kick(row.id)
             n += 1
             console_log('worker', f'Reverse #{row.id} re-queued (was stuck before Gemini)')
+    return n
+
+
+def resume_stuck_twists(*, delay=None) -> int:
+    """Deploy kills the Omni poll. Stills are already on disk — kick Omni
+    only, do not restyle 14 frames again."""
+    from app.models import ReversePrompt
+    from app.prompts.reverse_twist import frames_from_stored
+
+    kick = delay or twist_reverse_prompt.delay
+    n = 0
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(ReversePrompt).where(ReversePrompt.twist_status.in_(('queued', 'running')))
+        ).scalars().all()
+        for row in rows:
+            if not frames_from_stored(row.twist_frames):
+                continue
+            if row.twist_video_key:
+                continue
+            row.twist_status = 'queued'
+            row.twist_video_error = None
+            db.commit()
+            kick(row.id)
+            n += 1
+            console_log('worker', f'Reverse #{row.id} twist re-queued (Omni only)')
     return n
 
 

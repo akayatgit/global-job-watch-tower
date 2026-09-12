@@ -368,6 +368,8 @@ class PromptDeck:
             return self._prompt_text_reply(chat_id, int(parts[1]), copy=action == 'copy')
         if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
             return self.twist_reply(chat_id, int(parts[1]))
+        if action == 'omni' and len(parts) >= 2 and parts[1].isdigit():
+            return self.twist_reply(chat_id, int(parts[1]))
         if action == 'revretry' and len(parts) >= 2 and parts[1].isdigit():
             return self.retry_reverse_reply(chat_id, int(parts[1]))
         return ButtonReply(PROMPTS_USAGE)
@@ -879,7 +881,9 @@ class PromptDeck:
         rid = row.get('id')
         if rid is None:
             return keyboard
-        kind = 'timgs' if str(row.get('twist_status') or '') == 'done' else 'imgs'
+        from app.prompts.reverse_prompt import load_reference_frames
+
+        kind = 'timgs' if load_reference_frames(row.get('twist_frames')) else 'imgs'
         keyboard.append([('🖼 Images', f'pt:{kind}:{int(rid)}')])
         keyboard.append([
             ('Show prompt', f'pt:show:{int(rid)}'),
@@ -887,6 +891,8 @@ class PromptDeck:
         ])
         if offer_twist:
             keyboard.append([('💥 Twist', f'pt:twist:{int(rid)}')])
+        elif not row.get('twist_video_key'):
+            keyboard.append([('🔄 Retry video', f'pt:omni:{int(rid)}')])
         return keyboard
 
     def _offer_saves(self, chat_id: str, pairs: tuple[tuple[str, str | None], ...]) -> None:
@@ -1170,8 +1176,11 @@ class PromptDeck:
         sleep: Callable[[float], None] = time.sleep,
     ) -> str:
         """Block until the magic-pencil pass finishes, then deliver."""
+        from app.prompts.reverse_prompt import load_reference_frames
+
         waited = 0.0
         announced: set[str] = set()
+        last_beat = 0.0
         while True:
             try:
                 row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
@@ -1186,6 +1195,22 @@ class PromptDeck:
                         f'💥✏️ Twist #{reverse_id}: rewriting every beat, restyling the '
                         'cut frames, then Gemini Omni motion transfer.',
                     )
+                stills = load_reference_frames(row.get('twist_frames')) if isinstance(row, dict) else []
+                if status == 'running' and stills and 'omni' not in announced:
+                    announced.add('omni')
+                    if self.send_text:
+                        self.send_text(
+                            chat_id,
+                            f'🖼 {len(stills)} twisted stills ready. Gemini Omni is making '
+                            'the video now — about 2–6 min.',
+                        )
+                if status == 'running' and 'omni' in announced and self.send_text:
+                    if waited - last_beat >= DESCRIBE_HEARTBEAT_S:
+                        last_beat = waited
+                        self.send_text(
+                            chat_id,
+                            f'💥 Twist #{reverse_id} still rendering the twisted video…',
+                        )
                 if status == 'done':
                     self._deliver_twist(chat_id, row, sleep=sleep)
                     return 'done'
@@ -1202,8 +1227,15 @@ class PromptDeck:
                         self.send_text(chat_id, text)
                     return 'failed'
             if waited >= max_wait_s:
-                if self.send_text:
-                    self.send_text(chat_id, f'⏳ Twist #{reverse_id} is still running after {int(max_wait_s // 60)} min — I will stop watching.')
+                text = (
+                    f'⏳ Twist #{reverse_id} is still running after {int(max_wait_s // 60)} min '
+                    '— I will stop watching.'
+                )
+                keyboard = [[('🔄 Retry video', f'pt:omni:{reverse_id}')]]
+                if self.send_keyboard:
+                    self.send_keyboard(chat_id, text, keyboard)
+                elif self.send_text:
+                    self.send_text(chat_id, text)
                 return 'timeout'
             sleep(poll_s)
             waited += poll_s
