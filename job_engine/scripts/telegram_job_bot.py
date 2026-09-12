@@ -63,6 +63,10 @@ from app.telegram_guests import (  # noqa: E402
 from app.telegram_prompts import (  # noqa: E402
     CALLBACK_PREFIX as PROMPT_CALLBACK_PREFIX,
     REVERSE_ASK,
+    STATE_AWAIT_MODEL as PROMPT_AWAIT_MODEL,
+    STATE_AWAIT_TITLE as PROMPT_AWAIT_TITLE,
+    STATE_AWAIT_TWIST_APPLY as PROMPT_AWAIT_TWIST_APPLY,
+    STATE_AWAIT_URL as PROMPT_AWAIT_URL,
     STATE_PHOTO as PROMPT_PHOTO_STATE,
     STATE_VIDEO as PROMPT_VIDEO_STATE,
     PromptDeck,
@@ -131,6 +135,12 @@ PROMPT_COMMANDS = frozenset({
 })
 REVERSE_INTAKE_COMMANDS = frozenset({
     'igtovid', 'pintovid', 'pintovideo', 'reverseprompt',
+})
+# Reverse taps that must answer on the poll thread (instant). Images / play
+# stay on the worker — they upload bytes and can take a moment after the tap.
+REVERSE_FOREGROUND_ACTIONS = frozenset({
+    'revmodel', 'cancel', 'twistskip', 'show', 'copy', 'twist',
+    'revretry', 'omni', 'video',
 })
 # Synthetic tap the poll loop queues when the OWNER sends a photo with no
 # caption — the durable inbox is text-only, and the prompt flow needs the
@@ -511,6 +521,7 @@ class JobMasterTelegramBot:
             on_render_started=self._start_render_watch,
             on_reverse_started=self._start_reverse_watch,
             on_twist_started=self._start_twist_watch,
+            on_reverse_upload=self._start_reverse_upload,
             send_keyboard=self.api.send_keyboard,
         )
         self._last_request: dict[str, float] = {}
@@ -569,6 +580,52 @@ class JobMasterTelegramBot:
             self.deck.watch_reverse(chat_id, reverse_id)
         except Exception:
             LOG.exception('reverse watch crashed reverse=%s', reverse_id)
+
+    def _start_reverse_upload(
+        self,
+        chat_id: str,
+        *,
+        title: str | None = None,
+        vision_engine: str | None = None,
+        twist: str | None = None,
+    ) -> None:
+        """Foreground already said Workflow Started… — download + queue async."""
+        if getattr(self, '_sync_reverse_upload', False):
+            self._reverse_upload_safely(chat_id, title, vision_engine, twist)
+            return
+        thread = threading.Thread(
+            target=self._reverse_upload_safely,
+            args=(chat_id, title, vision_engine, twist),
+            daemon=True,
+            name=f'prompt-reverse-upload-{chat_id}',
+        )
+        thread.start()
+
+    def _reverse_upload_safely(
+        self,
+        chat_id: str,
+        title: str | None,
+        vision_engine: str | None,
+        twist: str | None,
+    ) -> None:
+        try:
+            reply = self.deck.finish_video_upload(
+                chat_id, title=title, vision_engine=vision_engine, twist=twist,
+            )
+            # Only speak again on failure — success already has Workflow Started…
+            # and the watcher will send the one done message.
+            text = reply.text if isinstance(reply, ButtonReply) else str(reply)
+            if text and not text.startswith('Workflow Started'):
+                if isinstance(reply, ButtonReply) and reply.keyboard:
+                    self.api.send_keyboard(chat_id, reply.text, reply.keyboard)
+                else:
+                    self.api.send(chat_id, text)
+        except Exception:
+            LOG.exception('reverse upload crashed chat=%s', chat_id)
+            try:
+                self.api.send(chat_id, 'Could not upload that video — send the link instead.')
+            except Exception:
+                LOG.exception('reverse upload failure notice failed chat=%s', chat_id)
 
     def _start_twist_watch(self, chat_id: str, reverse_id: int) -> None:
         thread = threading.Thread(
@@ -1739,6 +1796,36 @@ class JobMasterTelegramBot:
         """Never send Thinking… — Prompt Tower answers in one line."""
         return False
 
+    def _is_reverse_foreground(self, chat_id: str, text: str) -> bool:
+        """Intake + light reverse taps run on the poll thread — no worker wait."""
+        clean = (text or '').strip()
+        if not clean:
+            return False
+        if clean.startswith(BTN_PREFIX):
+            payload = clean[len(BTN_PREFIX):]
+            if not payload.startswith(PROMPT_CALLBACK_PREFIX):
+                return False
+            action = payload[len(PROMPT_CALLBACK_PREFIX):].split(':', 1)[0]
+            return action in REVERSE_FOREGROUND_ACTIONS
+        parsed = self._command(clean)
+        if parsed and parsed[0] in REVERSE_INTAKE_COMMANDS:
+            return True
+        if clean.lower() in {'/start', '/help', 'help', '/myalerts'} or GREETING_RE.match(clean):
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_URL.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_TITLE.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_MODEL.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_TWIST_APPLY.format(chat=chat_id), ''):
+            return True
+        try:
+            from app.prompts.reverse_prompt import find_url
+            return bool(find_url(clean))
+        except Exception:
+            return False
+
     def _handle_alert_or_push_callback(self, chat_id: str, payload: str) -> ButtonReply | None:
         """Alert/push taps can arrive from a delivered alert or broadcast at
         ANY time — independent of wherever the guest's own button-flow
@@ -2136,6 +2223,27 @@ class JobMasterTelegramBot:
                                         # global Telegram update order. Apply
                                         # them before authorizing a later
                                         # message from another chat.
+                                        if not self._process_queued(
+                                            update_id,
+                                            chat_id,
+                                            username,
+                                            text,
+                                        ):
+                                            self._enqueue_update(
+                                                workers,
+                                                update_id,
+                                                chat_id,
+                                                username,
+                                                text,
+                                            )
+                                        self.sessions.set_state(
+                                            'telegram_update_offset',
+                                            offset,
+                                        )
+                                        continue
+                                    # Reverse intake must answer on this
+                                    # thread — never wait behind a worker.
+                                    if self._is_reverse_foreground(chat_id, text):
                                         if not self._process_queued(
                                             update_id,
                                             chat_id,

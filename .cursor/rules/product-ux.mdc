@@ -933,6 +933,15 @@ it, shows recipient count) → `/pushconfirm`
 - **A second Gemini tap must not re-ask the link (Ashok 2026-09-12).**
   The URL arrives before the hook. If that URL (or last reverse)
   is still known, start or resume — never `Send the link` again.
+- **One Telegram message until you tap (Ashok 2026-09-12).** Never flood.
+  After each user message or button: **one** reply. Mid-flight reverse/twist
+  stays silent (no processing / download / heartbeat spam — auto-retry is
+  quiet). Done = one status line + buttons. Clip / reel / twist video /
+  images / prompt only after Save or ▶️ / Images / Show / Copy. Intake
+  (`/igtovid`, link, hook, model) answers on the **poll thread**; video
+  download + queue runs on a **background thread** so the chat never waits
+  on a multi-MB fetch.
+
 - **Never start a reverse without a clip (Ashok 2026-09-12).** Leftover
   intake Twist / Skip / stale Gemini buttons must not queue a hollow
   run. No URL and no last reverse → `Now Send me the Instagram or
