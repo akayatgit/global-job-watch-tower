@@ -1108,34 +1108,40 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
                 mock.patch('app.prompts.reverse_twist.twist_prompt_text', return_value=twisted), \
                 mock.patch('app.prompts.reverse_twist.twist_reference_frames', return_value=(tw_frames, [])), \
-                mock.patch('app.prompts.reverse_twist.render_twist_video', return_value=omni) as rendered, \
+                mock.patch.object(tasks.render_twist_omni, 'delay') as queued_omni, \
                 mock.patch('app.tasks.console_log'):
             result = tasks.twist_reverse_prompt.run(reverse_id)
         self.assertTrue(result['ok'], result)
-        self.assertTrue(result['video'])
-        rendered.assert_called_once()
+        self.assertTrue(result.get('omni_queued'))
+        queued_omni.assert_called_once_with(reverse_id)
         row = self.db.get(ReversePrompt, reverse_id)
-        self.assertEqual(row.twist_status, 'done')
         self.assertEqual(row.twist_keyword, 'GOLD')
         self.assertIn('liquid gold', row.twist_prompt)
         self.assertIn('twref.jpg', row.twist_frames or '')
+        self.assertEqual(row.prompt_text.startswith('[0.0s–8.0s] a juice glass'), True)
+
+        with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
+                mock.patch('app.prompts.reverse_twist.render_twist_video', return_value=omni) as rendered, \
+                mock.patch('app.tasks.console_log'):
+            video = tasks.render_twist_omni.run(reverse_id)
+        self.assertTrue(video['ok'], video)
+        self.assertTrue(video['video'])
+        rendered.assert_called_once()
+        row = self.db.get(ReversePrompt, reverse_id)
+        self.assertEqual(row.twist_status, 'done')
         self.assertEqual(row.twist_video_key, 'prompts/d/twvid.mp4')
         self.assertIn('twvid.mp4', row.twist_video_url or '')
         self.assertIsNone(row.twist_video_error)
-        self.assertEqual(row.prompt_text.startswith('[0.0s–8.0s] a juice glass'), True)
 
         row.twist_status = 'queued'
         row.twist_video_key = None
         row.twist_video_url = None
         self.db.commit()
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
-                mock.patch('app.prompts.reverse_twist.twist_prompt_text', return_value=twisted), \
-                mock.patch('app.prompts.reverse_twist.twist_reference_frames', return_value=(tw_frames, [])), \
                 mock.patch('app.prompts.reverse_twist.render_twist_video', side_effect=RuntimeError('Omni 500')), \
                 mock.patch('app.tasks.console_log'):
-            failed_video = tasks.twist_reverse_prompt.run(reverse_id)
-        self.assertTrue(failed_video['ok'], failed_video)
-        self.assertFalse(failed_video['video'])
+            failed_video = tasks.render_twist_omni.run(reverse_id)
+        self.assertFalse(failed_video['ok'], failed_video)
         row = self.db.get(ReversePrompt, reverse_id)
         self.assertEqual(row.twist_status, 'done')
         self.assertIn('twref.jpg', row.twist_frames or '')

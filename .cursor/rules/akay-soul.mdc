@@ -468,10 +468,10 @@ need to be told twice.
   "could not rewrite" is not a product.
 
 - **2026-09-12 · Stuck after 14 Eiffel stills.** Stills finished;
-  Omni never spoke. The worker held the JPEG commit until Omni
-  ended, then polled Replicate for 15 min × several schemas with
-  no Telegram line. Commit stills first, announce Omni, two short
-  tries, retry = video only.
+  Omni never spoke. Ashok checked Replicate: last call was Nano
+  Banana Lite — Omni was never queued. Same Celery process died
+  after the 14th edit. Commit stills, **queue Omni as its own
+  Replicate job**, announce it, two short tries, retry = video only.
 
 ## Honesty note on the codeword
 

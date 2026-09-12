@@ -1215,39 +1215,10 @@ def twist_reverse_prompt(self, reverse_id: int):
                 took = clock.stop('twist_frames')
                 row.timings = clock.snapshot()
                 db.commit()
-                log(f'{len(twisted)} twisted stills in {took}s — starting Gemini Omni')
-            try:
-                clock.start('omni')
-                video = reverse_twist.render_twist_video(
-                    twist=idea,
-                    twisted_prompt=row.twist_prompt or '',
-                    frames=twisted,
-                    video_url=row.video_url,
-                    duration_s=row.duration_s,
-                    prompt_id=row.id,
-                    log=log,
-                )
-                if video:
-                    row.twist_video_key = video.video_key
-                    row.twist_video_url = video.video_url
-                    row.twist_video_error = None
-                    log(f'twisted video ready in {clock.stop("omni")}s ({video.model})')
-                else:
-                    clock.stop('omni')
-                    row.twist_video_error = 'Omni had no usable input'
-            except Exception as exc:
-                clock.stop('omni')
-                row.twist_video_error = str(exc)[:2000]
-                log(f'Omni video failed (stills kept): {exc}')
-            row.twist_status = 'done'
-            row.timings = clock.dumps()
-            db.commit()
-            log(f'timing {row.timings}')
-            return {
-                'ok': True,
-                'frames': len(twisted),
-                'video': bool(row.twist_video_key),
-            }
+                log(f'{len(twisted)} twisted stills in {took}s — queueing Gemini Omni as its own Replicate call')
+            render_twist_omni.delay(int(row.id))
+            log(f'Gemini Omni queued ({reverse_twist.TWIST_VIDEO_MODEL}) — Nano Banana is done')
+            return {'ok': True, 'frames': len(twisted), 'omni_queued': True}
         except Exception as exc:
             db.rollback()
             row = db.get(ReversePrompt, int(reverse_id))
@@ -1261,6 +1232,67 @@ def twist_reverse_prompt(self, reverse_id: int):
                 db.commit()
             console_log('worker', f'{tag} FAILED: {exc}', level='error')
             return {'ok': False, 'error': str(exc)[:500]}
+
+
+@celery.task(name='app.tasks.render_twist_omni', bind=True, max_retries=0)
+def render_twist_omni(self, reverse_id: int):
+    """Fresh Celery + Replicate call — Nano Banana must not own this process."""
+    from app.models import ReversePrompt
+    from app.prompts import reverse_twist
+    from app.prompts.gen_timings import Clock, load_marks
+
+    with SessionLocal() as db:
+        row = db.get(ReversePrompt, int(reverse_id))
+        if row is None:
+            return {'ok': False, 'error': 'reverse prompt not found'}
+        tag = f'Reverse #{row.id} omni'
+        log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
+        idea = (row.twist_text or '').strip()
+        twisted = reverse_twist.frames_from_stored(row.twist_frames)
+        if not idea or not twisted:
+            row.twist_status = 'failed'
+            row.twist_error = 'need twisted stills before Omni'
+            db.commit()
+            return {'ok': False, 'error': row.twist_error}
+        clock = Clock(load_marks(row.timings))
+        row.twist_status = 'running'
+        db.commit()
+        log(f'calling {reverse_twist.TWIST_VIDEO_MODEL} with {len(twisted)} stills')
+        try:
+            clock.start('omni')
+            video = reverse_twist.render_twist_video(
+                twist=idea,
+                twisted_prompt=row.twist_prompt or '',
+                frames=twisted,
+                video_url=row.video_url,
+                duration_s=row.duration_s,
+                prompt_id=row.id,
+                log=log,
+            )
+            if video:
+                row.twist_video_key = video.video_key
+                row.twist_video_url = video.video_url
+                row.twist_video_error = None
+                log(f'twisted video ready in {clock.stop("omni")}s ({video.model})')
+            else:
+                clock.stop('omni')
+                row.twist_video_error = 'Omni had no usable input'
+            row.twist_status = 'done'
+            row.timings = clock.dumps()
+            db.commit()
+            log(f'timing {row.timings}')
+            return {'ok': True, 'frames': len(twisted), 'video': bool(row.twist_video_key)}
+        except Exception as exc:
+            clock.stop('omni')
+            row.twist_status = 'done'
+            row.twist_video_error = str(exc)[:2000]
+            try:
+                row.timings = clock.dumps()
+            except Exception:
+                pass
+            db.commit()
+            log(f'Omni video failed (stills kept): {exc}')
+            return {'ok': False, 'error': str(exc)[:500], 'frames': len(twisted)}
 
 
 def resume_stuck_reverses(*, delay=None) -> int:
@@ -1299,7 +1331,7 @@ def resume_stuck_twists(*, delay=None) -> int:
     from app.models import ReversePrompt
     from app.prompts.reverse_twist import frames_from_stored
 
-    kick = delay or twist_reverse_prompt.delay
+    kick = delay or render_twist_omni.delay
     n = 0
     with SessionLocal() as db:
         rows = db.execute(
