@@ -1122,7 +1122,7 @@ def reverse_prompt_video(self, reverse_id: int):
 
 @celery.task(name='app.tasks.twist_reverse_prompt', bind=True, max_retries=0)
 def twist_reverse_prompt(self, reverse_id: int):
-    """Magic pencil: rewrite the reverse prompt, then restyle each cut JPEG."""
+    """Magic pencil: rewrite the prompt, restyle stills, then Omni video."""
     from app.models import ReversePrompt
     from app.prompts import reverse_twist
 
@@ -1164,10 +1164,34 @@ def twist_reverse_prompt(self, reverse_id: int):
                 row.twist_error = None
             if not twisted:
                 raise RuntimeError(row.twist_error or 'no twisted stills')
+            try:
+                video = reverse_twist.render_twist_video(
+                    twist=idea,
+                    twisted_prompt=reading.prompt,
+                    frames=twisted,
+                    video_url=row.video_url,
+                    duration_s=row.duration_s,
+                    prompt_id=row.id,
+                    log=log,
+                )
+                if video:
+                    row.twist_video_key = video.video_key
+                    row.twist_video_url = video.video_url
+                    row.twist_video_error = None
+                    log(f'twisted video ready ({video.model})')
+                else:
+                    row.twist_video_error = 'Omni had no usable input'
+            except Exception as exc:
+                row.twist_video_error = str(exc)[:2000]
+                log(f'Omni video failed (stills kept): {exc}')
             row.twist_status = 'done'
             db.commit()
             log(f'{len(twisted)} twisted cut frames ready')
-            return {'ok': True, 'frames': len(twisted)}
+            return {
+                'ok': True,
+                'frames': len(twisted),
+                'video': bool(row.twist_video_key),
+            }
         except Exception as exc:
             db.rollback()
             row = db.get(ReversePrompt, int(reverse_id))

@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import base64
+import io
 import tempfile
 import unittest
 import urllib.error
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -497,6 +499,7 @@ class DeckTests(unittest.TestCase):
             'id': 11, 'status': 'done', 'keyword': 'COFFEE',
             'prompt_text': long_prompt, 'model': 'google/gemini-2.5-flash',
             'prompt_id': 44, 'reel_key': 'prompts/d/rreel.mp4',
+            'video_key': 'prompts/d/src.mp4',
             'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
             'ref_frames': [
                 {'t': 0.0, 'key': 'prompts/d/rref-01.jpg', 'filename': 'cut-01-0.00s.jpg'},
@@ -504,9 +507,12 @@ class DeckTests(unittest.TestCase):
             ],
         }
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/rreel.mp4')
-        self.assertIn('reel ready, post this', self.sent_videos[0][2])
-        self.assertIn('download=1', self.sent_videos[0][2])
+        self.assertEqual(len(self.sent_videos), 2)
+        self.assertEqual(self.sent_videos[0][1], b'ASSET:prompts/d/src.mp4')
+        self.assertIn('original clip', self.sent_videos[0][2])
+        self.assertIn('Tap the video to save', self.sent_videos[0][2])
+        self.assertEqual(self.sent_videos[1][1], b'ASSET:prompts/d/rreel.mp4')
+        self.assertIn('reel ready, post this', self.sent_videos[1][2])
         self.assertEqual(self.keyboards[0][1], 'Shall we twist the video?')
         keyboard = self.keyboards[0][2]
         self.assertEqual(
@@ -523,17 +529,18 @@ class DeckTests(unittest.TestCase):
         copied = self.deck.handle_callback('1', 'pt:copy:11')
         self.assertEqual(copied.text, 'Prompt file sent — open it to copy.')
         self.assertEqual(self.sent_docs[-1][2], 'prompt-11.txt')
-        self.assertTrue(any('cut-reference frames' in t for _c, t in self.texts))
-        self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/rref-01.jpg')
-        self.assertEqual(self.sent_docs[0][2], 'cut-01-0.00s.jpg')
-        self.assertIn('0.00s', self.sent_docs[0][3])
+        self.assertTrue(any('download all' in t for _c, t in self.texts))
+        self.assertEqual(self.sent_docs[0][2], 'frames-11.zip')
+        names = zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()
+        self.assertEqual(names, ['cut-01-0.00s.jpg', 'cut-02-1.76s.jpg'])
+        self.assertIn('download all', self.sent_docs[0][3])
 
     def test_watch_reverse_retries_flood_until_every_frame_arrives(self):
         hits: dict[str, int] = {}
 
         def send(c, d, filename='f.jpg', caption=''):
             hits[filename] = hits.get(filename, 0) + 1
-            if filename == 'cut-04-3.00s.jpg' and hits[filename] == 1:
+            if filename == 'frames-12.zip' and hits[filename] == 1:
                 raise RuntimeError('Too Many Requests: retry after 1')
             self.sent_docs.append((c, d, filename, caption))
 
@@ -548,17 +555,19 @@ class DeckTests(unittest.TestCase):
             ],
         }
         self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(len(self.sent_docs), 6)
-        self.assertEqual(hits['cut-04-3.00s.jpg'], 2)
+        self.assertEqual(len(self.sent_docs), 1)
+        self.assertEqual(self.sent_docs[0][2], 'frames-12.zip')
+        self.assertEqual(hits['frames-12.zip'], 2)
+        self.assertEqual(len(zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()), 6)
         self.assertFalse(any('did not arrive' in t for _c, t in self.texts))
 
     def test_watch_reverse_says_when_frames_still_missing(self):
-        def send(c, d, filename='f.jpg', caption=''):
-            if filename.startswith('cut-04') or filename.startswith('cut-05') or filename.startswith('cut-06'):
-                raise RuntimeError('Too Many Requests: retry after 1')
-            self.sent_docs.append((c, d, filename, caption))
+        def fetch(key: str) -> bytes:
+            if key.endswith(('03.jpg', '04.jpg', '05.jpg')):
+                raise RuntimeError('missing asset')
+            return b'ASSET:' + key.encode()
 
-        self.deck.send_document_bytes = send
+        self.deck.fetch_asset = fetch
         self.tower.reverse_status = {
             'id': 12, 'status': 'done', 'keyword': 'JUICE',
             'prompt_text': '[0.0s–8.0s] a drink.',
@@ -569,7 +578,9 @@ class DeckTests(unittest.TestCase):
             ],
         }
         self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(len(self.sent_docs), 3)
+        self.assertEqual(len(self.sent_docs), 1)
+        self.assertEqual(self.sent_docs[0][2], 'frames-12.zip')
+        self.assertEqual(len(zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()), 3)
         self.assertTrue(any('3 of 6 cut frames did not arrive' in t for _c, t in self.texts))
 
     def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
@@ -674,11 +685,16 @@ class DeckTests(unittest.TestCase):
             'twist_frames': [
                 {'t': 0.0, 'key': 'prompts/d/twref-01.jpg', 'filename': 'twist-01-0.00s.jpg'},
             ],
+            'twist_video_key': 'prompts/d/twvid.mp4',
+            'twist_video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/twvid.mp4',
         }
         self.assertEqual(self.deck.watch_twist('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertTrue(any('Twist #11 ready' in t for _c, t in self.texts))
         self.assertTrue(any('liquid gold' in t for _c, t in self.texts))
         self.assertFalse(any('[0.0s–8.0s] liquid gold pours' in t for _c, t in self.texts))
+        self.assertEqual(self.sent_videos[-1][1], b'ASSET:prompts/d/twvid.mp4')
+        self.assertIn('Gemini Omni', self.sent_videos[-1][2])
+        self.assertIn('Tap the video to save', self.sent_videos[-1][2])
         self.assertEqual(self.keyboards[-1][1], 'Prompt ready.')
         self.assertEqual(
             self.keyboards[-1][2][-1],
@@ -686,8 +702,9 @@ class DeckTests(unittest.TestCase):
         )
         shown = self.deck.handle_callback('1', 'pt:show:11')
         self.assertIn('liquid gold pours', shown.text)
-        self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
-        self.assertEqual(self.sent_docs[0][1], b'ASSET:prompts/d/twref-01.jpg')
+        self.assertEqual(self.sent_docs[0][2], 'twist-frames-11.zip')
+        names = zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()
+        self.assertEqual(names, ['twist-01-0.00s.jpg'])
 
 
 class BotWiringTests(unittest.TestCase):
@@ -800,6 +817,13 @@ class BotWiringTests(unittest.TestCase):
         self.assertFalse(is_cb)
         self.assertIsNone(text)
         self.assertEqual(file_id, 'big')
+
+    def test_document_content_type_matches_the_filename(self):
+        from scripts.telegram_job_bot import document_content_type
+
+        self.assertEqual(document_content_type('frames-11.zip'), 'application/zip')
+        self.assertEqual(document_content_type('prompt-11.txt'), 'text/plain')
+        self.assertEqual(document_content_type('cut-01.jpg'), 'image/jpeg')
 
 
 if __name__ == '__main__':

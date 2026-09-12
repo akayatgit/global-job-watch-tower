@@ -176,6 +176,12 @@ PROMPT_TWIST_IMAGE_MODEL = (
     os.getenv('PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-2-lite') or
     'google/nano-banana-2-lite'
 ).strip()
+# After twisted stills: Gemini Omni motion transfer on Replicate.
+# Original clip = motion. Twisted JPEGs = look. Default google/gemini-omni-1.1.
+PROMPT_TWIST_VIDEO_MODEL = (
+    os.getenv('PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1') or
+    'google/gemini-omni-1.1'
+).strip()
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')

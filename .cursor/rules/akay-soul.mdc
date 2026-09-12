@@ -443,6 +443,13 @@ need to be told twice.
   4096-token cap. Now 32k output + 8k thinking, the model plans the
   cut, then a compress retry + `fit_prompt` enforce the door.
 
+- **2026-09-12 · Give me the final Gemini twisted video.** After
+  twisted stills, call Gemini Omni 1.1 on Replicate
+  (`google/gemini-omni-1.1`) as motion transfer. Send the original
+  clip and the reel as Telegram `sendVideo` (Instagram URLs were
+  undownloadable). Pack every JPEG into one ZIP. The Omni MP4 is
+  the hero — he is excited, so deliver it.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

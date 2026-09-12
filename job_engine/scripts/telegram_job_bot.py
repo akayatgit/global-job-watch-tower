@@ -268,6 +268,22 @@ def load_env() -> dict[str, str]:
     return values
 
 
+def document_content_type(filename: str) -> str:
+    """MIME for sendDocument — ZIP / txt must not wear a JPEG costume."""
+    lower = (filename or '').lower()
+    if lower.endswith('.zip'):
+        return 'application/zip'
+    if lower.endswith('.txt'):
+        return 'text/plain'
+    if lower.endswith('.png'):
+        return 'image/png'
+    if lower.endswith('.webp'):
+        return 'image/webp'
+    if lower.endswith('.mp4'):
+        return 'video/mp4'
+    return 'image/jpeg'
+
+
 class TelegramAPI:
     def __init__(self, token: str):
         if not token:
@@ -400,12 +416,14 @@ class TelegramAPI:
     def send_document_bytes(
         self, chat_id: str, data: bytes, filename: str = 'frame.jpg', caption: str = '',
     ) -> None:
-        """sendDocument keeps the original JPEG so Ashok can download and attach it."""
+        """sendDocument keeps the original file so Ashok can download it."""
         name = (filename or 'frame.jpg').replace('/', '-')
         fields = {'chat_id': str(chat_id)}
         if caption:
             fields['caption'] = _truncate_utf16(caption, 1024)
-        self._multipart('sendDocument', fields, 'document', name, data, 'image/jpeg')
+        kind = document_content_type(name)
+        timeout = 600 if kind == 'application/zip' else 300
+        self._multipart('sendDocument', fields, 'document', name, data, kind, timeout=timeout)
 
     def get_file_bytes(self, file_id: str) -> tuple[bytes, str]:
         """Download a photo or video the owner sent (Bot API getFile → file path).

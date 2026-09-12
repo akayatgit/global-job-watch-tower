@@ -298,6 +298,10 @@ class ReversePrompt(Base):
     twist_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     twist_frames: Mapped[str | None] = mapped_column(Text, nullable=True)
     twist_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Gemini Omni motion-transfer MP4 (stills stay even when this fails)
+    twist_video_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    twist_video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    twist_video_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # queued | running | done | failed
     twist_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)

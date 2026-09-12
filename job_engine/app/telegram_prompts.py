@@ -52,6 +52,7 @@ STATE_VIDEO = 'pending_prompt_video:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 REVERSE_POLL_S = 15
 REVERSE_MAX_WAIT_S = 25 * 60
+TWIST_MAX_WAIT_S = 30 * 60
 DESCRIBE_HEARTBEAT_S = 90
 TELEGRAM_TEXT_LIMIT = 3900
 # Ashok (2026-09-11): /igtovid must answer at once, one line, no essay.
@@ -901,37 +902,60 @@ class PromptDeck:
             first = ButtonReply(head + '\n'.join(chunks))
         return first
 
+    def _send_video_file(self, chat_id: str, key: str | None, caption: str, *, rid=None) -> bool:
+        """Telegram sendVideo — playable + Save, same as the template reel."""
+        if not key or not self.fetch_asset or not self.send_video_bytes:
+            return False
+        try:
+            self.send_video_bytes(chat_id, self.fetch_asset(key), caption)
+            return True
+        except Exception:
+            logger.exception('video upload failed id=%s key=%s', rid, key)
+            return False
+
     def _deliver_reverse(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Reel first (or the source clip with the reason). Prompt stays
-        behind Show / Copy — Ashok 2026-09-12, no flood."""
+        """Original clip AND reel as Telegram videos (tap to save). Prompt
+        stays behind Show / Copy — Ashok 2026-09-12, no flood."""
         rid = row.get('id')
         model = f" · {row['model']}" if row.get('model') else ''
         catalogue = f" · catalogue #{row['prompt_id']}" if row.get('prompt_id') else ''
         clip_save = save_url(row.get('video_url'))
-        if row.get('reel_key'):
-            caption = (
-                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}\n"
-                f"Save clip: {clip_save}"
-            ).strip()
-            key = row.get('reel_key')
+        source_key = row.get('video_key')
+        reel_key = row.get('reel_key')
+        sent = False
+        if reel_key:
+            if source_key:
+                sent = self._send_video_file(
+                    chat_id,
+                    source_key,
+                    (
+                        f"🎞 Reverse prompt #{rid} — original clip{model}{catalogue}\n"
+                        "Tap the video to save it on your phone."
+                    ).strip(),
+                    rid=rid,
+                ) or sent
+            sent = self._send_video_file(
+                chat_id,
+                reel_key,
+                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}".strip(),
+                rid=rid,
+            ) or sent
         else:
             caption = (
                 f"🎞 Reverse prompt #{rid} — source clip{model}{catalogue}\n"
                 f"⚠️ Reel not composed: {row.get('reel_error') or 'unknown reason'}\n"
                 f"Save clip: {clip_save}"
             ).strip()
-            key = row.get('video_key')
-        sent = False
-        if key and self.fetch_asset and self.send_video_bytes:
-            try:
-                self.send_video_bytes(chat_id, self.fetch_asset(key), caption)
-                sent = True
-            except Exception:
-                logger.exception('reverse video upload failed id=%s', rid)
-        if not sent and self.send_text:
-            self.send_text(chat_id, caption)
+            sent = self._send_video_file(chat_id, source_key, caption, rid=rid)
+            if not sent and self.send_text:
+                self.send_text(chat_id, caption)
+        if not sent and reel_key and self.send_text:
+            self.send_text(
+                chat_id,
+                f"🎞 Reverse prompt #{rid} — reel ready, post this{model}{catalogue}".strip(),
+            )
         self._offer_reverse_done(chat_id, row, offer_twist=True)
         self._deliver_reference_frames(chat_id, row, sleep=sleep)
 
@@ -953,14 +977,46 @@ class PromptDeck:
                 sleep(wait)
         raise RuntimeError(str(last) if last else 'sendDocument failed')
 
+    def _deliver_frame_zip(
+        self,
+        chat_id: str,
+        frames: list,
+        *,
+        rid,
+        filename: str,
+        label: str,
+        sleep: Callable[[float], None],
+    ) -> list[str]:
+        """One ZIP — tap once, download all frames."""
+        from app.prompts.reverse_twist import pack_frames_zip
+
+        if self.send_text:
+            self.send_text(
+                chat_id,
+                f'🖼 {len(frames)} {label} for #{rid} — one file, download all.',
+            )
+        if not self.fetch_asset or not self.send_document_bytes:
+            if self.send_text:
+                keys = ', '.join(str(frame.get('key') or '') for frame in frames[:14])
+                self.send_text(chat_id, f'Frame keys: {keys}')
+            return []
+        data, failed = pack_frames_zip(frames, fetch=self.fetch_asset)
+        packed = max(0, len(frames) - len(failed))
+        if data:
+            caption = f'{packed} {label} — tap to download all'
+            try:
+                self._send_reference_document(chat_id, data, filename, caption, sleep=sleep)
+            except Exception as exc:
+                logger.warning('frame zip upload failed id=%s: %s', rid, exc)
+                failed = [filename]
+        elif not failed:
+            failed = [filename]
+        return failed
+
     def _deliver_reference_frames(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Downloadable cut frames AFTER the prompt — not the reel storyboard.
-
-        Telegram flood-waits if we blast documents after the reel. Pause
-        between sends and retry; never silently drop 4–14.
-        """
+        """One ZIP of cut frames AFTER the reel — not the storyboard."""
         from app.prompts.reverse_prompt import load_reference_frames
 
         frames = load_reference_frames(row.get('ref_frames'))
@@ -969,38 +1025,18 @@ class PromptDeck:
             if self.send_text and row.get('ref_error'):
                 self.send_text(chat_id, f"⚠️ Cut-reference frames for #{rid}: {row.get('ref_error')}")
             return
-        if self.send_text:
-            self.send_text(
-                chat_id,
-                f'🖼 {len(frames)} cut-reference frames for #{rid} — download these '
-                '(not the storyboard). Attach them with the prompt to recreate the clip.',
-            )
-        if not self.fetch_asset or not self.send_document_bytes:
-            if self.send_text:
-                keys = ', '.join(str(frame.get('key') or '') for frame in frames[:14])
-                self.send_text(chat_id, f'Reference frame keys: {keys}')
-            return
-        failed: list[str] = []
-        for index, frame in enumerate(frames, start=1):
-            key = str(frame.get('key') or '')
-            if not key:
-                failed.append(str(index))
-                continue
-            t = frame.get('t')
-            name = str(frame.get('filename') or f'cut-{index:02d}-{t}s.jpg')
-            caption = f'{index}/{len(frames)} · {t:.2f}s' if isinstance(t, (int, float)) else f'{index}/{len(frames)}'
-            try:
-                data = self.fetch_asset(key)
-                self._send_reference_document(chat_id, data, name, caption, sleep=sleep)
-            except Exception as exc:
-                logger.warning('reference frame upload failed id=%s key=%s: %s', rid, key, exc)
-                failed.append(f'{index}/{len(frames)}')
-            if index < len(frames):
-                sleep(REF_SEND_GAP_S)
+        failed = self._deliver_frame_zip(
+            chat_id,
+            frames,
+            rid=rid,
+            filename=f'frames-{rid}.zip',
+            label='cut-reference frames',
+            sleep=sleep,
+        )
         if failed and self.send_text:
             self.send_text(
                 chat_id,
-                f'⚠️ {len(failed)} of {len(frames)} cut frames did not arrive ({", ".join(failed)}). '
+                f'⚠️ {len(failed)} of {len(frames)} cut frames did not arrive ({", ".join(failed[:8])}). '
                 'Say so and I will resend them.',
             )
 
@@ -1010,7 +1046,7 @@ class PromptDeck:
         reverse_id: int,
         *,
         poll_s: float = REVERSE_POLL_S,
-        max_wait_s: float = REVERSE_MAX_WAIT_S,
+        max_wait_s: float = TWIST_MAX_WAIT_S,
         sleep: Callable[[float], None] = time.sleep,
     ) -> str:
         """Block until the magic-pencil pass finishes, then deliver."""
@@ -1025,7 +1061,11 @@ class PromptDeck:
                 status = str(row.get('twist_status') or '')
                 if status == 'running' and status not in announced and self.send_text:
                     announced.add(status)
-                    self.send_text(chat_id, f'💥✏️ Twist #{reverse_id}: rewriting every beat, then restyling the cut frames.')
+                    self.send_text(
+                        chat_id,
+                        f'💥✏️ Twist #{reverse_id}: rewriting every beat, restyling the '
+                        'cut frames, then Gemini Omni motion transfer.',
+                    )
                 if status == 'done':
                     self._deliver_twist(chat_id, row, sleep=sleep)
                     return 'done'
@@ -1050,6 +1090,16 @@ class PromptDeck:
             if idea:
                 line += f' {idea}'
             self.send_text(chat_id, line)
+        video_key = row.get('twist_video_key')
+        if video_key:
+            self._send_video_file(
+                chat_id,
+                video_key,
+                f'🎬 Twist #{rid} — Gemini Omni motion transfer. Tap the video to save it.',
+                rid=rid,
+            )
+        elif self.send_text and row.get('twist_video_error'):
+            self.send_text(chat_id, f"⚠️ Twisted video for #{rid}: {row.get('twist_video_error')}")
         self._offer_reverse_done(chat_id, row, offer_twist=False)
         from app.prompts.reverse_prompt import load_reference_frames
 
@@ -1058,35 +1108,18 @@ class PromptDeck:
             if self.send_text and row.get('twist_error'):
                 self.send_text(chat_id, f"⚠️ Twisted frames for #{rid}: {row.get('twist_error')}")
             return
-        if self.send_text:
-            self.send_text(
-                chat_id,
-                f'🖼 {len(frames)} twisted cut frames for #{rid} — download these '
-                'with the twisted prompt. Originals stay above.',
-            )
-        if not self.fetch_asset or not self.send_document_bytes:
-            return
-        failed: list[str] = []
-        for index, frame in enumerate(frames, start=1):
-            key = str(frame.get('key') or '')
-            if not key:
-                failed.append(str(index))
-                continue
-            t = frame.get('t')
-            name = str(frame.get('filename') or f'twist-{index:02d}-{t}s.jpg')
-            caption = f'twist {index}/{len(frames)} · {t:.2f}s' if isinstance(t, (int, float)) else f'twist {index}/{len(frames)}'
-            try:
-                data = self.fetch_asset(key)
-                self._send_reference_document(chat_id, data, name, caption, sleep=sleep)
-            except Exception as exc:
-                logger.warning('twisted frame upload failed id=%s key=%s: %s', rid, key, exc)
-                failed.append(f'{index}/{len(frames)}')
-            if index < len(frames):
-                sleep(REF_SEND_GAP_S)
+        failed = self._deliver_frame_zip(
+            chat_id,
+            frames,
+            rid=rid,
+            filename=f'twist-frames-{rid}.zip',
+            label='twisted cut frames',
+            sleep=sleep,
+        )
         if failed and self.send_text:
             self.send_text(
                 chat_id,
-                f'⚠️ {len(failed)} of {len(frames)} twisted frames did not arrive ({", ".join(failed)}).',
+                f'⚠️ {len(failed)} of {len(frames)} twisted frames did not arrive ({", ".join(failed[:8])}).',
             )
         if self.send_text and row.get('twist_error') and frames:
             self.send_text(chat_id, f"⚠️ {row.get('twist_error')}")

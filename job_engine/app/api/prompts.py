@@ -198,6 +198,10 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'twist_prompt': row.twist_prompt,
         'twist_frames': load_reference_frames(row.twist_frames),
         'twist_error': row.twist_error,
+        'twist_video_key': row.twist_video_key,
+        'twist_video_url': row.twist_video_url,
+        'twist_video_download_url': as_download_url(row.twist_video_url),
+        'twist_video_error': row.twist_video_error,
         'twist_status': row.twist_status,
         'model': row.model,
         'prompt_id': row.prompt_id,
@@ -317,7 +321,8 @@ def reverse_retry(reverse_id: int, db: Session = Depends(get_db)):
 @router.post('/reverse/{reverse_id}/twist', status_code=202)
 def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Session = Depends(get_db)):
     """Queue the magic-pencil pass on a finished reverse: Gemini rewrites
-    every beat, nano-banana restyles each cut-reference still."""
+    every beat, nano-banana restyles each still, then Gemini Omni
+    motion-transfers the original clip onto those frames."""
     from app.prompts.reverse_twist import clean_twist
     from app.tasks import twist_reverse_prompt
 
@@ -334,6 +339,9 @@ def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Se
     row.twist_text = idea
     row.twist_status = 'queued'
     row.twist_error = None
+    row.twist_video_key = None
+    row.twist_video_url = None
+    row.twist_video_error = None
     db.commit()
     try:
         twist_reverse_prompt.delay(row.id)

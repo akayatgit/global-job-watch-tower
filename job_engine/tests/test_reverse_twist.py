@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import unittest
+import zipfile
+from pathlib import Path
 from unittest import mock
 
 from app import config
 from app.prompts import reverse_twist
 from app.prompts.reverse_prompt import ReferenceFrame
+from app.prompts.video_creator import RenderResult
 
 
 class TwistUnitTests(unittest.TestCase):
@@ -110,6 +114,73 @@ class TwistUnitTests(unittest.TestCase):
         self.assertEqual(seen, [expected, expected])
         self.assertNotIn('IDENTITY LOCK', expected)
         self.assertNotIn('gold pours', expected)
+
+    def test_omni_attempts_send_source_video_and_twisted_stills(self):
+        attempts = reverse_twist.omni_input_attempts(
+            prompt='Motion transfer. Twist: gold.',
+            video_url='https://tower.example/clip.mp4',
+            frame_urls=[
+                'https://tower.example/a.jpg',
+                'https://tower.example/b.jpg',
+            ],
+        )
+        first = attempts[0]
+        self.assertEqual(first['video'], 'https://tower.example/clip.mp4')
+        self.assertEqual(first['image'], 'https://tower.example/a.jpg')
+        self.assertEqual(first['last_frame'], 'https://tower.example/b.jpg')
+        self.assertEqual(first['task'], 'edit')
+        self.assertEqual(first['resolution'], '720p')
+        self.assertEqual(first['aspect_ratio'], '9:16')
+        self.assertTrue(any('task' not in item and 'video' in item for item in attempts))
+        self.assertTrue(any('video' not in item and item.get('image') for item in attempts))
+
+    def test_render_twist_video_stores_omni_mp4(self):
+        seen: list[dict] = []
+
+        def run(model, input):
+            seen.append({'model': model, 'input': input})
+            return b'X' * 2048
+
+        frames = [ReferenceFrame(t=0.0, key='prompts/d/tw.jpg', filename='twist-01.jpg')]
+        stored: list[tuple[str, bytes]] = []
+        with mock.patch.object(config, 'PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1'), \
+                mock.patch.object(config, 'PARTNER_PUBLIC_BASE_URL', 'https://tower.example'):
+            result = reverse_twist.render_twist_video(
+                twist='liquid gold temple',
+                twisted_prompt='[0.0s–8.0s] gold pours from a temple spout.',
+                frames=frames,
+                video_url='https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1',
+                duration_s=8.0,
+                prompt_id=11,
+                run=run,
+                store=lambda key, data, content_type=None: stored.append((key, data)) or Path(key),
+                key_for=lambda kind, prompt_id, suffix: f'prompts/d/{kind}-{prompt_id}.{suffix}',
+                read_output=lambda output: output,
+            )
+        self.assertIsInstance(result, RenderResult)
+        self.assertEqual(result.model, 'google/gemini-omni-1.1')
+        self.assertEqual(stored[0][0], 'prompts/d/twvid-11.mp4')
+        self.assertEqual(len(stored[0][1]), 2048)
+        self.assertEqual(seen[0]['model'], 'google/gemini-omni-1.1')
+        self.assertEqual(
+            seen[0]['input']['video'],
+            'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+        )
+        self.assertEqual(seen[0]['input']['image'], 'https://tower.example/api/partner/v1/assets/prompts/d/tw.jpg')
+        self.assertIn('liquid gold temple', seen[0]['input']['prompt'])
+
+    def test_pack_frames_zip_is_one_downloadable_archive(self):
+        frames = [
+            {'t': 0.0, 'key': 'k0', 'filename': 'cut-01-0.00s.jpg'},
+            {'t': 1.7, 'key': 'k1', 'filename': 'cut-02-1.70s.jpg'},
+            {'t': 2.0, 'key': '', 'filename': 'cut-03.jpg'},
+        ]
+        data, failed = reverse_twist.pack_frames_zip(
+            frames, fetch=lambda key: b'JPEG-' + key.encode(),
+        )
+        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+        self.assertEqual(names, ['cut-01-0.00s.jpg', 'cut-02-1.70s.jpg'])
+        self.assertEqual(failed, ['3'])
 
 
 class EditImageTests(unittest.TestCase):
