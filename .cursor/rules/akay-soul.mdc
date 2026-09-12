@@ -467,11 +467,9 @@ need to be told twice.
   on the original beats so Nano Banana + Omni still run. Dead-end
   "could not rewrite" is not a product.
 
-- **2026-09-12 · Stuck after 14 Eiffel stills.** Stills finished;
-  Omni never spoke. Ashok checked Replicate: last call was Nano
-  Banana Lite — Omni was never queued. Same Celery process died
-  after the 14th edit. Commit stills, **queue Omni as its own
-  Replicate job**, announce it, two short tries, retry = video only.
+- **2026-09-12 · Start the Twist is the Omni tap.** After stills,
+  stop. Ashok: a button **Start the Twist** fires Omni. Do not
+  auto-queue video after Nano Banana. Images stay 4 + More.
 
 ## Honesty note on the codeword
 

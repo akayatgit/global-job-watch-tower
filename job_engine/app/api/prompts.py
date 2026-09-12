@@ -342,7 +342,7 @@ def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Se
     idea = clean_twist(payload.twist if payload else None) or (row.twist_text or '').strip()
     if not idea:
         raise HTTPException(422, 'send a twist line — one imaginative sentence')
-    if row.twist_status in ('queued', 'running'):
+    if row.twist_status in ('queued', 'running', 'omni', 'stills'):
         return _serialize_reverse(row)
     row.twist_text = idea
     row.twist_status = 'queued'
@@ -355,6 +355,34 @@ def reverse_twist(reverse_id: int, payload: ReverseTwistIn | None = None, db: Se
         twist_reverse_prompt.delay(row.id)
     except Exception as exc:
         row.twist_status = 'failed'
+        row.twist_error = f'worker queue unavailable: {exc}'
+        db.commit()
+    return _serialize_reverse(row)
+
+
+@router.post('/reverse/{reverse_id}/omni', status_code=202)
+def reverse_omni(reverse_id: int, db: Session = Depends(get_db)):
+    """Start Gemini Omni — only after twisted stills exist and the owner
+    taps Start the Twist."""
+    from app.prompts.reverse_twist import frames_from_stored
+    from app.tasks import render_twist_omni
+
+    row = db.get(ReversePrompt, int(reverse_id))
+    if row is None:
+        raise HTTPException(404, 'reverse prompt not found')
+    if not frames_from_stored(row.twist_frames):
+        raise HTTPException(409, 'twisted stills are not ready')
+    if row.twist_status == 'omni' and not row.twist_video_key:
+        return _serialize_reverse(row)
+    row.twist_status = 'omni'
+    row.twist_video_key = None
+    row.twist_video_url = None
+    row.twist_video_error = None
+    db.commit()
+    try:
+        render_twist_omni.delay(row.id)
+    except Exception as exc:
+        row.twist_status = 'stills'
         row.twist_error = f'worker queue unavailable: {exc}'
         db.commit()
     return _serialize_reverse(row)
