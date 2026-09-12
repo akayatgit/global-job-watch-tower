@@ -372,7 +372,7 @@ def pack_frames_zip(frames, *, fetch) -> tuple[bytes, list[str]]:
 
 
 def twist_video_prompt(twist: str, twisted_prompt: str, *, duration_s: float | None = None) -> str:
-    """Motion-transfer brief: keep the source clip's motion, wear the twist."""
+    """Motion-transfer brief for Omni: text + source video only (no stills)."""
     idea = clean_twist(twist)
     story = ' '.join((twisted_prompt or '').split())
     if len(story) > 1600:
@@ -380,8 +380,8 @@ def twist_video_prompt(twist: str, twisted_prompt: str, *, duration_s: float | N
     seconds = max(3, min(OMNI_MAX_S, int(round(float(duration_s or 8)))))
     return (
         f'Motion transfer. Keep the source video camera motion, pacing, and cuts '
-        f'for the full {seconds}s. Restyle every frame to match the reference stills. '
-        f'Twist: {idea}. {story}'
+        f'for the full {seconds}s. Restyle the whole clip for this twist only — '
+        f'do not invent new camera moves. Twist: {idea}. {story}'
     ).strip()
 
 
@@ -389,12 +389,16 @@ def omni_input_attempts(
     *,
     prompt: str,
     video_url: str | None,
-    frame_urls: list[str],
+    frame_urls: list[str] | None = None,
 ) -> list[dict]:
-    """Richest Gemini Omni motion-transfer payload first, then documented
-    Replicate fallbacks (image + last_frame) if extra fields are rejected."""
-    first = (frame_urls[0] if frame_urls else '').strip()
-    last = (frame_urls[-1] if len(frame_urls) > 1 else '').strip()
+    """Omni payloads: prompt + source video only.
+
+    Gemini Omni 1.1 rejects combining ``video`` (edit) with ``image``,
+    ``last_frame``, or ``reference_images``. Twisted stills stay for the
+    Telegram Images button; they are never sent here. ``frame_urls`` is
+    kept for call-site / future non-Omni models — ignored for Omni.
+    """
+    del frame_urls  # Omni path: never attach stills
     video = (video_url or '').strip()
     attempts: list[dict] = []
 
@@ -407,18 +411,7 @@ def omni_input_attempts(
         payload.update(extra)
         return payload
 
-    if video and first:
-        motion = {'video': video, 'image': first}
-        if last and last != first:
-            motion['last_frame'] = last
-        attempts.append(base(task='edit', **motion))
-        attempts.append(base(**motion))
-    if first:
-        interp = {'image': first}
-        if last and last != first:
-            interp['last_frame'] = last
-        attempts.append(base(**interp))
-    if video and not first:
+    if video:
         attempts.append(base(task='edit', video=video))
         attempts.append(base(video=video))
     return attempts[:OMNI_MAX_ATTEMPTS]
@@ -450,18 +443,20 @@ def render_twist_video(
     key_for: Callable[..., str] | None = None,
     read_output: Callable | None = None,
 ):
-    """Original clip + twisted stills → Gemini Omni MP4. Raises on total miss."""
+    """Original clip + twist prompt → Gemini Omni MP4. Stills are not sent.
+
+    Nano Banana twisted frames remain for Telegram Images; Omni only gets
+    the source video and the text brief (Ashok 2026-09-12).
+    """
     from app.prompts import video_creator
 
     idea = clean_twist(twist)
-    frame_urls = []
-    for frame in frames or []:
-        key, _name, _t = _frame_fields(frame)
-        if key:
-            frame_urls.append(video_creator.public_url(key))
+    # frames kept in the signature for callers / future video models that
+    # may accept reference stills again — Omni ignores them.
+    _ = frames
     video = _play_url(video_url)
     prompt = twist_video_prompt(idea, twisted_prompt, duration_s=duration_s)
-    attempts = omni_input_attempts(prompt=prompt, video_url=video or None, frame_urls=frame_urls)
+    attempts = omni_input_attempts(prompt=prompt, video_url=video or None)
     if not attempts:
         return None
     model = (

@@ -909,9 +909,13 @@ it, shows recipient count) → `/pushconfirm`
   Style line. Telegram shows `N chars`. Never ship an 8k essay.
 - **Gemini Omni is the twisted video (Ashok 2026-09-12).** After
   Nano Banana stills, call Replicate `google/gemini-omni-1.1`
-  (motion transfer: original clip + twisted frames). Telegram
-  delivers that MP4 with `sendVideo` — the final Gemini twisted
-  video. Stills stay if Omni fails.
+  (motion transfer). Telegram delivers that MP4 with `sendVideo` —
+  the final Gemini twisted video. Stills stay if Omni fails.
+- **Omni: prompt + source video only — never images (Ashok
+  2026-09-12).** Replicate rejects `video` combined with `image`,
+  `last_frame`, or `reference_images`. Omni gets the twist text
+  brief and the original clip. Twisted stills stay for Telegram
+  Images / future non-Omni models — never attach them to Omni.
 - **Videos as Telegram videos; frames only on tap (Ashok 2026-09-12).**
   Original Instagram clip and the template reel both go out as
   `sendVideo` (tap to view + save). URL Save buttons are not

@@ -454,6 +454,12 @@ need to be told twice.
   undownloadable). Pack every JPEG into one ZIP. The Omni MP4 is
   the hero — he is excited, so deliver it.
 
+- **2026-09-12 · Omni: prompt + video only, never images.** Ashok:
+  Replicate `ValueError: video (editing) cannot be combined with
+  image, last_frame, or reference_images`. Omni gets the twist text
+  brief and the source clip. Twisted stills stay for Telegram Images
+  / future models — never attach them to Omni.
+
 - **2026-09-12 · Stuck on Workflow Started with no clip.** Deploy
   mid-flow + leftover intake Twist let a Gemini tap start a hollow
   reverse. Typed hook must not become a twist. No URL = ask for the
