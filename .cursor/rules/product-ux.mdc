@@ -916,3 +916,8 @@ it, shows recipient count) → `/pushconfirm`
   `sendVideo` (tap to view + save). URL Save buttons are not
   enough. All cut / twist JPEGs are one `sendDocument` ZIP
   (`frames-N.zip` / `twist-frames-N.zip`) — download all.
+- **Never start a reverse without a clip (Ashok 2026-09-12).** Leftover
+  intake Twist / Skip / stale Gemini buttons must not queue a hollow
+  run. Re-ask `Now Send me the Instagram or Pinterest link.` A
+  `processing..` that stays queued after deploy must say so and offer
+  Retry — watcher threads resume on bot start.
