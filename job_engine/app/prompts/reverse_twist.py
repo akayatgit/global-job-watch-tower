@@ -8,7 +8,9 @@ cut-reference still through text+image→image. The original stay intact.
 
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from pathlib import Path
 from typing import Callable
 
@@ -41,6 +43,8 @@ logger = logging.getLogger(__name__)
 
 TWIST_TEXT_MAX = 400
 TWIST_IMAGE_BUDGET_S = 180
+TWIST_VIDEO_MODEL = 'google/gemini-omni-1.1'
+OMNI_MAX_S = 10
 
 TWIST_SYSTEM = """You are the magic pencil. You have a finished timestamped generation prompt that recreates a product video beat-for-beat.
 
@@ -254,3 +258,188 @@ def twist_reference_frames(
 
 def serialize_twist_frames(frames: list[ReferenceFrame]) -> list[dict]:
     return serialize_reference_frames(frames)
+
+
+def _frame_fields(frame) -> tuple[str, str, float | None]:
+    if isinstance(frame, dict):
+        key = str(frame.get('key') or '')
+        name = str(frame.get('filename') or '')
+        raw_t = frame.get('t')
+    else:
+        key = str(getattr(frame, 'key', '') or '')
+        name = str(getattr(frame, 'filename', '') or '')
+        raw_t = getattr(frame, 't', None)
+    try:
+        t = float(raw_t) if raw_t is not None else None
+    except (TypeError, ValueError):
+        t = None
+    return key, name, t
+
+
+def pack_frames_zip(frames, *, fetch) -> tuple[bytes, list[str]]:
+    """One ZIP Ashok can tap once — download all cut / twist JPEGs."""
+    buf = io.BytesIO()
+    failed: list[str] = []
+    written = 0
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for index, frame in enumerate(frames or [], start=1):
+            key, name, t = _frame_fields(frame)
+            if not name:
+                stamp = f'{t:.2f}s' if t is not None else f'{index:02d}'
+                name = f'frame-{index:02d}-{stamp}.jpg'
+            name = name.replace('/', '-')
+            if not key:
+                failed.append(str(index))
+                continue
+            try:
+                data = fetch(key)
+            except Exception:
+                data = None
+            if not data:
+                failed.append(name)
+                continue
+            archive.writestr(name, data)
+            written += 1
+    if written == 0:
+        return b'', failed
+    return buf.getvalue(), failed
+
+
+def twist_video_prompt(twist: str, twisted_prompt: str, *, duration_s: float | None = None) -> str:
+    """Motion-transfer brief: keep the source clip's motion, wear the twist."""
+    idea = clean_twist(twist)
+    story = ' '.join((twisted_prompt or '').split())
+    if len(story) > 1600:
+        story = story[:1600].rsplit(' ', 1)[0]
+    seconds = max(3, min(OMNI_MAX_S, int(round(float(duration_s or 8)))))
+    return (
+        f'Motion transfer. Keep the source video camera motion, pacing, and cuts '
+        f'for the full {seconds}s. Restyle every frame to match the reference stills. '
+        f'Twist: {idea}. {story}'
+    ).strip()
+
+
+def omni_input_attempts(
+    *,
+    prompt: str,
+    video_url: str | None,
+    frame_urls: list[str],
+) -> list[dict]:
+    """Richest Gemini Omni motion-transfer payload first, then documented
+    Replicate fallbacks (image + last_frame) if extra fields are rejected."""
+    first = (frame_urls[0] if frame_urls else '').strip()
+    last = (frame_urls[-1] if len(frame_urls) > 1 else '').strip()
+    video = (video_url or '').strip()
+    attempts: list[dict] = []
+
+    def base(**extra) -> dict:
+        payload = {
+            'prompt': prompt,
+            'resolution': '720p',
+            'aspect_ratio': '9:16',
+        }
+        payload.update(extra)
+        return payload
+
+    if video and first:
+        motion = {'video': video, 'image': first}
+        if last and last != first:
+            motion['last_frame'] = last
+        attempts.append(base(task='edit', **motion))
+        attempts.append(base(**motion))
+    if first:
+        interp = {'image': first}
+        if last and last != first:
+            interp['last_frame'] = last
+        attempts.append(base(**interp))
+    if video and not first:
+        attempts.append(base(task='edit', video=video))
+        attempts.append(base(video=video))
+    return attempts
+
+
+def _play_url(url: str | None) -> str:
+    """Replicate must fetch a streamable MP4, not the Save-As query."""
+    text = (url or '').strip()
+    if not text:
+        return ''
+    if text.endswith('?download=1'):
+        return text[:-len('?download=1')]
+    if '&download=1' in text:
+        return text.replace('&download=1', '')
+    return text
+
+
+def render_twist_video(
+    *,
+    twist: str,
+    twisted_prompt: str,
+    frames: list,
+    video_url: str | None,
+    duration_s: float | None,
+    prompt_id: int,
+    run: Callable[..., object] | None = None,
+    log: Callable[[str], None] | None = None,
+    store: Callable[..., Path] | None = None,
+    key_for: Callable[..., str] | None = None,
+    read_output: Callable | None = None,
+):
+    """Original clip + twisted stills → Gemini Omni MP4. Raises on total miss."""
+    from app.prompts import video_creator
+
+    idea = clean_twist(twist)
+    frame_urls = []
+    for frame in frames or []:
+        key, _name, _t = _frame_fields(frame)
+        if key:
+            frame_urls.append(video_creator.public_url(key))
+    video = _play_url(video_url)
+    prompt = twist_video_prompt(idea, twisted_prompt, duration_s=duration_s)
+    attempts = omni_input_attempts(prompt=prompt, video_url=video or None, frame_urls=frame_urls)
+    if not attempts:
+        return None
+    model = (
+        getattr(config, 'PROMPT_TWIST_VIDEO_MODEL', '') or TWIST_VIDEO_MODEL
+    ).strip() or TWIST_VIDEO_MODEL
+    if run is None:
+        token = getattr(config, 'REPLICATE_API_TOKEN', '')
+        if not token:
+            raise RuntimeError('REPLICATE_API_TOKEN missing in job_engine/.env')
+        import replicate
+
+        client = replicate.Client(api_token=token)
+        budget_s = float(getattr(config, 'PROMPT_VIDEO_TIMEOUT_S', 900))
+
+        def run(model, input):  # noqa: A001
+            return video_creator.replicate_render(
+                client, model, input=input, budget_s=budget_s, log=log,
+            )
+
+    store = store or video_creator.store_bytes
+    key_for = key_for or video_creator.asset_key
+    read_output = read_output or video_creator._read_output
+    last_err: BaseException | None = None
+    for index, inputs in enumerate(attempts, start=1):
+        try:
+            if log:
+                log(f'Omni motion transfer {index}/{len(attempts)} · {model}')
+            output = run(model, input=inputs)
+            data = read_output(output)
+            if not data or len(data) < 1024:
+                raise RuntimeError('Omni returned an empty file')
+            key = key_for('twvid', prompt_id=prompt_id, suffix='mp4')
+            path = store(key, data, content_type='video/mp4')
+            return video_creator.RenderResult(
+                video_key=key,
+                video_path=Path(path) if path else Path(key),
+                video_url=video_creator.public_url(key),
+                model=model,
+            )
+        except Exception as exc:
+            last_err = exc
+            logger.warning('Omni attempt %s failed: %s', index, exc)
+            if log:
+                log(f'Omni attempt {index} failed: {exc}')
+    if last_err is not None:
+        raise RuntimeError(str(last_err)[:2000]) from last_err
+    return None

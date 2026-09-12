@@ -906,3 +906,13 @@ it, shows recipient count) → `/pushconfirm`
   the dense cut (`thinking_budget=8192`, 32k output). A compress
   retry + deterministic `fit_prompt` keep every timestamp and the
   Style line. Telegram shows `N chars`. Never ship an 8k essay.
+- **Gemini Omni is the twisted video (Ashok 2026-09-12).** After
+  Nano Banana stills, call Replicate `google/gemini-omni-1.1`
+  (motion transfer: original clip + twisted frames). Telegram
+  delivers that MP4 with `sendVideo` — the final Gemini twisted
+  video. Stills stay if Omni fails.
+- **Videos as Telegram videos, frames as one ZIP (Ashok 2026-09-12).**
+  Original Instagram clip and the template reel both go out as
+  `sendVideo` (tap to view + save). URL Save buttons are not
+  enough. All cut / twist JPEGs are one `sendDocument` ZIP
+  (`frames-N.zip` / `twist-frames-N.zip`) — download all.
