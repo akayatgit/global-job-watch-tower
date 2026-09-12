@@ -10,6 +10,7 @@ from unittest.mock import patch
 from app import telegram_alerts, telegram_broadcast, telegram_guests
 from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
+from app.telegram_prompts import REVERSE_ASK, TITLE_ASK
 from scripts.telegram_job_bot import (
     JobMasterTelegramBot,
     _inline_keyboard_button,
@@ -174,7 +175,7 @@ class FlakyTelegramAPI(FakeTelegramAPI):
         self.failed_once = False
 
     def send(self, chat_id: str, text: str) -> None:
-        if text.startswith('1. AI Engineer') and not self.failed_once:
+        if text == REVERSE_ASK and not self.failed_once:
             self.failed_once = True
             raise OSError('temporary send failure')
         super().send(chat_id, text)
@@ -211,27 +212,24 @@ class TelegramBotContractTests(unittest.TestCase):
         self.guests_patch.stop()
         self.tmp.cleanup()
 
-    def test_thinking_is_immediate_before_result(self):
+    def test_free_text_is_the_reverse_ask_never_a_job_reply(self):
         self.bot.process('1221647274', 'Fresh AI jobs in Bangalore')
-        self.assertEqual(self.api.sent[0], ('1221647274', 'Thinking…'))
-        self.assertTrue(self.api.sent[1][1].startswith('1. AI Engineer'))
+        self.assertEqual(self.api.sent[-1], ('1221647274', REVERSE_ASK))
+        self.assertEqual(self.engine.calls, [])
+        blob = ' '.join(text for _chat, text in self.api.sent).lower()
+        for banned in ('jobmaster', 'linkedin', 'thinking…', 'verified job'):
+            self.assertNotIn(banned, blob)
 
-    def test_poll_loop_ack_is_not_duplicated_by_worker(self):
+    def test_poll_loop_never_sends_thinking(self):
         acked = self.bot._pre_ack('1221647274', 'Fresh AI jobs in Bangalore')
-        self.assertTrue(acked)
+        self.assertFalse(acked)
         self.bot.process('1221647274', 'Fresh AI jobs in Bangalore', acked=acked)
-        self.assertEqual(
-            [text for _chat, text in self.api.sent].count('Thinking…'),
-            1,
-        )
+        self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
 
-    def test_new_has_no_thinking_or_engine_metadata(self):
+    def test_new_is_the_reverse_ask(self):
         self.bot.process('1221647274', '/new')
-        self.assertEqual(len(self.api.sent), 1)
-        text = self.api.sent[0][1]
-        self.assertTrue(text.startswith('Search reset. Send a role, city, or job-market question.'))
-        for banned in ('qwen', 'Provider', 'Endpoint', 'terminal', 'mcp__'):
-            self.assertNotIn(banned, text)
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        self.assertEqual(self.engine.calls, [])
 
     def test_every_sender_gets_same_interface(self):
         self.bot.process('owner', 'AI jobs Bangalore')
@@ -240,44 +238,43 @@ class TelegramBotContractTests(unittest.TestCase):
         owner_reply = [text for chat, text in self.api.sent if chat == 'owner'][-1]
         guest_reply = [text for chat, text in self.api.sent if chat == 'guest'][-1]
         self.assertEqual(owner_reply, guest_reply)
+        self.assertEqual(owner_reply, REVERSE_ASK)
 
-    def test_same_chat_burst_is_throttled_after_first_result(self):
-        self.bot.process('42', 'AI jobs Bangalore')
-        self.bot.process('42', 'more')
-        self.assertEqual(self.api.sent[-1], ('42', 'One request at a time.'))
-        self.assertEqual(len(self.engine.calls), 1)
+    def test_guest_igtovid_and_pinterest_url_never_mention_jobs(self):
+        self.bot.process('guest-99', '/igtovid')
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        self.bot.process(
+            'guest-99',
+            'https://in.pinterest.com/pin/712553972335373284/',
+        )
+        self.assertEqual(self.api.sent[-1][1], TITLE_ASK)
+        blob = ' '.join(text for _chat, text in self.api.sent).lower()
+        for banned in ('jobmaster', 'linkedin', 'verified job', 'job-market', 'thinking…'):
+            self.assertNotIn(banned, blob)
+        self.assertEqual(self.engine.calls, [])
 
-    def test_help_is_jobmaster_not_generic_assistant(self):
-        # Guests keep the simple JobMaster line — never the ops sheet.
+    def test_help_is_the_public_reverse_ask(self):
         self.bot.process('guest-77', '/help')
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster provides verified jobs and live job-market insights. '
-            'Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
 
-    def test_owner_help_lists_every_command_with_options(self):
-        # Chat '42' is the owner — /help shows the full command sheet.
+    def test_owner_help_lists_prompt_commands(self):
         self.bot.process('42', '/help')
         text = self.api.sent[-1][1]
-        self.assertIn('JOBMASTER · ALL COMMANDS', text)
-        for fragment in (
-            '/topfreshers [company:<name>] [skill:<term>] [role:<term>]',
-            'city:<chennai/bangalore/remote>',
-            '/companyjobs <company> [24h | 7 | 30]',
-            '/addcompany <name>',
-            '/history <@username or ID> [1–40]',
-            '-unfiltered',
-        ):
-            self.assertIn(fragment, text)
+        self.assertIn('PROMPT TOWER · ALL COMMANDS', text)
+        self.assertNotIn('JOBMASTER', text)
+        self.assertNotIn('/topfreshers', text)
+        self.assertNotIn('/companyjobs', text)
         from scripts.telegram_job_bot import OWNER_MENU
 
         for item in OWNER_MENU:
             self.assertIn(f"/{item['command']}", text)
 
-    def test_start_launches_the_button_flow_not_the_old_text_blurb(self):
+    def test_start_launches_reverse_ask(self):
         self.bot.process('42', '/start')
-        self.assertIn('What kind of role are you looking for?', self.api.sent[-1][1])
+        self.assertIn('Now Send me the Instagram or Pinterest link.', self.api.sent[-1][1])
 
     def test_owner_board_command_bypasses_job_search_engine(self):
         rendered: list[tuple[str, int | None]] = []
@@ -299,12 +296,12 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(rendered, [('health', None)])
         self.assertEqual(self.engine.calls, [])
 
-    def test_owner_hiring_signal_command_passes_window(self):
+    def test_retired_job_commands_are_the_reverse_ask(self):
         rendered: list[tuple[str, int | None]] = []
 
-        def board_renderer(board: str, *, days: int | None = None) -> str:
+        def board_renderer(board: str, *, days: int | None = None, **kwargs) -> str:
             rendered.append((board, days))
-            return 'HIRING SIGNALS'
+            return 'SHOULD NOT RENDER'
 
         bot = JobMasterTelegramBot(
             self.api,
@@ -314,65 +311,22 @@ class TelegramBotContractTests(unittest.TestCase):
             owner_chat_ids={'owner'},
             board_renderer=board_renderer,
         )
-        bot.process('owner', '/hiringsignals 14')
-        self.assertEqual(rendered, [('signals', 14)])
-
-    def test_owner_stats_command_becomes_grounded_insight_query(self):
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'owner'},
-        )
-        bot.process('owner', '/stats ai')
-        self.assertEqual(
-            self.engine.calls,
-            [('How many ai jobs in the past 24 hours?', 'owner')],
-        )
-        self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
-
-    def test_owner_companyjobs_routes_to_engine_with_window(self):
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'owner'},
-        )
-        bot.process('owner', '/companyjobs deloitte 24h')
-        self.assertEqual(self.engine.company_calls, [('deloitte', 0, 'owner')])
-        self.assertIn('openings posted in the last 7 days', self.api.sent[-1][1])
-
-    def test_owner_companyjobs_defaults_to_7_days_and_keeps_multiword_names(self):
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'owner'},
-        )
-        bot.process('owner', '/companyjobs tata consultancy services')
-        bot.process('owner', '/companyjobs tata consultancy services 30')
-        self.assertEqual(
-            self.engine.company_calls,
-            [
-                ('tata consultancy services', 7, 'owner'),
-                ('tata consultancy services', 30, 'owner'),
-            ],
-        )
-
-    def test_owner_companyjobs_without_company_shows_usage(self):
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'owner'},
-        )
-        bot.process('owner', '/companyjobs')
+        for command in (
+            '/hiringsignals 14',
+            '/stats ai',
+            '/companyjobs deloitte 24h',
+            '/companyjobs',
+            '/fresh',
+            '/topfreshers 0',
+            '/funnel',
+            '/addcompany nvidia',
+            '/governmentjobs',
+        ):
+            bot.process('owner', command)
+            self.assertEqual(self.api.sent[-1][1], REVERSE_ASK, command)
+        self.assertEqual(rendered, [])
+        self.assertEqual(self.engine.calls, [])
         self.assertEqual(self.engine.company_calls, [])
-        self.assertIn('Usage: /companyjobs <company> [24h | 7 | 30]', self.api.sent[-1][1])
 
     def test_guest_companyjobs_is_denied_like_every_owner_command(self):
         bot = JobMasterTelegramBot(
@@ -386,7 +340,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(self.engine.company_calls, [])
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
 
     def _mnc_bot(self, tower_post=None):
@@ -399,55 +353,17 @@ class TelegramBotContractTests(unittest.TestCase):
             tower_post=tower_post,
         )
 
-    def test_fresh_board_is_checked_only_and_unfiltered_lifts_it(self):
-        rendered: list[tuple[str, dict]] = []
-
-        def board_renderer(board: str, *, days: int | None = None, **kwargs) -> str:
-            rendered.append((board, {'days': days, **kwargs}))
-            return 'FRESHEST CATCHES'
-
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'owner'},
-            board_renderer=board_renderer,
-        )
-        bot.process('owner', '/fresh')
-        bot.process('owner', '/fresh -unfiltered')
-        self.assertEqual(rendered[0], ('fresh', {'days': None}))
-        self.assertEqual(rendered[1], ('fresh', {'days': None, 'unfiltered': True}))
-
-    def test_owner_addcompany_adds_to_watchlist_and_queues_first_scrape(self):
+    def test_owner_addcompany_is_retired(self):
         posts: list[tuple[str, dict | None]] = []
 
         def tower_post(path, payload=None):
             posts.append((path, payload))
-            return {
-                'company': 'Nvidia',
-                'created': True,
-                'first_scrape_queued': True,
-            }
+            return {'company': 'Nvidia', 'created': True}
 
         bot = self._mnc_bot(tower_post)
         bot.process('owner', '/addcompany nvidia')
-        self.assertEqual(posts, [('/api/watchlist/companies', {'name': 'nvidia'})])
-        reply = self.api.sent[-1][1]
-        self.assertIn('✅ Nvidia added to the MNC watchlist', reply)
-        self.assertIn('First scrape is queued now', reply)
-
-    def test_owner_addcompany_existing_company_is_honest(self):
-        bot = self._mnc_bot(lambda _p, _b=None: {'company': 'Deloitte', 'created': False})
-        bot.process('owner', '/addcompany Deloitte')
-        self.assertIn('already on the watchlist', self.api.sent[-1][1])
-
-    def test_owner_addcompany_without_name_shows_usage(self):
-        posts: list = []
-        bot = self._mnc_bot(lambda *a, **k: posts.append(a) or {})
-        bot.process('owner', '/addcompany')
         self.assertEqual(posts, [])
-        self.assertIn('Usage: /addcompany <company name>', self.api.sent[-1][1])
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
 
     def test_guest_addcompany_is_denied(self):
         posts: list = []
@@ -456,46 +372,21 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(posts, [])
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
 
-    def test_owner_companies_lists_the_full_roster_untruncated(self):
-        from datetime import datetime, timedelta, timezone
-
-        recent = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-        self.engine.companies_roster = {
-            'total': 55,
-            'companies': [
-                {
-                    'company': f'Giant {i}',
-                    'enabled': i != 55,
-                    'jobs_total': 100 - i,
-                    'jobs_24h': 3,
-                    'last_run_at': recent if i == 1 else None,
-                }
-                for i in range(1, 56)
-            ],
-        }
+    def test_owner_companies_is_retired(self):
         bot = self._mnc_bot()
         bot.process('owner', '/companies')
-        reply = '\n'.join(text for _chat, text in self.api.sent)
-        self.assertIn('MNC WATCHLIST · 55 companies · 54 on · 1 paused', reply)
-        self.assertIn('1. Giant 1 — 99 jobs (3 in 24h) · scraped 2h ago', reply)
-        # Never truncated: the last giant renders too, with honest flags.
-        self.assertIn('55. Giant 55 — 45 jobs (3 in 24h) · scraped never · paused', reply)
-
-    def test_owner_companies_empty_watchlist_points_to_addcompany(self):
-        self.engine.companies_roster = {'total': 0, 'companies': []}
-        bot = self._mnc_bot()
-        bot.process('owner', '/companies')
-        self.assertIn('/addcompany <name>', self.api.sent[-1][1])
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        self.assertEqual(self.engine.api_calls, [])
 
     def test_guest_companies_is_denied(self):
         bot = self._mnc_bot()
         bot.process('guest', '/companies')
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
 
     def test_resetdata_stages_with_counts_and_disturbance_warning(self):
@@ -574,7 +465,7 @@ class TelegramBotContractTests(unittest.TestCase):
         bot.process('guest', '/resetdata')
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
 
     def test_guest_cannot_run_owner_command(self):
@@ -591,7 +482,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(acked)
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
         self.assertEqual(self.engine.calls, [])
 
@@ -607,7 +498,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(telegram_guests.is_username_allowed('intruder'))
         self.assertEqual(
             self.api.sent,
-            [('guest', 'JobMaster can help you find verified jobs. Ask naturally in any sentence.')],
+            [('guest', 'Now Send me the Instagram or Pinterest link.')],
         )
 
     def test_owner_can_allow_list_block_and_reallow_username(self):
@@ -711,7 +602,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertNotIn('private question', self.api.sent[-1][1])
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
 
     def test_history_command_explains_pre_feature_gap(self):
@@ -948,7 +839,7 @@ class TelegramBotContractTests(unittest.TestCase):
         reply = self.api.sent[-1][1]
         self.assertEqual(
             reply,
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
 
     def test_block_override_can_disable_default_username(self):
@@ -1028,7 +919,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(telegram_guests.is_allowed('111', 'anything'))
         self.assertTrue(telegram_guests.is_allowed('222', 'newperson'))
 
-    def test_command_menu_is_scoped_only_to_owner_chat(self):
+    def test_command_menu_is_public_reverse_plus_owner_ops(self):
         bot = JobMasterTelegramBot(
             self.api,
             engine=self.engine,
@@ -1037,9 +928,12 @@ class TelegramBotContractTests(unittest.TestCase):
             owner_chat_ids={'1221647274'},
         )
         self.assertTrue(bot._configure_command_menu())
-        self.assertEqual(self.api.calls[0][0], 'deleteMyCommands')
+        self.assertEqual(self.api.calls[0][0], 'setMyCommands')
         self.assertEqual(json.loads(self.api.calls[0][1]['scope']), {'type': 'default'})
-        self.assertEqual(self.api.calls[1][0], 'deleteMyCommands')
+        public = json.loads(self.api.calls[0][1]['commands'])
+        self.assertEqual(public[0]['command'], 'igtovid')
+        self.assertEqual(public[1]['command'], 'pintovid')
+        self.assertEqual(self.api.calls[1][0], 'setMyCommands')
         self.assertEqual(
             json.loads(self.api.calls[1][1]['scope']),
             {'type': 'all_private_chats'},
@@ -1048,17 +942,9 @@ class TelegramBotContractTests(unittest.TestCase):
         scope = json.loads(self.api.calls[2][1]['scope'])
         self.assertEqual(scope, {'type': 'chat', 'chat_id': 1221647274})
         commands = json.loads(self.api.calls[2][1]['commands'])
+        self.assertIn({'command': 'igtovid', 'description': 'Reverse prompt from an Instagram reel'}, commands)
         self.assertIn({'command': 'health', 'description': 'Tower health'}, commands)
-        self.assertIn({'command': 'allowguest', 'description': 'Un-block / VIP a person'}, commands)
-        self.assertIn(
-            {'command': 'blockguest', 'description': 'Block a person (public by default)'},
-            commands,
-        )
-        self.assertIn({'command': 'guests', 'description': 'Access dashboard'}, commands)
-        self.assertIn(
-            {'command': 'history', 'description': 'Guest conversation history'},
-            commands,
-        )
+        self.assertNotIn({'command': 'governmentjobs', 'description': 'Government jobs'}, commands)
         self.assertEqual(len(self.api.calls), 3)
 
     def test_command_menu_removes_previous_owner_chat_scope(self):
@@ -1082,30 +968,18 @@ class TelegramBotContractTests(unittest.TestCase):
             '222',
         )
 
-    def test_smoke_sends_only_ten_row_grounded_contract(self):
+    def test_smoke_sends_the_public_reverse_ask(self):
         bot = JobMasterTelegramBot(
             self.api,
             engine=SmokeEngine(valid=True),
             sessions=self.sessions,
             health_enabled=False,
         )
-        bot.smoke('42', 'Fresh jobs in Bangalore in AI space for fresher')
-        self.assertEqual(self.api.sent[0], ('42', 'Thinking…'))
-        self.assertEqual(
-            self.api.sent[1][1].count('https://www.linkedin.com/jobs/view/'),
-            10,
-        )
-
-    def test_smoke_rejects_fallback_before_sending_result(self):
-        bot = JobMasterTelegramBot(
-            self.api,
-            engine=SmokeEngine(valid=False),
-            sessions=self.sessions,
-            health_enabled=False,
-        )
-        with self.assertRaises(RuntimeError):
-            bot.smoke('42', 'Fresh jobs in Bangalore in AI space for fresher')
-        self.assertEqual(self.api.sent, [])
+        bot.smoke('42', '')
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        blob = ' '.join(text for _chat, text in self.api.sent).lower()
+        self.assertNotIn('linkedin', blob)
+        self.assertNotIn('jobmaster', blob)
 
     def test_telegram_failure_is_contained_by_worker_boundary(self):
         bot = JobMasterTelegramBot(
@@ -1188,7 +1062,7 @@ class TelegramBotContractTests(unittest.TestCase):
         history = self.sessions.conversation_history('@newperson', limit=40)
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]['user_text'], 'AI jobs Bangalore')
-        self.assertTrue(history[0]['bot_reply'].startswith('1. AI Engineer'))
+        self.assertEqual(history[0]['bot_reply'], REVERSE_ASK)
 
     def test_owner_commands_are_not_stored_as_guest_history(self):
         self.assertTrue(
@@ -1253,10 +1127,9 @@ class TelegramBotContractTests(unittest.TestCase):
                     username,
                     text,
                 )
-        self.assertEqual(
-            [text for text, chat_id in self.engine.calls if chat_id == '42'],
-            ['/new', '/reset', '/clear'],
-        )
+        replies = [text for _chat, text in self.api.sent]
+        self.assertEqual(replies, [REVERSE_ASK, REVERSE_ASK, REVERSE_ASK])
+        self.assertEqual(self.engine.calls, [])
 
     def test_failed_reply_retries_without_rerunning_or_reordering(self):
         api = FlakyTelegramAPI()
@@ -1279,17 +1152,9 @@ class TelegramBotContractTests(unittest.TestCase):
                         username,
                         text,
                     )
-        self.assertEqual(self.engine.calls, [('AI jobs Bangalore', '42'), ('/new', '42')])
+        self.assertEqual(self.engine.calls, [])
         replies = [text for _chat, text in api.sent if text != 'Thinking…']
-        self.assertEqual(
-            replies,
-            [
-                '1. AI Engineer — Acme — Fresher\n'
-                'https://www.linkedin.com/jobs/view/4448000001/',
-                'Search reset. Send a role, city, or job-market question.\n\n'
-                'JobMaster here! What kind of role are you looking for?',
-            ],
-        )
+        self.assertEqual(replies, [REVERSE_ASK, REVERSE_ASK])
 
 
 class RoleSwitchSelfTestTests(unittest.TestCase):
@@ -1332,17 +1197,18 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         self.bot.process('owner', '/health')
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
         self.assertEqual(self.rendered, [])
 
     def test_actasguest_hides_and_actasowner_restores_the_command_menu(self):
         self.bot.process('owner', '/actasguest')
-        hide_calls = [call for call in self.api.calls if call[0] == 'deleteMyCommands']
-        self.assertTrue(hide_calls)
+        public = [call for call in self.api.calls if call[0] == 'setMyCommands']
+        self.assertTrue(public)
+        self.assertEqual(json.loads(public[0][1]['commands'])[0]['command'], 'igtovid')
         self.bot.process('owner', '/actasowner')
         restore_calls = [call for call in self.api.calls if call[0] == 'setMyCommands']
-        self.assertTrue(restore_calls)
+        self.assertGreaterEqual(len(restore_calls), 2)
         self.assertIn('Testing mode OFF', self.api.sent[-1][1])
 
     def test_actasowner_restores_owner_commands(self):
@@ -1356,7 +1222,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         self.bot.process('owner', '/actasguest')
         self.bot._last_request.clear()
         self.bot.process('owner', 'AI jobs Bangalore')
-        self.assertTrue(self.api.sent[-1][1].startswith('1. AI Engineer'))
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
 
     def test_search_conversations_are_recorded_like_a_guests_while_testing(self):
         self.bot.process('owner', '/actasguest')
@@ -1376,7 +1242,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         self.bot.process('guest', '/actasguest')
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
         self.assertFalse(self.bot._is_simulating_guest('guest'))
 
@@ -1400,7 +1266,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         restarted.process('owner', '/health')
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
 
 
@@ -1441,25 +1307,19 @@ class VoiceLayerWiringTests(unittest.TestCase):
         self.env_patch.stop()
         self.tmp.cleanup()
 
-    def test_job_search_reply_is_voiced(self):
+    def test_free_text_is_not_voiced(self):
         self.bot.process('guest', 'AI jobs Bangalore')
-        expected = (
-            '1. AI Engineer — Acme — Fresher\n'
-            'https://www.linkedin.com/jobs/view/4448000001/'
-        )
-        self.assertEqual(self.api.sent[-1][1], f'{self.voice.prefix}{expected}')
-        self.assertEqual(len(self.voice.calls), 1)
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        self.assertEqual(len(self.voice.calls), 0)
 
-    def test_help_reply_is_voiced(self):
+    def test_help_reply_is_not_voiced(self):
         self.bot.process('guest', '/help')
-        self.assertTrue(self.api.sent[-1][1].startswith(self.voice.prefix))
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
+        self.assertEqual(len(self.voice.calls), 0)
 
-    def test_start_reply_is_the_deterministic_button_flow_not_voiced(self):
-        # /start now launches the button wizard — deterministic, no LLM
-        # warmth pass (kept snappy, and the fact-lock validator is one
-        # fewer moving part to reason about on a screen with no facts yet).
+    def test_start_reply_is_the_reverse_ask_not_voiced(self):
         self.bot.process('guest', '/start')
-        self.assertFalse(self.api.sent[-1][1].startswith(self.voice.prefix))
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
         self.assertEqual(len(self.voice.calls), 0)
 
     def test_owner_board_command_is_never_voiced(self):
@@ -1498,10 +1358,7 @@ class VoiceLayerWiringTests(unittest.TestCase):
             voice=self.voice,
         )
         bot.process('guest', 'AI jobs Bangalore')
-        self.assertEqual(
-            self.api.sent[-1][1],
-            'JobMaster could not reach live Watch Tower data. Try again shortly.',
-        )
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
         self.assertEqual(self.voice.calls, [])
 
     def test_durable_retry_reuses_the_already_voiced_reply_without_recomputing(self):
@@ -1510,7 +1367,7 @@ class VoiceLayerWiringTests(unittest.TestCase):
             self.sessions.queue_update(1, 'guest', 'AI jobs Bangalore', username=''),
         )
         self.assertTrue(self.bot._process_queued(1, 'guest', '', 'AI jobs Bangalore'))
-        self.assertEqual(len(self.voice.calls), 1)
+        self.assertEqual(len(self.voice.calls), 0)
         voiced_once = self.api.sent[-1][1]
 
         # Requeue the same update as a durability replay (e.g. after a crash
@@ -1519,7 +1376,7 @@ class VoiceLayerWiringTests(unittest.TestCase):
         self.sessions.queue_update(1, 'guest', 'AI jobs Bangalore', username='')
         self.sessions.save_update_reply(1, voiced_once)
         self.assertTrue(self.bot._process_queued(1, 'guest', '', 'AI jobs Bangalore'))
-        self.assertEqual(len(self.voice.calls), 1)
+        self.assertEqual(len(self.voice.calls), 0)
         self.assertEqual(self.api.sent[-1][1], voiced_once)
 
 
@@ -1549,19 +1406,16 @@ class MyAlertsCommandTests(unittest.TestCase):
         self.env_patch.stop()
         self.tmp.cleanup()
 
-    def test_myalerts_with_no_subscriptions_gives_a_helpful_empty_state(self):
+    def test_myalerts_is_the_reverse_ask(self):
         self.bot.process('guest', '/myalerts')
-        self.assertIn('no active alerts', self.api.sent[-1][1])
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
 
-    def test_myalerts_lists_active_alerts_with_a_stop_button(self):
+    def test_myalerts_does_not_list_job_alerts(self):
         self.sessions.create_job_alert(
             'guest', role_family='ai_ml', role_keywords=[], role_label='AI/ML', city='chennai',
         )
         self.bot.process('guest', '/myalerts')
-        text, keyboard = self.api.keyboards_sent[-1][1], self.api.keyboards_sent[-1][2]
-        self.assertIn('AI/ML', text)
-        labels = [label for row in keyboard for label, _data in row]
-        self.assertIn('🔕 Stop #1', labels)
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
 
     def test_myalerts_never_triggers_thinking_ack(self):
         acked = self.bot._pre_ack('guest', '/myalerts')
@@ -1702,7 +1556,7 @@ class PushBroadcastCommandTests(unittest.TestCase):
         self.bot.process('guest-1', '/push hello everyone')
         self.assertEqual(
             self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
+            'Now Send me the Instagram or Pinterest link.',
         )
         self.assertEqual(self.sessions.get_state('pending_push_text:guest-1', ''), '')
 
@@ -1920,9 +1774,8 @@ class NormalizeUpdateTests(unittest.TestCase):
         )
 
 
-class TopFreshersCommandTests(unittest.TestCase):
-    """/topfreshers — video gems: verified + explicitly-stated fresher/0-exp
-    only, with company: / skill: / role: filters (owner-only)."""
+class RetiredListingCommandTests(unittest.TestCase):
+    """Listing commands never return catalogue rows — Prompt Tower only."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1950,202 +1803,16 @@ class TopFreshersCommandTests(unittest.TestCase):
         self.guests_patch.stop()
         self.tmp.cleanup()
 
-    def _last_jobs_params(self) -> dict:
-        calls = [p for path, p in self.engine.api_calls if path == '/api/jobs']
-        self.assertTrue(calls, 'expected an /api/jobs call')
-        return calls[-1] or {}
-
-    def test_bare_zero_lists_all_verified_explicit_gems(self):
-        self.bot.process('42', '/topfreshers 0')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('verified'), 1)
-        self.assertEqual(params.get('explicit_fresher'), 1)
-        self.assertNotIn('company', params)
-        self.assertNotIn('skill', params)
-        text = self.api.sent[-1][1]
-        self.assertIn('TOP FRESHER GEMS', text)
-        self.assertIn('Data Analyst (Fresher) — Deloitte — Bengaluru', text)
-        self.assertIn('https://www.linkedin.com/jobs/view/4448000301/', text)
-
-    def test_company_filter_reaches_the_api(self):
-        self.bot.process('42', '/topfreshers company:Deloitte 0')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('company'), 'Deloitte')
-        self.assertEqual(params.get('verified'), 1)
-        self.assertEqual(params.get('explicit_fresher'), 1)
-        self.assertIn('Filters: company: Deloitte', self.api.sent[-1][1])
-
-    def test_multi_word_company_parses_whole(self):
-        self.bot.process('42', '/topfreshers company:Tata Consultancy Services 0')
-        self.assertEqual(self._last_jobs_params().get('company'), 'Tata Consultancy Services')
-
-    def test_skill_filter_reaches_the_api(self):
-        self.bot.process('42', '/topfreshers skill:sql 0')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('skill'), 'sql')
-        self.assertEqual(params.get('explicit_fresher'), 1)
-
-    def test_role_maps_to_family_when_known_else_title_terms(self):
-        self.bot.process('42', '/topfreshers role:data 0')
-        self.assertEqual(self._last_jobs_params().get('role_family'), 'data')
-        self.bot.process('42', '/topfreshers role:tester 0')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('title_terms'), 'tester')
-        self.assertNotIn('role_family', params)
-
-    def test_combined_filters(self):
-        self.bot.process('42', '/topfreshers company:Deloitte skill:sql 0')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('company'), 'Deloitte')
-        self.assertEqual(params.get('skill'), 'sql')
-
-    def test_nonzero_level_is_refused_honestly(self):
-        self.bot.process('42', '/topfreshers 2')
-        text = self.api.sent[-1][1]
-        self.assertIn('Only 0 is supported', text)
-        self.assertIn('Usage: /topfreshers', text)
-        self.assertEqual(
-            [p for path, p in self.engine.api_calls if path == '/api/jobs'], [],
-        )
-
-    def test_empty_result_mentions_the_verification_queue(self):
-        self.engine.jobs_rows = []
-        self.bot.process('42', '/topfreshers company:Nvidia 0')
-        text = self.api.sent[-1][1]
-        self.assertIn('No checked explicit-fresher gems', text)
-        self.assertIn('/health', text)
-
-    def test_long_lists_page_ten_with_a_more_button(self):
-        self.engine.jobs_rows = [
-            {
-                'title': f'Fresher Analyst {i}',
-                'company': 'Deloitte',
-                'city_key': 'bengaluru',
-                'location': 'Bengaluru',
-                'linkedin_job_id': f'id-{i}',
-                'job_url': f'https://www.linkedin.com/jobs/view/{4448001000 + i}/',
-            }
-            for i in range(35)
-        ]
-        self.bot.process('42', '/topfreshers 0')
-        text = self.api.sent[-1][1]
-        self.assertIn('Fresher Analyst 0', text)
-        self.assertIn('Fresher Analyst 9', text)
-        self.assertNotIn('Fresher Analyst 10', text)
-        self.assertIn('Reply more for 10 more gems.', text)
-        self.assertTrue(self.api.keyboards_sent, 'expected More gems keyboard')
-        # Page 2 via typed "more"
-        self.bot.process('42', 'more')
-        text2 = self.api.sent[-1][1]
-        self.assertIn('Fresher Analyst 10', text2)
-        self.assertIn('Fresher Analyst 19', text2)
-        self.assertNotIn('Fresher Analyst 9', text2)
-        self.assertNotIn('Fresher Analyst 20', text2)
-
-    def test_city_skill_time_filters_reach_the_api(self):
-        self.bot.process(
-            '42',
-            '/topfreshers skill:data_analyst city:chennai/bangalore/remote time:24hrs',
-        )
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('skill'), 'data_analyst')
-        self.assertEqual(params.get('city'), 'chennai/bangalore/remote')
-        self.assertEqual(params.get('days'), 0)
-        self.assertEqual(params.get('verified'), 1)
-        self.assertEqual(params.get('explicit_fresher'), 1)
-        text = self.api.sent[-1][1]
-        self.assertIn('skill: data_analyst', text)
-        self.assertIn('city: chennai/bangalore/remote', text)
-        self.assertIn('time: 24hrs', text)
-
-    def test_trailing_zero_is_optional(self):
-        self.bot.process('42', '/topfreshers city:chennai/bangalore/remote time:24hrs')
-        params = self._last_jobs_params()
-        self.assertEqual(params.get('city'), 'chennai/bangalore/remote')
-        self.assertEqual(params.get('days'), 0)
-
-    def test_salary_shows_on_the_row_only_when_employer_stated_it(self):
-        self.bot.process('42', '/topfreshers 0')
-        text = self.api.sent[-1][1]
-        # Deloitte row carries the AI quote-grounded salary; Oracle row
-        # (no stated salary) stays clean — never an invented number.
-        self.assertIn('💰 INR 4,50,000 - 6,00,000 per annum', text)
-        oracle_line = next(line for line in text.splitlines() if 'Oracle' in line)
-        self.assertNotIn('💰', oracle_line)
-
-    def test_guests_never_reach_topfreshers(self):
-        self.bot.process('guest-9', '/topfreshers 0')
-        self.assertEqual(
-            self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
-        )
+    def test_retired_listing_commands_are_the_reverse_ask(self):
+        for command in (
+            '/topfreshers 0',
+            '/topfreshers company:Deloitte 0',
+            '/funnel',
+            '/funnel 48',
+        ):
+            self.bot.process('42', command)
+            self.assertEqual(self.api.sent[-1][1], REVERSE_ASK, command)
         self.assertEqual(self.engine.api_calls, [])
-
-
-class FunnelCommandTests(unittest.TestCase):
-    """/funnel — where jobs die between LinkedIn and the bot (owner-only)."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.sessions = TelegramSessionStore(Path(self.tmp.name) / 'bot.db')
-        self.guests_patch = patch.object(
-            telegram_guests, 'GUESTS_FILE', Path(self.tmp.name) / 'guests.json',
-        )
-        self.env_patch = patch.object(
-            telegram_guests, 'HERMES_ENV', Path(self.tmp.name) / 'hermes.env',
-        )
-        self.guests_patch.start()
-        self.env_patch.start()
-        self.api = FakeTelegramAPI()
-        self.engine = FakeEngine()
-        self.bot = JobMasterTelegramBot(
-            self.api,
-            engine=self.engine,
-            sessions=self.sessions,
-            health_enabled=False,
-            owner_chat_ids={'42'},
-        )
-
-    def tearDown(self):
-        self.env_patch.stop()
-        self.guests_patch.stop()
-        self.tmp.cleanup()
-
-    def test_funnel_shows_every_gate_count(self):
-        self.bot.process('42', '/funnel')
-        text = self.api.sent[-1][1]
-        self.assertIn('JOB FUNNEL · last 24h', text)
-        self.assertIn('Caught: 42', text)
-        self.assertIn('in Chennai/Bengaluru/Remote: 30', text)
-        self.assertIn('GTM role titles: 25', text)
-        self.assertIn('detail-verified: 18', text)
-        self.assertIn('servable fresher gems: 7', text)
-        self.assertIn('Pending verification: 24', text)
-
-    def test_funnel_accepts_a_custom_window(self):
-        self.bot.process('42', '/funnel 48')
-        params = [p for path, p in self.engine.api_calls if path == '/api/jobs/funnel'][-1]
-        self.assertEqual(params.get('hours'), 48)
-
-    def test_bad_window_gets_usage(self):
-        self.bot.process('42', '/funnel yesterday')
-        self.assertIn('Usage: /funnel', self.api.sent[-1][1])
-
-    def test_guests_never_reach_funnel(self):
-        self.bot.process('guest-3', '/funnel')
-        self.assertEqual(
-            self.api.sent[-1][1],
-            'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
-        )
-        self.assertEqual(self.engine.api_calls, [])
-
-    def test_empty_topfreshers_includes_the_funnel_snapshot(self):
-        self.engine.jobs_rows = []
-        self.bot.process('42', '/topfreshers 0')
-        text = self.api.sent[-1][1]
-        self.assertIn('No checked explicit-fresher gems', text)
-        self.assertIn('Funnel 24h: 42 caught · 18 verified · 7 servable', text)
-        self.assertIn('/funnel', text)
 
 
 class InlineUrlButtonTests(unittest.TestCase):

@@ -1,11 +1,13 @@
-"""Prompt Tower on Telegram — Ashok's daily top-10 deck (owner-only).
+"""Prompt Tower on Telegram — daily top-10 plus public reverse prompt.
+
+Every user can run /igtovid · /pintovid. No jobseeker copy.
 
 Everything here is deterministic formatting over the tower API: the list,
 the full prompt, the ⭐ rating, the "📸 product image → ✅ make video" flow,
 the render watcher that uploads the finished MP4 + Instagram card back
 into the chat, and reverse prompt (`/igtovid` · `/pintovid`) which delivers
-the Gemini-authored timestamped prompt verbatim. No model composes job
-facts; reverse prompt is the one place a model authors a generation prompt.
+the Gemini-authored timestamped prompt verbatim. Reverse prompt is the
+one place a model authors a generation prompt.
 
 Callback data prefix: ``pt:``. Owner photo without a caption arrives as the
 synthetic ``pt:photo`` tap (see scripts/telegram_job_bot.py) so the durable
@@ -57,6 +59,7 @@ REVERSE_ASK = 'Now Send me the Instagram or Pinterest link.'
 REVERSE_USAGE = REVERSE_ASK
 # Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
 TITLE_ASK = 'Whats the hook?'
+# Ashok (2026-09-12): twist lives on the finished clip, next to Save.
 TWIST_ASK = 'Shall we twist the video?'
 MODEL_ASK = 'Select a Prompt Model…'
 REVERSE_QUEUED = 'processing..'
@@ -129,7 +132,7 @@ def save_keyboard(*pairs: tuple[str, str | None]) -> list[list[tuple[str, str]]]
 
 
 class PromptDeck:
-    """Owner-only prompt commands + ``pt:`` callbacks. Injected I/O only."""
+    """Prompt commands + ``pt:`` callbacks for every user. Injected I/O only."""
 
     def __init__(
         self,
@@ -348,6 +351,8 @@ class PromptDeck:
             return self.maybe_take_vision_model(chat_id, parts[1])
         if action == 'twistskip':
             return self._skip_intake_twist(chat_id)
+        if action in {'show', 'copy'} and len(parts) >= 2 and parts[1].isdigit():
+            return self._prompt_text_reply(chat_id, int(parts[1]), copy=action == 'copy')
         if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
             return self.twist_reply(chat_id, int(parts[1]))
         if action == 'revretry' and len(parts) >= 2 and parts[1].isdigit():
@@ -496,7 +501,7 @@ class PromptDeck:
         return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
     def maybe_take_url(self, chat_id: str, text: str) -> ButtonReply | None:
-        """Owner text carrying an Instagram / Pinterest link: after /igtovid
+        """Any user text carrying an Instagram / Pinterest link: after /igtovid
         any fetchable link counts; without the command only reel / pin
         links start a run (a stray direct .mp4 link in chat does not)."""
         from app.prompts.reverse_prompt import detect_platform, find_url
@@ -521,7 +526,7 @@ class PromptDeck:
             return None
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), title[:120])
-        return self._ask_twist(chat_id)
+        return self._ask_vision_model(chat_id)
 
     def maybe_take_twist(self, chat_id: str, text: str) -> ButtonReply | None:
         """Owner typed the magic-pencil line — after the title, or after
@@ -573,8 +578,7 @@ class PromptDeck:
         if not idea:
             self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), str(reverse_id))
             return ButtonReply(
-                f'💥✏️ Magic pencil for #{reverse_id} — send the twist in one line.\n'
-                'It will rewrite every beat and restyle all 14 cut frames.',
+                TWIST_ASK,
                 [[('✖ Cancel', 'pt:cancel')]],
             )
         return self._start_twist(chat_id, reverse_id, idea)
@@ -641,7 +645,7 @@ class PromptDeck:
         vision_engine: str | None = None,
         twist: str | None = None,
     ) -> ButtonReply:
-        """Forwarded video: ask for the header first, then the twist, then the model."""
+        """Forwarded video: ask for the header first, then the model."""
         if not title:
             return self._ask_title(chat_id)
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
@@ -812,8 +816,25 @@ class PromptDeck:
             sleep(poll_s)
             waited += poll_s
 
+    def _reverse_done_keyboard(self, row: dict[str, Any], *, offer_twist: bool = True) -> list[list[tuple[str, str]]]:
+        """Save clip / reel + Show / Copy / Twist on the finished clip."""
+        keyboard = save_keyboard(
+            ('⬇️ Save clip', row.get('video_url')),
+            ('⬇️ Save reel', row.get('reel_url')),
+        )
+        rid = row.get('id')
+        if rid is None:
+            return keyboard
+        keyboard.append([
+            ('Show prompt', f'pt:show:{int(rid)}'),
+            ('Copy prompt', f'pt:copy:{int(rid)}'),
+        ])
+        if offer_twist:
+            keyboard.append([('💥 Twist', f'pt:twist:{int(rid)}')])
+        return keyboard
+
     def _offer_saves(self, chat_id: str, pairs: tuple[tuple[str, str | None], ...]) -> None:
-        """URL buttons that force Save As — the play URL just opens a player."""
+        """URL buttons that force Save As — daily-deck renders only."""
         keyboard = save_keyboard(*pairs)
         if not keyboard:
             return
@@ -825,11 +846,66 @@ class PromptDeck:
             lines = [text] + [f'{label}: {href}' for row in keyboard for label, href in row]
             self.send_text(chat_id, '\n'.join(lines))
 
+    def _offer_reverse_done(
+        self, chat_id: str, row: dict[str, Any], *, offer_twist: bool = True,
+    ) -> None:
+        """One bar: Save + Show + Copy + Twist. Never dump the prompt."""
+        keyboard = self._reverse_done_keyboard(row, offer_twist=offer_twist)
+        if not keyboard:
+            return
+        text = TWIST_ASK if offer_twist else 'Prompt ready.'
+        if self.send_keyboard:
+            self.send_keyboard(chat_id, text, keyboard)
+            return
+        if self.send_text:
+            self.send_text(chat_id, text)
+
+    def _prompt_body(self, row: dict[str, Any]) -> str:
+        if str(row.get('twist_status') or '') == 'done' and (row.get('twist_prompt') or '').strip():
+            return str(row.get('twist_prompt') or '').strip()
+        return str(row.get('prompt_text') or '').strip()
+
+    def _prompt_text_reply(self, chat_id: str, reverse_id: int, *, copy: bool) -> ButtonReply:
+        try:
+            row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
+        except Exception as exc:
+            if '404' in str(exc):
+                return ButtonReply(f'No reverse #{reverse_id}.')
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower is unreachable right now — try again in a minute.')
+        body = self._prompt_body(row)
+        if not body:
+            return ButtonReply('The prompt is not ready yet — wait for the reverse to finish.')
+        if copy and self.send_document_bytes:
+            name = f'prompt-{reverse_id}.txt'
+            try:
+                try:
+                    self.send_document_bytes(
+                        chat_id, body.encode('utf-8'), filename=name, caption='Copy prompt',
+                    )
+                except TypeError:
+                    self.send_document_bytes(chat_id, body.encode('utf-8'), name, 'Copy prompt')
+                return ButtonReply('Prompt file sent — open it to copy.')
+            except Exception:
+                logger.exception('copy-prompt document failed id=%s', reverse_id)
+        head = '' if copy else f'📝 Prompt #{reverse_id}\n'
+        chunks = list(_chunks(body, TELEGRAM_TEXT_LIMIT - len(head)))
+        if not chunks:
+            return ButtonReply('The prompt is empty.')
+        first = ButtonReply(head + chunks[0])
+        if self.send_text:
+            for extra in chunks[1:]:
+                self.send_text(chat_id, extra)
+        elif len(chunks) > 1:
+            first = ButtonReply(head + '\n'.join(chunks))
+        return first
+
     def _deliver_reverse(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Reel first (or the source clip with the reason), then the prompt
-        text verbatim so it can be copied straight into the caption."""
+        """Reel first (or the source clip with the reason). Prompt stays
+        behind Show / Copy — Ashok 2026-09-12, no flood."""
         rid = row.get('id')
         model = f" · {row['model']}" if row.get('model') else ''
         catalogue = f" · catalogue #{row['prompt_id']}" if row.get('prompt_id') else ''
@@ -856,19 +932,7 @@ class PromptDeck:
                 logger.exception('reverse video upload failed id=%s', rid)
         if not sent and self.send_text:
             self.send_text(chat_id, caption)
-        self._offer_saves(chat_id, (
-            ('⬇️ Save clip', row.get('video_url')),
-            ('⬇️ Save reel', row.get('reel_url')),
-        ))
-        if self.send_text:
-            prompt_text = str(row.get('prompt_text') or '(no prompt text)')
-            head = (
-                f"📝 Prompt #{rid} · keyword {row.get('keyword') or 'PRODUCT'} "
-                f"· {len(prompt_text)} chars\n"
-            )
-            for chunk in _chunks(prompt_text, TELEGRAM_TEXT_LIMIT - len(head)):
-                self.send_text(chat_id, head + chunk)
-                head = ''
+        self._offer_reverse_done(chat_id, row, offer_twist=True)
         self._deliver_reference_frames(chat_id, row, sleep=sleep)
 
     def _send_reference_document(
@@ -939,20 +1003,6 @@ class PromptDeck:
                 f'⚠️ {len(failed)} of {len(frames)} cut frames did not arrive ({", ".join(failed)}). '
                 'Say so and I will resend them.',
             )
-        self._offer_twist(chat_id, rid)
-
-    def _offer_twist(self, chat_id: str, reverse_id: Any) -> None:
-        if reverse_id is None:
-            return
-        text = (
-            f'💥✏️ Twist #{reverse_id} — apply the magic pencil to every beat '
-            'and every cut frame. Original prompt stays above.'
-        )
-        keyboard = [[('💥✏️ Twist', f'pt:twist:{int(reverse_id)}')]]
-        if self.send_keyboard:
-            self.send_keyboard(chat_id, text, keyboard)
-        elif self.send_text:
-            self.send_text(chat_id, text + '\nTap 💥✏️ Twist when you are ready.')
 
     def watch_twist(
         self,
@@ -994,19 +1044,13 @@ class PromptDeck:
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         rid = row.get('id')
+        idea = (row.get('twist_text') or '').strip()
         if self.send_text:
-            idea = (row.get('twist_text') or '').strip()
-            twist_prompt = str(row.get('twist_prompt') or '(no twisted prompt)')
-            head = f"💥✏️ Twisted prompt #{rid}"
-            if row.get('twist_keyword'):
-                head += f" · keyword {row['twist_keyword']}"
-            head += f" · {len(twist_prompt)} chars"
+            line = f'💥 Twist #{rid} ready.'
             if idea:
-                head += f"\nTwist: {idea}"
-            head += '\n'
-            for chunk in _chunks(twist_prompt, TELEGRAM_TEXT_LIMIT - len(head)):
-                self.send_text(chat_id, head + chunk)
-                head = ''
+                line += f' {idea}'
+            self.send_text(chat_id, line)
+        self._offer_reverse_done(chat_id, row, offer_twist=False)
         from app.prompts.reverse_prompt import load_reference_frames
 
         frames = load_reference_frames(row.get('twist_frames'))

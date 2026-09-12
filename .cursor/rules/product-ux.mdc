@@ -5,6 +5,13 @@ alwaysApply: true
 
 # How to build here: UX expert + Product Owner + Architect
 
+**HARD LOCK 2026-09-12.** Product is **Prompt Tower**. Telegram never
+sends seeker copy, hiring-site links, or `Thinking…` then an essay.
+`/igtovid` and `/pintovid` are **public**. `/start` · `/help` · hi →
+`Now Send me the Instagram or Pinterest link.` Finished reverse: Save
+clip / Save reel / Show prompt / Copy prompt / Twist — never dump the
+prompt. Docs and PRD describe a Prompt application only.
+
 The user (admin) is a human, not an engineer. Every screen must be a joy to
 use — they should love opening the app, never fight it.
 

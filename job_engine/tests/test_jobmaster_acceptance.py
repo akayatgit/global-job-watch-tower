@@ -25,6 +25,7 @@ from app.telegram_job_search import (
     normalize_experience_value,
 )
 from app.telegram_sessions import TelegramSessionStore
+from app.telegram_prompts import REVERSE_ASK
 from scripts.telegram_job_bot import JobMasterTelegramBot
 
 BANNED_LEAK_MARKERS = (
@@ -581,7 +582,7 @@ class CoreConversationTests(unittest.TestCase):
         api = self._RecordingTelegramAPI()
         bot = self._bot(api)
         bot.process('guest', '/start')
-        self.assertIn('JobMaster', api.sent[-1][1])
+        self.assertEqual(api.sent[-1][1], REVERSE_ASK)
         self.assertNotIn('assistant', api.sent[-1][1].lower())
 
     def test_JM034_help_is_jobmaster_not_vigil_ops(self):
@@ -606,10 +607,7 @@ class CoreConversationTests(unittest.TestCase):
         bot = self._bot(api)
         bot.process('42', 'AI jobs Bangalore')
         bot.process('42', 'more')
-        self.assertEqual(api.sent[-1], ('42', 'One request at a time.'))
-        bot._last_request['42'] = 0.0  # simulate two seconds passing
-        bot.process('42', 'more')
-        self.assertNotEqual(api.sent[-1][1], 'One request at a time.')
+        self.assertEqual(api.sent[-1], ('42', REVERSE_ASK))
 
     def test_JM088_near_limit_message_stays_responsive(self):
         api = self._RecordingTelegramAPI()
@@ -680,18 +678,14 @@ class OwnerIsolationTests(unittest.TestCase):
             self.bot.process('guest', command)
             self.assertEqual(len(self.api.sent), 1)
             reply = self.api.sent[0][1]
-            self.assertEqual(
-                reply,
-                'JobMaster can help you find verified jobs. Ask naturally in any sentence.',
-            )
+            self.assertEqual(reply, REVERSE_ASK)
             low = reply.lower()
             for marker in ('72°', 'tower health', 'searches', 'ai jobs in the past'):
                 self.assertNotIn(marker.lower(), low)
 
     def test_JM026_guest_normal_search_still_works(self):
         self.bot.process('guest', 'Fresh AI jobs in Bangalore')
-        reply = self.api.sent[-1][1]
-        self.assertIn('https://www.linkedin.com/jobs/view/', reply)
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ASK)
 
     def test_JM027_owner_and_guest_replies_never_cross_chats(self):
         self.bot.process('owner', '/health')
@@ -699,7 +693,7 @@ class OwnerIsolationTests(unittest.TestCase):
         owner_replies = [t for c, t in self.api.sent if c == 'owner']
         guest_replies = [t for c, t in self.api.sent if c == 'guest' and t != 'Thinking…']
         self.assertEqual(owner_replies, ['TOWER HEALTH · 72°'])
-        self.assertTrue(all('linkedin.com' in t for t in guest_replies))
+        self.assertEqual(guest_replies, [REVERSE_ASK])
 
 
 if __name__ == '__main__':
