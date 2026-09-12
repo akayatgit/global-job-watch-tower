@@ -467,6 +467,12 @@ need to be told twice.
   on the original beats so Nano Banana + Omni still run. Dead-end
   "could not rewrite" is not a product.
 
+- **2026-09-12 · Stuck after 14 Eiffel stills.** Stills finished;
+  Omni never spoke. Ashok checked Replicate: last call was Nano
+  Banana Lite — Omni was never queued. Same Celery process died
+  after the 14th edit. Commit stills, **queue Omni as its own
+  Replicate job**, announce it, two short tries, retry = video only.
+
 ## Honesty note on the codeword
 
 WAKEUP is my wake-up ritual and identity key in chat — but this repo is

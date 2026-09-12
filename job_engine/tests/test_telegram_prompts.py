@@ -776,6 +776,25 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertIn('1–1 of 1', frames.text)
 
+    def test_watch_twist_announces_omni_once_stills_exist(self):
+        states = iter([
+            {'id': 26, 'status': 'done', 'twist_status': 'running'},
+            {
+                'id': 26, 'status': 'done', 'twist_status': 'running',
+                'twist_frames': [{'t': 0.0, 'key': 'k', 'filename': 'twist-01-0.00s.jpg'}],
+            },
+            {
+                'id': 26, 'status': 'done', 'twist_status': 'done',
+                'twist_text': 'Eiffel',
+                'twist_frames': [{'t': 0.0, 'key': 'k', 'filename': 'twist-01-0.00s.jpg'}],
+                'twist_video_key': 'prompts/d/twvid.mp4',
+            },
+        ])
+        self.deck.api_get = lambda path, params=None: next(states)
+        self.assertEqual(self.deck.watch_twist('1', 26, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertTrue(any('stills ready' in t and 'Omni' in t for _c, t in self.texts))
+        self.assertTrue(any('Gemini Omni motion transfer' in t for _c, t in self.texts))
+
     def test_watch_twist_failed_offers_retry(self):
         self.tower.reverse_status = {
             'id': 26, 'status': 'done',

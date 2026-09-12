@@ -926,6 +926,12 @@ it, shows recipient count) → `/pushconfirm`
   gets 3 tries. A short/errored rewrite no longer kills the pass —
   stamp the owner's twist onto every original beat, then stills +
   Omni. Failed twist (stills/queue) shows **Retry twist**.
+- **Omni starts the moment stills land (Ashok 2026-09-12).** Commit
+  the 14 twisted JPEGs, tell Telegram "stills ready — Omni is making
+  the video", then motion-transfer. Two Omni tries, 6 min each — do
+  not sit silent on a 15-min × 5-schema poll. Retry of a stuck twist
+  is **Omni only** (do not restyle 14 frames again). **Retry video**
+  when the MP4 is missing.
 - **A second Gemini tap must not re-ask the link (Ashok 2026-09-12).**
   The URL arrives before the hook. If that URL (or last reverse)
   is still known, start or resume — never `Send the link` again.

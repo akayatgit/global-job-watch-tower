@@ -182,6 +182,9 @@ PROMPT_TWIST_VIDEO_MODEL = (
     os.getenv('PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1') or
     'google/gemini-omni-1.1'
 ).strip()
+# Per Omni attempt (default 6 min). Two attempts max — do not inherit the
+# 15-min Kling render budget or the pass looks dead after the stills.
+PROMPT_TWIST_OMNI_TIMEOUT_S = int(os.getenv('PROMPT_TWIST_OMNI_TIMEOUT_S', '360'))
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')
