@@ -889,6 +889,24 @@ class BotWiringTests(unittest.TestCase):
         self.assertTrue(self.bot._is_reverse_foreground('100', f'{BTN_PREFIX}pt:revmodel:gemini'))
         self.assertFalse(self.bot._is_reverse_foreground('100', f'{BTN_PREFIX}pt:imgs:11'))
 
+    def test_igtovid_does_not_wait_on_a_held_chat_lock(self):
+        """Ashok 2026-09-12: /igtovid sat a full minute behind Images/video."""
+        import threading
+        import time
+
+        lock = self.bot._chat_locks.setdefault('100', threading.Lock())
+        self.assertTrue(lock.acquire(blocking=False))
+        try:
+            started = time.monotonic()
+            self.bot.process('100', '/igtovid')
+            elapsed = time.monotonic() - started
+        finally:
+            lock.release()
+        self.assertLess(elapsed, 0.5, f'/igtovid blocked on chat lock for {elapsed:.2f}s')
+        self.assertEqual(self.api.keyboards_sent[-1][1], REVERSE_ASK)
+        self.assertTrue(self.bot._is_reverse_lockfree('/igtovid', chat_id='100'))
+        self.assertFalse(self.bot._is_reverse_lockfree(f'{BTN_PREFIX}pt:imgs:11', chat_id='100'))
+
     def test_owner_igtovid_asks_for_url_then_title_starts_reverse(self):
         self.bot._process_locked('100', '/igtovid')
         _chat, text, keyboard = self.api.keyboards_sent[-1]
