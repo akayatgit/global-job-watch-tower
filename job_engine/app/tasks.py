@@ -993,6 +993,11 @@ def reverse_prompt_video(self, reverse_id: int):
         log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
         row.started_at = utcnow()
         try:
+            if not row.video_key and not (row.source_url or '').strip():
+                row.status = 'failed'
+                row.error = 'no clip — send the Instagram or Pinterest link'
+                db.commit()
+                return {'ok': False, 'error': row.error}
             if not row.video_key:
                 row.status = 'downloading'
                 db.commit()

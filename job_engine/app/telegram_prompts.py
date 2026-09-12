@@ -342,7 +342,10 @@ class PromptDeck:
         if action == 'go' and len(parts) >= 2 and parts[1].isdigit():
             return self.render_reply(chat_id, int(parts[1]))
         if action == 'cancel':
+            reverse_pending = self._reverse_pending(chat_id)
             self._clear_pending(chat_id)
+            if reverse_pending:
+                return ButtonReply(f'Cancelled. {REVERSE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
             return ButtonReply('Cancelled — nothing rendered.', [[('◂ Top 10', 'pt:list')]])
         if action == 'rate' and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
             return self.rate_reply(int(parts[1]), int(parts[2]))
@@ -351,7 +354,7 @@ class PromptDeck:
         if action == 'revmodel' and len(parts) >= 2:
             return self.maybe_take_vision_model(chat_id, parts[1])
         if action == 'twistskip':
-            return self._skip_intake_twist(chat_id)
+            return self._ignore_intake_twist(chat_id)
         if action in {'show', 'copy'} and len(parts) >= 2 and parts[1].isdigit():
             return self._prompt_text_reply(chat_id, int(parts[1]), copy=action == 'copy')
         if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
@@ -530,8 +533,8 @@ class PromptDeck:
         return self._ask_vision_model(chat_id)
 
     def maybe_take_twist(self, chat_id: str, text: str) -> ButtonReply | None:
-        """Owner typed the magic-pencil line — after the title, or after
-        tapping Twist on a finished reverse."""
+        """Typed magic-pencil line — only after Twist on a finished reverse.
+        Leftover intake twist state must not steal a hook or start a hollow run."""
         from app.prompts.reverse_prompt import find_url
         from app.prompts.reverse_twist import clean_twist
 
@@ -542,18 +545,22 @@ class PromptDeck:
         if apply_id.isdigit():
             self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), '')
             return self._start_twist(chat_id, int(apply_id), idea)
-        if self.sessions.get_state(STATE_AWAIT_TWIST.format(chat=chat_id), '') != '1':
+        if self.sessions.get_state(STATE_AWAIT_TWIST.format(chat=chat_id), '') == '1':
+            self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
+            self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
             return None
-        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
-        self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), idea)
-        return self._ask_vision_model(chat_id)
+        return None
 
-    def _skip_intake_twist(self, chat_id: str) -> ButtonReply:
-        if self.sessions.get_state(STATE_AWAIT_TWIST.format(chat=chat_id), '') != '1':
-            return ButtonReply('Send the link and the header title first.', [[('✖ Cancel', 'pt:cancel')]])
+    def _ignore_intake_twist(self, chat_id: str) -> ButtonReply:
+        """Old Skip button from intake twist — never start without a clip."""
         self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
-        return self._ask_vision_model(chat_id)
+        url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '')
+        has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
+        if url or has_video:
+            return self._ask_vision_model(chat_id)
+        self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+        return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
     def twist_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
         """✏️ Twist on a finished reverse — use the stored line or ask."""
@@ -613,8 +620,12 @@ class PromptDeck:
         """Owner tapped Gemini / GPT-6 Astra / Claude Fable 5 after the title."""
         from app.prompts.reverse_prompt import resolve_vision_engine, vision_key_missing, vision_label, ReverseError
 
-        if self.sessions.get_state(STATE_AWAIT_MODEL.format(chat=chat_id), '') != '1':
-            return ButtonReply('Send the link (or video) and the header title first.', [[('✖ Cancel', 'pt:cancel')]])
+        url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '') or None
+        has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
+        awaiting = self.sessions.get_state(STATE_AWAIT_MODEL.format(chat=chat_id), '') == '1'
+        if not awaiting:
+            self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
         try:
             engine = resolve_vision_engine(raw)
         except ReverseError:
@@ -625,18 +636,18 @@ class PromptDeck:
                 f'{vision_label(engine)} is not ready: {missing}\nPick another model.',
                 MODEL_BUTTONS,
             )
+        if not url and not has_video:
+            self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
+            self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
         title = self.sessions.get_state(STATE_PENDING_TITLE.format(chat=chat_id), '') or None
         twist = self.sessions.get_state(STATE_PENDING_TWIST.format(chat=chat_id), '') or None
-        url = self.sessions.get_state(STATE_PENDING_URL.format(chat=chat_id), '') or None
-        has_video = bool(self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), ''))
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), '')
         if has_video:
             return self.video_reply(chat_id, title=title, vision_engine=engine, twist=twist)
-        if not url:
-            return ButtonReply('Send the Instagram / Pinterest link first.', [[('✖ Cancel', 'pt:cancel')]])
         return self._start_reverse(chat_id, source_url=url, title=title, vision_engine=engine, twist=twist)
 
     def video_reply(
@@ -668,13 +679,6 @@ class PromptDeck:
             self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
         return ButtonReply(TITLE_ASK, [[('✖ Cancel', 'pt:cancel')]])
 
-    def _ask_twist(self, chat_id: str) -> ButtonReply:
-        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat=chat_id), '1')
-        return ButtonReply(
-            TWIST_ASK,
-            [[('Skip — original only', 'pt:twistskip')], [('✖ Cancel', 'pt:cancel')]],
-        )
-
     def _ask_vision_model(self, chat_id: str) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '1')
         return ButtonReply(MODEL_ASK, MODEL_BUTTONS)
@@ -698,8 +702,11 @@ class PromptDeck:
             payload['twist'] = twist
         if video is not None:
             payload['video_base64'] = base64.b64encode(video).decode('ascii')
-        else:
+        elif (source_url or '').strip():
             payload['source_url'] = source_url
+        else:
+            self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
+            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
         try:
             row = self.api_post('/api/prompts/reverse', payload)
         except Exception as exc:
@@ -780,6 +787,14 @@ class PromptDeck:
                         f'⬇️ Reverse #{reverse_id}: downloading the clip '
                         '(Instagram may need the logged-in browser, ~90s max).',
                     )
+                if status == 'queued' and waited >= 90 and 'queued-wait' not in announced:
+                    announced.add('queued-wait')
+                    if self.send_text:
+                        self.send_text(
+                            chat_id,
+                            f'⏳ Reverse #{reverse_id} is still queued — worker may be down. '
+                            'Tap Retry, or send /igtovid and the link again.',
+                        )
                 if status == 'queued' and waited >= 45 and 'requeued' not in announced:
                     announced.add('requeued')
                     try:
@@ -1239,6 +1254,14 @@ class PromptDeck:
         return True
 
     # --------------------------------------------------------------- misc
+
+    def _reverse_pending(self, chat_id: str) -> bool:
+        keys = (
+            STATE_AWAIT_URL, STATE_AWAIT_TITLE, STATE_AWAIT_TWIST,
+            STATE_AWAIT_TWIST_APPLY, STATE_AWAIT_MODEL, STATE_PENDING_URL,
+            STATE_PENDING_TITLE, STATE_PENDING_TWIST, STATE_VIDEO,
+        )
+        return any(self.sessions.get_state(key.format(chat=chat_id), '') for key in keys)
 
     def _clear_pending(self, chat_id: str) -> None:
         self.sessions.set_state(STATE_AWAIT_IMAGE.format(chat=chat_id), '')

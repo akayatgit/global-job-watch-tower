@@ -585,6 +585,34 @@ class JobMasterTelegramBot:
         except Exception:
             LOG.exception('twist watch crashed reverse=%s', reverse_id)
 
+    def resume_open_watches(self) -> int:
+        """After deploy, keep watching unfinished reverses so Telegram
+        does not sit on 'processing..' with a dead watcher thread."""
+        try:
+            payload = self.deck.api_get('/api/prompts/reverse', {'limit': 50})
+        except Exception:
+            LOG.exception('resume open reverse watches failed')
+            return 0
+        items = (payload or {}).get('items') if isinstance(payload, dict) else None
+        n = 0
+        for row in items or []:
+            if not isinstance(row, dict) or not row.get('id'):
+                continue
+            chat_id = str(row.get('chat_id') or '')
+            if not chat_id:
+                continue
+            status = str(row.get('status') or '')
+            if status in {'queued', 'downloading', 'describing', 'composing'}:
+                self._start_reverse_watch(chat_id, int(row['id']))
+                n += 1
+            twist = str(row.get('twist_status') or '')
+            if twist in {'queued', 'running'}:
+                self._start_twist_watch(chat_id, int(row['id']))
+                n += 1
+        if n:
+            LOG.info('resumed %s open reverse/twist watchers after start', n)
+        return n
+
     @staticmethod
     def _identity(raw: str) -> tuple[str, str] | None:
         value = (raw or '').strip()
@@ -2015,6 +2043,7 @@ class JobMasterTelegramBot:
                         username,
                         text,
                     )
+            self.resume_open_watches()
             while not STOP:
                 try:
                     poll_timeout = 2 if poll_successes < 2 else 25

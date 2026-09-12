@@ -18,7 +18,7 @@ from unittest import mock
 from app import config
 from app.telegram_buttons import BTN_PREFIX, ButtonReply
 from app.telegram_prompts import (
-    PromptDeck, STATE_AWAIT_IMAGE, STATE_AWAIT_MODEL, STATE_AWAIT_TITLE, STATE_AWAIT_TWIST,
+    PromptDeck, REVERSE_ASK, STATE_AWAIT_IMAGE, STATE_AWAIT_MODEL, STATE_AWAIT_TITLE, STATE_AWAIT_TWIST,
     STATE_AWAIT_TWIST_APPLY, STATE_AWAIT_URL, STATE_PHOTO, STATE_VIDEO,
 )
 from app.telegram_sessions import TelegramSessionStore
@@ -418,6 +418,29 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
 
+    def test_leftover_intake_twist_does_not_steal_the_hook(self):
+        self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
+        self.sessions.set_state(STATE_AWAIT_TWIST.format(chat='1'), '1')
+        stolen = self.deck.maybe_take_twist('1', 'Eiffel tower making step by step assembly')
+        self.assertIsNone(stolen)
+        asked = self.deck.maybe_take_title('1', 'Eiffel tower making step by step assembly')
+        self.assertIn('Select a Prompt Model', asked.text)
+        self.assertEqual(self.started, [])
+
+    def test_stale_or_clipless_model_tap_asks_for_the_link(self):
+        reply = self._pick_model('1', 'gemini')
+        self.assertEqual(reply.text, REVERSE_ASK)
+        self.assertEqual(self.tower.posts, [])
+        self.sessions.set_state(STATE_AWAIT_MODEL.format(chat='1'), '1')
+        reply = self._pick_model('1', 'gemini')
+        self.assertEqual(reply.text, REVERSE_ASK)
+        self.assertEqual(self.tower.posts, [])
+
+    def test_old_skip_twist_button_asks_for_the_link(self):
+        reply = self.deck.handle_callback('1', 'pt:twistskip')
+        self.assertEqual(reply.text, REVERSE_ASK)
+        self.assertEqual(self.tower.posts, [])
+
     def test_astra_button_sends_vision_engine(self):
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'CINEMATIC AI AD')
@@ -644,6 +667,16 @@ class DeckTests(unittest.TestCase):
         self.assertTrue(any('kicked it again' in t for _c, t in self.texts))
         self.assertTrue(any(p.endswith('/14/retry') for p in posts))
 
+    def test_watch_reverse_says_when_the_queue_is_dead(self):
+        self.deck.api_get = lambda path, params=None: {'id': 14, 'status': 'queued'}
+        self.deck.api_post = lambda path, payload=None: {'id': 14, 'status': 'queued'}
+        self.assertEqual(
+            self.deck.watch_reverse('1', 14, poll_s=45, max_wait_s=100, sleep=lambda s: None),
+            'timeout',
+        )
+        self.assertTrue(any('still queued' in t for _c, t in self.texts))
+        self.assertTrue(any('link again' in t for _c, t in self.texts))
+
     def test_retry_button_kicks_stuck_reverse(self):
         self.tower.reverse_status = {'id': 14, 'status': 'queued', 'prompt_text': None}
         reply = self.deck.handle_callback('1', 'pt:revretry:14')
@@ -809,6 +842,20 @@ class BotWiringTests(unittest.TestCase):
         self.assertIn('Workflow Started', self.api.keyboards_sent[-1][1])
         self.assertIn('video_base64', self.tower.posts[-1][1])
         self.assertEqual(self.tower.posts[-1][1]['title'], 'ROBE FILM')
+
+    def test_resume_open_watches_reattaches_unfinished_reverses(self):
+        self.tower.reverses = [
+            {'id': 21, 'chat_id': '100', 'status': 'queued'},
+            {'id': 22, 'chat_id': '100', 'status': 'done', 'twist_status': 'running'},
+            {'id': 23, 'status': 'queued'},
+        ]
+        started: list[tuple[str, int]] = []
+        twisted: list[tuple[str, int]] = []
+        self.bot._start_reverse_watch = lambda c, r: started.append((c, r))
+        self.bot._start_twist_watch = lambda c, r: twisted.append((c, r))
+        self.assertEqual(self.bot.resume_open_watches(), 2)
+        self.assertEqual(started, [('100', 21)])
+        self.assertEqual(twisted, [('100', 22)])
 
     def test_normalize_update_keeps_photo_file_id(self):
         update = {'message': {'chat': {'id': 100, 'type': 'private'}, 'from': {'username': 'ashok'},
