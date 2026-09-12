@@ -958,6 +958,8 @@ it, shows recipient count) → `/pushconfirm`
   download + queue runs on a **background thread** so the chat never waits
   on a multi-MB fetch.
 
+- **Ready message is one word (Ashok 2026-09-12).** Reverse/twist done caption is exactly `Ready…` — no timing essay, no “Shall we twist…”. No **Save clip** / **Save reel** buttons on that keyboard; Play / Images / Show / Copy / Twist stay.
+
 - **/igtovid must reply in under a second (Ashok 2026-09-12).** A one-minute
   wait for `Now Paste the link.` is a bug. Cause:
   reverse intake shared the per-chat lock with Images/video uploads. Law:

@@ -555,7 +555,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertEqual(len(self.keyboards), 1)
-        self.assertTrue(self.keyboards[0][1].startswith('✅ Reverse #11 ready.'))
+        self.assertEqual(self.keyboards[0][1], 'Ready…')
 
     def test_watch_reverse_delivers_one_message_with_buttons_only(self):
         long_prompt = '\n'.join(f'[{i}.0s–{i + 1}.0s] shot detail ' + ('x' * 80) for i in range(60))
@@ -577,16 +577,15 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_docs, [])
         self.assertEqual(self.texts, [])
         self.assertEqual(len(self.keyboards), 1)
-        self.assertTrue(self.keyboards[0][1].startswith('✅ Reverse #11 ready.'))
-        self.assertIn('⏱ ', self.keyboards[0][1])
-        self.assertIn('Shall we twist the video?', self.keyboards[0][1])
+        self.assertEqual(self.keyboards[0][1], 'Ready…')
         keyboard = self.keyboards[0][2]
-        self.assertEqual(
-            keyboard[0][0],
-            ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1'),
-        )
-        self.assertIn(('▶️ Clip', 'pt:playclip:11'), keyboard[2])
-        self.assertIn(('▶️ Reel', 'pt:playreel:11'), keyboard[2])
+        # No Save clip / Save reel — Play + Images / Show / Copy / Twist only.
+        self.assertFalse(any(
+            label.startswith('⬇️ Save clip') or label.startswith('⬇️ Save reel')
+            for row in keyboard for label, _ in row
+        ))
+        self.assertIn(('▶️ Clip', 'pt:playclip:11'), keyboard[0])
+        self.assertIn(('▶️ Reel', 'pt:playreel:11'), keyboard[0])
         self.assertEqual(keyboard[-3], [('🖼 Images', 'pt:imgs:11')])
         self.assertEqual(keyboard[-2], [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')])
         self.assertEqual(keyboard[-1], [('💥 Twist', 'pt:twist:11')])
@@ -681,7 +680,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.texts, [])
         self.assertEqual(self.sent_videos, [])
         self.assertEqual(len(self.keyboards), 1)
-        self.assertIn('Reel not composed: no video engine', self.keyboards[0][1])
+        self.assertEqual(self.keyboards[0][1], 'Ready…')
         self.assertIn(('▶️ Clip', 'pt:playclip:11'), self.keyboards[0][2][0])
 
     def test_watch_reverse_never_heartbeats_while_gemini_is_watching(self):
@@ -790,7 +789,11 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.texts, [])
         self.assertEqual(self.sent_videos, [])
         self.assertEqual(len(self.keyboards), 1)
-        self.assertTrue(self.keyboards[0][1].startswith('✅ Twist #11 ready.'))
+        self.assertEqual(self.keyboards[0][1], 'Ready…')
+        self.assertFalse(any(
+            label.startswith('⬇️ Save clip') or label.startswith('⬇️ Save reel')
+            for row in self.keyboards[0][2] for label, _ in row
+        ))
         self.assertIn(('▶️ Twist', 'pt:playtwist:11'), self.keyboards[0][2][1])
         self.assertEqual(self.keyboards[0][2][-2], [('🖼 Images', 'pt:timgs:11')])
         self.assertEqual(
