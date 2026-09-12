@@ -74,7 +74,6 @@ MODEL_BUTTONS = [
     [('Gemini', 'pt:revmodel:gemini')],
     [('GPT-6 Astra', 'pt:revmodel:astra')],
     [('Claude Fable 5', 'pt:revmodel:fable')],
-    [('✖ Cancel', 'pt:cancel')],
 ]
 
 PROMPTS_USAGE = (
@@ -342,18 +341,18 @@ class PromptDeck:
             return ButtonReply(
                 f'📸 Send the product photo now (as a photo, no caption needed). '
                 f"I'll pair it with prompt #{prompt_id} and ask you to confirm before rendering.",
-                [[('✖ Cancel', 'pt:cancel')]],
             )
         if action == 'photo':
             return self.photo_reply(chat_id)
         if action == 'go' and len(parts) >= 2 and parts[1].isdigit():
             return self.render_reply(chat_id, int(parts[1]))
         if action == 'cancel':
+            # Old Cancel taps still clear state — we no longer show the button.
             reverse_pending = self._reverse_pending(chat_id)
             self._clear_pending(chat_id)
             if reverse_pending:
-                return ButtonReply(f'Cancelled. {REVERSE_ASK}', [[('✖ Cancel', 'pt:cancel')]])
-            return ButtonReply('Cancelled — nothing rendered.', [[('◂ Top 10', 'pt:list')]])
+                return ButtonReply(REVERSE_ASK)
+            return ButtonReply('All good — nothing rendered.', [[('◂ Top 10', 'pt:list')]])
         if action == 'rate' and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
             return self.rate_reply(int(parts[1]), int(parts[2]))
         if action == 'posted' and len(parts) >= 2 and parts[1].isdigit():
@@ -437,7 +436,7 @@ class PromptDeck:
         return ButtonReply(
             f'Prompt #{prompt_id} + your product photo are paired.\n'
             'Make the video now? The prompt is used verbatim; your photo is the first frame.',
-            [[('✅ Make video', f'pt:go:{prompt_id}'), ('✖ Cancel', 'pt:cancel')]],
+            [[('✅ Make video', f'pt:go:{prompt_id}')]],
         )
 
     def render_reply(self, chat_id: str, prompt_id: int) -> ButtonReply:
@@ -520,7 +519,7 @@ class PromptDeck:
         if url:
             return self._ask_title(chat_id, source_url=url)
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-        return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(REVERSE_ASK)
 
     def maybe_take_url(self, chat_id: str, text: str) -> ButtonReply | None:
         """Any user text carrying an Instagram / Pinterest link: after /igtovid
@@ -578,7 +577,7 @@ class PromptDeck:
         if url or has_video:
             return self._ask_vision_model(chat_id)
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-        return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(REVERSE_ASK)
 
     def twist_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
         """✏️ Twist on a finished reverse — use the stored line or ask."""
@@ -613,10 +612,7 @@ class PromptDeck:
         idea = (row.get('twist_text') or '').strip()
         if not idea:
             self.sessions.set_state(STATE_AWAIT_TWIST_APPLY.format(chat=chat_id), str(reverse_id))
-            return ButtonReply(
-                TWIST_ASK,
-                [[('✖ Cancel', 'pt:cancel')]],
-            )
+            return ButtonReply(TWIST_ASK)
         return self._start_twist(chat_id, reverse_id, idea)
 
     def _start_twist(self, chat_id: str, reverse_id: int, twist: str) -> ButtonReply:
@@ -714,7 +710,7 @@ class PromptDeck:
         if resumed is not None:
             return resumed
         self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-        return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(REVERSE_ASK)
 
     def _resume_last_reverse(self, chat_id: str) -> ButtonReply | None:
         raw = self.sessions.get_state(STATE_LAST_REVERSE.format(chat=chat_id), '')
@@ -734,10 +730,7 @@ class PromptDeck:
                     self.on_reverse_started(str(chat_id), reverse_id)
                 except Exception:
                     logger.exception('resume watcher failed id=%s', reverse_id)
-            return ButtonReply(
-                REVERSE_STARTED,
-                [[('🔄 Retry', f'pt:revretry:{reverse_id}'), ('✖ Cancel', 'pt:cancel')]],
-            )
+            return ButtonReply(REVERSE_STARTED)
         if status == 'done':
             return ButtonReply(
                 f'Reverse #{reverse_id} is already done — tap Images / Show prompt / Twist below.',
@@ -773,7 +766,7 @@ class PromptDeck:
             except Exception:
                 logger.exception('reverse upload kick failed chat=%s', chat_id)
                 return ButtonReply('Tower could not start the reverse prompt — check /health and try again.')
-            return ButtonReply(REVERSE_STARTED, [[('✖ Cancel', 'pt:cancel')]])
+            return ButtonReply(REVERSE_STARTED)
         try:
             data, _content_type = self.download_photo(file_id)
         except Exception as exc:
@@ -795,7 +788,7 @@ class PromptDeck:
         file_id = self.sessions.get_state(STATE_VIDEO.format(chat=chat_id), '')
         if not file_id or self.download_photo is None:
             self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+            return ButtonReply(REVERSE_ASK)
         try:
             data, _content_type = self.download_photo(file_id)
         except Exception as exc:
@@ -815,7 +808,7 @@ class PromptDeck:
         self.sessions.set_state(STATE_AWAIT_TITLE.format(chat=chat_id), '1')
         if source_url:
             self.sessions.set_state(STATE_PENDING_URL.format(chat=chat_id), source_url)
-        return ButtonReply(TITLE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+        return ButtonReply(TITLE_ASK)
 
     def _ask_vision_model(self, chat_id: str) -> ButtonReply:
         self.sessions.set_state(STATE_AWAIT_MODEL.format(chat=chat_id), '1')
@@ -844,7 +837,7 @@ class PromptDeck:
             payload['source_url'] = source_url
         else:
             self.sessions.set_state(STATE_AWAIT_URL.format(chat=chat_id), '1')
-            return ButtonReply(REVERSE_ASK, [[('✖ Cancel', 'pt:cancel')]])
+            return ButtonReply(REVERSE_ASK)
         try:
             row = self.api_post('/api/prompts/reverse', payload)
         except Exception as exc:
@@ -866,10 +859,7 @@ class PromptDeck:
                 self.on_reverse_started(str(chat_id), int(row['id']))
             except Exception:
                 logger.exception('reverse watcher failed to start id=%s', row.get('id'))
-        return ButtonReply(
-            REVERSE_STARTED,
-            [[('🔄 Retry', f"pt:revretry:{row['id']}"), ('✖ Cancel', 'pt:cancel')]],
-        )
+        return ButtonReply(REVERSE_STARTED)
 
     def retry_reverse_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
         """Owner tapped Retry on a reverse that never reached Gemini."""
@@ -930,21 +920,15 @@ class PromptDeck:
                     return 'done'
                 if status == 'failed':
                     text = f"❌ Reverse prompt #{reverse_id} failed: {_reverse_fail_text(row)}"
-                    keyboard = [[('🔄 Retry', f'pt:revretry:{reverse_id}'), ('✖ Cancel', 'pt:cancel')]]
-                    if self.send_keyboard:
-                        self.send_keyboard(chat_id, text, keyboard)
-                    elif self.send_text:
+                    if self.send_text:
                         self.send_text(chat_id, text)
                     return 'failed'
             if waited >= max_wait_s:
                 text = (
-                    f'⏳ Reverse #{reverse_id} is still running after '
-                    f'{int(max_wait_s // 60)} min — tap Retry or send the link again.'
+                    f'⏳ Reverse #{reverse_id} is still going after '
+                    f'{int(max_wait_s // 60)} min — paste the link again anytime.'
                 )
-                keyboard = [[('🔄 Retry', f'pt:revretry:{reverse_id}'), ('✖ Cancel', 'pt:cancel')]]
-                if self.send_keyboard:
-                    self.send_keyboard(chat_id, text, keyboard)
-                elif self.send_text:
+                if self.send_text:
                     self.send_text(chat_id, text)
                 return 'timeout'
             sleep(poll_s)
@@ -1298,13 +1282,7 @@ class PromptDeck:
                 if status == 'failed':
                     err = row.get('twist_error') or 'unknown error'
                     text = f'❌ Twist #{reverse_id} failed: {err}'
-                    keyboard = [
-                        [('🔄 Retry twist', f'pt:twist:{reverse_id}')],
-                        [('Show prompt', f'pt:show:{reverse_id}')],
-                    ]
-                    if self.send_keyboard:
-                        self.send_keyboard(chat_id, text, keyboard)
-                    elif self.send_text:
+                    if self.send_text:
                         self.send_text(chat_id, text)
                     return 'failed'
             if waited >= max_wait_s:
@@ -1503,13 +1481,13 @@ def _reverse_fail_text(row: dict[str, Any]) -> str:
     if 'e001' in raw.lower() and 'gemini could not read' not in raw.lower():
         return (
             'Gemini could not read this clip (E001). '
-            'Pinterest/HLS often needs an H.264 remux — tap Retry, '
-            'or forward the video file. Astra/Fable also work.'
+            'Pinterest/HLS often needs an H.264 remux — forward the video file '
+            'or paste another link. Astra/Fable also work.'
         )
     if raw.lower().startswith('video model failed') and 'e001' in raw.lower():
         return (
             'Gemini could not read this clip (E001). '
-            'Tap Retry, or forward the video file and pick Gemini again.'
+            'Forward the video file or paste another link and pick Gemini again.'
         )
     return raw
 

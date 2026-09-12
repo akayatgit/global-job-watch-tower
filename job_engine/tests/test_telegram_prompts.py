@@ -259,7 +259,7 @@ class DeckTests(unittest.TestCase):
         self.sessions.set_state(STATE_PHOTO.format(chat='1'), 'file-abc')
         paired = self.deck.handle_callback('1', 'pt:photo')
         self.assertIn('Prompt #3 + your product photo are paired', paired.text)
-        self.assertEqual(paired.keyboard, [[('✅ Make video', 'pt:go:3'), ('✖ Cancel', 'pt:cancel')]])
+        self.assertEqual(paired.keyboard, [[('✅ Make video', 'pt:go:3')]])
         go = self.deck.handle_callback('1', 'pt:go:3')
         self.assertIn('Rendering prompt #3 (render 77)', go.text)
         path, payload = self.tower.posts[-1]
@@ -276,7 +276,7 @@ class DeckTests(unittest.TestCase):
         self.deck.handle_callback('1', 'pt:img:3')
         self.sessions.set_state(STATE_PHOTO.format(chat='1'), 'f')
         reply = self.deck.handle_callback('1', 'pt:cancel')
-        self.assertIn('Cancelled', reply.text)
+        self.assertIn('All good', reply.text)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_IMAGE.format(chat='1')), '')
 
     def test_rate_and_posted(self):
@@ -414,7 +414,7 @@ class DeckTests(unittest.TestCase):
         started = self._pick_model('1', 'gemini')
         self.assertIn('Workflow Started', started.text)
         self.assertEqual(self.started, [('1', 11)])
-        self.assertEqual(started.keyboard[0][0], ('🔄 Retry', 'pt:revretry:11'))
+        self.assertFalse(started.keyboard)
         payload = self.tower.posts[-1][1]
         self.assertEqual(payload['source_url'], 'https://www.instagram.com/reel/AbC123/')
         self.assertEqual(payload['title'], 'CINEMATIC AI AD')
@@ -678,10 +678,10 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 16, poll_s=45, max_wait_s=100, sleep=lambda s: None),
             'timeout',
         )
-        self.assertEqual(self.texts, [])
-        self.assertEqual(len(self.keyboards), 1)
-        self.assertIn('still running', self.keyboards[0][1])
-        self.assertEqual(self.keyboards[0][2][0][0][0], '🔄 Retry')
+        self.assertEqual(self.keyboards, [])
+        self.assertEqual(len(self.texts), 1)
+        self.assertIn('still going', self.texts[0][1])
+        self.assertIn('paste the link again', self.texts[0][1])
 
     def test_watch_reverse_rewrites_e001_as_gemini_not_video_model(self):
         self.deck.api_get = lambda path, params=None: {
@@ -692,9 +692,10 @@ class DeckTests(unittest.TestCase):
             ),
         }
         self.assertEqual(self.deck.watch_reverse('1', 16, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'failed')
-        self.assertEqual(self.texts, [])
-        self.assertIn('Gemini could not read this clip (E001)', self.keyboards[0][1])
-        self.assertNotIn('video model failed', self.keyboards[0][1])
+        self.assertEqual(self.keyboards, [])
+        self.assertEqual(len(self.texts), 1)
+        self.assertIn('Gemini could not read this clip (E001)', self.texts[0][1])
+        self.assertNotIn('video model failed', self.texts[0][1])
 
     def test_watch_reverse_quietly_kicks_a_stuck_queue(self):
         posts: list[str] = []
@@ -712,9 +713,9 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 14, poll_s=15, max_wait_s=50, sleep=lambda s: None),
             'timeout',
         )
-        self.assertEqual(self.texts, [])
+        self.assertEqual(self.keyboards, [])
         self.assertTrue(any(p.endswith('/14/retry') for p in posts))
-        self.assertIn('still running', self.keyboards[0][1])
+        self.assertTrue(any('still going' in t for _c, t in self.texts))
 
     def test_watch_reverse_says_when_the_queue_is_dead(self):
         self.deck.api_get = lambda path, params=None: {'id': 14, 'status': 'queued'}
@@ -723,9 +724,9 @@ class DeckTests(unittest.TestCase):
             self.deck.watch_reverse('1', 14, poll_s=45, max_wait_s=100, sleep=lambda s: None),
             'timeout',
         )
-        self.assertEqual(self.texts, [])
-        self.assertTrue(any('still running' in t for _c, t, _k in self.keyboards))
-        self.assertTrue(any('Retry' in label for _c, _t, kb in self.keyboards for row in kb for label, _d in row))
+        self.assertEqual(self.keyboards, [])
+        self.assertTrue(any('still going' in t for _c, t in self.texts))
+        self.assertTrue(any('paste the link again' in t for _c, t in self.texts))
 
     def test_retry_button_kicks_stuck_reverse(self):
         self.tower.reverse_status = {'id': 14, 'status': 'queued', 'prompt_text': None}
@@ -805,15 +806,18 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse/26/omni')
         self.assertEqual(self.twist_started, [('1', 26)])
 
-    def test_watch_twist_failed_offers_retry(self):
+    def test_watch_twist_failed_is_plain_text(self):
         self.tower.reverse_status = {
             'id': 26, 'status': 'done',
             'twist_status': 'failed',
             'twist_error': 'Gemini could not rewrite the prompt with that twist',
         }
         self.assertEqual(self.deck.watch_twist('1', 26, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'failed')
-        self.assertEqual(self.keyboards[-1][1], '❌ Twist #26 failed: Gemini could not rewrite the prompt with that twist')
-        self.assertEqual(self.keyboards[-1][2][0], [('🔄 Retry twist', 'pt:twist:26')])
+        self.assertEqual(self.keyboards, [])
+        self.assertEqual(
+            self.texts[-1][1],
+            '❌ Twist #26 failed: Gemini could not rewrite the prompt with that twist',
+        )
 
 
 class BotWiringTests(unittest.TestCase):
@@ -913,7 +917,7 @@ class BotWiringTests(unittest.TestCase):
         self.assertEqual(text, 'Now Paste the link.')
         self.assertNotIn('Gemini', text)
         self.assertNotIn('cinematic', text.lower())
-        self.assertEqual(keyboard, [[('✖ Cancel', 'pt:cancel')]])
+        self.assertFalse(keyboard)
         self.bot._process_locked('100', 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertEqual(self.api.keyboards_sent[-1][1], 'Whats the hook?')
         self.bot._process_locked('100', 'CINEMATIC AI AD')
