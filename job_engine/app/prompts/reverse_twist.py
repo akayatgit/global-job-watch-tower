@@ -43,11 +43,18 @@ logger = logging.getLogger(__name__)
 
 TWIST_TEXT_MAX = 400
 TWIST_IMAGE_BUDGET_S = 180
-TWIST_VIDEO_MODEL = 'google/gemini-omni-1.1'
-OMNI_MAX_S = 10
-# One hung Omni schema used to burn 15 min × 5 attempts. Two short tries.
-OMNI_ATTEMPT_BUDGET_S = 360
-OMNI_MAX_ATTEMPTS = 2
+TWIST_VIDEO_MODEL = 'bytedance/seedance-2.0'
+# Seedance duration is 4–15s (or -1 auto). Cap reference-video total ≤15s.
+SEEDANCE_MIN_S = 4
+SEEDANCE_MAX_S = 15
+SEEDANCE_MAX_REF_IMAGES = 9
+# Two attempts: with stills, then video-only. Do not inherit Kling's 15-min budget.
+SEEDANCE_ATTEMPT_BUDGET_S = 360
+SEEDANCE_MAX_ATTEMPTS = 2
+# Back-compat aliases (status keys / env still say omni in a few places).
+OMNI_MAX_S = SEEDANCE_MAX_S
+OMNI_ATTEMPT_BUDGET_S = SEEDANCE_ATTEMPT_BUDGET_S
+OMNI_MAX_ATTEMPTS = SEEDANCE_MAX_ATTEMPTS
 
 TWIST_SYSTEM = """You are the magic pencil. You have a finished timestamped generation prompt that recreates a product video beat-for-beat.
 
@@ -149,7 +156,7 @@ def twist_rewrite_ok(draft: str, refined: str) -> bool:
 
 def fallback_twist_prompt(draft: str, idea: str) -> str:
     """Gemini missed: keep every original beat and stamp the twist on it.
-    Stills + Omni can still run. Never mention 'twist' in the text."""
+    Stills + Seedance can still run. Never mention 'twist' in the text."""
     from app.prompts.reverse_prompt import _split_prompt_parts, fit_prompt
 
     idea = clean_twist(idea)
@@ -371,50 +378,93 @@ def pack_frames_zip(frames, *, fetch) -> tuple[bytes, list[str]]:
     return buf.getvalue(), failed
 
 
-def twist_video_prompt(twist: str, twisted_prompt: str, *, duration_s: float | None = None) -> str:
-    """Motion-transfer brief for Omni: text + source video only (no stills)."""
+def seedance_duration_s(duration_s: float | None = None) -> int:
+    """Seedance accepts 4–15, or -1 for auto. We clamp to the clip length."""
+    seconds = int(round(float(duration_s or 8)))
+    return max(SEEDANCE_MIN_S, min(SEEDANCE_MAX_S, seconds))
+
+
+def twist_video_prompt(
+    twist: str,
+    twisted_prompt: str,
+    *,
+    duration_s: float | None = None,
+    image_count: int = 0,
+) -> str:
+    """Seedance brief: motion from [Video1], look from [ImageN] when present."""
     idea = clean_twist(twist)
     story = ' '.join((twisted_prompt or '').split())
     if len(story) > 1600:
         story = story[:1600].rsplit(' ', 1)[0]
-    seconds = max(3, min(OMNI_MAX_S, int(round(float(duration_s or 8)))))
-    return (
-        f'Motion transfer. Keep the source video camera motion, pacing, and cuts '
-        f'for the full {seconds}s. Restyle the whole clip for this twist only — '
-        f'do not invent new camera moves. Twist: {idea}. {story}'
-    ).strip()
+    seconds = seedance_duration_s(duration_s)
+    if image_count > 0:
+        labels = ', '.join(f'[Image{i}]' for i in range(1, image_count + 1))
+        look = (
+            f'Keep camera motion, pacing, and cuts from [Video1] for the full '
+            f'{seconds}s. Restyle every frame to match the twisted stills '
+            f'{labels}. Twist: {idea}. {story}'
+        )
+    else:
+        look = (
+            f'Motion transfer from [Video1]. Keep camera motion, pacing, and cuts '
+            f'for the full {seconds}s. Restyle the whole clip for this twist only — '
+            f'do not invent new camera moves. Twist: {idea}. {story}'
+        )
+    return look.strip()
 
 
-def omni_input_attempts(
+def seedance_input_attempts(
     *,
     prompt: str,
     video_url: str | None,
     frame_urls: list[str] | None = None,
+    duration_s: float | None = None,
 ) -> list[dict]:
-    """Omni payloads: prompt + source video only.
+    """Seedance 2.0 payloads: source clip as ``reference_videos``.
 
-    Gemini Omni 1.1 rejects combining ``video`` (edit) with ``image``,
-    ``last_frame``, or ``reference_images``. Twisted stills stay for the
-    Telegram Images button; they are never sent here. ``frame_urls`` is
-    kept for call-site / future non-Omni models — ignored for Omni.
+    Unlike Omni, Seedance accepts ``reference_videos`` together with
+    ``reference_images`` (twisted stills). Prefer video+stills, then
+    video-only. Never use Omni's ``video``/``task=edit`` fields.
     """
-    del frame_urls  # Omni path: never attach stills
     video = (video_url or '').strip()
+    frames = [u for u in (frame_urls or []) if (u or '').strip()][:SEEDANCE_MAX_REF_IMAGES]
+    if not video:
+        return []
+    duration = seedance_duration_s(duration_s)
     attempts: list[dict] = []
 
     def base(**extra) -> dict:
         payload = {
             'prompt': prompt,
+            'reference_videos': [video],
+            'duration': duration,
             'resolution': '720p',
             'aspect_ratio': '9:16',
+            'generate_audio': False,
         }
         payload.update(extra)
         return payload
 
-    if video:
-        attempts.append(base(task='edit', video=video))
-        attempts.append(base(video=video))
-    return attempts[:OMNI_MAX_ATTEMPTS]
+    if frames:
+        attempts.append(base(reference_images=frames))
+    attempts.append(base())
+    return attempts[:SEEDANCE_MAX_ATTEMPTS]
+
+
+# Back-compat name used by older tests / callers.
+def omni_input_attempts(
+    *,
+    prompt: str,
+    video_url: str | None,
+    frame_urls: list[str] | None = None,
+    duration_s: float | None = None,
+) -> list[dict]:
+    return seedance_input_attempts(
+        prompt=prompt,
+        video_url=video_url,
+        frame_urls=frame_urls,
+        duration_s=duration_s,
+    )
 
 
 def _play_url(url: str | None) -> str:
@@ -443,20 +493,29 @@ def render_twist_video(
     key_for: Callable[..., str] | None = None,
     read_output: Callable | None = None,
 ):
-    """Original clip + twist prompt → Gemini Omni MP4. Stills are not sent.
+    """Original clip (+ twisted stills) → Seedance 2.0 MP4.
 
-    Nano Banana twisted frames remain for Telegram Images; Omni only gets
-    the source video and the text brief (Ashok 2026-09-12).
+    Seedance takes ``reference_videos`` for motion and optional
+    ``reference_images`` for the twisted look (Ashok 2026-09-12: replace Omni).
     """
     from app.prompts import video_creator
 
     idea = clean_twist(twist)
-    # frames kept in the signature for callers / future video models that
-    # may accept reference stills again — Omni ignores them.
-    _ = frames
+    frame_urls: list[str] = []
+    for frame in frames or []:
+        key, _name, _t = _frame_fields(frame)
+        if key:
+            frame_urls.append(video_creator.public_url(key))
     video = _play_url(video_url)
-    prompt = twist_video_prompt(idea, twisted_prompt, duration_s=duration_s)
-    attempts = omni_input_attempts(prompt=prompt, video_url=video or None)
+    prompt = twist_video_prompt(
+        idea, twisted_prompt, duration_s=duration_s, image_count=len(frame_urls),
+    )
+    attempts = seedance_input_attempts(
+        prompt=prompt,
+        video_url=video or None,
+        frame_urls=frame_urls,
+        duration_s=duration_s,
+    )
     if not attempts:
         return None
     model = (
@@ -469,7 +528,11 @@ def render_twist_video(
         import replicate
 
         client = replicate.Client(api_token=token)
-        budget_s = float(getattr(config, 'PROMPT_TWIST_OMNI_TIMEOUT_S', OMNI_ATTEMPT_BUDGET_S) or OMNI_ATTEMPT_BUDGET_S)
+        budget_s = float(
+            getattr(config, 'PROMPT_TWIST_VIDEO_TIMEOUT_S', None)
+            or getattr(config, 'PROMPT_TWIST_OMNI_TIMEOUT_S', SEEDANCE_ATTEMPT_BUDGET_S)
+            or SEEDANCE_ATTEMPT_BUDGET_S
+        )
 
         def run(model, input):  # noqa: A001
             return video_creator.replicate_render(
@@ -483,11 +546,11 @@ def render_twist_video(
     for index, inputs in enumerate(attempts, start=1):
         try:
             if log:
-                log(f'Omni motion transfer {index}/{len(attempts)} · {model}')
+                log(f'Seedance twist video {index}/{len(attempts)} · {model}')
             output = run(model, input=inputs)
             data = read_output(output)
             if not data or len(data) < 1024:
-                raise RuntimeError('Omni returned an empty file')
+                raise RuntimeError('Seedance returned an empty file')
             key = key_for('twvid', prompt_id=prompt_id, suffix='mp4')
             path = store(key, data, content_type='video/mp4')
             return video_creator.RenderResult(
@@ -498,9 +561,9 @@ def render_twist_video(
             )
         except Exception as exc:
             last_err = exc
-            logger.warning('Omni attempt %s failed: %s', index, exc)
+            logger.warning('Seedance attempt %s failed: %s', index, exc)
             if log:
-                log(f'Omni attempt {index} failed: {exc}')
+                log(f'Seedance attempt {index} failed: {exc}')
     if last_err is not None:
         raise RuntimeError(str(last_err)[:2000]) from last_err
     return None
