@@ -606,7 +606,7 @@ class JobMasterTelegramBot:
                 self._start_reverse_watch(chat_id, int(row['id']))
                 n += 1
             twist = str(row.get('twist_status') or '')
-            if twist in {'queued', 'running'}:
+            if twist in {'queued', 'running', 'stills', 'omni'}:
                 self._start_twist_watch(chat_id, int(row['id']))
                 n += 1
         if n:

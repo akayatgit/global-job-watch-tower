@@ -1184,7 +1184,7 @@ def twist_reverse_prompt(self, reverse_id: int):
         try:
             twisted = reverse_twist.frames_from_stored(row.twist_frames)
             if twisted and (row.twist_prompt or '').strip():
-                log(f'{len(twisted)} twisted stills already stored — Omni only')
+                log(f'{len(twisted)} twisted stills already stored — waiting for Start the Twist')
             else:
                 clock.start('twist_prompt')
                 reading = reverse_twist.twist_prompt_text(draft, idea, log=log)
@@ -1215,10 +1215,12 @@ def twist_reverse_prompt(self, reverse_id: int):
                 took = clock.stop('twist_frames')
                 row.timings = clock.snapshot()
                 db.commit()
-                log(f'{len(twisted)} twisted stills in {took}s — queueing Gemini Omni as its own Replicate call')
-            render_twist_omni.delay(int(row.id))
-            log(f'Gemini Omni queued ({reverse_twist.TWIST_VIDEO_MODEL}) — Nano Banana is done')
-            return {'ok': True, 'frames': len(twisted), 'omni_queued': True}
+                log(f'{len(twisted)} twisted stills in {took}s — waiting for Start the Twist')
+            row.twist_status = 'stills'
+            row.timings = clock.snapshot()
+            db.commit()
+            log(f'{len(twisted)} stills ready — Omni waits for the Start the Twist tap')
+            return {'ok': True, 'frames': len(twisted), 'stills_ready': True}
         except Exception as exc:
             db.rollback()
             row = db.get(ReversePrompt, int(reverse_id))
@@ -1255,7 +1257,7 @@ def render_twist_omni(self, reverse_id: int):
             db.commit()
             return {'ok': False, 'error': row.twist_error}
         clock = Clock(load_marks(row.timings))
-        row.twist_status = 'running'
+        row.twist_status = 'omni'
         db.commit()
         log(f'calling {reverse_twist.TWIST_VIDEO_MODEL} with {len(twisted)} stills')
         try:
@@ -1326,8 +1328,7 @@ def resume_stuck_reverses(*, delay=None) -> int:
 
 
 def resume_stuck_twists(*, delay=None) -> int:
-    """Deploy kills the Omni poll. Stills are already on disk — kick Omni
-    only, do not restyle 14 frames again."""
+    """Only resume Omni after the owner tapped Start the Twist."""
     from app.models import ReversePrompt
     from app.prompts.reverse_twist import frames_from_stored
 
@@ -1335,19 +1336,18 @@ def resume_stuck_twists(*, delay=None) -> int:
     n = 0
     with SessionLocal() as db:
         rows = db.execute(
-            select(ReversePrompt).where(ReversePrompt.twist_status.in_(('queued', 'running')))
+            select(ReversePrompt).where(ReversePrompt.twist_status == 'omni')
         ).scalars().all()
         for row in rows:
             if not frames_from_stored(row.twist_frames):
                 continue
             if row.twist_video_key:
                 continue
-            row.twist_status = 'queued'
             row.twist_video_error = None
             db.commit()
             kick(row.id)
             n += 1
-            console_log('worker', f'Reverse #{row.id} twist re-queued (Omni only)')
+            console_log('worker', f'Reverse #{row.id} Omni re-queued (Start the Twist)')
     return n
 
 

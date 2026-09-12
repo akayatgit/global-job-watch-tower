@@ -125,6 +125,12 @@ class FakeTower:
             row.update({'id': rid, 'status': 'queued', 'error': None})
             self.reverse_status = row
             return row
+        if path.endswith('/omni') and '/reverse/' in path:
+            rid = int(path.split('/')[-2])
+            row = dict(self.reverse_status or {'id': rid, 'status': 'done'})
+            row.update({'id': rid, 'twist_status': 'omni', 'twist_video_error': None})
+            self.reverse_status = row
+            return row
         if path.endswith('/twist') and '/reverse/' in path:
             rid = int(path.split('/')[-2])
             idea = ((payload or {}).get('twist') or '').strip()
@@ -776,24 +782,19 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
         self.assertIn('1–1 of 1', frames.text)
 
-    def test_watch_twist_announces_omni_once_stills_exist(self):
-        states = iter([
-            {'id': 26, 'status': 'done', 'twist_status': 'running'},
-            {
-                'id': 26, 'status': 'done', 'twist_status': 'running',
-                'twist_frames': [{'t': 0.0, 'key': 'k', 'filename': 'twist-01-0.00s.jpg'}],
-            },
-            {
-                'id': 26, 'status': 'done', 'twist_status': 'done',
-                'twist_text': 'Eiffel',
-                'twist_frames': [{'t': 0.0, 'key': 'k', 'filename': 'twist-01-0.00s.jpg'}],
-                'twist_video_key': 'prompts/d/twvid.mp4',
-            },
-        ])
-        self.deck.api_get = lambda path, params=None: next(states)
-        self.assertEqual(self.deck.watch_twist('1', 26, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertTrue(any('stills ready' in t and 'Omni' in t for _c, t in self.texts))
-        self.assertTrue(any('Gemini Omni motion transfer' in t for _c, t in self.texts))
+    def test_watch_twist_offers_start_the_twist_after_stills(self):
+        self.tower.reverse_status = {
+            'id': 26, 'status': 'done', 'twist_status': 'stills',
+            'twist_frames': [{'t': 0.0, 'key': 'k', 'filename': 'twist-01-0.00s.jpg'}],
+        }
+        self.assertEqual(self.deck.watch_twist('1', 26, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'stills')
+        self.assertIn('stills ready', self.keyboards[-1][1])
+        self.assertIn('Start the Twist', self.keyboards[-1][1])
+        self.assertEqual(self.keyboards[-1][2][-1], [('▶ Start the Twist', 'pt:omni:26')])
+        started = self.deck.handle_callback('1', 'pt:omni:26')
+        self.assertIn('Gemini Omni is making the video', started.text)
+        self.assertEqual(self.tower.posts[-1][0], '/api/prompts/reverse/26/omni')
+        self.assertEqual(self.twist_started, [('1', 26)])
 
     def test_watch_twist_failed_offers_retry(self):
         self.tower.reverse_status = {

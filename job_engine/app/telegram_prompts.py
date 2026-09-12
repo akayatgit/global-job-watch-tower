@@ -64,6 +64,7 @@ REVERSE_USAGE = REVERSE_ASK
 TITLE_ASK = 'Whats the hook?'
 # Ashok (2026-09-12): twist lives on the finished clip, next to Save.
 TWIST_ASK = 'Shall we twist the video?'
+START_TWIST = '▶ Start the Twist'
 MODEL_ASK = 'Select a Prompt Model…'
 REVERSE_QUEUED = 'processing..'
 REVERSE_STARTED = 'Workflow Started…'
@@ -369,7 +370,7 @@ class PromptDeck:
         if action == 'twist' and len(parts) >= 2 and parts[1].isdigit():
             return self.twist_reply(chat_id, int(parts[1]))
         if action == 'omni' and len(parts) >= 2 and parts[1].isdigit():
-            return self.twist_reply(chat_id, int(parts[1]))
+            return self.omni_reply(chat_id, int(parts[1]))
         if action == 'revretry' and len(parts) >= 2 and parts[1].isdigit():
             return self.retry_reverse_reply(chat_id, int(parts[1]))
         return ButtonReply(PROMPTS_USAGE)
@@ -575,6 +576,8 @@ class PromptDeck:
 
     def twist_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
         """✏️ Twist on a finished reverse — use the stored line or ask."""
+        from app.prompts.reverse_prompt import load_reference_frames
+
         try:
             row = self.api_get(f'/api/prompts/reverse/{reverse_id}', None)
         except Exception as exc:
@@ -586,12 +589,20 @@ class PromptDeck:
         if str(row.get('status') or '') != 'done' or not (row.get('prompt_text') or '').strip():
             return ButtonReply('The original prompt is not ready yet — wait for the reverse to finish.')
         status = str(row.get('twist_status') or '')
-        if status in ('queued', 'running'):
+        if status == 'stills' or (
+            status == 'running'
+            and load_reference_frames(row.get('twist_frames'))
+            and not row.get('twist_video_key')
+        ):
+            return self._stills_ready_reply(row)
+        if status in ('queued', 'running', 'omni'):
             if self.on_twist_started is not None:
                 try:
                     self.on_twist_started(str(chat_id), reverse_id)
                 except Exception:
                     logger.exception('twist watcher failed to start id=%s', reverse_id)
+            if status == 'omni':
+                return ButtonReply(f'💥 Twist #{reverse_id} — Gemini Omni is already making the video.')
             return ButtonReply(f'💥✏️ Twist for #{reverse_id} is already running — the twisted prompt and stills land here.')
         idea = (row.get('twist_text') or '').strip()
         if not idea:
@@ -626,6 +637,45 @@ class PromptDeck:
             f'💥✏️ Twist #{reverse_id} started — Gemini rewrites every beat, '
             'then each cut frame goes through text+image→image. Usually 3–8 minutes.'
         )
+
+    def omni_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
+        """▶ Start the Twist — Omni only, after stills exist."""
+        try:
+            row = self.api_post(f'/api/prompts/reverse/{reverse_id}/omni', {})
+        except Exception as exc:
+            text = str(exc)
+            if '404' in text:
+                return ButtonReply(f'No reverse #{reverse_id}.')
+            if '409' in text:
+                return ButtonReply('Twisted stills are not ready yet — wait for the images, then tap Start the Twist.')
+            logger.exception('omni request failed')
+            return ButtonReply('Tower could not start Omni — check /health and try again.')
+        if not isinstance(row, dict):
+            return ButtonReply('Tower could not start Omni — check /health and try again.')
+        if row.get('twist_status') == 'failed' and row.get('twist_error'):
+            return ButtonReply(f"Omni failed to queue: {row.get('twist_error')}")
+        if self.on_twist_started is not None:
+            try:
+                self.on_twist_started(str(chat_id), reverse_id)
+            except Exception:
+                logger.exception('omni watcher failed to start id=%s', reverse_id)
+        return ButtonReply(f'💥 Twist #{reverse_id} — Gemini Omni is making the video. About 2–6 min.')
+
+    def _stills_ready_reply(self, row: dict[str, Any]) -> ButtonReply:
+        from app.prompts.reverse_prompt import load_reference_frames
+
+        rid = int(row.get('id') or 0)
+        n = len(load_reference_frames(row.get('twist_frames')))
+        return ButtonReply(
+            f'🖼 {n} twisted stills ready. Tap Images (4 at a time), then {START_TWIST} for the video.',
+            self._stills_ready_keyboard(rid),
+        )
+
+    def _stills_ready_keyboard(self, reverse_id: int) -> list[list[tuple[str, str]]]:
+        return [
+            [('🖼 Images', f'pt:timgs:{reverse_id}')],
+            [(START_TWIST, f'pt:omni:{reverse_id}')],
+        ]
 
     def maybe_take_vision_model(self, chat_id: str, raw: str) -> ButtonReply:
         """Owner tapped Gemini / GPT-6 Astra / Claude Fable 5 after the title.
@@ -892,7 +942,7 @@ class PromptDeck:
         if offer_twist:
             keyboard.append([('💥 Twist', f'pt:twist:{int(rid)}')])
         elif not row.get('twist_video_key'):
-            keyboard.append([('🔄 Retry video', f'pt:omni:{int(rid)}')])
+            keyboard.append([(START_TWIST, f'pt:omni:{int(rid)}')])
         return keyboard
 
     def _offer_saves(self, chat_id: str, pairs: tuple[tuple[str, str | None], ...]) -> None:
@@ -1100,8 +1150,14 @@ class PromptDeck:
             text += f' {len(failed)} missed ({", ".join(failed)}).'
         if left:
             text += ' More images ▸'
-            return ButtonReply(text, [[('More images ▸', f'pt:{action}:{reverse_id}:{nxt}')]])
-        return ButtonReply(text)
+            rows = [[('More images ▸', f'pt:{action}:{reverse_id}:{nxt}')]]
+            if kind == 'twist' and not row.get('twist_video_key'):
+                rows.append([(START_TWIST, f'pt:omni:{reverse_id}')])
+            return ButtonReply(text, rows)
+        extra = []
+        if kind == 'twist' and not row.get('twist_video_key'):
+            extra.append([(START_TWIST, f'pt:omni:{reverse_id}')])
+        return ButtonReply(text, extra or None)
 
     def _deliver_frame_zip(
         self,
@@ -1196,15 +1252,21 @@ class PromptDeck:
                         'cut frames, then Gemini Omni motion transfer.',
                     )
                 stills = load_reference_frames(row.get('twist_frames')) if isinstance(row, dict) else []
-                if status == 'running' and stills and 'omni' not in announced:
-                    announced.add('omni')
-                    if self.send_text:
-                        self.send_text(
-                            chat_id,
-                            f'🖼 {len(stills)} twisted stills ready. Gemini Omni is making '
-                            'the video now — about 2–6 min.',
-                        )
-                if status == 'running' and 'omni' in announced and self.send_text:
+                waiting = (
+                    bool(stills)
+                    and not row.get('twist_video_key')
+                    and status in {'stills', 'running'}
+                )
+                if waiting:
+                    self._offer_stills_gate(chat_id, row, stills)
+                    return 'stills'
+                if status == 'omni' and status not in announced and self.send_text:
+                    announced.add(status)
+                    self.send_text(
+                        chat_id,
+                        f'💥 Twist #{reverse_id} — Gemini Omni is making the video. About 2–6 min.',
+                    )
+                if status == 'omni' and self.send_text:
                     if waited - last_beat >= DESCRIBE_HEARTBEAT_S:
                         last_beat = waited
                         self.send_text(
@@ -1231,7 +1293,7 @@ class PromptDeck:
                     f'⏳ Twist #{reverse_id} is still running after {int(max_wait_s // 60)} min '
                     '— I will stop watching.'
                 )
-                keyboard = [[('🔄 Retry video', f'pt:omni:{reverse_id}')]]
+                keyboard = [[(START_TWIST, f'pt:omni:{reverse_id}')]]
                 if self.send_keyboard:
                     self.send_keyboard(chat_id, text, keyboard)
                 elif self.send_text:
@@ -1239,6 +1301,19 @@ class PromptDeck:
                 return 'timeout'
             sleep(poll_s)
             waited += poll_s
+
+    def _offer_stills_gate(self, chat_id: str, row: dict[str, Any], stills: list) -> None:
+        rid = int(row.get('id') or 0)
+        text = (
+            f'🖼 {len(stills)} twisted stills ready. Tap Images (4 at a time), '
+            f'then {START_TWIST} for the video.'
+        )
+        keyboard = self._stills_ready_keyboard(rid)
+        if self.send_keyboard:
+            self.send_keyboard(chat_id, text, keyboard)
+            return
+        if self.send_text:
+            self.send_text(chat_id, text)
 
     def _deliver_twist(
         self, chat_id: str, row: dict[str, Any], *, sleep: Callable[[float], None] = time.sleep,

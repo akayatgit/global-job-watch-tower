@@ -1112,13 +1112,20 @@ class ReverseApiAndTaskTests(unittest.TestCase):
                 mock.patch('app.tasks.console_log'):
             result = tasks.twist_reverse_prompt.run(reverse_id)
         self.assertTrue(result['ok'], result)
-        self.assertTrue(result.get('omni_queued'))
-        queued_omni.assert_called_once_with(reverse_id)
+        self.assertTrue(result.get('stills_ready'))
+        queued_omni.assert_not_called()
         row = self.db.get(ReversePrompt, reverse_id)
+        self.assertEqual(row.twist_status, 'stills')
         self.assertEqual(row.twist_keyword, 'GOLD')
         self.assertIn('liquid gold', row.twist_prompt)
         self.assertIn('twref.jpg', row.twist_frames or '')
         self.assertEqual(row.prompt_text.startswith('[0.0s–8.0s] a juice glass'), True)
+
+        with mock.patch('app.tasks.render_twist_omni') as queued:
+            omni_resp = self.client.post(f'/api/prompts/reverse/{reverse_id}/omni')
+        self.assertEqual(omni_resp.status_code, 202, omni_resp.text)
+        self.assertEqual(omni_resp.json()['twist_status'], 'omni')
+        queued.delay.assert_called_once()
 
         with mock.patch.object(tasks, 'SessionLocal', lambda: _SessionCtx(self.db)), \
                 mock.patch('app.prompts.reverse_twist.render_twist_video', return_value=omni) as rendered, \
@@ -1204,7 +1211,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
         row.prompt_text = '[0.0s–8.0s] a glass.'
         row.twist_text = 'Eiffel'
         row.twist_prompt = '[0.0s–8.0s] Eiffel glass.'
-        row.twist_status = 'running'
+        row.twist_status = 'omni'
         row.twist_frames = json.dumps([{'t': 0.0, 'key': 'k', 'filename': 'twist-01.jpg'}])
         self.db.commit()
 
@@ -1224,7 +1231,7 @@ class ReverseApiAndTaskTests(unittest.TestCase):
             n = tasks.resume_stuck_twists(delay=seen.append)
         self.assertEqual(n, 1)
         self.assertEqual(seen, [reverse_id])
-        self.assertEqual(self.db.get(ReversePrompt, reverse_id).twist_status, 'queued')
+        self.assertEqual(self.db.get(ReversePrompt, reverse_id).twist_status, 'omni')
 
 
 if __name__ == '__main__':
