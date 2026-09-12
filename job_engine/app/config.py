@@ -176,18 +176,22 @@ PROMPT_TWIST_IMAGE_MODEL = (
     os.getenv('PROMPT_TWIST_IMAGE_MODEL', 'google/nano-banana-2-lite') or
     'google/nano-banana-2-lite'
 ).strip()
-# After twisted stills: Gemini Omni motion transfer on Replicate.
-# Omni accepts prompt + source video only — never image/last_frame/
-# reference_images with video (Replicate ValueError). Stills stay for
-# Telegram; future non-Omni models may attach frames again.
-# Default google/gemini-omni-1.1.
+# After twisted stills: Seedance 2.0 motion transfer on Replicate.
+# Payload = prompt + reference_videos (source clip) + optional
+# reference_images (twisted stills). Replaces Gemini Omni (Ashok
+# 2026-09-12). Override with PROMPT_TWIST_VIDEO_MODEL if needed.
 PROMPT_TWIST_VIDEO_MODEL = (
-    os.getenv('PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1') or
-    'google/gemini-omni-1.1'
+    os.getenv('PROMPT_TWIST_VIDEO_MODEL', 'bytedance/seedance-2.0') or
+    'bytedance/seedance-2.0'
 ).strip()
-# Per Omni attempt (default 6 min). Two attempts max — do not inherit the
+# Per attempt (default 6 min). Two attempts max — do not inherit the
 # 15-min Kling render budget or the pass looks dead after the stills.
-PROMPT_TWIST_OMNI_TIMEOUT_S = int(os.getenv('PROMPT_TWIST_OMNI_TIMEOUT_S', '360'))
+PROMPT_TWIST_VIDEO_TIMEOUT_S = int(
+    os.getenv('PROMPT_TWIST_VIDEO_TIMEOUT_S')
+    or os.getenv('PROMPT_TWIST_OMNI_TIMEOUT_S', '360')
+)
+# Back-compat alias for older .env / callers.
+PROMPT_TWIST_OMNI_TIMEOUT_S = PROMPT_TWIST_VIDEO_TIMEOUT_S
 # Where rendered prompt videos / cards / product images live — same asset
 # root AvatarPitch reads from, served by /api/partner/v1/assets/{key}
 PROMPT_ASSET_PREFIX = os.getenv('PROMPT_ASSET_PREFIX', 'prompts').strip().strip('/')

@@ -764,7 +764,7 @@ def _kick_detail_drain(**_kwargs):
             console_log('worker', f'resumed {n} stuck reverse prompt(s) after worker start')
         k = resume_stuck_twists()
         if k:
-            console_log('worker', f'resumed {k} stuck twist Omni pass(es) after worker start')
+            console_log('worker', f'resumed {k} stuck twist video pass(es) after worker start')
     except Exception:
         logger.warning('reverse resume on boot failed', exc_info=True)
 
@@ -1160,7 +1160,7 @@ def reverse_prompt_video(self, reverse_id: int):
 
 @celery.task(name='app.tasks.twist_reverse_prompt', bind=True, max_retries=0)
 def twist_reverse_prompt(self, reverse_id: int):
-    """Magic pencil: rewrite the prompt, restyle stills, then Omni video."""
+    """Magic pencil: rewrite the prompt, restyle stills, then Seedance video."""
     from app.models import ReversePrompt
     from app.prompts import reverse_twist
     from app.prompts.gen_timings import Clock, load_marks
@@ -1219,7 +1219,7 @@ def twist_reverse_prompt(self, reverse_id: int):
             row.twist_status = 'stills'
             row.timings = clock.snapshot()
             db.commit()
-            log(f'{len(twisted)} stills ready — Omni waits for the Start the Twist tap')
+            log(f'{len(twisted)} stills ready — Seedance waits for the Start the Twist tap')
             return {'ok': True, 'frames': len(twisted), 'stills_ready': True}
         except Exception as exc:
             db.rollback()
@@ -1253,7 +1253,7 @@ def render_twist_omni(self, reverse_id: int):
         twisted = reverse_twist.frames_from_stored(row.twist_frames)
         if not idea or not twisted:
             row.twist_status = 'failed'
-            row.twist_error = 'need twisted stills before Omni'
+            row.twist_error = 'need twisted stills before Seedance'
             db.commit()
             return {'ok': False, 'error': row.twist_error}
         clock = Clock(load_marks(row.timings))
@@ -1278,7 +1278,7 @@ def render_twist_omni(self, reverse_id: int):
                 log(f'twisted video ready in {clock.stop("omni")}s ({video.model})')
             else:
                 clock.stop('omni')
-                row.twist_video_error = 'Omni had no usable input'
+                row.twist_video_error = 'Seedance had no usable input'
             row.twist_status = 'done'
             row.timings = clock.dumps()
             db.commit()
@@ -1293,7 +1293,7 @@ def render_twist_omni(self, reverse_id: int):
             except Exception:
                 pass
             db.commit()
-            log(f'Omni video failed (stills kept): {exc}')
+            log(f'Seedance video failed (stills kept): {exc}')
             return {'ok': False, 'error': str(exc)[:500], 'frames': len(twisted)}
 
 
@@ -1328,7 +1328,7 @@ def resume_stuck_reverses(*, delay=None) -> int:
 
 
 def resume_stuck_twists(*, delay=None) -> int:
-    """Only resume Omni after the owner tapped Start the Twist."""
+    """Only resume Seedance after the owner tapped Start the Twist."""
     from app.models import ReversePrompt
     from app.prompts.reverse_twist import frames_from_stored
 
@@ -1347,7 +1347,7 @@ def resume_stuck_twists(*, delay=None) -> int:
             db.commit()
             kick(row.id)
             n += 1
-            console_log('worker', f'Reverse #{row.id} Omni re-queued (Start the Twist)')
+            console_log('worker', f'Reverse #{row.id} Seedance re-queued (Start the Twist)')
     return n
 
 

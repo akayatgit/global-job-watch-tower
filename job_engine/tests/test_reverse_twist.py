@@ -142,37 +142,43 @@ class TwistUnitTests(unittest.TestCase):
         self.assertNotIn('IDENTITY LOCK', expected)
         self.assertNotIn('gold pours', expected)
 
-    def test_omni_attempts_send_prompt_and_source_video_only(self):
-        attempts = reverse_twist.omni_input_attempts(
+    def test_seedance_attempts_send_reference_video_and_stills(self):
+        attempts = reverse_twist.seedance_input_attempts(
             prompt='Motion transfer. Twist: gold.',
             video_url='https://tower.example/clip.mp4',
             frame_urls=[
                 'https://tower.example/a.jpg',
                 'https://tower.example/b.jpg',
             ],
+            duration_s=8,
         )
         first = attempts[0]
         self.assertEqual(len(attempts), 2)
-        self.assertEqual(first['video'], 'https://tower.example/clip.mp4')
-        self.assertEqual(first['task'], 'edit')
+        self.assertEqual(first['reference_videos'], ['https://tower.example/clip.mp4'])
+        self.assertEqual(
+            first['reference_images'],
+            ['https://tower.example/a.jpg', 'https://tower.example/b.jpg'],
+        )
+        self.assertEqual(first['duration'], 8)
         self.assertEqual(first['resolution'], '720p')
         self.assertEqual(first['aspect_ratio'], '9:16')
-        for item in attempts:
-            self.assertNotIn('image', item)
-            self.assertNotIn('last_frame', item)
-            self.assertNotIn('reference_images', item)
-            self.assertEqual(item['video'], 'https://tower.example/clip.mp4')
-        self.assertTrue(any('task' not in item for item in attempts))
+        self.assertFalse(first['generate_audio'])
+        self.assertNotIn('video', first)
+        self.assertNotIn('task', first)
+        self.assertNotIn('image', first)
+        # Fallback attempt is video-only (no stills).
+        self.assertNotIn('reference_images', attempts[1])
+        self.assertEqual(attempts[1]['reference_videos'], ['https://tower.example/clip.mp4'])
 
-    def test_omni_attempts_ignore_frames_when_no_video(self):
-        attempts = reverse_twist.omni_input_attempts(
+    def test_seedance_attempts_empty_without_video(self):
+        attempts = reverse_twist.seedance_input_attempts(
             prompt='Motion transfer.',
             video_url=None,
             frame_urls=['https://tower.example/a.jpg'],
         )
         self.assertEqual(attempts, [])
 
-    def test_render_twist_video_stores_omni_mp4(self):
+    def test_render_twist_video_stores_seedance_mp4(self):
         seen: list[dict] = []
 
         def run(model, input):
@@ -181,7 +187,7 @@ class TwistUnitTests(unittest.TestCase):
 
         frames = [ReferenceFrame(t=0.0, key='prompts/d/tw.jpg', filename='twist-01.jpg')]
         stored: list[tuple[str, bytes]] = []
-        with mock.patch.object(config, 'PROMPT_TWIST_VIDEO_MODEL', 'google/gemini-omni-1.1'), \
+        with mock.patch.object(config, 'PROMPT_TWIST_VIDEO_MODEL', 'bytedance/seedance-2.0'), \
                 mock.patch.object(config, 'PARTNER_PUBLIC_BASE_URL', 'https://tower.example'):
             result = reverse_twist.render_twist_video(
                 twist='liquid gold temple',
@@ -196,18 +202,23 @@ class TwistUnitTests(unittest.TestCase):
                 read_output=lambda output: output,
             )
         self.assertIsInstance(result, RenderResult)
-        self.assertEqual(result.model, 'google/gemini-omni-1.1')
+        self.assertEqual(result.model, 'bytedance/seedance-2.0')
         self.assertEqual(stored[0][0], 'prompts/d/twvid-11.mp4')
         self.assertEqual(len(stored[0][1]), 2048)
-        self.assertEqual(seen[0]['model'], 'google/gemini-omni-1.1')
+        self.assertEqual(seen[0]['model'], 'bytedance/seedance-2.0')
         self.assertEqual(
-            seen[0]['input']['video'],
-            'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+            seen[0]['input']['reference_videos'],
+            ['https://tower.example/api/partner/v1/assets/prompts/d/src.mp4'],
         )
-        self.assertNotIn('image', seen[0]['input'])
-        self.assertNotIn('last_frame', seen[0]['input'])
+        self.assertEqual(
+            seen[0]['input']['reference_images'],
+            ['https://tower.example/api/partner/v1/assets/prompts/d/tw.jpg'],
+        )
         self.assertIn('liquid gold temple', seen[0]['input']['prompt'])
-        self.assertNotIn('reference stills', seen[0]['input']['prompt'])
+        self.assertIn('[Video1]', seen[0]['input']['prompt'])
+        self.assertIn('[Image1]', seen[0]['input']['prompt'])
+        self.assertNotIn('video', seen[0]['input'])
+        self.assertNotIn('task', seen[0]['input'])
 
     def test_pack_frames_zip_is_one_downloadable_archive(self):
         frames = [

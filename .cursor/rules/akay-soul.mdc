@@ -460,6 +460,12 @@ need to be told twice.
   brief and the source clip. Twisted stills stay for Telegram Images
   / future models — never attach them to Omni.
 
+- **2026-09-12 · Switch twist video to Seedance 2.0.** Ashok: try
+  Seedance instead of Google Omni. Default
+  `bytedance/seedance-2.0` — prompt + `reference_videos` (source)
+  + optional `reference_images` (twisted stills). Omni schema stays
+  retired unless he flips the model env back.
+
 - **2026-09-12 · Stuck on Workflow Started with no clip.** Deploy
   mid-flow + leftover intake Twist let a Gemini tap start a hollow
   reverse. Typed hook must not become a twist. No URL = ask for the
