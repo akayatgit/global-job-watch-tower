@@ -260,7 +260,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.bot.process('guest-77', '/help')
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
 
     def test_owner_help_lists_prompt_commands(self):
@@ -277,7 +277,7 @@ class TelegramBotContractTests(unittest.TestCase):
 
     def test_start_launches_reverse_ask(self):
         self.bot.process('42', '/start')
-        self.assertIn('Now Send me the Instagram or Pinterest link.', self.api.sent[-1][1])
+        self.assertIn('Now Paste the link.', self.api.sent[-1][1])
 
     def test_owner_board_command_bypasses_job_search_engine(self):
         rendered: list[tuple[str, int | None]] = []
@@ -343,7 +343,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(self.engine.company_calls, [])
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
 
     def _mnc_bot(self, tower_post=None):
@@ -375,7 +375,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertEqual(posts, [])
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
 
     def test_owner_companies_is_retired(self):
@@ -389,7 +389,7 @@ class TelegramBotContractTests(unittest.TestCase):
         bot.process('guest', '/companies')
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
 
     def test_resetdata_stages_with_counts_and_disturbance_warning(self):
@@ -468,7 +468,7 @@ class TelegramBotContractTests(unittest.TestCase):
         bot.process('guest', '/resetdata')
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
 
     def test_guest_cannot_run_owner_command(self):
@@ -485,7 +485,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(acked)
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
         self.assertEqual(self.engine.calls, [])
 
@@ -501,7 +501,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(telegram_guests.is_username_allowed('intruder'))
         self.assertEqual(
             self.api.sent,
-            [('guest', 'Now Send me the Instagram or Pinterest link.')],
+            [('guest', 'Now Paste the link.')],
         )
 
     def test_owner_can_allow_list_block_and_reallow_username(self):
@@ -605,7 +605,7 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertNotIn('private question', self.api.sent[-1][1])
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
 
     def test_history_command_explains_pre_feature_gap(self):
@@ -842,7 +842,7 @@ class TelegramBotContractTests(unittest.TestCase):
         reply = self.api.sent[-1][1]
         self.assertEqual(
             reply,
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
 
     def test_block_override_can_disable_default_username(self):
@@ -1200,7 +1200,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         self.bot.process('owner', '/health')
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
         self.assertEqual(self.rendered, [])
 
@@ -1245,7 +1245,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         self.bot.process('guest', '/actasguest')
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
         self.assertFalse(self.bot._is_simulating_guest('guest'))
 
@@ -1269,7 +1269,7 @@ class RoleSwitchSelfTestTests(unittest.TestCase):
         restarted.process('owner', '/health')
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
 
 
@@ -1559,7 +1559,7 @@ class PushBroadcastCommandTests(unittest.TestCase):
         self.bot.process('guest-1', '/push hello everyone')
         self.assertEqual(
             self.api.sent[-1][1],
-            'Now Send me the Instagram or Pinterest link.',
+            'Now Paste the link.',
         )
         self.assertEqual(self.sessions.get_state('pending_push_text:guest-1', ''), '')
 

@@ -92,6 +92,19 @@ def hold_scan(*, seconds: int = HOLD_S, now: float | None = None) -> int:
     return int(until - now)
 
 
+def clear_hold() -> None:
+    """Drop the reverse hold — CI/tests must not leak a 15-min lane lock."""
+    try:
+        _redis().delete(HOLD_KEY)
+    except Exception:
+        pass
+    try:
+        if _FILE.is_file():
+            _FILE.unlink()
+    except Exception as exc:
+        logger.warning('scan hold file clear failed: %s', exc)
+
+
 def revoke_scan_tasks(*, control=None) -> int:
     """SIGTERM any running / queued collect+score task. Reverse stays."""
     if control is None:

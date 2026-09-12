@@ -34,7 +34,12 @@ jobs:
       - name: Run JobMaster contract suite
         run: |
           cd job_engine
-          python -m unittest discover -s tests -v
+          # A reverse API test can leave scan_hold_until on disk; that then
+          # makes reddit/source tests raise ReverseHold and blocks deploy
+          # before code ever reaches the ThinkPad (Ashok 2026-09-12 canary).
+          PYTHONPATH=. python -c 'from app.prompts.scan_hold import clear_hold; clear_hold()'
+          PYTHONPATH=. python -m unittest discover -s tests -v
+          PYTHONPATH=. python -c 'from app.prompts.scan_hold import clear_hold; clear_hold()'
 
   deploy:
     needs: test

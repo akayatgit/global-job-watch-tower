@@ -396,7 +396,7 @@ class DeckTests(unittest.TestCase):
 
     def test_igtovid_url_then_title_then_model_starts_reverse(self):
         reply = self.deck.handle_command('1', 'igtovid', '')
-        self.assertEqual(reply.text, 'Now Send me the Instagram or Pinterest link.')
+        self.assertEqual(reply.text, 'Now Paste the link.')
         self.assertNotIn('magic-pencil', reply.text.lower())
         self.assertNotIn('cinematic', reply.text.lower())
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_URL.format(chat='1'), ''), '1')
@@ -910,7 +910,7 @@ class BotWiringTests(unittest.TestCase):
     def test_owner_igtovid_asks_for_url_then_title_starts_reverse(self):
         self.bot._process_locked('100', '/igtovid')
         _chat, text, keyboard = self.api.keyboards_sent[-1]
-        self.assertEqual(text, 'Now Send me the Instagram or Pinterest link.')
+        self.assertEqual(text, 'Now Paste the link.')
         self.assertNotIn('Gemini', text)
         self.assertNotIn('cinematic', text.lower())
         self.assertEqual(keyboard, [[('✖ Cancel', 'pt:cancel')]])
@@ -927,7 +927,7 @@ class BotWiringTests(unittest.TestCase):
 
     def test_guest_can_start_reverse_from_command_or_url(self):
         self.bot._process_locked('555', '/igtovid')
-        self.assertEqual(self.api.sent[-1][1], 'Now Send me the Instagram or Pinterest link.')
+        self.assertEqual(self.api.sent[-1][1], 'Now Paste the link.')
         self.bot._process_locked('555', 'https://www.instagram.com/reel/AbC123xyz/')
         self.assertEqual(self.api.sent[-1][1], 'Whats the hook?')
 

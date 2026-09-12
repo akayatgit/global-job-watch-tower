@@ -14,7 +14,7 @@ docs, nothing about the old catalogue.
 
 **Acceptance:**
 
-- Any user `/igtovid` → `Now Send me the Instagram or Pinterest link.`
+- Any user `/igtovid` → `Now Paste the link.`
 - Paste a Pinterest pin → `Whats the hook?`
 - No `Thinking…`, no hiring-site links, no seeker essays
 - Public Telegram menu shows `igtovid` · `pintovid` · `help`

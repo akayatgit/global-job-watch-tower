@@ -45,6 +45,8 @@ def png_b64(size=(120, 200)) -> str:
 
 class PromptsApiTests(unittest.TestCase):
     def setUp(self):
+        from app.prompts.scan_hold import clear_hold
+        clear_hold()
         self.db = make_session()
         self.client = make_client(self.db)
         self.tmp = tempfile.TemporaryDirectory()
@@ -63,6 +65,8 @@ class PromptsApiTests(unittest.TestCase):
         for patch in self.patches:
             patch.stop()
         self.tmp.cleanup()
+        from app.prompts.scan_hold import clear_hold
+        clear_hold()
 
     def _seed_shortlist(self):
         from app.prompts.sources import Candidate

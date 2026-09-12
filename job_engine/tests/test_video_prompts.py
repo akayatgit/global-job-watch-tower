@@ -196,6 +196,12 @@ class NormalizeTests(unittest.TestCase):
 
 
 class SourcesTests(unittest.TestCase):
+    def setUp(self):
+        # Reverse API tests can leave a 15-min lane hold on disk; clear so
+        # reddit pulls do not raise ReverseHold and red the deploy gate.
+        from app.prompts.scan_hold import clear_hold
+        clear_hold()
+
     def test_reddit_listing_yields_candidates_with_provenance(self):
         payload = {
             'data': {'children': [
@@ -1209,6 +1215,10 @@ At least one output file must be specified"""
 
 
 class IdleKickTests(unittest.TestCase):
+    def setUp(self):
+        from app.prompts.scan_hold import clear_hold
+        clear_hold()
+
     def test_empty_catalogue_dispatches_prompt_scan(self):
         from app import tasks
 

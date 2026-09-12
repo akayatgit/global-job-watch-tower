@@ -8,7 +8,7 @@ alwaysApply: true
 **HARD LOCK 2026-09-12.** Product is **Prompt Tower**. Telegram never
 sends seeker copy, hiring-site links, or `Thinking…` then an essay.
 `/igtovid` and `/pintovid` are **public**. `/start` · `/help` · hi →
-`Now Send me the Instagram or Pinterest link.` Finished reverse: Save
+`Now Paste the link.` Finished reverse: Save
 clip / Save reel / Images / Show prompt / Copy prompt / Twist — never
 dump the prompt or the 14 frames. Docs and PRD describe a Prompt
 application only.
@@ -887,9 +887,9 @@ it, shows recipient count) → `/pushconfirm`
   fetches — no giant upload). On E001, remux + data-URI once. Telegram
   says Gemini, with Retry / forward-the-file. Heartbeat while watching.
 - ** /igtovid is one line, instantly (Ashok 2026-09-11).** After
-  `/igtovid` / `/pintovid` say only: `Now Send me the Instagram or
-  Pinterest link.` No essay about title / twist / models / reel.
-  Answer on the poll thread — do not queue behind `/promptscan`.
+  `/igtovid` / `/pintovid` say only: `Now Paste the link.` No essay
+  about title / twist / models / reel. Answer on the poll thread — do
+  not queue behind `/promptscan`.
 - **Reverse owns the lane (Ashok 2026-09-11).** `/igtovid` / `/pintovid`
   breaks `/promptscan` for 15 minutes: revoke the collect+score task,
   refuse new scans, skip idle/beat kicks. Hermes and Chrome stay free
@@ -943,7 +943,7 @@ it, shows recipient count) → `/pushconfirm`
   on a multi-MB fetch.
 
 - **/igtovid must reply in under a second (Ashok 2026-09-12).** A one-minute
-  wait for `Now Send me the Instagram or Pinterest link.` is a bug. Cause:
+  wait for `Now Paste the link.` is a bug. Cause:
   reverse intake shared the per-chat lock with Images/video uploads. Law:
   reverse intake is **lock-free** + `sendChatAction(typing)` the instant the
   update arrives — never queue behind media. Measure: tap `/igtovid` → ask
@@ -951,6 +951,6 @@ it, shows recipient count) → `/pushconfirm`
 
 - **Never start a reverse without a clip (Ashok 2026-09-12).** Leftover
   intake Twist / Skip / stale Gemini buttons must not queue a hollow
-  run. No URL and no last reverse → `Now Send me the Instagram or
-  Pinterest link.` A `processing..` that stays queued after deploy
-  must say so and offer Retry — watcher threads resume on bot start.
+  run. No URL and no last reverse → `Now Paste the link.` A
+  `processing..` that stays queued after deploy must say so and offer
+  Retry — watcher threads resume on bot start.
