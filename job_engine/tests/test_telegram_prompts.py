@@ -452,7 +452,7 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(self.tower.posts[-1][1]['title'], 'EIFFEL TOWER')
         self.assertEqual(self.sessions.get_state(STATE_LAST_REVERSE.format(chat='1'), ''), '11')
 
-    def test_second_gemini_tap_after_start_resumes_instead_of_reasking(self):
+    def test_second_gemini_tap_after_start_stays_silent(self):
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
         self.deck.maybe_take_title('1', 'EIFFEL TOWER')
         started = self._pick_model('1', 'gemini')
@@ -460,7 +460,8 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(len(self.tower.posts), 1)
         self.assertEqual(self.sessions.get_state(STATE_PENDING_URL.format(chat='1'), ''), '')
         again = self._pick_model('1', 'gemini')
-        self.assertIn('Workflow Started', again.text)
+        # Duplicate Gemini taps must not flood Workflow Started.
+        self.assertEqual(again.text, '')
         self.assertEqual(len(self.tower.posts), 1)
 
     def test_old_skip_twist_button_asks_for_the_link(self):
@@ -542,6 +543,19 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(payload['title'], 'ROBE FILM')
         self.assertEqual(base64.b64decode(payload['video_base64']), b'JPEGBYTES-vid-9')
         self.assertEqual(self.sessions.get_state(STATE_VIDEO.format(chat='1'), ''), '')
+
+
+    def test_watch_reverse_ready_message_only_once_even_if_watched_twice(self):
+        self.tower.reverse_status = {
+            'id': 11, 'status': 'done', 'keyword': 'COFFEE',
+            'prompt_text': '[0.0s–1.0s] shot.',
+            'video_key': 'prompts/d/src.mp4',
+            'video_url': 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4',
+        }
+        self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
+        self.assertEqual(len(self.keyboards), 1)
+        self.assertTrue(self.keyboards[0][1].startswith('✅ Reverse #11 ready.'))
 
     def test_watch_reverse_delivers_one_message_with_buttons_only(self):
         long_prompt = '\n'.join(f'[{i}.0s–{i + 1}.0s] shot detail ' + ('x' * 80) for i in range(60))
@@ -959,11 +973,30 @@ class BotWiringTests(unittest.TestCase):
         ]
         started: list[tuple[str, int]] = []
         twisted: list[tuple[str, int]] = []
-        self.bot._start_reverse_watch = lambda c, r: started.append((c, r))
-        self.bot._start_twist_watch = lambda c, r: twisted.append((c, r))
+        self.bot._start_reverse_watch = lambda c, r: started.append((c, r)) or True
+        self.bot._start_twist_watch = lambda c, r: twisted.append((c, r)) or True
         self.assertEqual(self.bot.resume_open_watches(), 2)
         self.assertEqual(started, [('100', 21)])
         self.assertEqual(twisted, [('100', 22)])
+        # Second resume must not stack more watchers.
+        self.bot._start_reverse_watch = lambda c, r: False
+        self.bot._start_twist_watch = lambda c, r: False
+        self.assertEqual(self.bot.resume_open_watches(), 0)
+
+
+    def test_start_reverse_watch_starts_only_one_thread(self):
+        import time
+        ran = []
+
+        def hang(chat_id, reverse_id, **kwargs):
+            ran.append(reverse_id)
+            time.sleep(0.3)
+
+        self.bot.deck.watch_reverse = hang
+        self.assertTrue(self.bot._start_reverse_watch('100', 77))
+        self.assertFalse(self.bot._start_reverse_watch('100', 77))
+        time.sleep(0.05)
+        self.assertEqual(ran, [77])
 
     def test_normalize_update_keeps_photo_file_id(self):
         update = {'message': {'chat': {'id': 100, 'type': 'private'}, 'from': {'username': 'ashok'},

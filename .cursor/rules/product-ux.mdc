@@ -938,6 +938,13 @@ it, shows recipient count) → `/pushconfirm`
 - **A second Gemini tap must not re-ask the link (Ashok 2026-09-12).**
   The URL arrives before the hook. If that URL (or last reverse)
   is still known, start or resume — never `Send the link` again.
+
+- **One Workflow Started / one ready / one twist announce (Ashok 2026-09-12).**
+  Duplicate Gemini taps, resume_open_watches, and stacked watcher threads
+  were flooding Telegram (6× Started, 6× ready, 4× twist). Law: one live
+  watcher thread per reverse/twist id; announce + ready/stills/done each
+  claim once in session state; empty noop replies are not sent. A second
+  tap stays silent.
 - **One Telegram message until you tap (Ashok 2026-09-12).** Never flood.
   After each user message or button: **one** reply. Mid-flight reverse/twist
   stays silent (no processing / download / heartbeat spam — auto-retry is

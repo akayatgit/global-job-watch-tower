@@ -50,6 +50,11 @@ STATE_PENDING_TITLE = 'prompt_pending_reverse_title:{chat}'
 STATE_PENDING_TWIST = 'prompt_pending_reverse_twist:{chat}'
 STATE_VIDEO = 'pending_prompt_video:{chat}'
 STATE_LAST_REVERSE = 'prompt_last_reverse:{chat}'
+STATE_REVERSE_DELIVERED = 'prompt_reverse_delivered:{rid}'
+STATE_TWIST_STILLS_DELIVERED = 'prompt_twist_stills_delivered:{rid}'
+STATE_TWIST_DELIVERED = 'prompt_twist_delivered:{rid}'
+STATE_REVERSE_ANNOUNCED = 'prompt_reverse_announced:{rid}'
+STATE_TWIST_ANNOUNCED = 'prompt_twist_announced:{rid}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 FRAME_PAGE = 4
 REVERSE_POLL_S = 15
@@ -171,6 +176,33 @@ class PromptDeck:
         self.send_video_bytes = send_video_bytes
         self.send_document_bytes = send_document_bytes
         self.send_text = send_text
+
+
+    def _kick_watcher(self, callback, chat_id: str, reverse_id: int) -> bool:
+        """Start a reverse/twist watcher. False = already running (do not re-announce)."""
+        if callback is None:
+            return True
+        try:
+            started = callback(str(chat_id), int(reverse_id))
+        except Exception:
+            logger.exception('watcher kick failed id=%s', reverse_id)
+            return True
+        return started is not False
+
+    def _claim_once(self, key: str) -> bool:
+        """First caller wins; later watchers stay silent."""
+        if self.sessions.get_state(key, '') == '1':
+            return False
+        self.sessions.set_state(key, '1')
+        return True
+
+    def _clear_delivery(self, reverse_id: int) -> None:
+        rid = int(reverse_id)
+        self.sessions.set_state(STATE_REVERSE_DELIVERED.format(rid=rid), '')
+        self.sessions.set_state(STATE_TWIST_STILLS_DELIVERED.format(rid=rid), '')
+        self.sessions.set_state(STATE_TWIST_DELIVERED.format(rid=rid), '')
+        self.sessions.set_state(STATE_REVERSE_ANNOUNCED.format(rid=rid), '')
+        self.sessions.set_state(STATE_TWIST_ANNOUNCED.format(rid=rid), '')
 
     # ------------------------------------------------------------ commands
 
@@ -601,11 +633,9 @@ class PromptDeck:
         ):
             return self._stills_ready_reply(row)
         if status in ('queued', 'running', 'omni'):
-            if self.on_twist_started is not None:
-                try:
-                    self.on_twist_started(str(chat_id), reverse_id)
-                except Exception:
-                    logger.exception('twist watcher failed to start id=%s', reverse_id)
+            self._kick_watcher(self.on_twist_started, chat_id, reverse_id)
+            if not self._claim_once(STATE_TWIST_ANNOUNCED.format(rid=reverse_id)):
+                return ButtonReply('')
             if status == 'omni':
                 return ButtonReply(f'💥 Twist #{reverse_id} — Gemini Omni is already making the video.')
             return ButtonReply(f'💥✏️ Twist for #{reverse_id} is already running — the twisted prompt and stills land here.')
@@ -630,11 +660,11 @@ class PromptDeck:
             return ButtonReply('Tower could not start the twist — check /health and try again.')
         if row.get('twist_status') == 'failed' and row.get('twist_error'):
             return ButtonReply(f"Twist failed to queue: {row.get('twist_error')}")
-        if self.on_twist_started is not None:
-            try:
-                self.on_twist_started(str(chat_id), reverse_id)
-            except Exception:
-                logger.exception('twist watcher failed to start id=%s', reverse_id)
+        self.sessions.set_state(STATE_TWIST_STILLS_DELIVERED.format(rid=int(reverse_id)), '')
+        self.sessions.set_state(STATE_TWIST_DELIVERED.format(rid=int(reverse_id)), '')
+        self.sessions.set_state(STATE_TWIST_ANNOUNCED.format(rid=int(reverse_id)), '')
+        self._kick_watcher(self.on_twist_started, chat_id, reverse_id)
+        self.sessions.set_state(STATE_TWIST_ANNOUNCED.format(rid=int(reverse_id)), '1')
         return ButtonReply(
             f'💥✏️ Twist #{reverse_id} started — Gemini rewrites every beat, '
             'then each cut frame goes through text+image→image. Usually 3–8 minutes.'
@@ -656,11 +686,9 @@ class PromptDeck:
             return ButtonReply('Tower could not start Omni — check /health and try again.')
         if row.get('twist_status') == 'failed' and row.get('twist_error'):
             return ButtonReply(f"Omni failed to queue: {row.get('twist_error')}")
-        if self.on_twist_started is not None:
-            try:
-                self.on_twist_started(str(chat_id), reverse_id)
-            except Exception:
-                logger.exception('omni watcher failed to start id=%s', reverse_id)
+        self._kick_watcher(self.on_twist_started, chat_id, reverse_id)
+        if not self._claim_once(STATE_TWIST_ANNOUNCED.format(rid=reverse_id)):
+            return ButtonReply('')
         return ButtonReply(f'💥 Twist #{reverse_id} — Gemini Omni is making the video. About 2–6 min.')
 
     def _stills_ready_reply(self, row: dict[str, Any]) -> ButtonReply:
@@ -725,11 +753,9 @@ class PromptDeck:
             return None
         status = str(row.get('status') or '')
         if status in {'queued', 'downloading', 'describing', 'composing'}:
-            if self.on_reverse_started is not None:
-                try:
-                    self.on_reverse_started(str(chat_id), reverse_id)
-                except Exception:
-                    logger.exception('resume watcher failed id=%s', reverse_id)
+            self._kick_watcher(self.on_reverse_started, chat_id, reverse_id)
+            if not self._claim_once(STATE_REVERSE_ANNOUNCED.format(rid=reverse_id)):
+                return ButtonReply('')
             return ButtonReply(REVERSE_STARTED)
         if status == 'done':
             return ButtonReply(
@@ -854,11 +880,9 @@ class PromptDeck:
         self.sessions.set_state(STATE_LAST_REVERSE.format(chat=chat_id), str(row['id']))
         if row.get('status') == 'failed':
             return ButtonReply(f"Reverse prompt failed to queue: {row.get('error') or 'unknown error'}")
-        if self.on_reverse_started is not None:
-            try:
-                self.on_reverse_started(str(chat_id), int(row['id']))
-            except Exception:
-                logger.exception('reverse watcher failed to start id=%s', row.get('id'))
+        self._clear_delivery(int(row['id']))
+        self._kick_watcher(self.on_reverse_started, chat_id, int(row['id']))
+        self.sessions.set_state(STATE_REVERSE_ANNOUNCED.format(rid=int(row['id'])), '1')
         return ButtonReply(REVERSE_STARTED)
 
     def retry_reverse_reply(self, chat_id: str, reverse_id: int) -> ButtonReply:
@@ -876,11 +900,10 @@ class PromptDeck:
             return ButtonReply('Tower could not retry — check /health and try again.')
         if row.get('status') == 'failed':
             return ButtonReply(f"Retry failed: {row.get('error') or 'unknown error'}")
-        if self.on_reverse_started is not None:
-            try:
-                self.on_reverse_started(str(chat_id), reverse_id)
-            except Exception:
-                logger.exception('reverse watcher failed to start id=%s', reverse_id)
+        self._clear_delivery(reverse_id)
+        self._kick_watcher(self.on_reverse_started, chat_id, reverse_id)
+        if not self._claim_once(STATE_REVERSE_ANNOUNCED.format(rid=reverse_id)):
+            return ButtonReply('')
         return ButtonReply(
             f"🔄 Reverse #{reverse_id} kicked again — waiting for the clip, then Gemini. "
             'Forward the video file if Instagram keeps hiding it.',
@@ -1004,6 +1027,14 @@ class PromptDeck:
         self, chat_id: str, row: dict[str, Any], *, offer_twist: bool = True,
     ) -> None:
         """Exactly one message: status + buttons. Never dump prompt/images/video."""
+        rid = int(row.get('id') or 0)
+        key = (
+            STATE_REVERSE_DELIVERED.format(rid=rid)
+            if offer_twist
+            else STATE_TWIST_DELIVERED.format(rid=rid)
+        )
+        if rid and not self._claim_once(key):
+            return
         keyboard = self._reverse_done_keyboard(row, offer_twist=offer_twist)
         text = self._done_caption(row, offer_twist=offer_twist)
         if self.send_keyboard:
@@ -1301,6 +1332,8 @@ class PromptDeck:
 
     def _offer_stills_gate(self, chat_id: str, row: dict[str, Any], stills: list) -> None:
         rid = int(row.get('id') or 0)
+        if rid and not self._claim_once(STATE_TWIST_STILLS_DELIVERED.format(rid=rid)):
+            return
         text = (
             f'🖼 {len(stills)} twisted stills ready. Tap Images (4 at a time), '
             f'then {START_TWIST} for the video.'
