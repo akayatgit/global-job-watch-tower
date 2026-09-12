@@ -5,11 +5,9 @@
 from __future__ import annotations
 
 import base64
-import io
 import tempfile
 import unittest
 import urllib.error
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,7 +17,8 @@ from app import config
 from app.telegram_buttons import BTN_PREFIX, ButtonReply
 from app.telegram_prompts import (
     PromptDeck, REVERSE_ASK, STATE_AWAIT_IMAGE, STATE_AWAIT_MODEL, STATE_AWAIT_TITLE, STATE_AWAIT_TWIST,
-    STATE_AWAIT_TWIST_APPLY, STATE_AWAIT_URL, STATE_PHOTO, STATE_VIDEO,
+    STATE_AWAIT_TWIST_APPLY, STATE_AWAIT_URL, STATE_LAST_REVERSE, STATE_PENDING_TITLE, STATE_PENDING_URL,
+    STATE_PHOTO, STATE_VIDEO,
 )
 from app.telegram_sessions import TelegramSessionStore
 from scripts.telegram_job_bot import (
@@ -417,6 +416,7 @@ class DeckTests(unittest.TestCase):
         self.assertNotIn('twist', payload)
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_TITLE.format(chat='1'), ''), '')
         self.assertEqual(self.sessions.get_state(STATE_AWAIT_MODEL.format(chat='1'), ''), '')
+        self.assertEqual(self.sessions.get_state(STATE_LAST_REVERSE.format(chat='1'), ''), '11')
 
     def test_leftover_intake_twist_does_not_steal_the_hook(self):
         self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
@@ -435,6 +435,27 @@ class DeckTests(unittest.TestCase):
         reply = self._pick_model('1', 'gemini')
         self.assertEqual(reply.text, REVERSE_ASK)
         self.assertEqual(self.tower.posts, [])
+
+    def test_stale_gemini_with_pending_url_starts_even_without_await_model(self):
+        """URL arrived before the hook. Leftover Gemini must not re-ask it."""
+        self.sessions.set_state(STATE_PENDING_URL.format(chat='1'), 'https://www.instagram.com/reel/AbC123/')
+        self.sessions.set_state(STATE_PENDING_TITLE.format(chat='1'), 'EIFFEL TOWER')
+        started = self._pick_model('1', 'gemini')
+        self.assertIn('Workflow Started', started.text)
+        self.assertEqual(self.tower.posts[-1][1]['source_url'], 'https://www.instagram.com/reel/AbC123/')
+        self.assertEqual(self.tower.posts[-1][1]['title'], 'EIFFEL TOWER')
+        self.assertEqual(self.sessions.get_state(STATE_LAST_REVERSE.format(chat='1'), ''), '11')
+
+    def test_second_gemini_tap_after_start_resumes_instead_of_reasking(self):
+        self.deck.handle_command('1', 'igtovid', 'https://www.instagram.com/reel/AbC123/')
+        self.deck.maybe_take_title('1', 'EIFFEL TOWER')
+        started = self._pick_model('1', 'gemini')
+        self.assertIn('Workflow Started', started.text)
+        self.assertEqual(len(self.tower.posts), 1)
+        self.assertEqual(self.sessions.get_state(STATE_PENDING_URL.format(chat='1'), ''), '')
+        again = self._pick_model('1', 'gemini')
+        self.assertIn('Workflow Started', again.text)
+        self.assertEqual(len(self.tower.posts), 1)
 
     def test_old_skip_twist_button_asks_for_the_link(self):
         reply = self.deck.handle_callback('1', 'pt:twistskip')
@@ -528,6 +549,7 @@ class DeckTests(unittest.TestCase):
                 {'t': 0.0, 'key': 'prompts/d/rref-01.jpg', 'filename': 'cut-01-0.00s.jpg'},
                 {'t': 1.76, 'key': 'prompts/d/rref-02.jpg', 'filename': 'cut-02-1.76s.jpg'},
             ],
+            'timings': {'started_at': '2026-09-12T14:00:00+00:00', 'total': 121, 'download': 18, 'describe': 70, 'reel': 8},
         }
         self.assertEqual(self.deck.watch_reverse('1', 11, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
         self.assertEqual(len(self.sent_videos), 2)
@@ -536,12 +558,15 @@ class DeckTests(unittest.TestCase):
         self.assertIn('Tap the video to save', self.sent_videos[0][2])
         self.assertEqual(self.sent_videos[1][1], b'ASSET:prompts/d/rreel.mp4')
         self.assertIn('reel ready, post this', self.sent_videos[1][2])
+        self.assertEqual(self.sent_docs, [])
+        self.assertTrue(any(t.startswith('⏱ ') and 'download' in t for _c, t in self.texts))
         self.assertEqual(self.keyboards[0][1], 'Shall we twist the video?')
         keyboard = self.keyboards[0][2]
         self.assertEqual(
             keyboard[0][0],
             ('⬇️ Save clip', 'https://tower.example/api/partner/v1/assets/prompts/d/src.mp4?download=1'),
         )
+        self.assertEqual(keyboard[-3], [('🖼 Images', 'pt:imgs:11')])
         self.assertEqual(keyboard[-2], [('Show prompt', 'pt:show:11'), ('Copy prompt', 'pt:copy:11')])
         self.assertEqual(keyboard[-1], [('💥 Twist', 'pt:twist:11')])
         self.assertFalse(any('📝 Prompt #11' in t for _c, t in self.texts))
@@ -552,59 +577,69 @@ class DeckTests(unittest.TestCase):
         copied = self.deck.handle_callback('1', 'pt:copy:11')
         self.assertEqual(copied.text, 'Prompt file sent — open it to copy.')
         self.assertEqual(self.sent_docs[-1][2], 'prompt-11.txt')
-        self.assertTrue(any('download all' in t for _c, t in self.texts))
-        self.assertEqual(self.sent_docs[0][2], 'frames-11.zip')
-        names = zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()
-        self.assertEqual(names, ['cut-01-0.00s.jpg', 'cut-02-1.76s.jpg'])
-        self.assertIn('download all', self.sent_docs[0][3])
 
-    def test_watch_reverse_retries_flood_until_every_frame_arrives(self):
+    def test_images_button_sends_four_then_asks_for_more(self):
+        self.tower.reverse_status = {
+            'id': 12, 'status': 'done', 'keyword': 'JUICE',
+            'prompt_text': '[0.0s–8.0s] a drink.',
+            'ref_frames': [
+                {'t': float(i), 'key': f'prompts/d/rref-{i:02d}.jpg', 'filename': f'cut-{i + 1:02d}-{i:.2f}s.jpg'}
+                for i in range(6)
+            ],
+        }
+        with mock.patch('app.telegram_prompts.time.sleep'):
+            first = self.deck.handle_callback('1', 'pt:imgs:12')
+        self.assertEqual(len(self.sent_docs), 4)
+        self.assertEqual([doc[2] for doc in self.sent_docs], [
+            'cut-01-0.00s.jpg', 'cut-02-1.00s.jpg', 'cut-03-2.00s.jpg', 'cut-04-3.00s.jpg',
+        ])
+        self.assertIn('1–4 of 6', first.text)
+        self.assertEqual(first.keyboard[0][0], ('More images ▸', 'pt:imgs:12:4'))
+        more = self.deck.images_reply('1', 12, offset=4, sleep=lambda s: None)
+        self.assertEqual(len(self.sent_docs), 6)
+        self.assertIn('5–6 of 6', more.text)
+        self.assertFalse(more.keyboard)
+
+    def test_images_retries_flood_on_a_page(self):
         hits: dict[str, int] = {}
 
         def send(c, d, filename='f.jpg', caption=''):
             hits[filename] = hits.get(filename, 0) + 1
-            if filename == 'frames-12.zip' and hits[filename] == 1:
+            if filename == 'cut-01-0.00s.jpg' and hits[filename] == 1:
                 raise RuntimeError('Too Many Requests: retry after 1')
             self.sent_docs.append((c, d, filename, caption))
 
         self.deck.send_document_bytes = send
         self.tower.reverse_status = {
-            'id': 12, 'status': 'done', 'keyword': 'JUICE',
-            'prompt_text': '[0.0s–8.0s] a drink.',
-            'reel_key': 'prompts/d/rreel.mp4',
+            'id': 12, 'status': 'done',
             'ref_frames': [
                 {'t': float(i), 'key': f'prompts/d/rref-{i:02d}.jpg', 'filename': f'cut-{i + 1:02d}-{i:.2f}s.jpg'}
                 for i in range(6)
             ],
         }
-        self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(len(self.sent_docs), 1)
-        self.assertEqual(self.sent_docs[0][2], 'frames-12.zip')
-        self.assertEqual(hits['frames-12.zip'], 2)
-        self.assertEqual(len(zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()), 6)
-        self.assertFalse(any('did not arrive' in t for _c, t in self.texts))
+        reply = self.deck.images_reply('1', 12, sleep=lambda s: None)
+        self.assertEqual(len(self.sent_docs), 4)
+        self.assertEqual(hits['cut-01-0.00s.jpg'], 2)
+        self.assertIn('More images', reply.text)
 
-    def test_watch_reverse_says_when_frames_still_missing(self):
+    def test_images_says_when_a_frame_is_missing(self):
         def fetch(key: str) -> bytes:
-            if key.endswith(('03.jpg', '04.jpg', '05.jpg')):
+            if key.endswith('01.jpg'):
                 raise RuntimeError('missing asset')
             return b'ASSET:' + key.encode()
 
         self.deck.fetch_asset = fetch
         self.tower.reverse_status = {
-            'id': 12, 'status': 'done', 'keyword': 'JUICE',
-            'prompt_text': '[0.0s–8.0s] a drink.',
-            'reel_key': 'prompts/d/rreel.mp4',
+            'id': 12, 'status': 'done',
             'ref_frames': [
                 {'t': float(i), 'key': f'prompts/d/rref-{i:02d}.jpg', 'filename': f'cut-{i + 1:02d}-{i:.2f}s.jpg'}
                 for i in range(6)
             ],
         }
-        self.assertEqual(self.deck.watch_reverse('1', 12, poll_s=1, max_wait_s=5, sleep=lambda s: None), 'done')
-        self.assertEqual(len(self.sent_docs), 1)
-        self.assertEqual(self.sent_docs[0][2], 'frames-12.zip')
-        self.assertEqual(len(zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()), 3)
-        self.assertTrue(any('3 of 6 cut frames did not arrive' in t for _c, t in self.texts))
+        reply = self.deck.images_reply('1', 12, sleep=lambda s: None)
+        self.assertEqual(len(self.sent_docs), 3)
+        self.assertIn('1 missed (2)', reply.text)
+        self.assertIn('More images', reply.text)
 
     def test_watch_reverse_announces_describing_then_reel_failure_keeps_clip(self):
         states = iter([
@@ -735,9 +770,11 @@ class DeckTests(unittest.TestCase):
         )
         shown = self.deck.handle_callback('1', 'pt:show:11')
         self.assertIn('liquid gold pours', shown.text)
-        self.assertEqual(self.sent_docs[0][2], 'twist-frames-11.zip')
-        names = zipfile.ZipFile(io.BytesIO(self.sent_docs[0][1])).namelist()
-        self.assertEqual(names, ['twist-01-0.00s.jpg'])
+        self.assertEqual(self.sent_docs, [])
+        self.assertEqual(self.keyboards[-1][2][-2], [('🖼 Images', 'pt:timgs:11')])
+        frames = self.deck.images_reply('1', 11, kind='twist', sleep=lambda s: None)
+        self.assertEqual(self.sent_docs[0][2], 'twist-01-0.00s.jpg')
+        self.assertIn('1–1 of 1', frames.text)
 
 
 class BotWiringTests(unittest.TestCase):

@@ -172,6 +172,12 @@ class ReverseTwistIn(BaseModel):
     twist: str | None = None
 
 
+def _load_timings(raw) -> dict:
+    from app.prompts.gen_timings import load_marks
+
+    return load_marks(raw)
+
+
 def _serialize_reverse(row: ReversePrompt) -> dict:
     from app.prompts.reverse_prompt import load_reference_frames
     from app.prompts.video_creator import as_download_url
@@ -210,7 +216,9 @@ def _serialize_reverse(row: ReversePrompt) -> dict:
         'reel_download_url': as_download_url(row.reel_url),
         'reel_error': row.reel_error,
         'requested_at': row.requested_at.isoformat() if row.requested_at else None,
+        'started_at': row.started_at.isoformat() if row.started_at else None,
         'finished_at': row.finished_at.isoformat() if row.finished_at else None,
+        'timings': _load_timings(row.timings),
     }
 
 

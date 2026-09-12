@@ -316,6 +316,8 @@ class ReversePrompt(Base):
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # JSON {started_at, download, describe, frames, reel, omni, total, …}
+    timings: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RequestLog(Base):

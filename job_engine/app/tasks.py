@@ -982,6 +982,7 @@ def reverse_prompt_video(self, reverse_id: int):
     polls it. The clip and the prompt survive a reel failure."""
     from app.models import ReversePrompt
     from app.prompts import post_reel, reverse_prompt, video_creator
+    from app.prompts.gen_timings import Clock
     from app.prompts.pipeline import ingest
     from app.prompts.sources import Candidate
 
@@ -991,6 +992,7 @@ def reverse_prompt_video(self, reverse_id: int):
             return {'ok': False, 'error': 'reverse prompt not found'}
         tag = f'Reverse #{row.id}'
         log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
+        clock = Clock()
         row.started_at = utcnow()
         try:
             if not row.video_key and not (row.source_url or '').strip():
@@ -1002,6 +1004,7 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.status = 'downloading'
                 db.commit()
                 log(f'downloading {row.platform} video from {row.source_url}')
+                clock.start('download')
                 engine, _report = post_reel.resolve_engine()
                 fetched = reverse_prompt.fetch_video(
                     row.source_url or '',
@@ -1013,15 +1016,21 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.video_key = video_creator.asset_key('source', prompt_id=row.id, suffix='mp4')
                 video_creator.store_bytes(row.video_key, fetched.data, content_type='video/mp4')
                 row.video_url = video_creator.public_url(row.video_key)
+                took = clock.stop('download')
+                row.timings = clock.snapshot()
                 db.commit()
-                log(f'clip stored ({len(fetched.data) // 1024} KB) → {row.video_url}')
+                log(f'clip stored ({len(fetched.data) // 1024} KB) in {took}s → {row.video_url}')
             video_path = video_creator.assets_root() / row.video_key
             if not video_path.is_file():
                 raise RuntimeError('stored clip is missing from the asset root')
             try:
+                clock.start('remux')
                 if reverse_prompt.prepare_vision_clip(video_path, log=log):
-                    log(f'clip remuxed to H.264 for Gemini ({video_path.stat().st_size // 1024} KB)')
+                    log(f'clip remuxed to H.264 for Gemini in {clock.stop("remux")}s ({video_path.stat().st_size // 1024} KB)')
+                else:
+                    clock.stop('remux')
             except Exception as exc:
+                clock.stop('remux')
                 log(f'Gemini remux skipped: {exc}')
             info = post_reel.probe(video_path)
             row.duration_s = round(info.duration_s, 2) if info.duration_s else None
@@ -1029,6 +1038,7 @@ def reverse_prompt_video(self, reverse_id: int):
             if not row.prompt_text:
                 row.status = 'describing'
                 db.commit()
+                clock.start('describe')
                 reading = reverse_prompt.describe_video(
                     video_path,
                     duration_s=info.duration_s,
@@ -1039,10 +1049,13 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.keyword = reading.keyword
                 row.prompt_text = reading.prompt
                 row.model = reading.model
+                took = clock.stop('describe')
+                row.timings = clock.snapshot()
                 db.commit()
-                log(f'prompt written by {reading.model} ({len(reading.prompt)} chars, keyword {reading.keyword})')
+                log(f'prompt written by {reading.model} in {took}s ({len(reading.prompt)} chars, keyword {reading.keyword})')
                 frames: list = []
                 try:
+                    clock.start('frames')
                     times = reverse_prompt.plan_reference_times(
                         reading.cuts or reverse_prompt.cuts_from_prompt(reading.prompt),
                         duration_s=info.duration_s,
@@ -1052,13 +1065,17 @@ def reverse_prompt_video(self, reverse_id: int):
                     )
                     row.ref_frames = json.dumps(reverse_prompt.serialize_reference_frames(frames))
                     row.ref_error = None if frames else 'no cut-reference frames could be grabbed'
-                    log(f'{len(frames)} cut-reference frames at {", ".join(f"{f.t:.2f}s" for f in frames)}')
+                    took = clock.stop('frames')
+                    row.timings = clock.snapshot()
+                    log(f'{len(frames)} cut-reference frames in {took}s at {", ".join(f"{f.t:.2f}s" for f in frames)}')
                 except Exception as exc:
+                    clock.stop('frames')
                     row.ref_error = str(exc)[:2000]
                     log(f'cut-reference frames skipped: {exc}')
                 db.commit()
                 if frames:
                     try:
+                        clock.start('refine')
                         refined = reverse_prompt.refine_prompt_with_frames(
                             video_path,
                             prompt=row.prompt_text or '',
@@ -1072,12 +1089,17 @@ def reverse_prompt_video(self, reverse_id: int):
                         if refined is not None:
                             row.prompt_text = refined.prompt
                             row.keyword = refined.keyword or row.keyword
+                            took = clock.stop('refine')
+                            row.timings = clock.snapshot()
                             db.commit()
                             log(
-                                f'prompt refined against {len(frames)} cut frames '
+                                f'prompt refined against {len(frames)} cut frames in {took}s '
                                 f'({len(refined.prompt)} chars, keyword {row.keyword})'
                             )
+                        else:
+                            clock.stop('refine')
                     except Exception as exc:
+                        clock.stop('refine')
                         log(f'cut-frame attention skipped: {exc}')
                 try:  # catalogue after refine so the attended prompt is what we keep
                     catalogue, outcome = ingest(db, Candidate(
@@ -1096,6 +1118,7 @@ def reverse_prompt_video(self, reverse_id: int):
             row.status = 'composing'
             db.commit()
             try:
+                clock.start('reel')
                 reel = video_creator.create_reel(
                     video_path, prompt_id=row.id, prompt_text=row.prompt_text or '',
                     keyword=row.keyword or 'PRODUCT',
@@ -1105,14 +1128,17 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.reel_key = reel.reel_key
                 row.reel_url = reel.reel_url
                 row.reel_error = None
-                log(f'reel composed via {reel.engine} ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}')
+                log(f'reel composed via {reel.engine} in {clock.stop("reel")}s ({reel.frames} frames, {reel.duration_s:.1f}s) → {reel.reel_url}')
             except Exception as exc:
+                clock.stop('reel')
                 row.reel_error = str(exc)[:2000]
                 console_log('worker', f'{tag} reel FAILED (clip + prompt kept): {exc}', level='error')
             row.status = 'done'
             row.finished_at = utcnow()
+            row.timings = clock.dumps()
             db.commit()
-            return {'ok': True, 'reel_url': row.reel_url, 'prompt_id': row.prompt_id}
+            log(f'timing {row.timings}')
+            return {'ok': True, 'reel_url': row.reel_url, 'prompt_id': row.prompt_id, 'timings': clock.marks}
         except Exception as exc:
             db.rollback()
             row = db.get(ReversePrompt, int(reverse_id))
@@ -1120,6 +1146,10 @@ def reverse_prompt_video(self, reverse_id: int):
                 row.status = 'failed'
                 row.error = str(exc)[:2000]
                 row.finished_at = utcnow()
+                try:
+                    row.timings = clock.dumps()
+                except Exception:
+                    pass
                 db.commit()
             console_log('worker', f'{tag} FAILED: {exc}', level='error')
             return {'ok': False, 'error': str(exc)[:500]}
@@ -1130,6 +1160,7 @@ def twist_reverse_prompt(self, reverse_id: int):
     """Magic pencil: rewrite the prompt, restyle stills, then Omni video."""
     from app.models import ReversePrompt
     from app.prompts import reverse_twist
+    from app.prompts.gen_timings import Clock, load_marks
 
     with SessionLocal() as db:
         row = db.get(ReversePrompt, int(reverse_id))
@@ -1137,6 +1168,7 @@ def twist_reverse_prompt(self, reverse_id: int):
             return {'ok': False, 'error': 'reverse prompt not found'}
         tag = f'Reverse #{row.id} twist'
         log = lambda line: console_log('worker', f'{tag} {line}')  # noqa: E731
+        clock = Clock(load_marks(row.timings))
         idea = (row.twist_text or '').strip()
         draft = (row.prompt_text or '').strip()
         if not idea or not draft:
@@ -1147,14 +1179,18 @@ def twist_reverse_prompt(self, reverse_id: int):
         row.twist_status = 'running'
         db.commit()
         try:
+            clock.start('twist_prompt')
             reading = reverse_twist.twist_prompt_text(draft, idea, log=log)
             if reading is None:
                 raise RuntimeError('Gemini could not rewrite the prompt with that twist')
             row.twist_prompt = reading.prompt
             row.twist_keyword = reading.keyword
+            took = clock.stop('twist_prompt')
+            row.timings = clock.snapshot()
             db.commit()
-            log(f'prompt twisted ({len(reading.prompt)} chars, keyword {reading.keyword})')
+            log(f'prompt twisted in {took}s ({len(reading.prompt)} chars, keyword {reading.keyword})')
             frames = reverse_twist.frames_from_stored(row.ref_frames)
+            clock.start('twist_frames')
             twisted, failed = reverse_twist.twist_reference_frames(
                 frames,
                 twist=idea,
@@ -1169,7 +1205,11 @@ def twist_reverse_prompt(self, reverse_id: int):
                 row.twist_error = None
             if not twisted:
                 raise RuntimeError(row.twist_error or 'no twisted stills')
+            took = clock.stop('twist_frames')
+            row.timings = clock.snapshot()
+            log(f'{len(twisted)} twisted stills in {took}s')
             try:
+                clock.start('omni')
                 video = reverse_twist.render_twist_video(
                     twist=idea,
                     twisted_prompt=reading.prompt,
@@ -1183,15 +1223,18 @@ def twist_reverse_prompt(self, reverse_id: int):
                     row.twist_video_key = video.video_key
                     row.twist_video_url = video.video_url
                     row.twist_video_error = None
-                    log(f'twisted video ready ({video.model})')
+                    log(f'twisted video ready in {clock.stop("omni")}s ({video.model})')
                 else:
+                    clock.stop('omni')
                     row.twist_video_error = 'Omni had no usable input'
             except Exception as exc:
+                clock.stop('omni')
                 row.twist_video_error = str(exc)[:2000]
                 log(f'Omni video failed (stills kept): {exc}')
             row.twist_status = 'done'
+            row.timings = clock.dumps()
             db.commit()
-            log(f'{len(twisted)} twisted cut frames ready')
+            log(f'timing {row.timings}')
             return {
                 'ok': True,
                 'frames': len(twisted),
@@ -1203,6 +1246,10 @@ def twist_reverse_prompt(self, reverse_id: int):
             if row is not None:
                 row.twist_status = 'failed'
                 row.twist_error = str(exc)[:2000]
+                try:
+                    row.timings = clock.dumps()
+                except Exception:
+                    pass
                 db.commit()
             console_log('worker', f'{tag} FAILED: {exc}', level='error')
             return {'ok': False, 'error': str(exc)[:500]}
