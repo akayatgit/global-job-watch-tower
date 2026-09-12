@@ -324,6 +324,13 @@ class TelegramAPI:
                 'disable_web_page_preview': 'true',
             })
 
+    def send_chat_action(self, chat_id: str, action: str = 'typing') -> None:
+        """Instant Telegram feedback while we prepare the real reply."""
+        try:
+            self.call('sendChatAction', {'chat_id': str(chat_id), 'action': action}, timeout=5)
+        except Exception:
+            LOG.debug('sendChatAction failed chat=%s action=%s', chat_id, action, exc_info=True)
+
     def send_keyboard(
         self,
         chat_id: str,
@@ -1591,6 +1598,12 @@ class JobMasterTelegramBot:
         acked: bool = False,
         update_id: int | None = None,
     ) -> None:
+        # Reverse intake must NEVER wait on the per-chat lock. A stuck Images
+        # send or video post held that lock and made /igtovid take a full
+        # minute (Ashok 2026-09-12). Light reverse turns skip the lock.
+        if self._is_reverse_lockfree(text, chat_id=str(chat_id)):
+            self._process_locked(str(chat_id), text, acked=acked, update_id=update_id)
+            return
         with self._chat_locks_guard:
             lock = self._chat_locks.setdefault(str(chat_id), threading.Lock())
         with lock:
@@ -1796,8 +1809,17 @@ class JobMasterTelegramBot:
         """Never send Thinking… — Prompt Tower answers in one line."""
         return False
 
-    def _is_reverse_foreground(self, chat_id: str, text: str) -> bool:
-        """Intake + light reverse taps run on the poll thread — no worker wait."""
+    def _nudge_typing(self, chat_id: str) -> None:
+        """Show Telegram's typing bubble the instant we see a message."""
+        send_action = getattr(self.api, 'send_chat_action', None)
+        if callable(send_action):
+            try:
+                send_action(chat_id, 'typing')
+            except Exception:
+                LOG.debug('typing nudge failed chat=%s', chat_id, exc_info=True)
+
+    def _is_reverse_lockfree(self, text: str, chat_id: str | None = None) -> bool:
+        """These replies are cheap — never block behind media uploads."""
         clean = (text or '').strip()
         if not clean:
             return False
@@ -1812,19 +1834,26 @@ class JobMasterTelegramBot:
             return True
         if clean.lower() in {'/start', '/help', 'help', '/myalerts'} or GREETING_RE.match(clean):
             return True
-        if self.sessions.get_state(PROMPT_AWAIT_URL.format(chat=chat_id), '') == '1':
-            return True
-        if self.sessions.get_state(PROMPT_AWAIT_TITLE.format(chat=chat_id), '') == '1':
-            return True
-        if self.sessions.get_state(PROMPT_AWAIT_MODEL.format(chat=chat_id), '') == '1':
-            return True
-        if self.sessions.get_state(PROMPT_AWAIT_TWIST_APPLY.format(chat=chat_id), ''):
-            return True
         try:
             from app.prompts.reverse_prompt import find_url
-            return bool(find_url(clean))
+            if find_url(clean):
+                return True
         except Exception:
-            return False
+            pass
+        if chat_id:
+            if self.sessions.get_state(PROMPT_AWAIT_URL.format(chat=chat_id), '') == '1':
+                return True
+            if self.sessions.get_state(PROMPT_AWAIT_TITLE.format(chat=chat_id), '') == '1':
+                return True
+            if self.sessions.get_state(PROMPT_AWAIT_MODEL.format(chat=chat_id), '') == '1':
+                return True
+            if self.sessions.get_state(PROMPT_AWAIT_TWIST_APPLY.format(chat=chat_id), ''):
+                return True
+        return False
+
+    def _is_reverse_foreground(self, chat_id: str, text: str) -> bool:
+        """Intake + light reverse taps run on the poll thread — no worker wait."""
+        return self._is_reverse_lockfree(text, chat_id=str(chat_id))
 
     def _handle_alert_or_push_callback(self, chat_id: str, payload: str) -> ButtonReply | None:
         """Alert/push taps can arrive from a delivered alert or broadcast at
@@ -2189,6 +2218,12 @@ class JobMasterTelegramBot:
                                     # it is authorized — processing itself may
                                     # take longer via the durable queue below.
                                     self.api.answer_callback(callback_id)
+                                # Typing bubble FIRST — before SQLite / locks /
+                                # workers. This is why /igtovid felt like a
+                                # minute: we were silent until the chat lock
+                                # freed (Ashok 2026-09-12).
+                                if self._is_reverse_foreground(chat_id, text):
+                                    self._nudge_typing(chat_id)
                                 if not self._is_owner(chat_id):
                                     observe_identity(chat_id, username)
                                     telegram_broadcast.record_activity(self.sessions, chat_id)

@@ -47,6 +47,9 @@ class FakeTelegramAPI:
     def answer_callback(self, callback_query_id: str, text: str = '') -> None:
         pass
 
+    def send_chat_action(self, chat_id: str, action: str = 'typing') -> None:
+        self.calls.append(('sendChatAction', {'chat_id': chat_id, 'action': action}))
+
     def call(self, method: str, data: dict | None = None, timeout: int = 35) -> dict:
         self.calls.append((method, data or {}))
         return {'ok': True}

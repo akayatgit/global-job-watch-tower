@@ -942,6 +942,13 @@ it, shows recipient count) → `/pushconfirm`
   download + queue runs on a **background thread** so the chat never waits
   on a multi-MB fetch.
 
+- **/igtovid must reply in under a second (Ashok 2026-09-12).** A one-minute
+  wait for `Now Send me the Instagram or Pinterest link.` is a bug. Cause:
+  reverse intake shared the per-chat lock with Images/video uploads. Law:
+  reverse intake is **lock-free** + `sendChatAction(typing)` the instant the
+  update arrives — never queue behind media. Measure: tap `/igtovid` → ask
+  lands before you can look away.
+
 - **Never start a reverse without a clip (Ashok 2026-09-12).** Leftover
   intake Twist / Skip / stale Gemini buttons must not queue a hollow
   run. No URL and no last reverse → `Now Send me the Instagram or
