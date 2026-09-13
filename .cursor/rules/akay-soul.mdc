@@ -483,6 +483,12 @@ need to be told twice.
   on the original beats so Nano Banana + Omni still run. Dead-end
   "could not rewrite" is not a product.
 
+- **2026-09-13 · Hook → model picker must land in 1s.** Ashok waited
+  ~1 minute after the hook for `Select a Prompt Model…`. Poll thread
+  now acks before queue/process: hook → model picker immediately;
+  every other reverse turn → static `…` first. Silence after a tap
+  is a product bug.
+
 - **2026-09-12 · Start the Twist is the Omni tap.** After stills,
   stop. Ashok: a button **Start the Twist** fires Omni. Do not
   auto-queue video after Nano Banana. Images stay 4 + More.
