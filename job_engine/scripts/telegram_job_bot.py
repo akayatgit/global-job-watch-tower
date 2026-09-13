@@ -1878,7 +1878,7 @@ class JobMasterTelegramBot:
         screen). Any other reverse message/button → static ``…`` first,
         then the real reply follows from process.
         """
-        if not self._is_reverse_foreground(chat_id, text):
+        if not self._needs_reverse_instant_ack(chat_id, text):
             return False
         clean = (text or '').strip()
         try:
@@ -1966,6 +1966,41 @@ class JobMasterTelegramBot:
     def _is_reverse_foreground(self, chat_id: str, text: str) -> bool:
         """Intake + light reverse taps run on the poll thread — no worker wait."""
         return self._is_reverse_lockfree(text, chat_id=str(chat_id))
+
+    def _needs_reverse_instant_ack(self, chat_id: str, text: str) -> bool:
+        """Static/next-screen ack is only for reverse workflow — not /myalerts.
+
+        Lockfree also covers /start · /help · greetings so they never wait
+        behind media. Those must NOT get a reverse ``…`` ack (Ashok contract:
+        myalerts never triggers thinking/ellipsis ack).
+        """
+        clean = (text or '').strip()
+        if not clean:
+            return False
+        if clean.startswith(BTN_PREFIX):
+            payload = clean[len(BTN_PREFIX):]
+            if not payload.startswith(PROMPT_CALLBACK_PREFIX):
+                return False
+            action = payload[len(PROMPT_CALLBACK_PREFIX):].split(':', 1)[0]
+            return action in REVERSE_FOREGROUND_ACTIONS
+        parsed = self._command(clean)
+        if parsed and parsed[0] in REVERSE_INTAKE_COMMANDS:
+            return True
+        try:
+            from app.prompts.reverse_prompt import find_url
+            if find_url(clean):
+                return True
+        except Exception:
+            pass
+        if self.sessions.get_state(PROMPT_AWAIT_URL.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_TITLE.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_MODEL.format(chat=chat_id), '') == '1':
+            return True
+        if self.sessions.get_state(PROMPT_AWAIT_TWIST_APPLY.format(chat=chat_id), ''):
+            return True
+        return False
 
     def _handle_alert_or_push_callback(self, chat_id: str, payload: str) -> ButtonReply | None:
         """Alert/push taps can arrive from a delivered alert or broadcast at
