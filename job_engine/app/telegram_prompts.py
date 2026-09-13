@@ -55,6 +55,8 @@ STATE_TWIST_STILLS_DELIVERED = 'prompt_twist_stills_delivered:{rid}'
 STATE_TWIST_DELIVERED = 'prompt_twist_delivered:{rid}'
 STATE_REVERSE_ANNOUNCED = 'prompt_reverse_announced:{rid}'
 STATE_TWIST_ANNOUNCED = 'prompt_twist_announced:{rid}'
+# Poll-thread instant ack already answered this update (Ashok 2026-09-13).
+STATE_POLL_ACKED = 'prompt_poll_acked:{chat}'
 REVERSE_COMMANDS = frozenset({'igtovid', 'pintovid', 'pintovideo', 'reverseprompt'})
 FRAME_PAGE = 4
 REVERSE_POLL_S = 15
@@ -67,6 +69,8 @@ TELEGRAM_TEXT_LIMIT = 3900
 # ThinkPad has not picked up main — deploy is the bug, not the bot logic.
 REVERSE_ASK = 'Now Paste the link.'
 REVERSE_USAGE = REVERSE_ASK
+# Ashok (2026-09-13): every reverse tap/message gets a static ack within 1s.
+REVERSE_ACK = '…'
 # Ashok (2026-09-11): one line each. No footer essay, no magic-pencil speech.
 TITLE_ASK = 'Whats the hook?'
 # Ashok (2026-09-12): twist lives on the finished clip.
@@ -1472,6 +1476,7 @@ class PromptDeck:
         self.sessions.set_state(STATE_PENDING_TITLE.format(chat=chat_id), '')
         self.sessions.set_state(STATE_PENDING_TWIST.format(chat=chat_id), '')
         self.sessions.set_state(STATE_VIDEO.format(chat=chat_id), '')
+        self.sessions.set_state(STATE_POLL_ACKED.format(chat=chat_id), '')
 
 
 def retry_after_s(exc: BaseException) -> float | None:

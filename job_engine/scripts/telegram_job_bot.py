@@ -62,12 +62,16 @@ from app.telegram_guests import (  # noqa: E402
 )
 from app.telegram_prompts import (  # noqa: E402
     CALLBACK_PREFIX as PROMPT_CALLBACK_PREFIX,
+    MODEL_ASK,
+    MODEL_BUTTONS,
+    REVERSE_ACK,
     REVERSE_ASK,
     STATE_AWAIT_MODEL as PROMPT_AWAIT_MODEL,
     STATE_AWAIT_TITLE as PROMPT_AWAIT_TITLE,
     STATE_AWAIT_TWIST_APPLY as PROMPT_AWAIT_TWIST_APPLY,
     STATE_AWAIT_URL as PROMPT_AWAIT_URL,
     STATE_PHOTO as PROMPT_PHOTO_STATE,
+    STATE_POLL_ACKED as PROMPT_POLL_ACKED,
     STATE_VIDEO as PROMPT_VIDEO_STATE,
     PromptDeck,
 )
@@ -149,6 +153,9 @@ PROMPT_PHOTO_TAP = f'{BTN_PREFIX}{PROMPT_CALLBACK_PREFIX}photo'
 # Same shape for a forwarded video (the reverse-prompt source clip).
 PROMPT_VIDEO_TAP = f'{BTN_PREFIX}{PROMPT_CALLBACK_PREFIX}video'
 PROMPT_DAILY_CHECK_S = 600  # bot-side check for a fresh daily shortlist
+# Marker stored when the poll thread already delivered the next screen
+# (hook → model picker). Crash replay must not send this as chat text.
+INSTANT_ACK_SENTINEL = '(instant-ack)'
 # 10 minutes to review a staged /push before it expires unconfirmed —
 # short enough that a forgotten broadcast never fires hours later.
 PENDING_PUSH_TTL_S = 600
@@ -1751,6 +1758,9 @@ class JobMasterTelegramBot:
             self.sessions.complete_update(update_id)
             return True
         if prepared is not None:
+            if prepared == INSTANT_ACK_SENTINEL:
+                self.sessions.complete_update(update_id)
+                return True
             try:
                 self.api.send(chat_id, prepared)
             except Exception as exc:
@@ -1855,9 +1865,61 @@ class JobMasterTelegramBot:
             with self._queue_guard:
                 self._active_chats.discard(chat_id)
 
-    def _pre_ack(self, chat_id: str, text: str) -> bool:
-        """Never send Thinking… — Prompt Tower answers in one line."""
-        return False
+    def _pre_ack(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        update_id: int | None = None,
+    ) -> bool:
+        """Ashok 2026-09-13: reverse workflow must land a reply within 1s.
+
+        Hook → send the model picker immediately (that is the real next
+        screen). Any other reverse message/button → static ``…`` first,
+        then the real reply follows from process.
+        """
+        if not self._is_reverse_foreground(chat_id, text):
+            return False
+        clean = (text or '').strip()
+        try:
+            # Typed hook while awaiting title: skip the ellipsis and show
+            # Select a Prompt Model… now — that is the bug Ashok hit (~1 min).
+            if (
+                not clean.startswith(BTN_PREFIX)
+                and self.sessions.get_state(PROMPT_AWAIT_TITLE.format(chat=chat_id), '') == '1'
+            ):
+                reply = self.deck.maybe_take_title(chat_id, clean)
+                if reply is not None:
+                    self._send_button_reply(chat_id, reply)
+                    self.sessions.set_state(PROMPT_POLL_ACKED.format(chat=chat_id), 'done')
+                    return True
+            self.api.send(chat_id, REVERSE_ACK)
+            self.sessions.set_state(PROMPT_POLL_ACKED.format(chat=chat_id), 'partial')
+            return True
+        except Exception:
+            LOG.exception('reverse instant ack failed chat=%s', chat_id)
+            return False
+
+    def _seal_instant_ack(self, chat_id: str, update_id: int) -> None:
+        """After queue_update, persist done-ack so crash replay skips re-process.
+
+        Clears the poll flag here — `_process_queued` short-circuits on the
+        sentinel and never reaches `_consume_poll_ack`.
+        """
+        key = PROMPT_POLL_ACKED.format(chat=chat_id)
+        if (self.sessions.get_state(key, '') or '') != 'done':
+            return
+        if self.sessions.load_update_reply(update_id) is None:
+            self.sessions.save_update_reply(update_id, INSTANT_ACK_SENTINEL)
+        self.sessions.set_state(key, '')
+
+    def _consume_poll_ack(self, chat_id: str) -> str:
+        """Return and clear the poll-thread ack flag for this chat."""
+        key = PROMPT_POLL_ACKED.format(chat=chat_id)
+        flag = self.sessions.get_state(key, '') or ''
+        if flag:
+            self.sessions.set_state(key, '')
+        return flag
 
     def _nudge_typing(self, chat_id: str) -> None:
         """Show Telegram's typing bubble the instant we see a message."""
@@ -1986,6 +2048,19 @@ class JobMasterTelegramBot:
         clean = (text or '').strip()
         if not clean:
             return
+        # Instant poll-thread ack already sent the user-visible next screen
+        # (hook → Select a Prompt Model…). Do not send it again.
+        poll_ack = self._consume_poll_ack(chat_id)
+        if poll_ack == 'done':
+            if update_id is not None and self.sessions.load_update_reply(update_id) is None:
+                # Durable marker — must not re-send as plain text on crash replay.
+                self.sessions.save_update_reply(update_id, INSTANT_ACK_SENTINEL)
+            if self.health_enabled:
+                self._write_health(
+                    status='running', last_result='ok', last_chat=chat_id,
+                    last_kind='reverse_prompt_ack', last_text=clean[:120],
+                )
+            return
         if clean.startswith(BTN_PREFIX):
             # A tapped inline-keyboard button, encoded through the same
             # durable per-chat pipeline as typed text (see the poll loop) —
@@ -2110,6 +2185,20 @@ class JobMasterTelegramBot:
                 self._write_health(
                     status='running', last_result='ok', last_chat=chat_id,
                     last_kind='reverse_prompt', last_text=clean[:120],
+                )
+            return
+        # Instant hook-ack already parked us on the model picker. Free text
+        # here must not restart intake with "Paste the link".
+        if self.sessions.get_state(PROMPT_AWAIT_MODEL.format(chat=chat_id), '') == '1':
+            self._send_button_reply(
+                chat_id,
+                ButtonReply(MODEL_ASK, MODEL_BUTTONS),
+                update_id=update_id,
+            )
+            if self.health_enabled:
+                self._write_health(
+                    status='running', last_result='ok', last_chat=chat_id,
+                    last_kind='reverse_prompt_model', last_text=clean[:120],
                 )
             return
         if clean.lower() in {'/start', '/help', 'help', '/myalerts'} or GREETING_RE.match(clean):
@@ -2279,8 +2368,15 @@ class JobMasterTelegramBot:
                                 # workers. This is why /igtovid felt like a
                                 # minute: we were silent until the chat lock
                                 # freed (Ashok 2026-09-12).
-                                if self._is_reverse_foreground(chat_id, text):
+                                reverse_fg = self._is_reverse_foreground(chat_id, text)
+                                if reverse_fg:
                                     self._nudge_typing(chat_id)
+                                    # Instant static/next-screen ack BEFORE
+                                    # queue_update / process — Ashok 2026-09-13:
+                                    # hook → model picker was taking ~1 min.
+                                    acked = self._pre_ack(chat_id, text)
+                                else:
+                                    acked = False
                                 if not self._is_owner(chat_id):
                                     observe_identity(chat_id, username)
                                     telegram_broadcast.record_activity(self.sessions, chat_id)
@@ -2302,6 +2398,8 @@ class JobMasterTelegramBot:
                                     text,
                                     username=username,
                                 ):
+                                    if acked:
+                                        self._seal_instant_ack(chat_id, update_id)
                                     parsed = self._command(text)
                                     if (
                                         self._is_owner(chat_id)
@@ -2320,6 +2418,7 @@ class JobMasterTelegramBot:
                                             chat_id,
                                             username,
                                             text,
+                                            acked=acked,
                                         ):
                                             self._enqueue_update(
                                                 workers,
@@ -2327,6 +2426,7 @@ class JobMasterTelegramBot:
                                                 chat_id,
                                                 username,
                                                 text,
+                                                acked=acked,
                                             )
                                         self.sessions.set_state(
                                             'telegram_update_offset',
@@ -2335,12 +2435,13 @@ class JobMasterTelegramBot:
                                         continue
                                     # Reverse intake must answer on this
                                     # thread — never wait behind a worker.
-                                    if self._is_reverse_foreground(chat_id, text):
+                                    if reverse_fg:
                                         if not self._process_queued(
                                             update_id,
                                             chat_id,
                                             username,
                                             text,
+                                            acked=acked,
                                         ):
                                             self._enqueue_update(
                                                 workers,
@@ -2348,13 +2449,15 @@ class JobMasterTelegramBot:
                                                 chat_id,
                                                 username,
                                                 text,
+                                                acked=acked,
                                             )
                                         self.sessions.set_state(
                                             'telegram_update_offset',
                                             offset,
                                         )
                                         continue
-                                    acked = self._pre_ack(chat_id, text)
+                                    if not acked:
+                                        acked = self._pre_ack(chat_id, text)
                                     self._enqueue_update(
                                         workers,
                                         update_id,

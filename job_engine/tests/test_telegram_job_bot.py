@@ -10,7 +10,7 @@ from unittest.mock import patch
 from app import telegram_alerts, telegram_broadcast, telegram_guests
 from app.telegram_buttons import BTN_PREFIX
 from app.telegram_sessions import TelegramSessionStore
-from app.telegram_prompts import REVERSE_ASK, TITLE_ASK
+from app.telegram_prompts import MODEL_ASK, REVERSE_ACK, REVERSE_ASK, TITLE_ASK
 from scripts.telegram_job_bot import (
     JobMasterTelegramBot,
     _inline_keyboard_button,
@@ -228,6 +228,41 @@ class TelegramBotContractTests(unittest.TestCase):
         self.assertFalse(acked)
         self.bot.process('1221647274', 'Fresh AI jobs in Bangalore', acked=acked)
         self.assertNotIn('Thinking…', [text for _chat, text in self.api.sent])
+
+    def test_hook_pre_ack_sends_model_picker_immediately(self):
+        """Ashok 2026-09-13: hook → Select a Prompt Model… must land in <1s."""
+        import time
+        chat = '1221647274'
+        self.bot.process(chat, '/igtovid')
+        self.bot.process(chat, 'https://www.instagram.com/reel/ABC123/')
+        self.assertEqual(self.api.sent[-1][1], TITLE_ASK)
+        self.api.sent.clear()
+        self.api.keyboards_sent.clear()
+        started = time.perf_counter()
+        acked = self.bot._pre_ack(chat, 'CINEMATIC GOLD HOOK')
+        elapsed = time.perf_counter() - started
+        self.assertTrue(acked)
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(self.api.sent[-1][1], MODEL_ASK)
+        self.assertTrue(self.api.keyboards_sent)
+        # Process must not send the picker a second time.
+        before = len(self.api.sent)
+        self.bot.process(chat, 'CINEMATIC GOLD HOOK', acked=True)
+        self.assertEqual(len(self.api.sent), before)
+
+    def test_reverse_button_pre_ack_sends_ellipsis(self):
+        chat = 'guest-ack'
+        self.bot.process(chat, '/igtovid')
+        self.api.sent.clear()
+        from app.telegram_buttons import BTN_PREFIX
+        from app.telegram_prompts import CALLBACK_PREFIX
+        tap = f'{BTN_PREFIX}{CALLBACK_PREFIX}cancel'
+        started = __import__('time').perf_counter()
+        acked = self.bot._pre_ack(chat, tap)
+        elapsed = __import__('time').perf_counter() - started
+        self.assertTrue(acked)
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(self.api.sent[-1][1], REVERSE_ACK)
 
     def test_new_is_the_reverse_ask(self):
         self.bot.process('1221647274', '/new')

@@ -902,6 +902,12 @@ it, shows recipient count) → `/pushconfirm`
   Start and the first describing beat are both `Workflow Started…`.
   Do not restore the "which model / I will say when / clip downloaded"
   essays. Heartbeats, download, fail, and done stay detailed.
+- **Instant reverse ack within 1s (Ashok 2026-09-13).** Every reverse
+  message or button must land a reply on the poll thread before
+  `queue_update` / process. Hook text while awaiting title → send
+  `Select a Prompt Model…` immediately (that is the next screen).
+  Any other reverse turn → static `…` first, then the real reply.
+  Never leave Ashok staring at silence for a minute after the hook.
 - **Prompts strictly under 3000 characters including spaces (Ashok
   2026-09-11).** Reverse and twist. Thinking is on so Gemini plans
   the dense cut (`thinking_budget=8192`, 32k output). A compress
